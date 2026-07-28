@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Info Produk - {{ product.nama_produk }}{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto bg-white p-6 rounded-lg shadow-sm border border-gray-200 mt-6">
+    <div class="mb-4 border-b pb-3">
+        <h1 class="text-lg font-bold text-gray-900">Edit Informasi Produk</h1>
+        <p class="text-xs text-gray-500">Ubah meta data dokumen formula maklon</p>
+    </div>
+
+    <form action="/products/{{ product.id }}/edit" method="POST" class="space-y-4 text-sm">
+        <div>
+            <label class="block font-medium text-gray-750 mb-1">Nama Produk</label>
+            <input type="text" name="nama_produk" value="{{ product.nama_produk }}" required class="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:border-indigo-500 text-sm">
+        </div>
+        <div>
+            <label class="block font-medium text-gray-750 mb-1">Nama Customer</label>
+            <input type="text" name="customer" value="{{ product.customer }}" required class="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:border-indigo-500 text-sm">
+        </div>
+        <div>
+            <label class="block font-medium text-gray-750 mb-1">Sediaan / Bentuk</label>
+            <input type="text" name="tipe" value="{{ product.tipe or '' }}" placeholder="Contoh: Cream, Cair, Gel" required class="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:border-indigo-500 text-sm">
+        </div>
+        
+        <div class="pt-2 flex justify-end gap-2">
+            <a href="/" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-semibold">Batal</a>
+            <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold shadow-xs">Simpan Perubahan</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block title %}INCI Ingredient Report - {{ product.nama_produk }}{% endblock %}
+
+{% block content %}
+<div class="mb-6 border-b pb-4">
+    <a href="/" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium"><i class="fa-solid fa-arrow-left mr-1"></i> Kembali ke Dashboard</a>
+    <div class="mt-2">
+        <h1 class="text-2xl font-bold text-gray-950">Dokumen Informasi Produk (DIP) - INCI Breakdown</h1>
+        <p class="text-sm text-gray-500">Hasil kalkulasi breakdown komposit dan urutan bahan baku untuk produk: <span class="text-gray-900 font-semibold">{{ product.nama_produk }}</span></p>
+    </div>
+</div>
+
+<!-- Teks Siap Copy Paste Ke BPOM -->
+<div class="bg-gray-900 rounded-lg shadow-xs p-5 mb-6 text-white">
+    <div class="flex justify-between items-center mb-3 border-b border-gray-700 pb-2">
+        <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400"><i class="fa-solid fa-copy mr-1"></i> Format Penulisan Komposisi (Urutan Regulasi BPOM)</h3>
+        <button onclick="copyToClipboard()" class="text-xs bg-gray-800 hover:bg-gray-700 text-indigo-400 px-2.5 py-1 rounded transition cursor-pointer">Copy Teks</button>
+    </div>
+    <p id="composition-text" class="text-sm font-serif leading-relaxed text-gray-200">
+        {% for item in inci_list %}{{ item.inci_name }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    </p>
+</div>
+
+<!-- Tabel Rincian Persentase Murni -->
+<div class="bg-white shadow-xs rounded-lg border border-gray-200 overflow-hidden">
+    <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
+        <h3 class="text-sm font-semibold text-gray-900">Rincian Komposisi Murni Eksak</h3>
+        <span class="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Total: {{ inci_list|length }} Komponen Murni</span>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">No</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">INCI Name</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">CAS Number</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Fungsi</th>
+                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Kadar Aktual Mutlak (%)</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200 font-mono text-xs">
+                {% for item in inci_list %}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-3 text-gray-400">{{ loop.index }}</td>
+                    <td class="px-6 py-3 font-sans font-medium text-gray-900 text-sm">{{ item.inci_name }}</td>
+                    <td class="px-6 py-3 text-gray-500">{{ item.cas_number }}</td>
+                    <td class="px-6 py-3 font-sans text-gray-500">{{ item.function }}</td>
+                    <td class="px-6 py-3 text-right font-bold text-indigo-600">{{ item.total_percentage|clean_pct }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function copyToClipboard() {
+    const text = document.getElementById('composition-text').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        alert('Teks komposisi berhasil disalin ke clipboard!');
+    }).catch(err => {
+        alert('Gagal menyalin teks: ', err);
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,282 @@
+{% extends 'base.html' %}
+
+{% block title %}Manajemen Bahan Baku - DIP Builder{% endblock %}
+
+{% block content %}
+<div class="sm:flex sm:items-center sm:justify-between mb-8">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-950">Master Bahan Baku</h1>
+        <p class="mt-1 text-sm text-gray-500">Kelola database nama dagang dan komponen INCI internal.</p>
+    </div>
+    <div class="mt-4 sm:mt-0">
+        <button onclick="toggleModal(true)" class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 transition cursor-pointer">
+            <i class="fa-solid fa-plus mr-2"></i> Tambah Bahan Baku
+        </button>
+    </div>
+</div>
+
+<!-- Daftar Bahan Baku -->
+<div class="bg-white shadow-xs rounded-lg border border-gray-200 overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Nama Dagang / Kode</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Tipe</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Komponen INCI breakdown</th>
+                <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Aksi</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            {% for rm in raw_materials %}
+            <tr class="hover:bg-gray-50 transition">
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900">{{ rm.nama_dagang }}</div>
+                    <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ 'bg-purple-100 text-purple-800' if rm.tipe == 'komposit' else 'bg-blue-100 text-blue-800' }}">
+                        {{ rm.tipe }}
+                    </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">
+                    <ul class="space-y-1 list-disc list-inside">
+                        {% for comp in rm.raw_material_components %}
+                        <li>
+                            <strong class="text-gray-700">{{ comp.inci_name }}</strong> 
+                            <span class="text-xs text-gray-400">({{ comp.cas_number or 'No CAS' }})</span> - 
+                            <span class="font-mono text-indigo-600">{{ comp.percent_internal }}%</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                    <button onclick='openEditModal({{ rm | tojson }})' class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition cursor-pointer">
+                        <i class="fa-solid fa-pen-to-square"></i> Edit
+                    </button>
+                    <a href="/raw-materials/delete/{{ rm.id }}" onclick="return confirm('Yakin mau hapus bahan baku ini? Jika masih dipakai di produk aktif akan ditolak oleh sistem.')" class="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition">
+                        <i class="fa-solid fa-trash"></i>
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="px-6 py-12 text-center text-sm text-gray-500">
+                    Belum ada data bahan baku.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Modal Tambah Bahan Baku -->
+<div id="crud-modal" class="hidden fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h3 class="text-lg font-bold text-gray-900">Tambah Master Bahan Baku</h3>
+            <button onclick="toggleModal(false)" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        
+        <form action="/raw-materials/add" method="POST" onsubmit="return validateForm()">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Nama Dagang</label>
+                    <input type="text" name="nama_dagang" required class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Kode Bahan Baku (Internal)</label>
+                    <input type="text" name="kode_bahan_baku" required class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Tipe Bahan</label>
+                <div class="flex space-x-4">
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="tipe" value="single" checked onchange="handleTypeChange(this.value)" class="text-indigo-600 focus:ring-indigo-500">
+                        <span class="ml-2 text-sm text-gray-700">Single Ingredient</span>
+                    </label>
+                    <label class="inline-flex items-center">
+                        <input type="radio" name="tipe" value="komposit" onchange="handleTypeChange(this.value)" class="text-indigo-600 focus:ring-indigo-500">
+                        <span class="ml-2 text-sm text-gray-700">Komposit (Campuran)</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Bagian Form Dinamis Komponen -->
+            <div id="component-section" class="border-t pt-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h4 class="text-sm font-semibold text-gray-900">Breakdown Komponen INCI</h4>
+                    <button type="button" id="btn-add-row" onclick="addTemplateRow()" class="hidden text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-medium transition cursor-pointer">
+                        <i class="fa-solid fa-plus mr-1"></i> Tambah Baris
+                    </button>
+                </div>
+                
+                <div id="wrapper-rows" class="space-y-3">
+                    <!-- Row pertama default untuk single/komposit -->
+                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row">
+                        <div>
+                            <label class="block text-xs text-gray-500">INCI Name (Opsional)</label>
+                            <input type="text" name="inci_name" id="single-inci" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500">CAS Number</label>
+                            <input type="text" name="cas_number" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500">Fungsi</label>
+                            <input type="text" name="function" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500">% Internal</label>
+                            <input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full rounded-md bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Indikator Total Persentase Real-time -->
+            <div class="mt-4 p-3 bg-gray-50 rounded border border-gray-200 flex justify-between items-center text-sm">
+                <span class="font-medium text-gray-700">Total Persentase Input:</span>
+                <span id="total-pct-indicator" class="font-mono font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded">100.000%</span>
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-3 border-t pt-4">
+                <button type="button" onclick="toggleModal(false)" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50 transition cursor-pointer">Batal</button>
+                <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 transition cursor-pointer">Simpan Data</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function toggleModal(show) {
+    document.getElementById('crud-modal').classList.toggle('hidden', !show);
+    if (show) {
+        modal.querySelector('h3').innerText = "Tambah Master Bahan Baku";
+        modal.querySelector('form').action = "/raw-materials/add";
+        updateTotalCalculated(); 
+    }
+}
+
+function handleTypeChange(val) {
+    const btnAddRow = document.getElementById('btn-add-row');
+    const wrapper = document.getElementById('wrapper-rows');
+
+    if (val === 'single') {
+        btnAddRow.classList.add('hidden');
+        wrapper.innerHTML = `
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 class-row">
+                <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">% Internal</label><input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none"></div>
+            </div>`;
+    } else {
+        btnAddRow.classList.remove('hidden');
+        wrapper.innerHTML = '';
+        addTemplateRow();
+    }
+    updateTotalCalculated();
+}
+
+function addTemplateRow() {
+    const wrapper = document.getElementById('wrapper-rows');
+    const newRow = document.createElement('div');
+    newRow.className = "grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row";
+    newRow.innerHTML = `
+        <div><input type="text" name="inci_name" required placeholder="Nama INCI" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+        <div><input type="text" name="cas_number" placeholder="CAS Number" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+        <div><input type="text" name="function" placeholder="Fungsi" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+        <div class="flex items-center space-x-2">
+            <input type="number" step="0.001" name="percent_internal" required placeholder="%" oninput="updateTotalCalculated()" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs font-mono">
+            <button type="button" onclick="this.parentElement.parentElement.remove(); updateTotalCalculated();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash"></i></button>
+        </div>`;
+    wrapper.appendChild(newRow);
+    updateTotalCalculated();
+}
+
+function updateTotalCalculated() {
+    const pctInputs = document.getElementsByName('percent_internal');
+    const indicator = document.getElementById('total-pct-indicator');
+    let total = 0;
+    
+    for (let input of pctInputs) {
+        total += parseFloat(input.value || 0);
+    }
+    
+    indicator.innerText = total.toFixed(3) + '%';
+    
+    if (Math.abs(total - 100) < 0.001) {
+        indicator.className = "font-mono font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded";
+    } else {
+        indicator.className = "font-mono font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded animate-pulse";
+    }
+}
+
+function validateForm() {
+    const tipe = document.querySelector('input[name="tipe"]:checked').value;
+    if (tipe === 'komposit') {
+        const pctInputs = document.getElementsByName('percent_internal');
+        let total = 0;
+        for (let input of pctInputs) {
+            total += parseFloat(input.value || 0);
+        }
+        if (Math.abs(total - 100) > 0.001) {
+            alert('Amsyong! Total % komponen internal untuk tipe komposit wajib pas 100%. Total input lu saat ini: ' + total.toFixed(3) + '%');
+            return false;
+        }
+    }
+    return true;
+}
+
+function openEditModal(rm) {
+    const modal = document.getElementById('crud-modal');
+    const form = modal.querySelector('form');
+    modal.querySelector('h3').innerText = "Edit Master Bahan Baku";
+    form.action = "/raw-materials/edit/" + rm.id;
+
+    form.querySelector('input[name="nama_dagang"]').value = rm.nama_dagang;
+    form.querySelector('input[name="kode_bahan_baku"]').value = rm.kode_bahan_baku;
+    
+    const radios = form.querySelectorAll('input[name="tipe"]');
+    radios.forEach(r => {
+        if (r.value === rm.tipe) r.checked = true;
+    });
+
+    const btnAddRow = document.getElementById('btn-add-row');
+    const wrapper = document.getElementById('wrapper-rows');
+    wrapper.innerHTML = '';
+
+    if (rm.tipe === 'single') {
+        btnAddRow.classList.add('hidden');
+        const comp = rm.raw_material_components[0] || {};
+        wrapper.innerHTML = `
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 class-row">
+                <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" value="${comp.inci_name || ''}" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" value="${comp.cas_number || ''}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" value="${comp.function || ''}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">% Internal</label><input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none"></div>
+            </div>`;
+    } else {
+        btnAddRow.classList.remove('hidden');
+        rm.raw_material_components.forEach((comp, idx) => {
+            const newRow = document.createElement('div');
+            newRow.className = "grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row";
+            newRow.innerHTML = `
+                <div><input type="text" name="inci_name" required value="${comp.inci_name}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div><input type="text" name="cas_number" value="${comp.cas_number || ''}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div><input type="text" name="function" value="${comp.function || ''}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div class="flex items-center space-x-2">
+                    <input type="number" step="0.001" name="percent_internal" required value="${comp.percent_internal}" oninput="updateTotalCalculated()" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs font-mono">
+                    ${idx > 0 ? `<button type="button" onclick="this.parentElement.parentElement.remove(); updateTotalCalculated();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash"></i></button>` : '<div class="w-4"></div>'}
+                </div>`;
+            wrapper.appendChild(newRow);
+        });
+    }
+
+    modal.classList.remove('hidden');
+    updateTotalCalculated();
+}
+</script>
+{% endblock %}

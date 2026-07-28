@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard Produk - DIP Builder{% endblock %}
+
+{% block content %}
+<div class="sm:flex sm:items-center sm:justify-between mb-8">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-950">Daftar Produk</h1>
+        <p class="mt-1 text-sm text-gray-500">Pantau formula produk dan status registrasi nomor notifikasi BPOM.</p>
+    </div>
+    <div class="mt-4 sm:mt-0">
+        <button onclick="toggleProductModal(true)" class="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-indigo-600 transition">
+            <i class="fa-solid fa-plus mr-2"></i> Tambah Produk Baru
+        </button>
+    </div>
+</div>
+
+<!-- Grid Status Cards Singkat -->
+<div class="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
+    <div class="bg-white overflow-hidden shadow-xs rounded-lg border border-gray-200 p-5">
+        <div class="flex items-center">
+            <div class="p-3 rounded-md bg-green-50 text-green-600">
+                <i class="fa-solid fa-circle-check text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-500 truncate">NA Aktif</p>
+                <p class="text-2xl font-semibold text-gray-900">
+                    {{ products | selectattr('status_na', 'equalto', 'aktif') | list | length }}
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white overflow-hidden shadow-xs rounded-lg border border-gray-200 p-5">
+        <div class="flex items-center">
+            <div class="p-3 rounded-md bg-yellow-50 text-yellow-600">
+                <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-500 truncate">Akan Expired</p>
+                <p class="text-2xl font-semibold text-gray-900">
+                    {{ products | selectattr('status_na', 'equalto', 'akan_expired') | list | length }}
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white overflow-hidden shadow-xs rounded-lg border border-gray-200 p-5">
+        <div class="flex items-center">
+            <div class="p-3 rounded-md bg-red-50 text-red-600">
+                <i class="fa-solid fa-circle-xmark text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-500 truncate">Expired</p>
+                <p class="text-2xl font-semibold text-gray-900">
+                    {{ products | selectattr('status_na', 'equalto', 'expired') | list | length }}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabel Produk -->
+<div class="bg-white shadow-xs rounded-lg border border-gray-200 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Nama Produk</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Sediaan / Netto</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">No. NA BPOM</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status NA</th>
+                    <th scope="col" class="relative px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Aksi</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {% for product in products %}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">{{ product.nama_produk }}</div>
+                        <div class="text-xs text-gray-400">ID: {{ product.id[:8] }}...</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {{ product.nama_customer or '-' }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 mr-1">
+                            {{ product.sediaan or '-' }}
+                        </span>
+                        <span class="text-xs text-gray-400">{{ product.netto or '-' }}</span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                        {{ product.no_na_produk or 'Belum Terdaftar' }}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if product.status_na == 'aktif' %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <span class="w-1.5 h-1.5 mr-1.5 bg-green-500 rounded-full"></span> Aktif
+                        </span>
+                        {% elif product.status_na == 'akan_expired' %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <span class="w-1.5 h-1.5 mr-1.5 bg-yellow-500 rounded-full"></span> Akan Expired
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <span class="w-1.5 h-1.5 mr-1.5 bg-red-500 rounded-full"></span> Expired
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                        <!-- Masukkan ini di kolom AKSI tabel produk Anda -->
+                        <a href="/products/{{ product.id }}/edit" class="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded shadow-xs text-white bg-amber-500 hover:bg-amber-600 focus:outline-none mr-2">
+                            <i class="fa-solid fa-pen-to-square mr-1"></i> Edit Info
+                        </a>
+                        <a href="/products/{{ product.id }}" class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded transition">
+                            <i class="fa-solid fa-flask mr-1"></i> Formula
+                        </a>
+                        <a href="/products/{{ product.id }}/inci-breakdown/report" class="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded transition">
+                            <i class="fa-solid fa-file-invoice mr-1"></i> INCI Report
+                        </a>
+                        <a href="/products/{{ product.id }}/qualitative-quantitative" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-md shadow-xs transition duration-200 inline-flex items-center" title="Download / Lihat Qual & Quan Report">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 mr-1">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                            </svg>
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-6 py-12 text-center text-sm text-gray-500">
+                        <i class="fa-solid fa-folder-open text-3xl text-gray-300 mb-3 block"></i>
+                        Belum ada data produk. Klik "Tambah Produk Baru" untuk memulai.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
+<!-- Modal Tambah Produk Baru -->
+<div id="product-modal" class="hidden fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h3 class="text-lg font-bold text-gray-900">Tambah Produk Baru</h3>
+            <button onclick="toggleProductModal(false)" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        
+        <form action="/products/add" method="POST">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Nama Produk *</label>
+                    <input type="text" name="nama_produk" required placeholder="Misal: Brightening Serum Niacinamide" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Nama Customer / Klien</label>
+                    <input type="text" name="nama_customer" placeholder="Nama Brand / PT" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Bentuk Sediaan</label>
+                        <input type="text" name="sediaan" placeholder="Cream / Gel / Serum" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Warna Sediaan</label>
+                        <input type="text" name="warna" placeholder="Putih / Transparan" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Jenis Kemasan</label>
+                        <input type="text" name="kemasan" placeholder="Botol Pipet / Jar" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Netto / Berat Bersih</label>
+                        <input type="text" name="netto" placeholder="20 ml / 50 gr" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Nomor NA (Notifikasi BPOM)</label>
+                        <input type="text" name="no_na_produk" placeholder="NA18xxxxxxxx" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Status Registrasi NA</label>
+                        <select name="status_na" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm bg-white">
+                            <option value="aktif">Aktif</option>
+                            <option value="akan_expired">Akan Expired</option>
+                            <option value="expired">Expired</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-3 border-t pt-4">
+                <button type="button" onclick="toggleProductModal(false)" class="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50 transition cursor-pointer">Batal</button>
+                <button type="submit" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-indigo-500 transition cursor-pointer">Simpan Produk</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function toggleProductModal(show) {
+    document.getElementById('product-modal').classList.toggle('hidden', !show);
+}
+</script>
+
+{% endblock %}
