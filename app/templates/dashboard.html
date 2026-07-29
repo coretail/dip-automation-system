@@ -92,8 +92,13 @@
                         <div class="text-sm font-medium text-gray-900">{{ product.nama_produk }}</div>
                         <div class="text-xs text-gray-400">ID: {{ product.id[:8] }}...</div>
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {{ product.nama_customer or '-' }}
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">{{ product.nama_customer }}</div>
+                        {% if product.perusahaan == 'PT Heka' %}
+                        <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">PT Heka</span>
+                        {% elif product.perusahaan == 'PT Erfi' %}
+                        <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">PT Erfi</span>
+                        {% endif %}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 mr-1">
@@ -179,9 +184,13 @@
                     <label class="block text-sm font-medium text-gray-700">Nama Produk *</label>
                     <input type="text" name="nama_produk" required placeholder="Misal: Brightening Serum Niacinamide" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Nama Customer / Klien</label>
-                    <input type="text" name="nama_customer" placeholder="Nama Brand / PT" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                <div class="mb-4">
+                    <label class="block text-sm font-semibold mb-1">Perusahaan *</label>
+                    <select name="perusahaan" required class="w-full border rounded-md px-3 py-2">
+                        <option value="">-- Pilih PT --</option>
+                        <option value="PT Heka">PT Heka</option>
+                        <option value="PT Erfi">PT Erfi</option>
+                    </select>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>

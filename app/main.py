@@ -203,6 +203,7 @@ async def delete_raw_material(rm_id: str):
 @app.post("/products/add")
 async def add_product(
     nama_produk: str = Form(...),
+    perusahaan: str = Form(...),
     nama_customer: str = Form(None),
     sediaan: str = Form(None),
     warna: str = Form(None),
@@ -213,6 +214,7 @@ async def add_product(
 ):
     product_data = {
         "nama_produk": nama_produk,
+        "perusahaan": perusahaan,
         "nama_customer": nama_customer,
         "sediaan": sediaan,
         "warna": warna,
@@ -441,6 +443,7 @@ async def edit_product_page(request: Request, product_id: str):
 async def update_product(
     product_id: str,
     nama_produk: str = Form(...),
+    perusahaan: str = Form(...),
     nama_customer: str = Form(None),
     sediaan: str = Form(None),
     warna: str = Form(None),
@@ -451,6 +454,7 @@ async def update_product(
 ):
     supabase.table("products").update({
         "nama_produk": nama_produk,
+        "perusahaan": perusahaan,
         "nama_customer": nama_customer,
         "sediaan": sediaan,
         "warna": warna,

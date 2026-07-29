@@ -15,6 +15,15 @@
         </div>
 
         <div class="mb-4">
+            <label class="block text-sm font-semibold mb-1">Perusahaan *</label>
+            <select name="perusahaan" required class="w-full border rounded-md px-3 py-2">
+                <option value="">-- Pilih PT --</option>
+                <option value="PT Heka" {{ 'selected' if product.perusahaan == 'PT Heka' else '' }}>PT Heka</option>
+                <option value="PT Erfi" {{ 'selected' if product.perusahaan == 'PT Erfi' else '' }}>PT Erfi</option>
+            </select>
+        </div>
+
+        <div class="mb-4">
             <label class="block text-sm font-semibold mb-1">Nama Customer / Klien</label>
             <input type="text" name="nama_customer" value="{{ product.nama_customer or '' }}"
                    class="w-full border rounded-md px-3 py-2">
