@@ -33,17 +33,28 @@
 
 <!-- ==================== DOKUMEN 1: PER NAMA DAGANG ==================== -->
 <div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 mb-12 printable-doc">
+    <div id="letterhead-trade" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
+        <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
+        <div>
+            <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
+            <p class="letterhead-line text-xs text-gray-600">{{ company.alamat }}</p>
+            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email }} &nbsp; Website: {{ company.website }}</p>
+        </div>
+    </div>
+
     <div id="title-trade" class="text-center font-bold text-sm tracking-wider uppercase mb-6 underline">
         FORMULA KUALITATIF & KUANTITATIF
     </div>
 
     <!-- Header Informasi -->
-    <table class="w-full text-xs mb-6" style="border: none !important;">
+    <table id="info-trade" class="w-full text-xs mb-6" style="border: none !important;">
         <tr style="border: none !important;"><td class="w-32 py-1 font-semibold" style="border: none !important;">Nama Produk</td><td class="py-1" style="border: none !important;">: {{ product.nama_produk }}</td></tr>
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Warna</td><td class="py-1" style="border: none !important;">: -</td></tr>
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Sediaan</td><td class="py-1" style="border: none !important;">: {{ product.tipe or 'Cream/Tonic' }}</td></tr>
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Kemasan</td><td class="py-1" style="border: none !important;">: {{ product.kemasan or '-' }}</td></tr>
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Netto</td><td class="py-1" style="border: none !important;">: {{ product.netto or '-' }}</td></tr>
+        <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Nama Customer</td><td class="py-1" style="border: none !important;">: {{ product.nama_customer or '-' }}</td></tr>
+        <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Tanggal Acc Sampel</td><td class="py-1" style="border: none !important;">: {{ product.acc_sampel or '-' }}</td></tr>
     </table>
 
     <!-- Tabel Data 1 -->
@@ -98,13 +109,22 @@
 <div class="page-break"></div>
 
 <!-- ==================== DOKUMEN 2: MURNI BAHAN BAKU INCI ==================== -->
-<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 printable-doc">
+<div id="title-pure" class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 printable-doc">
+    <div id="letterhead-pure" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
+        <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
+        <div>
+            <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
+            <p class="letterhead-line text-xs text-gray-600">{{ company.alamat }}</p>
+            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email }} &nbsp; Website: {{ company.website }}</p>
+        </div>
+    </div>
+
     <div id="info-trade" class="text-center font-bold text-sm tracking-wider uppercase mb-6 underline">
         FORMULA KUALITATIF & KUANTITATIF
     </div>
     
     <!-- Header Informasi -->
-    <table class="w-full text-xs mb-6" style="border: none !important;">
+    <table id="info-pure" class="w-full text-xs mb-6" style="border: none !important;">
         <tr style="border: none !important;"><td class="w-32 py-1 font-semibold" style="border: none !important;">Nama Produk</td><td class="py-1" style="border: none !important;">: {{ product.nama_produk }}</td></tr>
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Warna</td><td class="py-1" style="border: none !important;">: -</td></tr>
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Sediaan</td><td class="py-1" style="border: none !important;">: {{ product.tipe or 'Cream/Tonic' }}</td></tr>
@@ -164,10 +184,21 @@ function extractInfoLines(infoTableEl) {
     return lines;
 }
 
-function buildSheetWithHeader(titleEl, infoTableEl, dataTableEl) {
+function extractLetterheadLines(letterheadEl) {
+    var lines = [];
+    if (!letterheadEl) return lines;
+    letterheadEl.querySelectorAll('.letterhead-line').forEach(function (el) {
+        var text = el.innerText.trim();
+        if (text) lines.push([text]);
+    });
+    lines.push([]); // baris kosong pemisah setelah kop surat
+    return lines;
+}
+
+function buildSheetWithHeader(letterheadEl, titleEl, infoTableEl, dataTableEl) {
     var ws = {};
 
-    var aoa = [];
+    var aoa = extractLetterheadLines(letterheadEl);
     if (titleEl) aoa.push([titleEl.innerText.trim()]);
     aoa = aoa.concat(extractInfoLines(infoTableEl));
     aoa.push([]);
@@ -222,6 +253,8 @@ function exportToExcel() {
     var titlePure = document.getElementById("title-pure");
     var infoTrade = document.getElementById("info-trade");
     var infoPure = document.getElementById("info-pure");
+    var letterheadTrade = document.getElementById("letterhead-trade");
+    var letterheadPure = document.getElementById("letterhead-pure");
 
     if (!tableTrade || !tablePure) {
         alert("Tabel data formula tidak ditemukan di halaman!");
@@ -229,9 +262,8 @@ function exportToExcel() {
     }
 
     var wb = XLSX.utils.book_new();
-
-    var sheetTrade = buildSheetWithHeader(titleTrade, infoTrade, tableTrade);
-    var sheetPure = buildSheetWithHeader(titlePure, infoPure, tablePure);
+    var sheetTrade = buildSheetWithHeader(letterheadTrade, titleTrade, infoTrade, tableTrade);
+    var sheetPure = buildSheetWithHeader(letterheadPure, titlePure, infoPure, tablePure);
 
     XLSX.utils.book_append_sheet(wb, sheetTrade, "Formula Nama Dagang");
     XLSX.utils.book_append_sheet(wb, sheetPure, "Formula INCI Murni");

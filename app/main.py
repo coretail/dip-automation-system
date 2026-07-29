@@ -24,6 +24,23 @@ def clean_pct(value, decimals=4):
     except Exception:
         return str(value)
 
+# Data kop surat per perusahaan — sesuaikan detail PT Heka dengan data resmi yang benar
+COMPANY_INFO = {
+    "PT Erfi": {
+        "nama": "PT. ERFI KARYA ABADI",
+        "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
+        "email": "contact@erfikaryaabadi.com",
+        "website": "www.erfikaryaabadi.com",
+        "logo": "/static/images/logo_erfi.png"
+    },
+    "PT Heka": {
+        "nama": "PT. HARAKA ERFI KOSMETINDO ABADI",          
+        "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
+        "Telp": "081281938715", 
+        "logo": "/static/images/logo_heka.png"
+    }
+}
+
 templates.env.filters["clean_pct"] = clean_pct
 
 @app.get("/", response_class=HTMLResponse)
@@ -432,9 +449,6 @@ async def qualitative_quantitative_report(request: Request, product_id: str):
             "pct_ww": clean_sum
         })
 
-    # Urutkan berdasarkan persentase terbesar
-    pure_breakdown = sorted(pure_breakdown, key=lambda x: x["pct_ww"], reverse=True)
-
     clean_product = {}
     if isinstance(product, list) and len(product) > 0:
         clean_product = product[0]
@@ -443,13 +457,17 @@ async def qualitative_quantitative_report(request: Request, product_id: str):
         
     final_product = {str(k): (str(v) if v is not None else "") for k, v in clean_product.items()}
 
+    # Ambil data kop surat sesuai perusahaan produk ini, fallback ke PT Erfi kalau kosong/tidak dikenali
+    company = COMPANY_INFO.get(final_product.get("perusahaan"), COMPANY_INFO["PT Erfi"])
+
     return templates.TemplateResponse(
         request=request,
         name="qualitative_quantitative.html",
         context={
             "product": final_product,
             "trade_breakdown": trade_breakdown,
-            "pure_breakdown": pure_breakdown
+            "pure_breakdown": pure_breakdown,
+            "company": company
         }
     )
 
