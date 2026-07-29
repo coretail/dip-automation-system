@@ -16,7 +16,7 @@
 </div>
 
 <!-- Grid Status Cards Singkat -->
-<div class="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
+<div class="grid grid-cols-1 gap-5 sm:grid-cols-4 mb-8">
     <div class="bg-white overflow-hidden shadow-xs rounded-lg border border-gray-200 p-5">
         <div class="flex items-center">
             <div class="p-3 rounded-md bg-green-50 text-green-600">
@@ -52,6 +52,19 @@
                 <p class="text-sm font-medium text-gray-500 truncate">Expired</p>
                 <p class="text-2xl font-semibold text-gray-900">
                     {{ products | selectattr('status_na', 'equalto', 'expired') | list | length }}
+                </p>
+            </div>
+        </div>
+    </div>
+    <div class="bg-white overflow-hidden shadow-xs rounded-lg border border-gray-200 p-5">
+        <div class="flex items-center">
+            <div class="p-3 rounded-md bg-gray-100 text-gray-500">
+                <i class="fa-solid fa-file-circle-question text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-500 truncate">Belum Terdaftar</p>
+                <p class="text-2xl font-semibold text-gray-900">
+                    {{ products | selectattr('status_na', 'equalto', 'belum_terdaftar') | list | length }}
                 </p>
             </div>
         </div>
@@ -100,28 +113,42 @@
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                             <span class="w-1.5 h-1.5 mr-1.5 bg-yellow-500 rounded-full"></span> Akan Expired
                         </span>
-                        {% else %}
+                        {% elif product.status_na == 'expired' %}
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                             <span class="w-1.5 h-1.5 mr-1.5 bg-red-500 rounded-full"></span> Expired
                         </span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                            <span class="w-1.5 h-1.5 mr-1.5 bg-gray-400 rounded-full"></span> Belum Terdaftar
+                        </span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                        <!-- Masukkan ini di kolom AKSI tabel produk Anda -->
-                        <a href="/products/{{ product.id }}/edit" class="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded shadow-xs text-white bg-amber-500 hover:bg-amber-600 focus:outline-none mr-2">
-                            <i class="fa-solid fa-pen-to-square mr-1"></i> Edit Info
-                        </a>
-                        <a href="/products/{{ product.id }}" class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded transition">
-                            <i class="fa-solid fa-flask mr-1"></i> Formula
-                        </a>
-                        <a href="/products/{{ product.id }}/inci-breakdown/report" class="text-emerald-600 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded transition">
-                            <i class="fa-solid fa-file-invoice mr-1"></i> INCI Report
-                        </a>
-                        <a href="/products/{{ product.id }}/qualitative-quantitative" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-md shadow-xs transition duration-200 inline-flex items-center" title="Download / Lihat Qual & Quan Report">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 mr-1">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                            </svg>
-                        </a>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <div class="flex items-center justify-end gap-1.5">
+                            <a href="/products/{{ product.id }}/edit" title="Edit Info"
+                            class="inline-flex items-center justify-center w-8 h-8 rounded text-white bg-amber-500 hover:bg-amber-600 transition">
+                                <i class="fa-solid fa-pen-to-square text-xs"></i>
+                            </a>
+                            <a href="/products/{{ product.id }}" title="Formula"
+                            class="inline-flex items-center justify-center w-8 h-8 rounded text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition">
+                                <i class="fa-solid fa-flask text-xs"></i>
+                            </a>
+                            <a href="/products/{{ product.id }}/inci-breakdown/report" title="INCI Report"
+                            class="inline-flex items-center justify-center w-8 h-8 rounded text-emerald-600 bg-emerald-50 hover:bg-emerald-100 transition">
+                                <i class="fa-solid fa-file-invoice text-xs"></i>
+                            </a>
+                            <a href="/products/{{ product.id }}/qualitative-quantitative" title="Download / Lihat Qual & Quan Report"
+                            class="inline-flex items-center justify-center w-8 h-8 rounded text-white bg-indigo-600 hover:bg-indigo-700 transition">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                </svg>
+                            </a>
+                            <a href="#" onclick="if(confirm('Yakin mau hapus produk ini? Data formula ikut terhapus dan tidak bisa dikembalikan.')) window.location.href='/products/delete/{{ product.id }}'; return false;"
+                            title="Hapus Produk"
+                            class="inline-flex items-center justify-center w-8 h-8 rounded text-white bg-red-600 hover:bg-red-700 transition">
+                                <i class="fa-solid fa-trash text-xs"></i>
+                            </a>
+                        </div>
                     </td>
                 </tr>
                 {% else %}
@@ -187,6 +214,7 @@
                             <option value="aktif">Aktif</option>
                             <option value="akan_expired">Akan Expired</option>
                             <option value="expired">Expired</option>
+                            <option value="belum_terdaftar" selected>Belum Terdaftar</option>
                         </select>
                     </div>
                 </div>

@@ -3,29 +3,74 @@
 {% block title %}Edit Info Produk - {{ product.nama_produk }}{% endblock %}
 
 {% block content %}
-<div class="max-w-xl mx-auto bg-white p-6 rounded-lg shadow-sm border border-gray-200 mt-6">
-    <div class="mb-4 border-b pb-3">
-        <h1 class="text-lg font-bold text-gray-900">Edit Informasi Produk</h1>
-        <p class="text-xs text-gray-500">Ubah meta data dokumen formula maklon</p>
-    </div>
+<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
+    <h2 class="text-lg font-bold text-gray-900">Edit Informasi Produk</h2>
+    <p class="text-xs text-gray-500 mb-6">Ubah meta data dokumen formula maklon</p>
 
-    <form action="/products/{{ product.id }}/edit" method="POST" class="space-y-4 text-sm">
-        <div>
-            <label class="block font-medium text-gray-750 mb-1">Nama Produk</label>
-            <input type="text" name="nama_produk" value="{{ product.nama_produk }}" required class="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:border-indigo-500 text-sm">
+    <form method="POST" action="/products/{{ product.id }}/edit">
+        <div class="mb-4">
+            <label class="block text-sm font-semibold mb-1">Nama Produk *</label>
+            <input type="text" name="nama_produk" value="{{ product.nama_produk or '' }}" required
+                   class="w-full border rounded-md px-3 py-2">
         </div>
-        <div>
-            <label class="block font-medium text-gray-750 mb-1">Nama Customer</label>
-            <input type="text" name="customer" value="{{ product.customer }}" required class="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:border-indigo-500 text-sm">
+
+        <div class="mb-4">
+            <label class="block text-sm font-semibold mb-1">Nama Customer / Klien</label>
+            <input type="text" name="nama_customer" value="{{ product.nama_customer or '' }}"
+                   class="w-full border rounded-md px-3 py-2">
         </div>
-        <div>
-            <label class="block font-medium text-gray-750 mb-1">Sediaan / Bentuk</label>
-            <input type="text" name="tipe" value="{{ product.tipe or '' }}" placeholder="Contoh: Cream, Cair, Gel" required class="block w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:border-indigo-500 text-sm">
+
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <div>
+                <label class="block text-sm font-semibold mb-1">Bentuk Sediaan</label>
+                <input type="text" name="sediaan" value="{{ product.sediaan or '' }}"
+                       placeholder="Cream / Gel / Serum"
+                       class="w-full border rounded-md px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold mb-1">Warna Sediaan</label>
+                <input type="text" name="warna" value="{{ product.warna or '' }}"
+                       placeholder="Putih / Transparan"
+                       class="w-full border rounded-md px-3 py-2">
+            </div>
         </div>
-        
-        <div class="pt-2 flex justify-end gap-2">
-            <a href="/" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-semibold">Batal</a>
-            <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold shadow-xs">Simpan Perubahan</button>
+
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <div>
+                <label class="block text-sm font-semibold mb-1">Jenis Kemasan</label>
+                <input type="text" name="kemasan" value="{{ product.kemasan or '' }}"
+                       placeholder="Botol Pipet / Jar"
+                       class="w-full border rounded-md px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold mb-1">Netto / Berat Bersih</label>
+                <input type="text" name="netto" value="{{ product.netto or '' }}"
+                       placeholder="20 ml / 50 gr"
+                       class="w-full border rounded-md px-3 py-2">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div>
+                <label class="block text-sm font-semibold mb-1">Nomor NA (Notifikasi BPOM)</label>
+                <input type="text" name="no_na_produk" value="{{ product.no_na_produk or '' }}"
+                       placeholder="NA18xxxxxxxx"
+                       class="w-full border rounded-md px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold mb-1">Status Registrasi NA</label>
+                <select name="status_na" class="w-full border rounded-md px-3 py-2">
+                    <option value="aktif" {{ 'selected' if product.status_na == 'aktif' else '' }}>Aktif</option>
+                    <option value="akan_expired" {{ 'selected' if product.status_na == 'akan_expired' else '' }}>Akan Expired</option>
+                    <option value="expired" {{ 'selected' if product.status_na == 'expired' else '' }}>Expired</option>
+                    <option value="belum_terdaftar" {{ 'selected' if product.status_na == 'belum_terdaftar' else '' }}>Belum Terdaftar</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-2">
+            <a href="/products/{{ product.id }}" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md">Batal</a>
+            <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-md">Simpan Perubahan</button>
         </div>
     </form>
 </div>

@@ -181,11 +181,24 @@ async def edit_raw_material(
 
 @app.get("/raw-materials/delete/{rm_id}")
 async def delete_raw_material(rm_id: str):
+    # Cek dulu apakah bahan baku ini masih dipakai di formula produk manapun
+    usage_check = supabase.table("product_formula_lines").select("id").eq("raw_material_id", rm_id).execute()
+
+    if usage_check.data:
+        jumlah_pemakaian = len(usage_check.data)
+        return RedirectResponse(
+            url=f"/raw-materials?error=Bahan+baku+ini+masih+dipakai+di+{jumlah_pemakaian}+formula+produk.+Hapus+dari+formula+dulu+sebelum+menghapus+bahan+baku.",
+            status_code=303
+        )
+
     try:
+        # Hapus komponen internal dulu (kalau bahan komposit)
+        supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
         supabase.table("raw_materials").delete().eq("id", rm_id).execute()
-    except Exception:
-        pass
-    return RedirectResponse(url="/raw-materials", status_code=303)
+    except Exception as e:
+        return RedirectResponse(url=f"/raw-materials?error=Gagal+menghapus:+{str(e)}", status_code=303)
+
+    return RedirectResponse(url="/raw-materials?success=Bahan+baku+berhasil+dihapus", status_code=303)
 
 @app.post("/products/add")
 async def add_product(
@@ -196,7 +209,7 @@ async def add_product(
     kemasan: str = Form(None),
     netto: str = Form(None),
     no_na_produk: str = Form(None),
-    status_na: str = Form("aktif")
+    status_na: str = Form("belum_terdaftar")
 ):
     product_data = {
         "nama_produk": nama_produk,
@@ -447,4 +460,15 @@ async def update_product(
         "status_na": status_na
     }).eq("id", product_id).execute()
     
+    return RedirectResponse(url="/", status_code=303)
+
+@app.get("/products/delete/{product_id}")
+async def delete_product(product_id: str):
+    try:
+        # Hapus dulu baris formula terkait (kalau FK belum di-set CASCADE)
+        supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
+        # Baru hapus produknya
+        supabase.table("products").delete().eq("id", product_id).execute()
+    except Exception as e:
+        print(f"Gagal hapus produk {product_id}: {e}")
     return RedirectResponse(url="/", status_code=303)
