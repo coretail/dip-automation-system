@@ -104,7 +104,7 @@ Aplikasi ini dibangun di atas **4 entitas data (tabel) inti**, dengan relasi hea
 | nama_customer | string | Nama customer/klien |
 | acc_sampel | string/date | Status/tanggal acc sampel |
 | no_na_produk | string | Nomor Notifikasi BPOM |
-| status_na | enum | `aktif` \| `akan_expired` \| `expired` |
+| status_na | enum | `aktif` \| `akan_expired` \| `expired` \| `Belum Terdaftar` |
 
 **Tabel 4 — `product_formula_lines`**
 
