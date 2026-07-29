@@ -26,6 +26,12 @@
 </div>
 {% endif %}
 
+{% if error_msg %}
+<div class="mb-4 p-4 text-sm text-red-700 bg-red-100 rounded-lg dark:bg-red-200 dark:text-red-800" role="alert">
+    <span class="font-medium">Gagal Simpan!</span> {{ error_msg }}
+</div>
+{% endif %}
+
 <!-- Daftar Bahan Baku -->
 <div class="bg-white shadow-xs rounded-lg border border-gray-200 overflow-hidden">
     <table class="min-w-full divide-y divide-gray-200">
@@ -79,6 +85,7 @@
         </tbody>
     </table>
 </div>
+
 
 <!-- Modal Tambah Bahan Baku -->
 <div id="crud-modal" class="hidden fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">

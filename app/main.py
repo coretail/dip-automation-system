@@ -79,6 +79,7 @@ async def raw_materials_page(request: Request):
 
 @app.post("/raw-materials/add")
 async def add_raw_material(
+    request: Request, # PENTING: Tambah parameter request di sini biar bisa lempar template
     nama_dagang: str = Form(...),
     kode_bahan_baku: str = Form(...),
     tipe: str = Form(...),
@@ -91,8 +92,20 @@ async def add_raw_material(
     existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).execute()
     
     if existing_rm.data:
-        raise HTTPException(status_code=400, detail=f"Amsyong! Kode bahan baku '{kode_check}' sudah terdaftar di sistem. Gunakan kode lain.")
+        # PERBAIKAN: Ambil ulang data master buat render ulang halaman raw-materials
+        rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*)").order("nama_dagang").execute()
         
+        # Kembalikan ke page semula tanpa pindah halaman JSON eror
+        return templates.TemplateResponse(
+            request=request,
+            name="raw_materials.html",
+            context={
+                "raw_materials": rm_resp.data,
+                "error_msg": f"Amsyong! Kode '{kode_check}' sudah terdaftar di sistem. Gunakan kode lain."
+            }
+        )
+        
+    # --- LOGIK INSERT DI BAWAHNYA TETAP SAMA KAKAK ---
     rm_resp = supabase.table("raw_materials").insert({
         "nama_dagang": nama_dagang,
         "kode_bahan_baku": kode_bahan_baku,
