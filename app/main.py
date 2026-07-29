@@ -252,8 +252,14 @@ async def add_product(
     kemasan: str = Form(None),
     netto: str = Form(None),
     no_na_produk: str = Form(None),
-    status_na: str = Form("belum_terdaftar")
+    status_na: str = Form("belum_terdaftar"),
+    acc_sampel: str = Form(None)
 ):
+    # Bersihkan input tanggal kosong menjadi None agar Supabase tidak error
+    acc_sampel_val = acc_sampel.strip() if acc_sampel else None
+    if acc_sampel_val == "":
+        acc_sampel_val = None
+
     product_data = {
         "nama_produk": nama_produk,
         "perusahaan": perusahaan,
@@ -263,7 +269,8 @@ async def add_product(
         "kemasan": kemasan,
         "netto": netto,
         "no_na_produk": no_na_produk,
-        "status_na": status_na
+        "status_na": status_na,
+        "acc_sampel": acc_sampel_val
     }
     
     supabase.table("products").insert(product_data).execute()
@@ -493,8 +500,14 @@ async def update_product(
     netto: str = Form(None),      
     kemasan: str = Form(None),
     no_na_produk: str = Form(None),
-    status_na: str = Form("aktif")
+    status_na: str = Form("aktif"),
+    acc_sampel: str = Form(None)
 ):
+    # 2. Bersihin input tanggal biar tipenya pas di database
+    acc_sampel_val = acc_sampel.strip() if acc_sampel else None
+    if acc_sampel_val == "":
+        acc_sampel_val = None
+
     supabase.table("products").update({
         "nama_produk": nama_produk,
         "perusahaan": perusahaan,
@@ -504,7 +517,8 @@ async def update_product(
         "netto": netto,          
         "kemasan": kemasan,
         "no_na_produk": no_na_produk,
-        "status_na": status_na
+        "status_na": status_na,
+        "acc_sampel": acc_sampel_val
     }).eq("id", product_id).execute()
     
     return RedirectResponse(url="/", status_code=303)
