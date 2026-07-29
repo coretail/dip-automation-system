@@ -100,11 +100,17 @@
                         <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">PT Erfi</span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 mr-1">
-                            {{ product.sediaan or '-' }}
-                        </span>
-                        <span class="text-xs text-gray-400">{{ product.netto or '-' }}</span>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <!-- Baris Atas: Sediaan -->
+                        <div class="text-sm font-medium text-gray-900">
+                            <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                {{ product.sediaan or '-' }}
+                            </span>
+                        </div>
+                        <!-- Baris Bawah: Netto -->
+                        <div class="text-xs text-gray-400 mt-1">
+                            {{ product.netto or '-' }}
+                        </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                         {{ product.no_na_produk or 'Belum Terdaftar' }}
