@@ -35,6 +35,29 @@
 </div>
 {% endif %}
 
+<!-- Search & Filter Bar -->
+<div class="bg-white shadow-xs rounded-lg border border-gray-200 p-4 mb-4">
+    <div class="flex flex-col sm:flex-row gap-3">
+        <div class="flex-1 relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+            <input type="text" id="search-input" placeholder="Cari nama dagang, kode, atau INCI..."
+                   oninput="filterTable()"
+                   class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:border-indigo-500 focus:outline-none">
+        </div>
+        <select id="filter-tipe" onchange="filterTable()"
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:border-indigo-500 focus:outline-none">
+            <option value="">Semua Tipe</option>
+            <option value="single">Single</option>
+            <option value="komposit">Komposit</option>
+        </select>
+        <button onclick="resetFilter()" title="Reset Filter"
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition">
+            <i class="fa-solid fa-rotate-left"></i>
+        </button>
+    </div>
+    <p id="filter-count" class="text-xs text-gray-400 mt-2"></p>
+</div>
+
 <!-- Daftar Bahan Baku -->
 <div class="bg-white shadow-xs rounded-lg border border-gray-200 overflow-hidden">
     <table class="min-w-full divide-y divide-gray-200">
@@ -48,7 +71,11 @@
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
             {% for rm in raw_materials %}
-            <tr class="hover:bg-gray-50 transition">
+            <tr class="hover:bg-gray-50 transition rm-row"
+                data-nama="{{ rm.nama_dagang | lower }}"
+                data-kode="{{ (rm.kode_bahan_baku or '') | lower }}"
+                data-tipe="{{ rm.tipe or '' }}"
+                data-inci="{{ rm.raw_material_components | map(attribute='inci_name') | join(' ') | lower }}">
                 <td class="px-6 py-4 whitespace-nowrap">
                     <div class="text-sm font-medium text-gray-900">{{ rm.nama_dagang }}</div>
                     <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
@@ -299,5 +326,42 @@ function openEditModal(rm) {
     modal.classList.remove('hidden');
     updateTotalCalculated();
 }
+
+function filterTable() {
+    const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
+    const tipeVal = document.getElementById('filter-tipe').value;
+    const rows = document.querySelectorAll('.rm-row');
+
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        const nama = row.dataset.nama || '';
+        const kode = row.dataset.kode || '';
+        const inci = row.dataset.inci || '';
+        const tipe = row.dataset.tipe || '';
+
+        const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal) || inci.includes(searchVal);
+        const matchTipe = !tipeVal || tipe === tipeVal;
+
+        const show = matchSearch && matchTipe;
+        row.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
+    });
+
+    const countEl = document.getElementById('filter-count');
+    const totalRows = rows.length;
+    if (searchVal || tipeVal) {
+        countEl.textContent = `Menampilkan ${visibleCount} dari ${totalRows} bahan baku`;
+    } else {
+        countEl.textContent = '';
+    }
+}
+
+function resetFilter() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-tipe').value = '';
+    filterTable();
+}
+
 </script>
 {% endblock %}

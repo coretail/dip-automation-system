@@ -71,6 +71,37 @@
     </div>
 </div>
 
+<!-- Search & Filter Bar -->
+<div class="bg-white shadow-xs rounded-lg border border-gray-200 p-4 mb-4">
+    <div class="flex flex-col sm:flex-row gap-3">
+        <div class="flex-1 relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+            <input type="text" id="search-input" placeholder="Cari nama produk atau customer..."
+                   oninput="filterTable()"
+                   class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:border-indigo-500 focus:outline-none">
+        </div>
+        <select id="filter-perusahaan" onchange="filterTable()"
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:border-indigo-500 focus:outline-none">
+            <option value="">Semua PT</option>
+            <option value="PT Heka">PT Heka</option>
+            <option value="PT Erfi">PT Erfi</option>
+        </select>
+        <select id="filter-status" onchange="filterTable()"
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:border-indigo-500 focus:outline-none">
+            <option value="">Semua Status</option>
+            <option value="belum_terdaftar">Belum Terdaftar</option>
+            <option value="aktif">Aktif</option>
+            <option value="akan_expired">Akan Expired</option>
+            <option value="expired">Expired</option>
+        </select>
+        <button onclick="resetFilter()" title="Reset Filter"
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition">
+            <i class="fa-solid fa-rotate-left"></i>
+        </button>
+    </div>
+    <p id="filter-count" class="text-xs text-gray-400 mt-2"></p>
+</div>
+
 <!-- Tabel Produk -->
 <div class="bg-white shadow-xs rounded-lg border border-gray-200 overflow-hidden">
     <div class="overflow-x-auto">
@@ -87,7 +118,11 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
                 {% for product in products %}
-                <tr class="hover:bg-gray-50 transition">
+                <tr class="hover:bg-gray-50 transition product-row"
+                    data-nama="{{ product.nama_produk | lower }}"
+                    data-customer="{{ (product.nama_customer or '') | lower }}"
+                    data-perusahaan="{{ product.perusahaan or '' }}"
+                    data-status="{{ product.status_na or '' }}">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ product.nama_produk }}</div>
                         <div class="text-xs text-gray-400">ID: {{ product.id[:8] }}...</div>
@@ -251,6 +286,45 @@
 <script>
 function toggleProductModal(show) {
     document.getElementById('product-modal').classList.toggle('hidden', !show);
+}
+
+function filterTable() {
+    const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
+    const ptVal = document.getElementById('filter-perusahaan').value;
+    const statusVal = document.getElementById('filter-status').value;
+    const rows = document.querySelectorAll('.product-row');
+
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        const nama = row.dataset.nama || '';
+        const customer = row.dataset.customer || '';
+        const perusahaan = row.dataset.perusahaan || '';
+        const status = row.dataset.status || '';
+
+        const matchSearch = !searchVal || nama.includes(searchVal) || customer.includes(searchVal);
+        const matchPt = !ptVal || perusahaan === ptVal;
+        const matchStatus = !statusVal || status === statusVal;
+
+        const show = matchSearch && matchPt && matchStatus;
+        row.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
+    });
+
+    const countEl = document.getElementById('filter-count');
+    const totalRows = rows.length;
+    if (searchVal || ptVal || statusVal) {
+        countEl.textContent = `Menampilkan ${visibleCount} dari ${totalRows} produk`;
+    } else {
+        countEl.textContent = '';
+    }
+}
+
+function resetFilter() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-perusahaan').value = '';
+    document.getElementById('filter-status').value = '';
+    filterTable();
 }
 </script>
 
