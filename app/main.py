@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi import FastAPI, Request, Form, HTTPException, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -71,15 +71,32 @@ async def ingredient_report(request: Request, product_id: str):
 @app.get("/raw-materials", response_class=HTMLResponse)
 async def raw_materials_page(request: Request):
     rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*)").order("nama_dagang").execute()
-    return templates.TemplateResponse(
+    
+    # Ambil pesan sukses atau eror dari cookies (kalau ada)
+    success_msg = request.cookies.get("success_msg")
+    error_msg = request.cookies.get("error_msg")
+    
+    response = templates.TemplateResponse(
         request=request,
         name="raw_materials.html",
-        context={"raw_materials": rm_resp.data}
+        context={
+            "raw_materials": rm_resp.data,
+            "success_msg": success_msg,
+            "error_msg": error_msg
+        }
     )
+    
+    # Setelah dibaca, langsung hapus cookies-nya biar pas di-refresh alert-nya ilang
+    if success_msg:
+        response.delete_cookie("success_msg")
+    if error_msg:
+        response.delete_cookie("error_msg")
+        
+    return response
 
 @app.post("/raw-materials/add")
 async def add_raw_material(
-    request: Request, # PENTING: Tambah parameter request di sini biar bisa lempar template
+    request: Request,
     nama_dagang: str = Form(...),
     kode_bahan_baku: str = Form(...),
     tipe: str = Form(...),
@@ -91,21 +108,13 @@ async def add_raw_material(
     kode_check = kode_bahan_baku.strip()
     existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).execute()
     
+    # JIKA GAGAL (Kode Dobel)
     if existing_rm.data:
-        # PERBAIKAN: Ambil ulang data master buat render ulang halaman raw-materials
-        rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*)").order("nama_dagang").execute()
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", f"Kode '{kode_check}' udah terdaftar. Gunakan kode lain.")
+        return response
         
-        # Kembalikan ke page semula tanpa pindah halaman JSON eror
-        return templates.TemplateResponse(
-            request=request,
-            name="raw_materials.html",
-            context={
-                "raw_materials": rm_resp.data,
-                "error_msg": f"Amsyong! Kode '{kode_check}' sudah terdaftar di sistem. Gunakan kode lain."
-            }
-        )
-        
-    # --- LOGIK INSERT DI BAWAHNYA TETAP SAMA KAKAK ---
+    # --- LOGIK INSERT SAMA SEPERTI SEBELUMNYA ---
     rm_resp = supabase.table("raw_materials").insert({
         "nama_dagang": nama_dagang,
         "kode_bahan_baku": kode_bahan_baku,
@@ -138,7 +147,10 @@ async def add_raw_material(
         if components:
             supabase.table("raw_material_components").insert(components).execute()
 
-    return RedirectResponse(url="/raw-materials", status_code=303)
+    # JIKA BERHASIL: Set cookie tanda sukses lalu redirect
+    response = RedirectResponse(url="/raw-materials", status_code=303)
+    response.set_cookie("success_msg", f"Mantap! Bahan baku '{nama_dagang}' berhasil ditambahkan.")
+    return response
 
 @app.post("/raw-materials/edit/{rm_id}")
 async def edit_raw_material(
