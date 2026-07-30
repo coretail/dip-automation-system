@@ -229,6 +229,39 @@ function parseLocaleNumber(text) {
     return isNaN(num) ? null : num;
 }
 
+function extractLabelValueLines(tableEl) {
+    var rows = [];
+    if (!tableEl) return rows;
+    tableEl.querySelectorAll('tr').forEach(function (tr) {
+        var cells = tr.querySelectorAll('td');
+        if (cells.length >= 2) {
+            var label = cells[0].innerText.trim();
+            var value = cells[1].innerText.trim();
+            rows.push([label, value]);
+        } else if (cells.length === 1) {
+            rows.push([cells[0].innerText.trim()]);
+        }
+    });
+    return rows;
+}
+
+function applySimpleBorder(ws, startRow, range) {
+    var thinBorder = { style: 'thin', color: { rgb: 'FF000000' } };
+    for (var r = startRow; r <= range.e.r; r++) {
+        for (var c = range.s.c; c <= range.e.c; c++) {
+            var addr = XLSX.utils.encode_cell({ r: r, c: c });
+            if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+            ws[addr].s = ws[addr].s || {};
+            ws[addr].s.border = {
+                top: thinBorder,
+                bottom: thinBorder,
+                left: thinBorder,
+                right: thinBorder
+            };
+        }
+    }
+}
+
 function extractInfoLines(infoTableEl) {
     var lines = [];
     if (!infoTableEl) return lines;
@@ -301,6 +334,24 @@ function buildSheetWithHeader(letterheadEl, titleEl, infoTableEl, dataTableEl) {
     return ws;
 }
 
+function buildTextDesignSheet(letterheadEl, infoTableEl) {
+    var ws = {};
+    var aoa = extractLetterheadLines(letterheadEl);
+    aoa.push(['TEXT DESIGN']);
+    aoa.push([]);
+
+    var startRow = aoa.length; // baris tempat tabel info mulai (buat border)
+    var infoRows = extractLabelValueLines(infoTableEl);
+    aoa = aoa.concat(infoRows);
+
+    XLSX.utils.sheet_add_aoa(ws, aoa, { origin: 'A1' });
+
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    applySimpleBorder(ws, startRow, range);
+
+    return ws;
+}
+
 function exportToExcel() {
     var tableTrade = document.getElementById("table-trade");
     var tablePure = document.getElementById("table-pure");
@@ -310,6 +361,8 @@ function exportToExcel() {
     var infoPure = document.getElementById("info-pure");
     var letterheadTrade = document.getElementById("letterhead-trade");
     var letterheadPure = document.getElementById("letterhead-pure");
+    var letterheadTextDesign = document.getElementById("letterhead-textdesign");   
+    var infoTextDesign = document.getElementById("info-textdesign");
 
     if (!tableTrade || !tablePure) {
         alert("Tabel data formula tidak ditemukan di halaman!");
@@ -319,9 +372,12 @@ function exportToExcel() {
     var wb = XLSX.utils.book_new();
     var sheetTrade = buildSheetWithHeader(letterheadTrade, titleTrade, infoTrade, tableTrade);
     var sheetPure = buildSheetWithHeader(letterheadPure, titlePure, infoPure, tablePure);
+    var sheetTextDesign = buildTextDesignSheet(letterheadTextDesign, infoTextDesign);
 
     XLSX.utils.book_append_sheet(wb, sheetTrade, "Formula Nama Dagang");
     XLSX.utils.book_append_sheet(wb, sheetPure, "Formula INCI Murni");
+    XLSX.utils.book_append_sheet(wb, sheetTextDesign, "Text Design");
+    
 {% endraw %}
 
     var productName = "{{ product.nama_produk }}".replace(/[^a-z0-9]/gi, '_').toLowerCase();
