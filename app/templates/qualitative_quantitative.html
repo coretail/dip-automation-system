@@ -164,6 +164,61 @@
 <!-- Script 1: load library SheetJS -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
+<div class="page-break"></div>
+
+<br><br>
+
+<!-- ==================== DOKUMEN 3: TEXT DESIGN ==================== -->
+<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 printable-doc">
+    <div id="letterhead-textdesign" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
+        <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
+        <div>
+            <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
+            <p class="letterhead-line text-xs text-gray-600">{{ company.alamat }}</p>
+            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email }} &nbsp; Website: {{ company.website }}</p>
+        </div>
+    </div>
+
+    <table id="info-textdesign" class="w-full text-xs border-collapse" style="border: 1px solid #c0c0c0;">
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="w-32 py-2 px-2 font-semibold" style="border: 1px solid #c0c0c0;">Tanggal</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.tanggal_text_design or '-' }}</td>
+        </tr>
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold" style="border: 1px solid #c0c0c0;">Nama Produk</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.nama_produk }}</td>
+        </tr>
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold" style="border: 1px solid #c0c0c0;">Netto</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.netto or '-' }}</td>
+        </tr>
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold" style="border: 1px solid #c0c0c0;">No NA</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.no_na_produk or '-' }}</td>
+        </tr>
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Diproduksi Oleh</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ company.nama }}<br>{{ company.alamat }}</td>
+        </tr>
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Komposisi</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ pure_breakdown | map(attribute='inci_name') | join(', ') }}.</td>
+        </tr>
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Teks</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.teks_marketing or '-' }}</td>
+        </tr>
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Cara Pakai</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.cara_pakai or '-' }}</td>
+        </tr>
+    </table>
+
+    <div class="bg-yellow-300 text-center font-bold text-xs py-2 mt-0" style="border: 1px solid #c0c0c0; border-top: none;">
+        Keterangan tambahan: QR BPOM, No Batch dan Exp Date, Netto yg digunakan.
+    </div>
+</div>
+
 <!-- Script 2: kode fungsi kita sendiri, tag baru tanpa atribut src -->
 <script>
 {% raw %}
