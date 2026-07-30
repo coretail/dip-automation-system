@@ -1,13 +1,12 @@
 # Aplikasi Penyusun Dokumen Informasi Produk (DIP) Kosmetik
-## Bagian I — Modul Formula & Bahan Baku (Fondasi Bab II, III, IV)
+
+**Link aplikasi:** https://dip-automation-system.onrender.com/
 
 ---
 
-Link : https://dip-automation-system.onrender.com/
-
 ## 1. Latar Belakang
 
-Penyusunan Dokumen Informasi Produk (DIP) kosmetik — khususnya Bab II (Data Mutu dan Keamanan Bahan Kosmetika), Bab III (Data Mutu Produk Jadi), dan Bab IV (Data Keamanan Produk) — saat ini dikerjakan secara manual menggunakan Microsoft Excel dan penyusunan dokumen Word satu per satu.
+Penyusunan Dokumen Informasi Produk (DIP) kosmetik — khususnya Bab II (Data Mutu dan Keamanan Bahan Kosmetika), Bab III (Data Mutu Produk Jadi), dan Bab IV (Data Keamanan Produk) — sebelumnya dikerjakan secara manual menggunakan Microsoft Excel dan penyusunan dokumen Word satu per satu, untuk dua perusahaan sekaligus (PT Erfi Karya Abadi dan PT Heka).
 
 Proses manual ini menimbulkan beberapa masalah berulang:
 
@@ -15,219 +14,227 @@ Proses manual ini menimbulkan beberapa masalah berulang:
 2. Satu nama dagang bahan baku dapat berupa:
    - **Bahan tunggal** (single ingredient) — misal Cetearyl Alcohol, Vaselin, BHT.
    - **Bahan komposit** — mengandung lebih dari satu INCI dengan proporsi tertentu di dalamnya (misal Sepigel, SiO2TiO2CR50, Polawax).
-3. Ingredient yang sama dapat berasal dari lebih dari satu nama dagang berbeda dalam satu formula (misal Cetearyl Alcohol berasal dari bahan "Cetearyl Alcohol" itu sendiri **dan** dari "Polawax"). Persentase akhir ingredient ini harus **dijumlahkan secara manual**, yang rawan human error dan memakan waktu.
+3. Ingredient yang sama dapat berasal dari lebih dari satu nama dagang berbeda dalam satu formula. Persentase akhir ingredient ini harus **dijumlahkan secara manual**, yang rawan human error dan memakan waktu.
 4. Perhitungan konversi dari % nama dagang ke % ingredient akhir dilakukan manual dengan rumus:
 
    ```
    % Ingredient (akhir) = % Nama Dagang (dalam formula) × % Ingredient (dalam komposisi bahan) / 100
    ```
 
-5. Data kode bahan baku, spesifikasi, dan sertifikat analisis (CoA) tersebar di banyak file dan harus dicocokkan manual saat menyusun dokumen Bab II.
-6. Tidak ada sistem terpusat untuk memantau status registrasi (Nomor Notifikasi/NA) produk — apakah aktif, akan expired, atau sudah expired.
-
-Aplikasi ini dirancang untuk mengotomatiskan proses tersebut, dimulai dari fondasi yang paling krusial: **manajemen data bahan baku dan kalkulasi formula produk**, sebelum masuk ke tahap generate dokumen Bab II secara otomatis.
+5. Data kode bahan baku, spesifikasi, dan sertifikat analisis (CoA/MSDS/Halal) tersebar di banyak file dan harus dicocokkan manual saat menyusun dokumen Bab II.
+6. Tidak ada sistem terpusat untuk memantau status registrasi (Nomor Notifikasi/NA) produk, riwayat kedatangan batch bahan baku, maupun untuk memisahkan produk berdasarkan perusahaan penerbit (PT Erfi / PT Heka).
 
 ---
 
 ## 2. Tujuan Aplikasi
 
-1. Menyediakan **database bahan baku terpusat dan reusable** yang dapat dipakai berulang kali untuk berbagai produk, tanpa perlu input ulang setiap kali membuat formula baru.
+1. Menyediakan **database bahan baku terpusat dan reusable**, dapat dipakai berulang kali lintas produk maupun lintas PT tanpa duplikasi data.
 2. Mengotomatiskan **konversi formula dari basis Nama Dagang ke basis Ingredient (INCI)**, termasuk penjumlahan otomatis untuk ingredient yang muncul dari beberapa bahan baku berbeda.
-3. Menyediakan **database produk terpusat** yang mencakup data formula sekaligus data administratif/regulasi (customer, nomor NA, status registrasi, dsb).
-4. Menjadi fondasi data bagi tahap pengembangan selanjutnya, yaitu **generate otomatis dokumen Bab II, Bab III, dan Bab IV DIP** dalam format Word/PDF.
+3. Menyediakan **database produk terpusat** mencakup data formula, data administratif/regulasi, dan penanda perusahaan penerbit (PT Erfi Karya Abadi / PT Heka).
+4. Menyimpan dan mengelola **dokumen pendukung bahan baku** (MSDS per bahan, serta CoA dan sertifikat Halal per kedatangan batch) secara terpusat dan mudah ditelusuri.
+5. Menghasilkan **dokumen siap pakai** (preview cetak/PDF dan file Excel) langsung dari data yang tersimpan, lengkap dengan kop surat sesuai PT terkait.
+6. Menjadi fondasi data bagi tahap pengembangan selanjutnya: generate otomatis dokumen Bab II, Bab III, dan Bab IV DIP.
 
 ---
 
-## 3. Ruang Lingkup Tahap Ini (Fase 1)
+## 3. Status Pengembangan
 
-Fase pertama pengembangan **difokuskan pada**:
-
-- Modul database bahan baku (CRUD, Admin)
-- Modul database produk
-- Modul Formula Builder per produk
-- Modul Ingredient Report (hasil kalkulasi otomatis, basis untuk Bab II/III)
-
-**Belum termasuk** di fase ini (dikerjakan pada fase berikutnya):
-
-- Generate dokumen Bab II, III, IV secara otomatis ke Word/PDF
-- Manajemen lampiran CoA (Certificate of Analysis) supplier per bahan baku
-- Modul Bab III (Data Mutu Produk Jadi) dan Bab IV (Data Keamanan Produk)
+| Fase | Modul | Status |
+|---|---|---|
+| 1 | Database bahan baku, produk, formula builder, ingredient report, dokumen Qual-Quan + Text Design | ✅ **Selesai** |
+| 2a | Manajemen batch bahan baku (CoA, Sertifikat Halal) & MSDS per bahan baku | ✅ **Selesai** |
+| 2b | Generator Dokumen Bab II (spesifikasi otomatis, penggabungan checklist + SOP CPKB + lampiran) | 🔧 Dalam perancangan |
+| 3 | Generator Dokumen Bab III (Data Mutu Produk Jadi) | ⬜ Belum dimulai |
+| 4 | Generator Dokumen Bab IV (Data Keamanan Produk) | ⬜ Belum dimulai |
 
 ---
 
-## 4. Struktur Data (Data Model)
+## 4. Fase 1 — Fondasi Data & Dokumen Formula (Selesai)
 
-Aplikasi ini dibangun di atas **4 entitas data (tabel) inti**, dengan relasi header–detail:
+### 4.1 Struktur Data
 
-### 4.1 Skema Tabel
-
-| # | Nama Tabel | Fungsi | Relasi |
-|---|---|---|---|
-| 1 | `raw_materials` | Header data bahan baku (identitas nama dagang) | Induk dari tabel 2 |
-| 2 | `raw_material_components` | Rincian komponen INCI di dalam satu bahan baku | Anak dari tabel 1 (banyak baris per 1 bahan baku) |
-| 3 | `products` | Header data produk (identitas & data registrasi) | Induk dari tabel 4 |
-| 4 | `product_formula_lines` | Rincian baris formula (bahan baku apa saja & berapa % di produk) | Anak dari tabel 3, mereferensikan tabel 1 |
-
-> **Catatan:** Tabel 1 & 2 dipisah karena satu bahan baku dapat memiliki 1 komponen (bahan tunggal) atau banyak komponen (bahan komposit) — pemisahan ini menghindari duplikasi data nama dagang/kode di setiap baris komponen. Prinsip yang sama berlaku pada pemisahan tabel 3 & 4.
-
-### 4.2 Detail Field per Tabel
-
-**Tabel 1 — `raw_materials`**
+**Tabel 1 — `raw_materials`** (header bahan baku)
 
 | Field | Tipe | Keterangan |
 |---|---|---|
-| id | string | ID unik bahan baku |
-| nama_dagang | string | Nama dagang/nama supplier (misal "Sepigel", "Vaselin") |
-| kode_bahan_baku | string | Kode internal perusahaan (misal "TCK05LQ-0905") |
+| id | uuid | ID unik |
+| nama_dagang | string | Nama dagang/supplier |
+| kode_bahan_baku | string | Kode internal, unik (divalidasi anti-dobel) |
 | tipe | enum | `single` atau `komposit` |
+| produsen | string | Nama produsen/pabrikan asal bahan |
+| msds_file_url | text | Link file MSDS (Material Safety Data Sheet) tersimpan di Supabase Storage |
 
-**Tabel 2 — `raw_material_components`**
+**Tabel 2 — `raw_material_components`** (rincian INCI per bahan baku)
 
 | Field | Tipe | Keterangan |
 |---|---|---|
-| id | string | ID unik komponen |
+| id | uuid | ID unik |
 | raw_material_id | FK → tabel 1 | Bahan baku induk |
-| inci_name | string | Nama INCI (misal "Polyacrylamide") |
-| function | string | Fungsi bahan (misal "Antistatic Agent") |
-| percent_internal | number | % komponen ini di dalam bahan baku (total seluruh komponen per 1 raw_material harus = 100%) |
+| inci_name | string | Nama INCI |
+| cas_number | string | Nomor CAS (opsional) |
+| function | string | Fungsi bahan |
+| percent_internal | number | % komponen dalam bahan baku (total per bahan baku = 100%, divalidasi di form) |
 
-**Tabel 3 — `products`**
+**Tabel 3 — `products`** (header produk)
 
 | Field | Tipe | Keterangan |
 |---|---|---|
-| id | string | ID unik produk |
+| id | uuid | ID unik |
 | nama_produk | string | Nama produk |
-| warna | string | Warna sediaan |
-| sediaan | string | Bentuk sediaan (cream, gel, lotion, dll) |
-| kemasan | string | Jenis kemasan |
-| netto | string | Berat/volume netto |
+| perusahaan | string | `PT Erfi` atau `PT Heka` — menentukan kop surat dokumen |
 | nama_customer | string | Nama customer/klien |
-| acc_sampel | string/date | Status/tanggal acc sampel |
+| sediaan | string | Bentuk sediaan |
+| warna | string | Warna sediaan |
+| kemasan | string | Jenis kemasan (bisa multi-varian) |
+| netto | string | Berat/volume netto (bisa multi-varian) |
 | no_na_produk | string | Nomor Notifikasi BPOM |
-| status_na | enum | `aktif` \| `akan_expired` \| `expired` \| `Belum Terdaftar` |
+| status_na | enum | `belum_terdaftar` \| `aktif` \| `akan_expired` \| `expired` |
+| acc_sampel | date | Tanggal acc sampel |
+| tanggal_text_design | date | Tanggal dokumen text design/label |
+| teks_marketing | text | Deskripsi produk untuk kemasan/label |
+| cara_pakai | text | Instruksi penggunaan untuk kemasan/label |
 
-**Tabel 4 — `product_formula_lines`**
+**Tabel 4 — `product_formula_lines`** (baris formula per produk)
 
 | Field | Tipe | Keterangan |
 |---|---|---|
-| id | string | ID unik baris formula |
+| id | uuid | ID unik |
 | product_id | FK → tabel 3 | Produk terkait |
 | raw_material_id | FK → tabel 1 | Bahan baku yang dipakai |
-| percent_in_formula | number | % w/w bahan baku ini di dalam formula produk (total seluruh baris per 1 produk harus = 100%) |
+| percent_in_formula | number | % w/w dalam formula (total per produk = 100%, divalidasi di form) |
 
-### 4.3 Data Turunan (Tidak Disimpan, Dihitung Otomatis)
+> **Ingredient Report** tidak disimpan sebagai tabel — dihitung *on-the-fly* dari join tabel 2, 3, 4, sehingga selalu sinkron begitu data bahan baku diubah.
 
-**Ingredient Report** — tabel hasil akhir (basis Bab II/III, format ke BPOM) **tidak disimpan sebagai tabel terpisah**, melainkan dihitung secara *on-the-fly* (real-time) dari join tabel 2, 3, dan 4. Pendekatan ini dipilih agar:
+### 4.2 Logika Kalkulasi Inti
 
-- Setiap perubahan pada data bahan baku (tabel 1/2) otomatis termutakhirkan di seluruh laporan produk yang memakainya, tanpa perlu sinkronisasi manual.
-- Tidak terjadi duplikasi/inkonsistensi data antara formula asal dan laporan hasil.
-
----
-
-## 5. Logika Kalkulasi Inti
-
-### 5.1 Konversi % Nama Dagang → % Ingredient
-
+**Konversi % Nama Dagang → % Ingredient:**
 ```
-% Ingredient (final) = % Nama Dagang (dalam formula) × % Ingredient (dalam komposisi bahan) ÷ 100
+% Ingredient (final) = % Nama Dagang (formula) × % Ingredient (komposisi internal bahan) ÷ 100
 ```
 
-**Contoh kasus nyata (bahan komposit "Sepigel"):**
+**Penggabungan ingredient sejenis:** setelah semua baris formula di-*expand* ke level INCI, sistem *group-by* nama INCI dan menjumlahkan seluruh kontribusi dari sumber bahan baku manapun — menghilangkan proses penjumlahan manual yang sebelumnya dilakukan di Excel.
 
-| Komponen internal Sepigel | % internal |
-|---|---|
-| Aqua | 34,52% |
-| Polyacrylamide | 40,00% |
-| C13-14 Isoparaffin | 20,00% |
-| Laureth-7 | 5,48% |
+**Presisi angka:** seluruh kalkulasi menggunakan tipe `Decimal` (bukan `float` murni) dengan pembulatan eksplisit sebelum ditampilkan, untuk menghindari *floating point noise* (mis. `0.43150000000000005`) maupun *trailing zero* yang tidak perlu (`58.00000` → `58`).
 
-Jika Sepigel dipakai **2,500%** dalam formula produk, maka:
+**Validasi otomatis:**
+- Total `percent_internal` per bahan baku komposit wajib 100% (validasi real-time di form Bahan Baku).
+- Total `percent_in_formula` per produk wajib 100% (indikator visual di Formula Builder).
 
-- Aqua = 2,500 × 34,52% ÷ 100 = **0,863%**
-- Polyacrylamide = 2,500 × 40,00% ÷ 100 = **1,000%**
-- C13-14 Isoparaffin = 2,500 × 20,00% ÷ 100 = **0,500%**
-- Laureth-7 = 2,500 × 5,48% ÷ 100 = **0,137%**
+### 4.3 Modul & Halaman Aplikasi
 
-*(Angka ini tervalidasi cocok dengan data existing pada working formula perusahaan.)*
+**Dashboard Produk**
+- Ringkasan jumlah produk per status NA (4 kartu: Belum Terdaftar, Aktif, Akan Expired, Expired)
+- Tabel produk dengan badge warna status NA dan badge perusahaan (PT Erfi / PT Heka)
+- Search bar (nama produk & customer) + filter dropdown (perusahaan, status NA), berjalan di sisi klien tanpa reload
+- Tambah, edit, dan hapus produk (dengan konfirmasi)
 
-### 5.2 Penggabungan Ingredient Sejenis (Group & Sum)
+**Formula Builder**
+- Pemilihan bahan baku dari database + input % w/w
+- Indikator total persentase formula real-time (wajib 100% untuk disimpan)
 
-Setelah seluruh baris formula di-*expand* ke level INCI, sistem melakukan **group-by nama INCI**, lalu **menjumlahkan** seluruh kontribusi persentase dari sumber bahan baku manapun.
+**Ingredient Report**
+- Tabel hasil breakdown & penggabungan otomatis (Ingredient, Function, % w/w)
 
-**Contoh:** Cetearyl Alcohol muncul dari 2 sumber berbeda dalam formula:
-- Dari bahan baku "Cetearyl Alcohol" langsung: 2,000%
-- Dari bahan baku "Polawax" (komponen internal): 1,500%
+**Dokumen Formula Kualitatif & Kuantitatif** (preview cetak/PDF + export Excel)
+- **Dokumen 1:** Formula per Nama Dagang (dengan kode bahan baku)
+- **Dokumen 2:** Formula murni per Ingredient (INCI, digabung & diurutkan berdasarkan % terbesar)
+- **Dokumen 3 — Text Design:** lembar teks label/kemasan (Tanggal, Nama Produk, Netto, No NA, Diproduksi Oleh, Komposisi otomatis dari Dokumen 2, Teks marketing, Cara Pakai)
+- Kop surat otomatis mengikuti `perusahaan` produk (logo, nama PT, alamat, email, website)
+- Export ke Excel (`.xlsx`) menghasilkan 3 sheet terpisah, dengan:
+  - Parsing angka yang locale-proof (menghindari isu `SUM()` gagal akibat perbedaan format desimal koma/titik)
+  - Border otomatis dan styling tabel (termasuk tabel info 2 kolom label–nilai)
+  - Kop surat & info produk ikut disertakan di setiap sheet
 
-→ Ingredient Report menampilkan **satu baris** "Cetearyl Alcohol" dengan total **3,500%** — proses yang sebelumnya dilakukan manual di Excel, kini otomatis.
+**Admin — Manajemen Bahan Baku**
+- CRUD lengkap (tambah, edit, hapus) untuk bahan tunggal maupun komposit dengan baris komponen dinamis
+- Validasi total 100% untuk bahan komposit
+- Proteksi hapus: bahan baku yang masih dipakai di formula produk manapun tidak bisa dihapus, dengan pesan yang menyebutkan jumlah pemakaian
+- Search bar (nama dagang, kode, atau nama INCI di dalamnya) + filter tipe (single/komposit)
+- Upload file **MSDS** per bahan baku, disimpan ke Supabase Storage dan dapat diunduh langsung dari tabel
 
-### 5.3 Validasi Otomatis
+### 4.4 Alur Kerja Pengguna
 
-- Total `percent_internal` per bahan baku komposit **harus = 100%** (divalidasi saat input/edit di Admin).
-- Total `percent_in_formula` per produk **harus = 100%** (divalidasi saat menyusun formula, dengan indikator visual jika kurang/lebih).
-
----
-
-## 6. Struktur Halaman Aplikasi
-
-### 6.1 Dashboard Produk
-- Tabel seluruh produk terdaftar: Nama Produk, No. NA, Nama Customer, Sediaan, Status NA (indikator warna: hijau = aktif, kuning = akan expired, merah = expired)
-- Fitur pencarian dan filter berdasarkan status NA
-- Tombol tambah produk baru
-
-### 6.2 Form Detail Produk
-- Bagian data administratif: nama produk, warna, sediaan, kemasan, netto, nama customer, acc sampel, no. NA produk, status NA
-- Bagian Formula Builder (lihat 6.3)
-
-### 6.3 Formula Builder
-- Pencarian dan pemilihan bahan baku dari database (menampilkan nama dagang + kode bahan baku)
-- Input % w/w bahan baku tersebut dalam formula
-- Tampilan tabel formula per nama dagang (setara format kerja Excel yang sudah biasa dipakai)
-- Indikator total persentase formula (real-time, menandai jika ≠ 100%)
-
-### 6.4 Ingredient Report (Auto-generated)
-- Tabel hasil akhir: Ingredient (INCI), Function, % w/w, Total
-- Dihasilkan otomatis dari Formula Builder — inilah dasar data untuk penyusunan Bab II & III DIP pada fase pengembangan berikutnya
-
-### 6.5 Admin — Manajemen Bahan Baku (CRUD)
-- Daftar seluruh bahan baku (dengan pencarian: nama dagang, kode, tipe)
-- **Tambah bahan baku**: pilih tipe (single/komposit) → jika komposit, dapat menambahkan baris komponen INCI secara dinamis dengan validasi total 100%
-- **Edit bahan baku**: ubah nama dagang, kode, atau komponen
-- **Hapus bahan baku**: dengan peringatan jika bahan tersebut masih digunakan pada produk aktif
+1. **Admin** mengisi database bahan baku sekali di awal (reusable lintas produk & lintas PT).
+2. Pengguna membuat **produk baru** — pilih PT penerbit, isi data administratif dan konten label.
+3. Pengguna menyusun **formula** menggunakan bahan baku dari database.
+4. Sistem otomatis menghasilkan **Ingredient Report** dan **dokumen Qual-Quan + Text Design** siap cetak/download, dengan kop surat sesuai PT.
+5. **Dashboard** memantau status registrasi seluruh produk dari kedua PT sekaligus, dengan pencarian dan filter.
 
 ---
 
-## 7. Alur Kerja Pengguna (End-to-End)
+## 5. Fase 2a — Manajemen Batch & Dokumen Bahan Baku (Selesai)
 
-1. **Admin** mengisi database bahan baku satu kali di awal (data ini bersifat permanen dan dapat dipakai berulang untuk produk apa pun ke depannya).
-2. Pengguna membuat **produk baru**, mengisi data administratif (nama, customer, No. NA, dll.).
-3. Pengguna menyusun **formula produk** menggunakan bahan baku yang sudah tersedia di database, cukup memilih bahan dan mengisi persentasenya.
-4. Sistem otomatis menghasilkan **Ingredient Report** — tanpa perlu perhitungan manual atau penjumlahan ingredient sejenis secara manual.
-5. **Dashboard** memungkinkan pemantauan status registrasi (NA) seluruh produk sekaligus.
+Ditambahkan tabel baru untuk mencatat riwayat **kedatangan batch/lot** tiap bahan baku, karena data ini bersifat berubah-ubah (berbeda untuk setiap kali penerimaan barang) — berbeda sifatnya dari data bahan baku itu sendiri yang stabil.
 
----
+### 5.1 Struktur Data
 
-## 8. Rencana Pengembangan Lanjutan (Fase Berikutnya)
+**Tabel baru — `raw_material_batches`**
 
-Fase ini menjadi fondasi bagi pengembangan modul-modul berikut, yang akan dibangun setelah Fase 1 selesai dan tervalidasi:
-
-| Fase | Modul | Deskripsi Singkat |
+| Field | Tipe | Keterangan |
 |---|---|---|
-| 2 | Generator Dokumen Bab II | Menyusun otomatis halaman checklist kelengkapan data, Catatan Pemeriksaan Bahan Baku, dan Catatan Spesifikasi Bahan Baku per bahan, berbasis data dari Fase 1 |
-| 3 | Manajemen Lampiran CoA | Upload dan pengelolaan sertifikat analisis (CoA) supplier, terhubung ke masing-masing bahan baku |
-| 4 | Generator Dokumen Bab III | Data Mutu Produk Jadi |
-| 5 | Generator Dokumen Bab IV | Data Keamanan Produk |
-| 6 | Ekspor Dokumen | Ekspor seluruh dokumen ke format Word (.docx) dan PDF, mengikuti format standar DIP perusahaan |
+| id | uuid | ID unik |
+| raw_material_id | FK → `raw_materials` | Bahan baku terkait |
+| no_batch | string | Nomor batch/lot dari supplier |
+| supplier | string | Nama supplier pengirim |
+| harga_per_kg | number | Harga satuan batch ini |
+| tanggal_terima_sampel | date | Tanggal sampel diterima QC |
+| hasil_pemerian | string | Hasil pemeriksaan pemerian |
+| hasil_aroma | string | Hasil pemeriksaan aroma |
+| hasil_exp_date | string | Tanggal kedaluwarsa batch ini |
+| kesimpulan | string | Diluluskan / ditolak |
+| diperiksa_oleh | string | Nama pemeriksa QC |
+| disetujui_oleh | string | Nama penyetuju |
+| coa_file_url | text | Link file Certificate of Analysis, Supabase Storage |
+| halal_batch_file_url | text | Link file Sertifikat Halal batch ini, Supabase Storage |
+
+### 5.2 Fitur
+
+- Form tambah data batch per bahan baku, dengan upload file **CoA** dan **Sertifikat Halal** langsung ke Supabase Storage (bucket `raw-material-docs`)
+- Tabel riwayat batch menampilkan badge dokumen (CoA, Halal, MSDS) yang bisa diklik langsung untuk membuka file terkait di tab baru
+- MSDS ditampilkan di tabel batch dengan mengambil relasi ke `raw_materials.msds_file_url` (karena MSDS melekat pada bahan baku, bukan per batch)
 
 ---
 
-## 9. Manfaat yang Diharapkan
+## 6. Fase 2b — Generator Dokumen Bab II (Rancangan)
 
-- **Efisiensi waktu**: menghilangkan proses perhitungan dan penjumlahan manual di Excel untuk setiap produk baru.
-- **Akurasi**: mengeliminasi human error dalam kalkulasi cascading percentage dan penjumlahan ingredient sejenis.
-- **Konsistensi**: satu sumber data bahan baku (single source of truth) yang dipakai untuk seluruh produk, mengurangi risiko data yang tidak sinkron antar dokumen.
-- **Skalabilitas**: fondasi data yang sama dapat dipakai untuk menyusun Bab II, III, dan IV tanpa input ulang.
-- **Traceability**: kode bahan baku dan riwayat status NA produk terdokumentasi rapi dan mudah ditelusuri.
+Bab II Dokumen Informasi Produk terdiri atas empat komponen dengan karakter data yang berbeda:
+
+| # | Komponen | Sifat | Sumber Data |
+|---|---|---|---|
+| 1 | Checklist Kelengkapan Data | Statis, sama di setiap dokumen | Template tetap |
+| 2 | SOP CPKB (Prosedur Tetap Pemeriksaan Bahan Baku) | Tetap, dapat direvisi sewaktu-waktu (perlu versioning) | File terunggah, per PT |
+| 3 | Catatan Spesifikasi Bahan Baku | Per bahan baku, stabil (tidak berubah antar batch) | Field baru pada `raw_materials` (belum ditambahkan: Pemerian, Aroma, pH, Viskositas, Masa Kedaluarsa, Cara Penyimpanan) |
+| 4 | Catatan Pemeriksaan Bahan Baku + CoA + Halal | Per bahan baku, berubah tiap kedatangan batch/lot | ✅ Sudah tersedia lewat `raw_material_batches` (Fase 2a) |
+
+### 6.1 Sisa Pekerjaan
+- Menambahkan field spesifikasi stabil pada `raw_materials` (Pemerian, Aroma, pH, Viskositas, Masa Kedaluarsa, Cara Penyimpanan, Referensi) agar Catatan Spesifikasi Bahan Baku dapat digenerate otomatis
+- Tabel baru `sop_documents` untuk menyimpan SOP CPKB dengan versioning (nomor dokumen, nomor revisi, tanggal berlaku, status aktif, per PT)
+- Mekanisme pemilihan batch mana yang disertakan saat satu bahan baku memiliki riwayat beberapa batch
+- Engine penggabungan seluruh komponen menjadi satu dokumen Word/PDF (kandidat: `python-docx` di backend)
+
+### 6.2 Alur Generate (Rencana)
+
+```
+1. Ambil seluruh raw_material yang dipakai pada formula produk
+2. Untuk setiap raw_material:
+   a. Halaman Spesifikasi  → dari raw_materials (field baru)
+   b. Halaman Pemeriksaan  → dari raw_material_batches (batch terpilih/terbaru)
+   c. CoA + Halal          → lampiran dari raw_material_batches
+3. Sisipkan SOP CPKB versi aktif sesuai PT produk
+4. Gabungkan menjadi satu dokumen Word/PDF:
+   Checklist → SOP CPKB → [Spesifikasi + Pemeriksaan + CoA + Halal] × tiap bahan baku
+```
 
 ---
 
-*Dokumen ini merupakan laporan rancangan (design proposal) untuk Fase 1 pengembangan aplikasi. Rancangan teknis implementasi (pilihan platform, database, dsb.) akan ditentukan pada tahap pengembangan.*
+## 7. Manfaat yang Diharapkan
+
+- **Efisiensi waktu**: menghilangkan proses perhitungan dan penjumlahan manual di Excel untuk setiap produk baru, di kedua perusahaan.
+- **Akurasi**: mengeliminasi human error dalam kalkulasi cascading percentage, penjumlahan ingredient sejenis, dan pembulatan angka.
+- **Konsistensi**: satu sumber data bahan baku (single source of truth) untuk seluruh produk lintas PT, dengan kop surat yang otomatis menyesuaikan.
+- **Skalabilitas**: fondasi data yang sama menjadi basis penyusunan Bab II, III, dan IV tanpa input ulang.
+- **Traceability**: kode bahan baku, riwayat status NA, dan riwayat batch/CoA/MSDS/Halal terdokumentasi rapi dan mudah ditelusuri langsung dari aplikasi.
+
+---
+
+*Dokumen ini diperbarui mengikuti perkembangan aktual aplikasi. Fase 1 dan 2a telah selesai dan berjalan di lingkungan produksi; Fase 2b masih dalam tahap perancangan struktur data sebelum implementasi.*
