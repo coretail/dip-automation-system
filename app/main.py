@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, HTTPException, Response
+from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -89,21 +89,43 @@ async def ingredient_report(request: Request, product_id: str):
 async def raw_materials_page(request: Request):
     rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*)").order("nama_dagang").execute()
     
-    # Ambil pesan sukses atau eror dari cookies (kalau ada)
     success_msg = request.cookies.get("success_msg")
     error_msg = request.cookies.get("error_msg")
+    
+    try:
+        query_batches = (
+            supabase.table("raw_material_batches")
+            .select("""
+                *,
+                raw_materials (
+                    nama_dagang,
+                    produsen,
+                    msds_file_url,
+                    raw_material_components (
+                        inci_name,
+                        cas_number
+                    )
+                )
+            """)
+            .execute()
+        )
+        batches_data = query_batches.data
+        print(batches_data[0] if batches_data else "KOSONG")
+    except Exception as e:
+        print(f"Gagal ambil data batches: {e}")
+        batches_data = []
     
     response = templates.TemplateResponse(
         request=request,
         name="raw_materials.html",
         context={
             "raw_materials": rm_resp.data,
+            "batches": batches_data,
             "success_msg": success_msg,
             "error_msg": error_msg
         }
     )
     
-    # Setelah dibaca, langsung hapus cookies-nya biar pas di-refresh alert-nya ilang
     if success_msg:
         response.delete_cookie("success_msg")
     if error_msg:
@@ -117,11 +139,22 @@ async def add_raw_material(
     nama_dagang: str = Form(...),
     kode_bahan_baku: str = Form(...),
     tipe: str = Form(...),
-    inci_name: List[str] = Form(None),
-    cas_number: List[str] = Form(None),
-    function: List[str] = Form(None),
-    percent_internal: List[float] = Form(None)
+    produsen: str = Form(None),
+    msds_file: UploadFile = File(None),
+    # Gunakan Form(None) untuk data list agar FastAPI dinamis
+    inci_name: list[str] = Form(None),
+    cas_number: list[str] = Form(None),
+    function: list[str] = Form(None),
+    percent_internal: list[float] = Form(None)
 ):
+    # KITA PAKSA TULISAN INI KELUAR DI TERMINAL APAPUN YANG TERJADI
+    print("\n" + "="*40)
+    print("LOG INI HARUSNYA MUNCUL DI TERMINAL!")
+    print(f"Nama Dagang: {nama_dagang}")
+    print(f"Produsen: {produsen}")
+    print(f"File MSDS: {msds_file.filename if msds_file else 'Kosong'}")
+    print("="*40 + "\n")
+
     kode_check = kode_bahan_baku.strip()
     existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).execute()
     
@@ -131,11 +164,35 @@ async def add_raw_material(
         response.set_cookie("error_msg", f"Kode '{kode_check}' udah terdaftar. Gunakan kode lain.")
         return response
         
-    # --- LOGIK INSERT SAMA SEPERTI SEBELUMNYA ---
+    # --- LOGIC UPLOAD MSDS KE SUPABASE STORAGE ---
+    msds_url = None
+    if msds_file and msds_file.filename:
+        try:
+            file_bytes = await msds_file.read()
+            # Bersihkan nama kode buat nama file agar aman di URL
+            clean_kode = "".join(c for c in kode_check if c.isalnum() or c in ('-', '_')).strip()
+            file_path = f"msds/msds_{clean_kode}.pdf"
+            
+            # Upload fisik file ke bucket 'raw-material-docs'
+            supabase.storage.from_("raw-material-docs").upload(
+                path=file_path,
+                file=file_bytes,
+                file_options={"content-type": msds_file.content_type}
+            )
+            
+            # Dapatkan Link Public-nya
+            msds_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
+        except Exception as e:
+            print(f"Gagal upload MSDS: {e}")
+            # Lanjut proses tanpa menggagalkan insert jika upload bermasalah
+
+    # --- INSERT DATA UTAMA (Ditambah Produsen & MSDS URL) ---
     rm_resp = supabase.table("raw_materials").insert({
         "nama_dagang": nama_dagang,
         "kode_bahan_baku": kode_bahan_baku,
-        "tipe": tipe
+        "tipe": tipe,
+        "produsen": produsen,        # <-- Masuk ke database
+        "msds_file_url": msds_url    # <-- Simpan URL link filenya
     }).execute()
     new_rm_id = rm_resp.data[0]["id"]
 
@@ -178,20 +235,59 @@ async def edit_raw_material(
     inci_name: List[str] = Form(None),
     cas_number: List[str] = Form(None),
     function: List[str] = Form(None),
-    percent_internal: List[float] = Form(None)
+    percent_internal: List[float] = Form(None),
+    msds_file: UploadFile = File(None)  # 1. KITA TAMBAHKAN PARAMETER INI (Opsional pas edit)
 ):
+    print("\n" + "="*40)
+    print("LOG INI MUNCUL PAS LU KLIK EDIT!")
+    print(f"ID Bahan Baku: {rm_id}")
+    print(f"Nama Dagang: {nama_dagang}")
+    print(f"File MSDS Baru: {msds_file.filename if msds_file else 'Tidak Ada File Baru'}")
+    print("="*40 + "\n")
+    
     kode_check = kode_bahan_baku.strip()
     existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).neq("id", rm_id).execute()
     
     if existing_rm.data:
         raise HTTPException(status_code=400, detail=f"Gagal Edit! Kode '{kode_check}' sudah dipakai oleh bahan baku lain.")
     
-    supabase.table("raw_materials").update({
+    # 2. SIAPKAN DICTIONARY DATA UNTUK UPDATE TABLE RAW_MATERIALS
+    update_data = {
         "nama_dagang": nama_dagang,
         "kode_bahan_baku": kode_bahan_baku,
         "tipe": tipe
-    }).eq("id", rm_id).execute()
+    }
+    
+    # 3. LOGIKA PROSES UPLOAD FILE MSDS (JIKA USER UPLOAD FILE BARU)
+    if msds_file and msds_file.filename:
+        try:
+            file_contents = await msds_file.read()
+            # Bersihkan nama file biar aman di URL
+            clean_filename = f"msds_{rm_id}_{msds_file.filename.replace(' ', '_')}"
+            storage_path = f"msds/{clean_filename}"
+            
+            # Upload file biner ke bucket raw-material-docs
+            supabase.storage.from_("raw-material-docs").upload(
+                path=storage_path,
+                file=file_contents,
+                file_options={"content-type": msds_file.content_type, "upsert": "true"}
+            )
+            
+            # Dapatkan URL publik dari file yang berhasil di-upload
+            msds_url = supabase.storage.from_("raw-material-docs").get_public_url(storage_path)
+            
+            # Masukkan URL ke data update (Pastikan nama kolom 'msds_file_url' sesuai DB lu ya!)
+            update_data["msds_file_url"] = msds_url
+            print(f"Sukses upload MSDS baru ke: {msds_url}")
+            
+        except Exception as e:
+            print(f"Gagal proses upload MSDS: {e}")
+            # Opsional: lu bisa throw eror atau biarkan lanjut tanpa ganti file lama
+    
+    # 4. JALANKAN UPDATE KE TABEL RAW_MATERIALS
+    supabase.table("raw_materials").update(update_data).eq("id", rm_id).execute()
 
+    # --- Sisa kode management komponen INCI lu di bawah biarkan utuh ---
     supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
     
     if tipe == "single":
@@ -241,6 +337,77 @@ async def delete_raw_material(rm_id: str):
         return RedirectResponse(url=f"/raw-materials?error=Gagal+menghapus:+{str(e)}", status_code=303)
 
     return RedirectResponse(url="/raw-materials?success=Bahan+baku+berhasil+dihapus", status_code=303)
+
+@app.post("/raw-materials/batches/add")
+async def add_material_batch(
+    request: Request,
+    raw_material_id: str = Form(...),
+    no_batch: str = Form(...),
+    supplier: str = Form(...),
+    harga_per_kg: float = Form(...),
+    tanggal_terima_sampel: str = Form(...),
+    hasil_pemerian: str = Form(...),
+    # Tangkap file dokumen baru
+    coa_file: UploadFile = File(None),
+    halal_file: UploadFile = File(None)
+):
+    clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
+    
+    coa_url = None
+    halal_url = None
+
+    # 1. Proses Upload CoA jika ada filenya
+    if coa_file and coa_file.filename:
+        try:
+            coa_bytes = await coa_file.read()
+            coa_path = f"coa/coa_{clean_batch}.pdf"
+            
+            supabase.storage.from_("raw-material-docs").upload(
+                path=coa_path,
+                file=coa_bytes,
+                file_options={"content-type": coa_file.content_type, "upsert": "true"}
+            )
+            coa_url = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
+            print(f"--> Sukses upload CoA ke: {coa_url}")
+        except Exception as e:
+            print(f"Gagal upload CoA: {e}")
+
+    # 2. Proses Upload Halal Cert jika ada filenya
+    if halal_file and halal_file.filename:
+        try:
+            halal_bytes = await halal_file.read()
+            halal_path = f"halal/halal_{clean_batch}.pdf"
+            
+            supabase.storage.from_("raw-material-docs").upload(
+                path=halal_path,
+                file=halal_bytes,
+                file_options={"content-type": halal_file.content_type, "upsert": "true"}
+            )
+            halal_url = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
+            print(f"--> Sukses upload Halal ke: {halal_url}")
+        except Exception as e:
+            print(f"Gagal upload Halal Cert: {e}")
+
+    # 3. Simpan record data ke tabel raw_material_batches
+    batch_data = {
+        "raw_material_id": raw_material_id,
+        "no_batch": no_batch,
+        "supplier": supplier,
+        "harga_per_kg": harga_per_kg,
+        "tanggal_terima_sampel": tanggal_terima_sampel,
+        "hasil_pemerian": hasil_pemerian,
+        "coa_file_url": coa_url,       # Nilainya akan string URL atau NULL jika tidak upload
+        "halal_batch_file_url": halal_url    # Nilainya akan string URL atau NULL jika tidak upload
+    }
+
+    try:
+        supabase.table("raw_material_batches").insert(batch_data).execute()
+        print("--> Data Batch berhasil masuk ke Database!")
+    except Exception as e:
+        print(f"Gagal insert ke DB: {e}")
+
+    # Redirect balik ke halaman utama bahan baku
+    return RedirectResponse(url="/raw-materials", status_code=303)
 
 @app.post("/products/add")
 async def add_product(
