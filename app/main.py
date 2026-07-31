@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile
+from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile, status, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -45,8 +45,123 @@ COMPANY_INFO = {
 
 templates.env.filters["clean_pct"] = clean_pct
 
+# ================= FUNCTION Login (REPLACEMENT) =================
+async def get_current_user(request: Request):
+    # 1. Ambil cookie token dari browser
+    token_cookie = request.cookies.get("access_token")
+    if not token_cookie:
+        # PENTING: Pakai raise HTTPException 307 biar FastAPI paksa browser redirect!
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/login"}
+        )
+    
+    try:
+        # 2. Ekstrak token aslinya
+        token = token_cookie.replace("Bearer ", "")
+        
+        # 3. Minta data user ke Supabase Auth
+        user_auth = supabase.auth.get_user(token)
+        user_data = user_auth.user
+        
+        # 4. Tarik info nama & role dari tabel profiles yg baru lu buat
+        profile_res = supabase.table("profiles").select("full_name", "role").eq("id", user_data.id).execute()
+        
+        # Default value aman kalau data profile di DB lu belum lengkap
+        user_role = "staff"
+        full_name = "User Lab"
+        
+        if profile_res.data:
+            user_role = profile_res.data[0].get("role", "staff")
+            full_name = profile_res.data[0].get("full_name", "User Lab")
+            
+        # Balikin dictionary komplit biar bisa dipakai di route-route lain ntar
+        return {
+            "id": user_data.id,
+            "email": user_data.email,
+            "full_name": full_name,
+            "role": user_role
+        }
+        
+    except Exception as e:
+        print(f"Token invalid atau expired: {e}")
+        # Kalo tokennya ngaco/expired, hapus cookie dan tendang balik ke login
+        response = RedirectResponse(url="/login", status_code=303)
+        response.delete_cookie(key="access_token")
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/login"}
+        )
+
+
+# ================= 1. ROUTE TAMPILAN LOGIN =================
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    # Cek dulu kalau tokennya udah ada di cookie, langsung lempar ke dashboard
+    if request.cookies.get("access_token"):
+        return RedirectResponse(url="/", status_code=303)
+        
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={}
+    )
+
+# ================= 2. ROUTE PROSES LOGIN (POST) =================
+@app.post("/login")
+async def login_submit(
+    response: Response,
+    email: str = Form(...), # Ini nangkep input username/email dari form
+    password: str = Form(...)
+):
+    try:
+        login_identifier = email.strip()
+        
+        # JIKA YANG DIINPUT BUKAN EMAIL (GA ADA TANDA @)
+        if "@" not in login_identifier:
+            # Cari di tabel profiles berdasarkan nama/username
+            profile_query = supabase.table("profiles").select("id").eq("full_name", login_identifier).execute()
+            
+            if profile_query.data:
+                # Kalo username ketemu, kita cari email aslinya via admin auth di Supabase
+                # Catatan: Ini cara paling dinamis & aman tanpa hardcode email
+                user_id = profile_query.data[0]["id"]
+                user_auth_data = supabase.auth.admin.get_user_by_id(user_id)
+                login_identifier = user_auth_data.user.email
+            else:
+                # Kalo ga ketemu di profiles, fallback otomatis pake domain kantor
+                login_identifier = f"{login_identifier}@erfi.com"
+            
+        # Tembak ke Supabase Auth pake email asli yang udah dapet dari DB
+        auth_response = supabase.auth.sign_in_with_password({
+            "email": login_identifier,
+            "password": password
+        })
+        
+        session_token = auth_response.session.access_token
+        redirect = RedirectResponse(url="/", status_code=303)
+        redirect.set_cookie(
+            key="access_token",
+            value=f"Bearer {session_token}",
+            httponly=True,
+            max_age=86400,
+            samesite="lax"
+        )
+        return redirect
+
+    except Exception as e:
+        print(f"Gagal login: {e}")
+        return RedirectResponse(url="/login?error=invalid_credentials", status_code=303)
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=303)
+    # Hapus cookie token yang tersimpan di browser
+    response.delete_cookie(key="access_token")
+    return response
+
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, current_user: dict = Depends(get_current_user)):
     try:
         # 1. Mengambil data produk master terbaru
         response_prod = supabase.table("products").select("*").order("created_at", desc=True).execute()
@@ -72,7 +187,8 @@ async def dashboard(request: Request):
         context={
             "request": request, 
             "products": products, 
-            "recent_samples": recent_samples
+            "recent_samples": recent_samples,
+            "user": current_user
         }
     )
 
@@ -167,7 +283,8 @@ async def add_raw_material(
     inci_name: list[str] = Form(None),
     cas_number: list[str] = Form(None),
     function: list[str] = Form(None),
-    percent_internal: list[float] = Form(None)
+    percent_internal: list[float] = Form(None),
+    current_user: dict = Depends(get_current_user)
 ):
     # KITA PAKSA TULISAN INI KELUAR DI TERMINAL APAPUN YANG TERJADI
     print("\n" + "="*40)
@@ -258,7 +375,8 @@ async def edit_raw_material(
     cas_number: List[str] = Form(None),
     function: List[str] = Form(None),
     percent_internal: List[float] = Form(None),
-    msds_file: UploadFile = File(None)  # 1. KITA TAMBAHKAN PARAMETER INI (Opsional pas edit)
+    msds_file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
 ):
     print("\n" + "="*40)
     print("LOG INI MUNCUL PAS LU KLIK EDIT!")
@@ -445,7 +563,8 @@ async def add_product(
     acc_sampel: str = Form(None),
     tanggal_text_design: str = Form(None),
     teks_marketing: str = Form(None),
-    cara_pakai: str = Form(None)
+    cara_pakai: str = Form(None),
+    current_user: dict = Depends(get_current_user)
 ):
     # Bersihkan input tanggal kosong menjadi None agar Supabase tidak error
     acc_sampel_val = acc_sampel.strip() if acc_sampel else None
@@ -700,7 +819,8 @@ async def update_product(
     tanggal_text_design: str = Form(None),
     teks_marketing: str = Form(None),
     cara_pakai: str = Form(None),
-    status_progress: str = Form("R&D / Sample Phase") 
+    status_progress: str = Form("R&D / Sample Phase"),
+    current_user: dict = Depends(get_current_user)
 ):
     # 2. Bersihin input tanggal biar tipenya pas di database
     acc_sampel_val = acc_sampel.strip() if acc_sampel else None
@@ -974,3 +1094,90 @@ async def sample_submission_preview(request: Request, submission_id: str):
         name="sample_preview.html",
         context={"s": submission}
     )
+
+    # =====================================================================
+#                     MODUL MANAJEMEN USER (ADMIN ONLY)
+# =====================================================================
+
+# 1. TAMPILAN HALAMAN UTAMA USER & REGISTER
+@app.get("/admin/users", response_class=HTMLResponse)
+async def manage_users_page(request: Request, current_user: dict = Depends(get_current_user)):
+    # Proteksi: Cuma admin yang boleh masuk page ini
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+        
+    try:
+        # Tarik semua data dari tabel profiles
+        profiles_res = supabase.table("profiles").select("*").order("full_name").execute()
+        users_list = profiles_res.data or []
+    except Exception as e:
+        print(f"Gagal ambil data profiles: {e}")
+        users_list = []
+        
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_users.html",
+        context={"request": request, "user": current_user, "users": users_list}
+    )
+
+# 1. TAMPILAN HALAMAN REGISTER PUBLIK (TANPA GEMBOK LOGIN)
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    return templates.TemplateResponse(request=request, name="register.html")
+
+# 2. PROSES DAFTAR AKUN MANDIRI (TANPA GEMBOK LOGIN)
+@app.post("/register")
+async def register_user_submit(
+    email: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    confirm_password: str = Form(...)
+):
+    try:
+        # 1. Validasi kecocokan password
+        if password != confirm_password:
+            return RedirectResponse(url="/register?error=password_mismatch", status_code=303)
+            
+        clean_username = username.strip().lower()
+        clean_email = email.strip().lower()
+        
+        # 2. Daftarin ke Supabase Auth Service pake email asli yang diinput user
+        auth_res = supabase.auth.admin.create_user({
+            "email": clean_email,
+            "password": password,
+            "email_confirm": True
+        })
+        
+        new_uid = auth_res.user.id
+        
+        # 3. Inject ke tabel profiles, full_name kita isi username biar sinkron sama login murni username
+        supabase.table("profiles").insert({
+            "id": new_uid,
+            "full_name": clean_username, 
+            "role": "staff",
+            "updated_at": "now()"
+        }).execute()
+        
+        return RedirectResponse(url="/login?status=register_success", status_code=303)
+        
+    except Exception as e:
+        print(f"Gagal registrasi mandiri: {e}")
+        return RedirectResponse(url="/register?error=failed", status_code=303)
+
+# 3. PROSES UPDATE ROLE USER (POST)
+@app.post("/admin/users/update-role")
+async def update_user_role(
+    target_uid: str = Form(...),
+    new_role: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak!")
+        
+    try:
+        # Update kolom role di tabel profiles berdasarkan UUID user yang dipilih
+        supabase.table("profiles").update({"role": new_role, "updated_at": "now()"}).eq("id", target_uid).execute()
+        return RedirectResponse(url="/admin/users?status=update_success", status_code=303)
+    except Exception as e:
+        print(f"Gagal update role: {e}")
+        return RedirectResponse(url="/admin/users?error=update_failed", status_code=303)

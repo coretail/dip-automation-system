@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIP ERFI APP - User Management</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased">
+
+    <!-- Top Navigation / Header -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-50 px-6 py-4 flex justify-between items-center shadow-xs">
+        <div class="flex items-center gap-3">
+            <a href="/" class="text-gray-500 hover:text-indigo-600 transition-colors"><i class="fa-solid fa-arrow-left text-lg"></i></a>
+            <h1 class="text-lg font-bold tracking-tight text-gray-900">Control Panel Admin</h1>
+        </div>
+        <div class="text-sm text-gray-600">
+            Login sebagai: <span class="font-bold text-indigo-600 uppercase">{{ user.full_name }} ({{ user.role }})</span>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6">
+        
+        <!-- Grid layout 2 Kolom -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- KOLOM KIRI: DAFTAR USER & SET ROLE (Makan 2/3 tempat) -->
+            <div class="lg:col-span-3 bg-white rounded-xl border border-gray-200 shadow-xs p-6">
+                <h2 class="text-md font-bold uppercase tracking-wider text-gray-700 mb-4"><i class="fa-solid fa-users text-indigo-500 mr-2"></i> Anggota Tim Lab & Dokumen</h2>
+                
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-200 bg-gray-50/70 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                <th class="p-3">Username / Identifier</th>
+                                <th class="p-3">Role Saat Ini</th>
+                                <th class="p-3 text-right">Aksi Ubah Role</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            {% for u in users %}
+                            <tr class="hover:bg-gray-50/50 transition-colors">
+                                <td class="p-3 font-medium text-gray-900">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-7 h-7 bg-indigo-50 text-indigo-600 font-bold rounded-full flex items-center justify-center text-xs uppercase">
+                                            {{ u.full_name[:2] }}
+                                        </div>
+                                        <div>
+                                            <!-- Nampilin username murni dari kolom full_name -->
+                                            <p class="font-bold text-gray-800">{{ u.full_name }}</p>
+                                            <p class="text-xs text-gray-400">ID: {{ u.id[:8] }}...</p>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="p-3">
+                                    <span class="px-2 py-0.5 text-xs font-semibold rounded {{ 'bg-red-50 text-red-700 border border-red-200' if u.role == 'admin' else 'bg-amber-50 text-amber-700 border border-amber-200' }} uppercase">
+                                        {{ u.role }}
+                                    </span>
+                                </td>
+                                <td class="p-3 text-right">
+                                    <form action="/admin/users/update-role" method="POST" class="inline-flex items-center gap-1">
+                                        <input type="hidden" name="target_uid" value="{{ u.id }}">
+                                        <select name="new_role" onchange="this.form.submit()" class="text-xs bg-white border border-gray-300 rounded px-2 py-1 text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer">
+                                            <option value="staff" {% if u.role == 'staff' %}selected{% endif %}>Set Staff</option>
+                                            <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Set Admin</option>
+                                        </select>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="3" class="p-8 text-center text-sm text-gray-400">Belum ada user terdaftar.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+</body>
+</html>

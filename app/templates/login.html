@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - DIP ERFI APP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-50 flex items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-xl shadow-md border border-gray-100 w-full max-w-md">
+        <!-- Header Logo / Judul -->
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-indigo-600 text-white text-xl font-bold mb-3">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800">DIP ERFI APP</h2>
+            <p class="text-sm text-gray-400 mt-1">Sistem Manajemen Lab & Dokumen FSP</p>
+        </div>
+
+        <!-- Form Login -->
+        <form action="/login" method="POST" class="space-y-5">
+            <div>
+                <!-- Ubah label jadi Username / Email -->
+                <label class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Username / Email</label>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fa-solid fa-user text-sm"></i> <!-- Icon diganti jadi user -->
+                    </span>
+                    <!-- Type diganti 'text' biar ga validasi format email @ doang -->
+                    <input type="text" name="email" required placeholder="Ketik username atau email..." 
+                        class="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50/50">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Password</label>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fa-solid fa-lock text-sm"></i>
+                    </span>
+                    <input type="password" name="password" required placeholder="••••••••" 
+                           class="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50/50">
+                </div>
+            </div>
+
+            <button type="submit" 
+                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
+                <i class="fa-solid fa-right-to-bracket"></i> Masuk ke Aplikasi
+            </button>
+        </form>
+
+        <!-- Cari bagian akhir form login lu, lalu selipin div ini di bawahnya -->
+        <div class="mt-6 text-center border-t border-gray-100 pt-4">
+            <p class="text-xs text-gray-500">Anggota tim baru? <a href="/register" class="text-indigo-600 hover:underline font-medium">Registrasi Akun Baru</a></p>
+        </div>
+    </div>
+
+</body>
+</html>
