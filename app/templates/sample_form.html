@@ -48,14 +48,14 @@
 
         <!-- BAGIAN 2: DATA PRODUK -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-1">Pilih Produk Eksisting (Opsional)</label>
-                <select name="product_id" id="product_id" onchange="autoFillProduct()" class="w-full border rounded p-2 text-sm">
-                    <option value="">-- Isi Manual / Produk Baru --</option>
-                    {% for p in products %}
-                        <option value="{{ p.id }}" data-nama="{{ p.nama_produk }}" data-netto="{{ p.netto }}" data-sediaan="{{ p.sediaan }}" data-kemasan="{{ p.kemasan }}">
-                            {{ p.nama_produk }}
-                        </option>
+            <div class="mb-4">
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Pilih Produk Eksisting (Opsional)</label>
+                <select name="product_id" id="product_id_select" class="w-full border rounded-lg p-2 text-sm focus:ring-indigo-500">
+                    <option value="">-- Buat Produk Baru / Manual --</option>
+                    {% for p in existing_products %}
+                    <option value="{{ p.id }}" data-nama="{{ p.nama_produk }}" data-company="{{ p.company }}">
+                        {{ p.nama_produk }} ({% if p.company == 'Heka' %}PT Heka{% else %}PT Erfi{% endif %})
+                    </option>
                     {% endfor %}
                 </select>
             </div>
@@ -160,5 +160,35 @@ function autoFillProduct() {
         document.getElementById('kemasan').value = selectedOption.getAttribute('data-kemasan') || '';
     }
 }
+
+document.getElementById('product_id_select').addEventListener('change', function() {
+    const selectedOption = this.options[this.selectedIndex];
+    const masterName = selectedOption.getAttribute('data-nama');
+    const masterCompany = selectedOption.getAttribute('data-company');
+    
+    const inputNamaProduk = document.querySelector('input[name="product_name"]');
+    const radioCompany = document.querySelectorAll('input[name="company"]');
+    
+    if (this.value) {
+        // Jika pilih produk eksisting, isi otomatis dan disable inputannya biar ga typo
+        inputNamaProduk.value = masterName;
+        inputNamaProduk.readOnly = true;
+        
+        radioCompany.forEach(radio => {
+            if (radio.value === masterCompany) {
+                radio.checked = true;
+            }
+            radio.disabled = true; // Kunci pilihan PT-nya
+        });
+    } else {
+        // Jika balik ke manual, reset dan buka gemboknya
+        inputNamaProduk.value = '';
+        inputNamaProduk.readOnly = false;
+        radioCompany.forEach(radio => {
+            radio.checked = false;
+            radio.disabled = false;
+        });
+    }
+});
 </script>
 {% endblock %}

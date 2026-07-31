@@ -47,13 +47,19 @@ templates.env.filters["clean_pct"] = clean_pct
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    response = supabase.table("products").select("*").order("created_at", desc=True).execute()
-    products = response.data
+    try:
+        # Mengambil semua kolom (termasuk status_progress yang baru) dan diurutkan dari yang terbaru
+        response = supabase.table("products").select("*").order("created_at", desc=True).execute()
+        products = response.data or []
+    except Exception as e:
+        print(f"Gagal ambil data produk di dashboard: {e}")
+        products = []
     
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html", 
-        context={"products": products}
+        # Di template HTML dashboard lu nanti tinggal looping pakai variabel 'products'
+        context={"request": request, "products": products}
     )
 
 @app.get("/products/{product_id}", response_class=HTMLResponse)
@@ -679,7 +685,8 @@ async def update_product(
     acc_sampel: str = Form(None),
     tanggal_text_design: str = Form(None),
     teks_marketing: str = Form(None),
-    cara_pakai: str = Form(None)
+    cara_pakai: str = Form(None),
+    status_progress: str = Form("R&D / Sample Phase") 
 ):
     # 2. Bersihin input tanggal biar tipenya pas di database
     acc_sampel_val = acc_sampel.strip() if acc_sampel else None
@@ -699,7 +706,8 @@ async def update_product(
         "acc_sampel": acc_sampel_val,
         "tanggal_text_design": tanggal_text_design or None,
         "teks_marketing": teks_marketing,
-        "cara_pakai": cara_pakai
+        "cara_pakai": cara_pakai,
+        "status_progress": status_progress 
     }).eq("id", product_id).execute()
     
     return RedirectResponse(url="/", status_code=303)
@@ -719,11 +727,11 @@ async def delete_product(product_id: str):
 async def create_sample_submission(
     request: Request,
     brand_id: str = Form(...),
-    company: str = Form(...),
+    company: str = Form(None),
     custom_producer: str = Form(None),
     custom_brand: str = Form(None),
     product_id: str = Form(None),
-    product_name: str = Form(...),
+    product_name: str = Form(None),
     product_item: str = Form(None),
     netto: str = Form(None),
     sediaan: str = Form(None),
@@ -737,6 +745,18 @@ async def create_sample_submission(
     viscosity_value: str = Form(None),
     color_value: str = Form(None)
 ):
+    final_product_id = None if not product_id else product_id
+    if final_product_id:
+        # Jalur kilat: Tarik data asli dari master produk
+        prod_master = supabase.table("products").select("nama_produk", "company").eq("id", final_product_id).execute()
+        if prod_master.data:
+            final_product_name = prod_master.data[0]['nama_produk']
+            final_company = prod_master.data[0]['company']
+    else:
+        # Jalur manual: Pakai inputan ketikan dari form
+        final_product_name = product_name
+        final_company = company
+
     today_str = datetime.now().strftime("%d-%m-%Y")
     
     # --- 1. LOGIKAHITUNG X.Y (OTOMATIS) ---
@@ -846,6 +866,7 @@ async def create_sample_submission(
         data_to_insert = {
             # ... data_to_insert lu yang lama tetep biarkan ...
             "sample_code": sample_code,
+            "product_id": final_product_id,
             "company": company,
             "brand_id": final_brand_id,
             "product_name": product_name,
