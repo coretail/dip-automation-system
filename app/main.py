@@ -48,18 +48,32 @@ templates.env.filters["clean_pct"] = clean_pct
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     try:
-        # Mengambil semua kolom (termasuk status_progress yang baru) dan diurutkan dari yang terbaru
-        response = supabase.table("products").select("*").order("created_at", desc=True).execute()
-        products = response.data or []
+        # 1. Mengambil data produk master terbaru
+        response_prod = supabase.table("products").select("*").order("created_at", desc=True).execute()
+        products = response_prod.data or []
+        
+        # 2. Tambahan: Tarik 5 data pengajuan sample (FSP) paling baru
+        response_sample = supabase.table("sample_submissions") \
+            .select("id, sample_code, product_name, company, created_at, revision_number") \
+            .order("created_at", desc=True) \
+            .limit(5) \
+            .execute()
+        recent_samples = response_sample.data or []
+        
     except Exception as e:
-        print(f"Gagal ambil data produk di dashboard: {e}")
+        print(f"Gagal ambil data dashboard: {e}")
         products = []
+        recent_samples = []
     
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html", 
-        # Di template HTML dashboard lu nanti tinggal looping pakai variabel 'products'
-        context={"request": request, "products": products}
+        # Oper variabel 'products' dan 'recent_samples' ke HTML
+        context={
+            "request": request, 
+            "products": products, 
+            "recent_samples": recent_samples
+        }
     )
 
 @app.get("/products/{product_id}", response_class=HTMLResponse)
