@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-6xl mx-auto mt-6 bg-white p-6 rounded-lg shadow">
+    <!-- Header Halaman -->
+    <div class="flex justify-between items-center mb-6 border-b pb-4">
+        <h2 class="text-xl font-bold text-gray-800">
+            <i class="fa-solid fa-folder-open mr-2 text-indigo-600"></i>Riwayat Pengajuan Sample Produk
+        </h2>
+        <!-- Tombol buat ke halaman form input -->
+        <a href="/sample-submissions/form" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded text-sm transition">
+            <i class="fa-solid fa-plus mr-1"></i> Buat Pengajuan Baru
+        </a>
+    </div>
+
+    <!-- KOMPONEN SEARCHBAR BARU -->
+    <div class="mb-4">
+        <form action="/sample-submissions" method="GET" class="flex gap-2 max-w-md">
+            <div class="relative flex-1">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
+                    <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                </span>
+                <input type="text" name="search" value="{{ search_value }}" 
+                       class="w-full border rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50/50" 
+                       placeholder="Cari Kode Dokumen atau Nama Produk...">
+            </div>
+            <button type="submit" class="px-4 py-2 bg-gray-800 text-white hover:bg-gray-900 rounded-lg text-sm font-medium transition cursor-pointer">
+                Cari
+            </button>
+            {% if search_value %}
+            <a href="/sample-submissions" class="px-3 py-2 border rounded-lg text-sm bg-white hover:bg-gray-50 text-gray-500 flex items-center justify-center transition" title="Reset Pencarian">
+                <i class="fa-solid fa-xmark"></i>
+            </a>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Tabel Riwayat -->
+    <div class="overflow-x-auto border rounded-lg">
+        <table class="w-full text-sm text-left text-gray-500">
+            <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b">
+                <tr>
+                    <th class="px-4 py-3">Tanggal</th>
+                    <th class="px-4 py-3">Kode Dokumen</th>
+                    <th class="px-4 py-3">Produsen / Merk</th>
+                    <th class="px-4 py-3">Nama Produk</th>
+                    <th class="px-4 py-3">Rev</th>
+                    <th class="px-4 py-3 text-center">Aksi</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for s in submissions %}
+                <tr class="hover:bg-gray-50 bg-white">
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        {{ s.created_at[:10] if s.created_at else '-' }}
+                    </td>
+                    <td class="px-4 py-3 font-mono font-bold text-gray-900">
+                        {{ s.sample_code }}
+                    </td>
+                    <td class="px-4 py-3">
+                        {{ s.brands.producers.name if s.brand_id else s.draft_producer }} 
+                        <span class="text-gray-400">/</span> 
+                        {{ s.brands.name if s.brand_id else s.draft_brand }}
+                    </td>
+                    <td class="px-4 py-3 font-medium text-gray-900">
+                        {{ s.product_name }}
+                    </td>
+                    <td class="px-4 py-3 font-mono">
+                        v{{ s.revision_number }}
+                    </td>
+                    <td class="px-4 py-3 text-center whitespace-nowrap">
+                        <a href="/sample-submissions/preview/{{ s.id }}" class="inline-flex items-center px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded font-medium text-xs transition">
+                            <i class="fa-solid fa-eye mr-1"></i> Lihat / Print PDF
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-4 py-8 text-center text-gray-400">
+                        {% if search_value %}
+                            Tidak ditemukan hasil untuk pencarian "<span class="font-semibold text-gray-600">{{ search_value }}</span>".
+                        {% else %}
+                            Belum ada riwayat pengajuan sample produk.
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

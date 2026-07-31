@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow mt-6">
+    <h2 class="text-xl font-bold mb-6 text-gray-800 border-b pb-3">
+        <i class="fa-solid fa-flask mr-2 text-indigo-600"></i>Form Pengajuan Sample Produk
+    </h2>
+
+    <form action="/sample-submissions/create" method="POST" class="space-y-6">
+        
+        <!-- BAGIAN 1: PRODUSEN & MERK -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="mb-4">
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Perusahaan / PT *</label>
+                <div class="flex space-x-6">
+                    <label class="inline-flex items-center cursor-pointer">
+                        <input type="radio" name="company" value="Erfi" class="text-indigo-600 focus:ring-indigo-500" required>
+                        <span class="ml-2 text-sm font-medium text-gray-700">Erfi</span>
+                    </label>
+                    <label class="inline-flex items-center cursor-pointer">
+                        <input type="radio" name="company" value="Heka" class="text-indigo-600 focus:ring-indigo-500" required>
+                        <span class="ml-2 text-sm font-medium text-gray-700">Heka</span>
+                    </label>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Pilih Merk / Brand</label>
+                <select name="brand_id" id="brand_id" onchange="toggleDraftInput()" class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500" required>
+                    <option value="">-- Pilih Merk --</option>
+                    {% for b in brands %}
+                        <option value="{{ b.id }}">{{ b.producers.name }} - {{ b.name }}</option>
+                    {% endfor %}
+                    <option value="new" class="text-indigo-600 font-medium">++ Ketik Baru (Draft/Belum Terdaftar) ++</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- KOLOM INPUT DRAFT (MUNCUL HANYA JIKA PILIH KETIK BARU) -->
+        <div id="draft_brand_fields" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded border border-dashed border-gray-300">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Produsen Baru (Draft)</label>
+                <input type="text" name="custom_producer" id="custom_producer" class="w-full border rounded p-2 text-sm bg-white" placeholder="Masukkan nama produsen">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Merk Baru (Draft)</label>
+                <input type="text" name="custom_brand" id="custom_brand" class="w-full border rounded p-2 text-sm bg-white" placeholder="Masukkan nama merk">
+            </div>
+        </div>
+
+        <!-- BAGIAN 2: DATA PRODUK -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Pilih Produk Eksisting (Opsional)</label>
+                <select name="product_id" id="product_id" onchange="autoFillProduct()" class="w-full border rounded p-2 text-sm">
+                    <option value="">-- Isi Manual / Produk Baru --</option>
+                    {% for p in products %}
+                        <option value="{{ p.id }}" data-nama="{{ p.nama_produk }}" data-netto="{{ p.netto }}" data-sediaan="{{ p.sediaan }}" data-kemasan="{{ p.kemasan }}">
+                            {{ p.nama_produk }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Produk *</label>
+                <input type="text" name="product_name" id="product_name" class="w-full border rounded p-2 text-sm" required>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Netto</label>
+                <input type="text" name="netto" id="netto" class="w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Sediaan</label>
+                <input type="text" name="sediaan" id="sediaan" class="w-full border rounded p-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Kemasan</label>
+                <input type="text" name="kemasan" id="kemasan" class="w-full border rounded p-2 text-sm">
+            </div>
+        </div>
+
+        <!-- BAGIAN 3: DETAIL HERO & CATATAN -->
+        <div class="border-t pt-4 space-y-4">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Bahan Aktif (Hero Ingredient)</label>
+                <input type="text" name="hero_ingredient" class="w-full border rounded p-2 text-sm" placeholder="Contoh: Niacinamide 5%, Retinol 1%">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Keterangan / Deskripsi</label>
+                <textarea name="description" rows="3" class="w-full border rounded p-2 text-sm" placeholder="Catatan detail pengajuan..."></textarea>
+            </div>
+        </div>
+
+        <!-- CATATAN FISIK (JSONB BUNDLE) -->
+        <div class="grid grid-cols-3 gap-4 bg-indigo-50/50 p-4 rounded border border-indigo-100">
+            <div>
+                <label class="block text-sm font-medium text-indigo-900 mb-1">Target pH</label>
+                <input type="text" name="ph_value" class="w-full border rounded p-2 text-sm bg-white" placeholder="5.5 - 6.0">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-indigo-900 mb-1">Viskositas</label>
+                <input type="text" name="viscosity_value" class="w-full border rounded p-2 text-sm bg-white" placeholder="Gel / Liquid">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-indigo-900 mb-1">Warna Sediaan</label>
+                <input type="text" name="color_value" class="w-full border rounded p-2 text-sm bg-white" placeholder="Transparan / Putih">
+            </div>
+        </div>
+
+        <!-- BAGIAN 4: VALIDASI TANDA TANGAN -->
+        <div class="grid grid-cols-2 gap-4 border-t pt-4">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Pemeriksa (QC) *</label>
+                <input type="text" name="qc_signer" class="w-full border rounded p-2 text-sm" placeholder="Nama Personel QC" required>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Penyetuju (R&D) *</label>
+                <input type="text" name="rd_signer" class="w-full border rounded p-2 text-sm" placeholder="Nama Personel R&D" required>
+            </div>
+        </div>
+
+        <!-- TOMBOL SIMPAN -->
+        <div class="flex justify-end space-x-2 border-t pt-4">
+            <a href="/sample-submissions" class="px-4 py-2 border rounded text-sm text-gray-600 hover:bg-gray-50">Batal</a>
+            <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded text-sm transition cursor-pointer">
+                <i class="fa-solid fa-floppy-disk mr-2"></i>Simpan & Buat Dokumen
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- JAVASCRIPT LOGIC INTERAKTIF -->
+<script>
+function toggleDraftInput() {
+    const brandSelect = document.getElementById('brand_id');
+    const draftContainer = document.getElementById('draft_brand_fields');
+    const customProd = document.getElementById('custom_producer');
+    const customBrand = document.getElementById('custom_brand');
+
+    if (brandSelect.value === 'new') {
+        draftContainer.classList.remove('hidden');
+        customProd.setAttribute('required', 'true');
+        customBrand.setAttribute('required', 'true');
+    } else {
+        draftContainer.classList.add('hidden');
+        customProd.removeAttribute('required');
+        customBrand.removeAttribute('required');
+    }
+}
+
+function autoFillProduct() {
+    const productSelect = document.getElementById('product_id');
+    const selectedOption = productSelect.options[productSelect.selectedIndex];
+
+    if (productSelect.value !== '') {
+        document.getElementById('product_name').value = selectedOption.getAttribute('data-nama') || '';
+        document.getElementById('netto').value = selectedOption.getAttribute('data-netto') || '';
+        document.getElementById('sediaan').value = selectedOption.getAttribute('data-sediaan') || '';
+        document.getElementById('kemasan').value = selectedOption.getAttribute('data-kemasan') || '';
+    }
+}
+</script>
+{% endblock %}

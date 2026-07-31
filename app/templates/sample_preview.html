@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+    /* Styling khusus mode cetak */
+    @media print {
+        .no-print {
+            display: none !important;
+        }
+        body {
+            background-color: #ffffff;
+            color: #000000;
+        }
+        .print-container {
+            width: 100% !important;
+            max-width: 100% !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+    }
+</style>
+
+<div class="max-w-4xl mx-auto my-6 no-print flex justify-between items-center bg-gray-50 p-4 rounded border">
+    <div class="text-sm text-gray-600">
+        <i class="fa-solid fa-circle-check text-green-500 mr-1"></i> Dokumen Berhasil Dibuat! Silakan periksa kembali sebelum dicetak.
+    </div>
+    <div class="flex space-x-2">
+        <a href="/sample-submissions" class="px-4 py-2 border rounded text-sm bg-white hover:bg-gray-50 text-gray-700">
+            <i class="fa-solid fa-plus mr-1"></i> Buat Baru
+        </a>
+        <button onclick="window.print()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded text-sm transition cursor-pointer">
+            <i class="fa-solid fa-print mr-1"></i> Cetak / Save PDF
+        </button>
+    </div>
+</div>
+
+<!-- CONTAINER UTAMA DOKUMEN (BERSIH TANPA KOP SURAT) -->
+<div class="print-container max-w-4xl mx-auto bg-white p-8 shadow rounded border border-gray-200">
+    
+    <!-- Judul Dokumen -->
+    <div class="text-center border-b-2 border-black pb-4 mb-6">
+        <h1 class="text-xl font-bold uppercase tracking-wider text-black">Form Pengajuan Sample Produk {{ s.company }}</h1>
+        <p class="text-sm font-mono text-gray-600 mt-1">Kode Dokumen: <span class="font-bold text-black">{{ s.sample_code }}</span></p>
+    </div>
+
+    <!-- Informasi Utama (Grid Tabel) -->
+    <table class="w-full border-collapse border border-black text-sm text-black mb-6">
+        <tbody>
+            <tr>
+                <td class="w-1/4 border border-black px-3 py-2 bg-gray-50 font-semibold">Produsen</td>
+                <td class="w-3/4 border border-black px-3 py-2">
+                    {{ s.brands.producers.name if s.brand_id else s.draft_producer }}
+                </td>
+            </tr>
+            <tr>
+                <td class="border border-black px-3 py-2 bg-gray-50 font-semibold">Merk / Brand</td>
+                <td class="border border-black px-3 py-2">
+                    {{ s.brands.name if s.brand_id else s.draft_brand }}
+                </td>
+            </tr>
+            <tr>
+                <td class="border border-black px-3 py-2 bg-gray-50 font-semibold">Nama Produk</td>
+                <td class="border border-black px-3 py-2 font-medium">{{ s.product_name }}</td>
+            </tr>
+            <tr>
+                <td class="border border-black px-3 py-2 bg-gray-50 font-semibold">Item Produk</td>
+                <td class="border border-black px-3 py-2">{{ s.product_item or '-' }}</td>
+            </tr>
+            <tr>
+                <td class="border border-black px-3 py-2 bg-gray-50 font-semibold">Spesifikasi Fisik</td>
+                <td class="border border-black px-3 py-2">
+                    <span class="mr-6">Netto: {{ s.netto or '-' }}</span>
+                    <span class="mr-6">Sediaan: {{ s.sediaan or '-' }}</span>
+                    <span>Kemasan: {{ s.kemasan or '-' }}</span>
+                </td>
+            </tr>
+            <tr>
+                <td class="border border-black px-3 py-2 bg-gray-50 font-semibold">Revisi Sampel</td>
+                <td class="border border-black px-3 py-2 font-mono">Ke-{{ s.revision_number }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Detail Formulasi & Keterangan -->
+    <div class="space-y-4 text-sm text-black mb-8">
+        <div class="border border-black p-3 rounded">
+            <h3 class="font-bold uppercase border-b border-black pb-1 mb-2 bg-gray-50 -mx-3 -mt-3 px-3 py-1">Bahan Aktif (Hero Ingredient)</h3>
+            <p class="whitespace-pre-line">{{ s.hero_ingredient or 'Tidak ada bahan aktif spesifik yang dicantumkan.' }}</p>
+        </div>
+
+        <div class="border border-black p-3 rounded">
+            <h3 class="font-bold uppercase border-b border-black pb-1 mb-2 bg-gray-50 -mx-3 -mt-3 px-3 py-1">Keterangan Tambahan (Target Parameter)</h3>
+            <div class="grid grid-cols-3 gap-2 font-mono text-xs">
+                <div>Target pH: {{ s.additional_notes.ph or '-' }}</div>
+                <div>Viskositas: {{ s.additional_notes.viscosity or '-' }}</div>
+                <div>Warna Sediaan: {{ s.additional_notes.color or '-' }}</div>
+            </div>
+        </div>
+
+        <div class="border border-black p-3 rounded">
+            <h3 class="font-bold uppercase border-b border-black pb-1 mb-2 bg-gray-50 -mx-3 -mt-3 px-3 py-1">Deskripsi / Catatan R&D</h3>
+            <p class="whitespace-pre-line">{{ s.description or '-' }}</p>
+        </div>
+    </div>
+
+    <!-- AREA TANDA TANGAN (FIX 2 KOLOM QC & R&D) -->
+    <div class="mt-16 grid grid-cols-2 gap-12 text-center text-sm text-black">
+        <div class="flex flex-col justify-between h-32">
+            <span class="font-bold uppercase">Dibuat / Diperiksa Oleh (QC)</span>
+            <div class="mx-auto w-56 border-b border-black font-medium pb-1">
+                {{ s.qc_signer }}
+            </div>
+        </div>
+        <div class="flex flex-col justify-between h-32">
+            <span class="font-bold uppercase">Disetujui Oleh (R&D)</span>
+            <div class="mx-auto w-56 border-b border-black font-medium pb-1">
+                {{ s.rd_signer }}
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

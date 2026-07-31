@@ -5,6 +5,8 @@ from fastapi.templating import Jinja2Templates
 from typing import List
 from app.database import supabase
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime
+import uuid
 
 app = FastAPI(title="DIP Kosmetik Automation")
 
@@ -712,3 +714,228 @@ async def delete_product(product_id: str):
     except Exception as e:
         print(f"Gagal hapus produk {product_id}: {e}")
     return RedirectResponse(url="/", status_code=303)
+
+@app.post("/sample-submissions/create")
+async def create_sample_submission(
+    request: Request,
+    brand_id: str = Form(...),
+    company: str = Form(...),
+    custom_producer: str = Form(None),
+    custom_brand: str = Form(None),
+    product_id: str = Form(None),
+    product_name: str = Form(...),
+    product_item: str = Form(None),
+    netto: str = Form(None),
+    sediaan: str = Form(None),
+    kemasan: str = Form(None),
+    hero_ingredient: str = Form(None),
+    description: str = Form(None),
+    qc_signer: str = Form(...),
+    rd_signer: str = Form(...),
+    # Catatan tambahan dikirim sebagai form teks biasa dulu nanti kita bungkus ke JSON
+    ph_value: str = Form(None),
+    viscosity_value: str = Form(None),
+    color_value: str = Form(None)
+):
+    today_str = datetime.now().strftime("%d-%m-%Y")
+    
+    # --- 1. LOGIKAHITUNG X.Y (OTOMATIS) ---
+    # Cari tahu total produk berbeda hari ini untuk menentukan X
+    # Cari tahu total percobaan untuk produk yang sama hari ini untuk menentukan Y
+    # Untuk sementara lu bisa pakai dummy increment atau query count dari DB.
+    try:
+        # Ambil data submission khusus yang dibuat dari awal hari ini (WIB)
+        start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        
+        today_submissions = supabase.table("sample_submissions") \
+            .select("sample_code, product_name") \
+            .gte("created_at", start_of_day) \
+            .execute()
+        
+        existing_records = today_submissions.data or []
+        
+        # Cari urutan produk BERBEDA hari ini untuk nentuin nilai X
+        distinct_products = list(dict.fromkeys([r['product_name'] for r in existing_records]))
+        
+        if product_name in distinct_products:
+            x_index = distinct_products.index(product_name) + 1
+        else:
+            x_index = len(distinct_products) + 1
+            
+        # Cari total trial untuk produk yang SAMA khusus hari ini untuk nentuin nilai Y
+        same_product_trials = [r for r in existing_records if r['product_name'] == product_name]
+        y_index = len(same_product_trials) + 1
+        
+        sample_code = f"FSP/{today_str}/{x_index}.{y_index}" #[cite: 1]
+        
+        # Hitung nomor revisi kumulatif (all-time) untuk produk ini[cite: 1]
+        all_time_trials = supabase.table("sample_submissions") \
+            .select("id") \
+            .eq("product_name", product_name) \
+            .execute()
+        
+        revision_number = (len(all_time_trials.data) or 0) + 1 #[cite: 1]
+
+    except Exception as e:
+        print(f"Gagal hitung logic kode FSP otomatis: {e}")
+        sample_code = f"FSP/{today_str}/1.1"
+        revision_number = 1
+    
+    # --- 2. PENANGANAN AUTO-SAVE DRAFT KE MASTER PRODUSEN/MERK ---
+    if brand_id == "new":
+        try:
+            # 2a. Cek dulu apakah nama produsen ini udah ada di master (biar ga duplikat)
+            prod_check = supabase.table("producers") \
+                .select("id") \
+                .ilike("name", custom_producer.strip()) \
+                .execute()
+            
+            if prod_check.data:
+                producer_id = prod_check.data[0]['id']
+            else:
+                # Kalau belum ada, insert produsen baru ke master
+                new_prod = supabase.table("producers") \
+                    .insert({"name": custom_producer.strip()}) \
+                    .execute()
+                producer_id = new_prod.data[0]['id']
+            
+            # 2b. Cek apakah brand ini udah ada di bawah produsen tersebut
+            brand_check = supabase.table("brands") \
+                .select("id") \
+                .eq("producer_id", producer_id) \
+                .ilike("name", custom_brand.strip()) \
+                .execute()
+                
+            if brand_check.data:
+                final_brand_id = brand_check.data[0]['id']
+            else:
+                # Kalau belum ada, insert brand baru dengan relasi producer_id
+                new_brnd = supabase.table("brands") \
+                    .insert({
+                        "producer_id": producer_id,
+                        "name": custom_brand.strip()
+                    }) \
+                    .execute()
+                final_brand_id = new_brnd.data[0]['id']
+                
+            # Tetap simpan log teks ketikan pertamanya di kolom draft buat backup histori
+            draft_prod = custom_producer
+            draft_brnd = custom_brand
+
+        except Exception as e:
+            print(f"Gagal auto-save master brand/producer: {e}")
+            # Fallback aman jika query master gagal, tetep lolos sebagai draft murni
+            final_brand_id = None
+            draft_prod = custom_producer
+            draft_brnd = custom_brand
+    else:
+        # Jika user milih brand resmi dari dropdown
+        final_brand_id = brand_id
+        draft_prod = None
+        draft_brnd = None
+    
+    # --- 3. BUNGKUS JSON UNTUK CATATAN TAMBAHAN ---
+    additional_notes = {
+        "ph": ph_value,
+        "viscosity": viscosity_value,
+        "color": color_value
+    }
+
+    # 4. INSERT KE SUPABASE
+    try:
+        data_to_insert = {
+            # ... data_to_insert lu yang lama tetep biarkan ...
+            "sample_code": sample_code,
+            "company": company,
+            "brand_id": final_brand_id,
+            "product_name": product_name,
+            "product_item": product_item if product_item else product_name,
+            "netto": netto,
+            "sediaan": sediaan,
+            "kemasan": kemasan,
+            "revision_number": revision_number,
+            "hero_ingredient": hero_ingredient,
+            "description": description,
+            "additional_notes": additional_notes,
+            "qc_signer": qc_signer,
+            "rd_signer": rd_signer,
+            "draft_producer": draft_prod,
+            "draft_brand": draft_brnd
+        }
+        
+        # Tambahkan .execute() dan tangkap hasilnya buat ambil ID dokumen baru
+        result = supabase.table("sample_submissions").insert(data_to_insert).execute()
+        new_id = result.data[0]['id']
+        
+    except Exception as e:
+        print(f"Eror saat simpan form sample: {e}")
+        raise HTTPException(status_code=500, detail="Gagal menyimpan dokumen.")
+        
+    # UBAH REDIRECT KE HALAMAN PREVIEW BERDASARKAN ID BARU
+    return RedirectResponse(url=f"/sample-submissions/preview/{new_id}", status_code=303)
+
+@app.get("/sample-submissions", response_class=HTMLResponse)
+async def sample_submissions_list(request: Request, search: str = None):
+    try:
+        # Inisialisasi query dasar
+        query = supabase.table("sample_submissions").select("*, brands(*, producers(*))")
+        
+        # Jika ada input di searchbar, filter berdasarkan kode dokumen atau nama produk
+        if search:
+            search_term = f"%{search}%"
+            # Melakukan filter OR pada sample_code atau product_name
+            query = query.or_(f"sample_code.ilike.{search_term},product_name.ilike.{search_term}")
+        
+        # Urutkan dari yang terbaru
+        result = query.order("created_at", desc=True).execute()
+        submissions = result.data or []
+    except Exception as e:
+        print(f"Gagal ambil list sample dengan search: {e}")
+        submissions = []
+        
+    return templates.TemplateResponse(
+        request=request,
+        name="sample_list.html",
+        context={"submissions": submissions, "search_value": search or ""}
+    )
+
+@app.get("/sample-submissions/form", response_class=HTMLResponse)
+async def sample_submission_form(request: Request):
+    try:
+        brand_query = supabase.table("brands").select("*, producers(*)").execute()
+        brands = brand_query.data or []
+        
+        product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan").execute()
+        products = product_query.data or []
+    except Exception as e:
+        print(f"Gagal ambil data pendukung form: {e}")
+        brands, products = [], []
+        
+    return templates.TemplateResponse(
+        request=request,
+        name="sample_form.html",
+        context={"brands": brands, "products": products}
+    )
+
+@app.get("/sample-submissions/preview/{submission_id}", response_class=HTMLResponse)
+async def sample_submission_preview(request: Request, submission_id: str):
+    try:
+        # Ambil data submission spesifik beserta join brand & produsen
+        query = supabase.table("sample_submissions") \
+            .select("*, brands(*, producers(*))") \
+            .eq("id", submission_id) \
+            .execute()
+            
+        if not query.data:
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+            
+        submission = query.data[0]
+    except Exception as e:
+        print(f"Gagal ambil data preview: {e}")
+        raise HTTPException(status_code=500, detail="Gagal memuat preview dokumen.")
+        
+    return templates.TemplateResponse(
+        request=request,
+        name="sample_preview.html",
+        context={"s": submission}
+    )
