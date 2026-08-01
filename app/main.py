@@ -6,6 +6,11 @@ from typing import List
 from app.database import supabase
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+# Zona waktu bisnis (WIB) — dipakai buat semua logika berbasis "hari ini"
+# (kode FSP, hitungan revisi) biar gak geser gara-gara server jalan di UTC.
+WIB = ZoneInfo("Asia/Jakarta")
 import uuid
 
 app = FastAPI(title="DIP Kosmetik Automation")
@@ -885,16 +890,21 @@ async def create_sample_submission(
     final_product_id = None if not product_id else product_id
     if final_product_id:
         # Jalur kilat: Tarik data asli dari master produk
-        prod_master = supabase.table("products").select("nama_produk", "company").eq("id", final_product_id).execute()
+        # Kolom di tabel products namanya "perusahaan", bukan "company" (bug #2)
+        prod_master = supabase.table("products").select("nama_produk", "perusahaan").eq("id", final_product_id).execute()
         if prod_master.data:
             final_product_name = prod_master.data[0]['nama_produk']
-            final_company = prod_master.data[0]['company']
+            final_company = prod_master.data[0]['perusahaan']
+        else:
+            # Fallback: product_id dikirim tapi nggak ketemu di database -> pakai input form manual
+            final_product_name = product_name
+            final_company = company
     else:
         # Jalur manual: Pakai inputan ketikan dari form
         final_product_name = product_name
         final_company = company
 
-    today_str = datetime.now().strftime("%d-%m-%Y")
+    today_str = datetime.now(WIB).strftime("%d-%m-%Y")
     
     # --- 1. LOGIKAHITUNG X.Y (OTOMATIS) ---
     # Cari tahu total produk berbeda hari ini untuk menentukan X
@@ -902,7 +912,7 @@ async def create_sample_submission(
     # Untuk sementara lu bisa pakai dummy increment atau query count dari DB.
     try:
         # Ambil data submission khusus yang dibuat dari awal hari ini (WIB)
-        start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        start_of_day = datetime.now(WIB).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         
         today_submissions = supabase.table("sample_submissions") \
             .select("sample_code, product_name") \
@@ -914,13 +924,13 @@ async def create_sample_submission(
         # Cari urutan produk BERBEDA hari ini untuk nentuin nilai X
         distinct_products = list(dict.fromkeys([r['product_name'] for r in existing_records]))
         
-        if product_name in distinct_products:
-            x_index = distinct_products.index(product_name) + 1
+        if final_product_name in distinct_products:
+            x_index = distinct_products.index(final_product_name) + 1
         else:
             x_index = len(distinct_products) + 1
             
         # Cari total trial untuk produk yang SAMA khusus hari ini untuk nentuin nilai Y
-        same_product_trials = [r for r in existing_records if r['product_name'] == product_name]
+        same_product_trials = [r for r in existing_records if r['product_name'] == final_product_name]
         y_index = len(same_product_trials) + 1
         
         sample_code = f"FSP/{today_str}/{x_index}.{y_index}" #[cite: 1]
@@ -928,7 +938,7 @@ async def create_sample_submission(
         # Hitung nomor revisi kumulatif (all-time) untuk produk ini[cite: 1]
         all_time_trials = supabase.table("sample_submissions") \
             .select("id") \
-            .eq("product_name", product_name) \
+            .eq("product_name", final_product_name) \
             .execute()
         
         revision_number = (len(all_time_trials.data) or 0) + 1 #[cite: 1]
@@ -1004,10 +1014,10 @@ async def create_sample_submission(
             # ... data_to_insert lu yang lama tetep biarkan ...
             "sample_code": sample_code,
             "product_id": final_product_id,
-            "company": company,
+            "company": final_company,
             "brand_id": final_brand_id,
-            "product_name": product_name,
-            "product_item": product_item if product_item else product_name,
+            "product_name": final_product_name,
+            "product_item": product_item if product_item else final_product_name,
             "netto": netto,
             "sediaan": sediaan,
             "kemasan": kemasan,
@@ -1063,7 +1073,8 @@ async def sample_submission_form(request: Request):
         brand_query = supabase.table("brands").select("*, producers(*)").execute()
         brands = brand_query.data or []
         
-        product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan").execute()
+        # Kolom di tabel products namanya "perusahaan", bukan "company" (bug #2)
+        product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan, perusahaan").execute()
         products = product_query.data or []
     except Exception as e:
         print(f"Gagal ambil data pendukung form: {e}")
@@ -1072,8 +1083,10 @@ async def sample_submission_form(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="sample_form.html",
-        context={"brands": brands, "products": products}
+        # Key "existing_products" harus sama persis kayak yang dipakai template (bug #1)
+        context={"brands": brands, "existing_products": products}
     )
+
 
 @app.get("/sample-submissions/preview/{submission_id}", response_class=HTMLResponse)
 async def sample_submission_preview(request: Request, submission_id: str):
