@@ -85,12 +85,15 @@ async def get_current_user(request: Request):
         
     except Exception as e:
         print(f"Token invalid atau expired: {e}")
-        # Kalo tokennya ngaco/expired, hapus cookie dan tendang balik ke login
-        response = RedirectResponse(url="/login", status_code=303)
-        response.delete_cookie(key="access_token")
+        # Kalo tokennya ngaco/expired, hapus cookie dan tendang balik ke login.
+        # PENTING: instruksi hapus cookie harus nempel di header HTTPException yang
+        # di-raise, bukan di response terpisah yang nggak pernah dipakai/dibuang.
         raise HTTPException(
             status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": "/login"}
+            headers={
+                "Location": "/login",
+                "Set-Cookie": "access_token=; Max-Age=0; Path=/; HttpOnly; SameSite=lax"
+            }
         )
 
 
@@ -1120,49 +1123,49 @@ async def manage_users_page(request: Request, current_user: dict = Depends(get_c
         context={"request": request, "user": current_user, "users": users_list}
     )
 
-# 1. TAMPILAN HALAMAN REGISTER PUBLIK (TANPA GEMBOK LOGIN)
-@app.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request):
-    return templates.TemplateResponse(request=request, name="register.html")
+# CATATAN: Self-register publik (GET/POST /register) sengaja DIHAPUS.
+# Alasan: app internal perusahaan dengan data sensitif (formula, harga, dokumen regulasi).
+# Pembuatan akun sekarang cuma bisa lewat admin, lihat POST /admin/users/create di bawah.
 
-# 2. PROSES DAFTAR AKUN MANDIRI (TANPA GEMBOK LOGIN)
-@app.post("/register")
-async def register_user_submit(
+# 1. PROSES ADMIN BIKIN AKUN USER BARU (KHUSUS ADMIN)
+@app.post("/admin/users/create")
+async def admin_create_user(
     email: str = Form(...),
     username: str = Form(...),
     password: str = Form(...),
-    confirm_password: str = Form(...)
+    role: str = Form("staff"),
+    current_user: dict = Depends(get_current_user)
 ):
+    # Proteksi: cuma admin yang boleh bikin akun baru
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+
     try:
-        # 1. Validasi kecocokan password
-        if password != confirm_password:
-            return RedirectResponse(url="/register?error=password_mismatch", status_code=303)
-            
         clean_username = username.strip().lower()
         clean_email = email.strip().lower()
-        
-        # 2. Daftarin ke Supabase Auth Service pake email asli yang diinput user
+
+        # Daftarin ke Supabase Auth Service, langsung confirmed (dibuat admin, bukan self-register)
         auth_res = supabase.auth.admin.create_user({
             "email": clean_email,
             "password": password,
             "email_confirm": True
         })
-        
+
         new_uid = auth_res.user.id
-        
-        # 3. Inject ke tabel profiles, full_name kita isi username biar sinkron sama login murni username
+
+        # Inject ke tabel profiles dengan role yang dipilih admin (default staff)
         supabase.table("profiles").insert({
             "id": new_uid,
-            "full_name": clean_username, 
-            "role": "staff",
+            "full_name": clean_username,
+            "role": role if role in ("staff", "admin") else "staff",
             "updated_at": "now()"
         }).execute()
-        
-        return RedirectResponse(url="/login?status=register_success", status_code=303)
-        
+
+        return RedirectResponse(url="/admin/users?status=create_success", status_code=303)
+
     except Exception as e:
-        print(f"Gagal registrasi mandiri: {e}")
-        return RedirectResponse(url="/register?error=failed", status_code=303)
+        print(f"Gagal bikin user baru (admin): {e}")
+        return RedirectResponse(url="/admin/users?error=create_failed", status_code=303)
 
 # 3. PROSES UPDATE ROLE USER (POST)
 @app.post("/admin/users/update-role")
