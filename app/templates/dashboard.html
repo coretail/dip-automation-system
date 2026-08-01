@@ -142,7 +142,7 @@
 </div>
 
 <!-- === 2. ISI KONTEN TABEL (Full Width) === -->
-<div class="bg-white shadow-sm rounded-lg border border-gray-200 overflow-hidden">
+<div class="bg-white shadow-sm rounded-lg border border-gray-200">
     
     <!-- ================= CONTEN TAB 1: MASTER PRODUK ================= -->
     <div id="master-produk-tab" class="tab-content block overflow-x-auto">
@@ -157,11 +157,15 @@
                 </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-                {% for product in products[:5] %}
-                <tr class="hover:bg-gray-50 transition">
+                {% for product in products %}
+                <tr class="product-row hover:bg-gray-50 transition"
+                    data-nama="{{ (product.nama_produk or '') | lower }}" 
+                    data-customer="{{ (product.nama_customer or '') | lower }}" 
+                    data-perusahaan="{{ product.perusahaan or '' }}" 
+                    data-status="{{ product.status_na or '' }}">
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-bold text-gray-900 uppercase">{{ product.nama_produk }}</div>
-                        <div class="text-xs text-gray-400 font-mono">ID: {{ product.id[:8] }}...</div>
+                        <div class="text-sm font-bold text-gray-900 uppercase">{{ product.nama_produk or 'TANPA NAMA' }}</div>
+                        <div class="text-xs text-gray-400 font-mono">ID: {{ product.id[:8] if product.id else '-' }}...</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ product.nama_customer or '-' }}</div>
@@ -189,12 +193,42 @@
                             BPOM: {% if product.status_na == 'aktif' %}<span class="text-green-600 font-medium">{{ product.no_na_produk }}</span>{% else %}Belum Terdaftar{% endif %}
                         </div>
                     </td>
+                    <!-- Kolom Aksi -->
                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div class="flex items-center justify-end gap-1.5">
-                            <a href="/products/{{ product.id }}/edit" class="p-1.5 bg-amber-500 text-white rounded hover:bg-amber-600"><i class="fa-solid fa-pen-to-square text-xs"></i></a>
-                            <a href="/products/{{ product.id }}" class="p-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100"><i class="fa-solid fa-flask text-xs"></i></a>
+                            <!-- 1. Tombol Formula Builder (Ungu) -->
+                            <a href="/products/{{ product.id }}" class="p-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100" title="Formula Builder">
+                                <i class="fa-solid fa-flask text-xs"></i>
+                            </a>
+
+                            <!-- 2. Tombol INCI Breakdown Report (Hijau) -->
+                            <a href="/products/{{ product.id }}/inci-breakdown/report" class="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100" title="INCI Report">
+                                <i class="fa-solid fa-dna text-xs"></i>
+                            </a>
+
+                            <!-- 3. Tombol Download Dokumen Qual-Quan / Excel (Biru) -->
+                            <a href="/products/{{ product.id }}/qualitative-quantitative" class="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100" title="Qual-Quan Document">
+                                <i class="fa-solid fa-file-excel text-xs"></i>
+                            </a>
+
+                            <!-- 4. Tombol Edit Info Produk (Oranye) -->
+                            <a href="/products/{{ product.id }}/edit" class="p-1.5 bg-amber-500 text-white rounded hover:bg-amber-600" title="Edit Produk">
+                                <i class="fa-solid fa-pen-to-square text-xs"></i>
+                            </a>
+
+                            <!-- 5. Tombol Hapus Produk (Merah) -->
+                            <a href="/products/delete/{{ product.id }}" 
+                            onclick="return confirm('Yakin mau hapus produk ini? Semua formula di dalamnya bakal ikut kehapus men.')"
+                            class="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100" 
+                            title="Hapus Produk">
+                                <i class="fa-solid fa-trash-can text-xs"></i>
+                            </a>
                         </div>
                     </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="px-6 py-8 text-center text-gray-400">Belum ada data produk master.</td>
                 </tr>
                 {% endfor %}
             </tbody>
