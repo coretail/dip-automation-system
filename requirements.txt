@@ -4,4 +4,4 @@ supabase
 pydantic-settings
 jinja2
 python-multipart
-tzdate
+tzdata
