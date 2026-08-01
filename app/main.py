@@ -7,7 +7,11 @@ from app.database import supabase
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from supabase import create_client
+import os
 
+from dotenv import load_dotenv
+load_dotenv()
 # Zona waktu bisnis (WIB) — dipakai buat semua logika berbasis "hari ini"
 # (kode FSP, hitungan revisi) biar gak geser gara-gara server jalan di UTC.
 WIB = ZoneInfo("Asia/Jakarta")
@@ -116,31 +120,43 @@ async def login_page(request: Request):
     )
 
 # ================= 2. ROUTE PROSES LOGIN (POST) =================
+from supabase import create_client
+import os
+
 @app.post("/login")
 async def login_submit(
     response: Response,
-    email: str = Form(...), # Ini nangkep input username/email dari form
+    email: str = Form(...), # Menangkap input dari form (bisa email ataupun username)
     password: str = Form(...)
 ):
     try:
         login_identifier = email.strip()
         
+        # 1. Ambil langsung variabel dari environment yang udah di-load sempurna di atas
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        
+        # Validasi darurat biar keliatan di log terminal lu kalau env lu masih kosong
+        if not supabase_url or not supabase_service_key:
+            print("❌ Eror: SUPABASE_URL atau SUPABASE_SERVICE_ROLE_KEY di file .env kagak kebaca men!")
+            
+        supabase_admin = create_client(supabase_url, supabase_service_key)
+        
         # JIKA YANG DIINPUT BUKAN EMAIL (GA ADA TANDA @)
         if "@" not in login_identifier:
-            # Cari di tabel profiles berdasarkan nama/username
-            profile_query = supabase.table("profiles").select("id").eq("full_name", login_identifier).execute()
+            # Cari di tabel profiles menggunakan client admin bebas hambatan
+            profile_query = supabase_admin.table("profiles").select("id").eq("full_name", login_identifier.lower()).execute()
             
             if profile_query.data:
-                # Kalo username ketemu, kita cari email aslinya via admin auth di Supabase
-                # Catatan: Ini cara paling dinamis & aman tanpa hardcode email
+                # Kalo username ketemu, ambil email aslinya via admin auth service
                 user_id = profile_query.data[0]["id"]
-                user_auth_data = supabase.auth.admin.get_user_by_id(user_id)
+                user_auth_data = supabase_admin.auth.admin.get_user_by_id(user_id)
                 login_identifier = user_auth_data.user.email
             else:
                 # Kalo ga ketemu di profiles, fallback otomatis pake domain kantor
-                login_identifier = f"{login_identifier}@erfi.com"
+                login_identifier = f"{login_identifier.lower()}@erfi.com"
             
-        # Tembak ke Supabase Auth pake email asli yang udah dapet dari DB
+        # 2. Tembak proses sign-in tetap pake client global bawaan aplikasi utama
         auth_response = supabase.auth.sign_in_with_password({
             "email": login_identifier,
             "password": password
