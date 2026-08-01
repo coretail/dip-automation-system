@@ -139,6 +139,7 @@
             <thead class="bg-gray-50 text-xs font-semibold text-gray-700 uppercase tracking-wider text-left">
                 <tr>
                     <th class="px-4 py-3">Tgl Terima</th>
+                    <th class="px-4 py-3">Tgl ED</th>
                     <th class="px-4 py-3">Supplier</th>
                     <th class="px-4 py-3">Nama Bahan Baku</th>
                     <th class="px-4 py-3">Lot / Batch No.</th>
@@ -153,6 +154,9 @@
                 <tr class="hover:bg-gray-50 batch-row">
                     <!-- Tanggal Terima -->
                     <td class="px-4 py-3 whitespace-nowrap font-mono text-xs">{{ b.tanggal_terima_sampel or '-' }}</td>
+
+                    <!-- Tanggal ED -->
+                    <td class="px-4 py-3 whitespace-nowrap font-mono text-xs">{{ b.tanggal_ed or '-' }}</td>
                     
                     <!-- Supplier -->
                     <td class="px-4 py-3 whitespace-nowrap">{{ b.supplier or '-' }}</td>
@@ -221,7 +225,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" class="px-6 py-12 text-center text-sm text-gray-500">
+                    <td colspan="9" class="px-6 py-12 text-center text-sm text-gray-500">
                         Belum ada data kedatangan batch yang tercatat.
                     </td>
                 </tr>
@@ -353,6 +357,12 @@
                 <div class="mb-3">
                     <label class="block text-xs font-semibold text-gray-600 uppercase">Tanggal Terima Sampel</label>
                     <input type="date" name="tanggal_terima_sampel" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2 border">
+                </div>
+
+                <div class="mb-3">
+                    <label class="block text-xs font-semibold text-gray-600 uppercase">Tanggal ED (Expired Date)</label>
+                    <input type="date" name="tanggal_ed" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm p-2 border">
+                    <p class="text-[11px] text-gray-400 mt-1">Diisi manual oleh tim R&D sesuai batch yang diterima.</p>
                 </div>
 
                 <div class="mb-3">
