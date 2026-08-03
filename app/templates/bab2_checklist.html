@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    body { font-family: Helvetica, sans-serif; font-size: 10pt; color: #1a1a1a; }
+    h1 { font-size: 14pt; margin-bottom: 2px; }
+    h2 { font-size: 12pt; margin-top: 18px; margin-bottom: 6px; border-bottom: 1px solid #444; padding-bottom: 3px; }
+    p.subtitle { font-size: 9pt; color: #555; margin-top: 0; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    td, th { border: 1px solid #999; padding: 5px 7px; font-size: 9pt; text-align: left; vertical-align: top; }
+    th { background-color: #eeeeee; }
+</style>
+</head>
+<body>
+    <h1>BAB II — DATA MUTU DAN KEAMANAN BAHAN KOSMETIKA</h1>
+    <p class="subtitle">Produk: <strong>{{ product.nama_produk or '-' }}</strong> &nbsp;|&nbsp; Perusahaan: {{ product.perusahaan or '-' }}</p>
+
+    <h2>A. Checklist Kelengkapan Data</h2>
+    <table>
+        <tr>
+            <th style="width: 30px;">No</th>
+            <th>Item</th>
+            <th style="width: 100px;">Status</th>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>Prosedur Tetap Pemeriksaan Bahan Baku (SOP CPKB)</td>
+            <td>Terlampir</td>
+        </tr>
+        <tr>
+            <td>2</td>
+            <td>Spesifikasi Bahan Baku</td>
+            <td>Terlampir</td>
+        </tr>
+        <tr>
+            <td>3</td>
+            <td>Catatan Pemeriksaan Bahan Baku</td>
+            <td>Terlampir</td>
+        </tr>
+        <tr>
+            <td>4</td>
+            <td>Certificate of Analysis (CoA)</td>
+            <td>Terlampir</td>
+        </tr>
+        <tr>
+            <td>5</td>
+            <td>Sertifikat Halal</td>
+            <td>Terlampir</td>
+        </tr>
+        <tr>
+            <td>6</td>
+            <td>Material Safety Data Sheet (MSDS)</td>
+            <td>Terlampir</td>
+        </tr>
+    </table>
+
+    <p style="font-size: 8.5pt; color: #666;">
+        Catatan: Prosedur Tetap Pemeriksaan Bahan Baku (SOP CPKB) dilampirkan setelah halaman ini.
+        Spesifikasi, Catatan Pemeriksaan, CoA, Sertifikat Halal, dan MSDS dilampirkan per bahan baku
+        secara berurutan di halaman selanjutnya.
+    </p>
+</body>
+</html>

@@ -926,50 +926,65 @@ async def download_bab2_document(product_id: str):
         .execute()
     sop_url = sop_resp.data[0]["file_url"] if sop_resp.data else None
 
-    # 5. Render bagian yang di-generate (Checklist + Spesifikasi + Catatan) jadi HTML -> PDF
-    html_content = templates.env.get_template("bab2_generated.html").render(
-        product=product,
-        materials_data=materials_data
-    )
+    # 5. Render Checklist (halaman pembuka) jadi PDF sendiri
+    checklist_html = templates.env.get_template("bab2_checklist.html").render(product=product)
+    checklist_buffer = io.BytesIO()
+    checklist_status = pisa.CreatePDF(src=checklist_html, dest=checklist_buffer)
+    if checklist_status.err:
+        raise HTTPException(status_code=500, detail="Gagal generate halaman Checklist Bab II.")
+    checklist_buffer.seek(0)
 
-    generated_pdf_buffer = io.BytesIO()
-    pisa_status = pisa.CreatePDF(src=html_content, dest=generated_pdf_buffer)
-    if pisa_status.err:
-        raise HTTPException(status_code=500, detail="Gagal generate PDF dari data Bab II.")
-    generated_pdf_buffer.seek(0)
-
-    # 6. Gabungin semua PDF jadi satu: [Generated] + [SOP CPKB] + [CoA per bahan baku]
+    # 6. Gabungin PDF sesuai urutan request BPOM:
+    # Checklist -> SOP CPKB -> per bahan baku: (Spesifikasi + Catatan -> CoA -> Halal -> MSDS)
     writer = PdfWriter()
 
-    reader_generated = PdfReader(generated_pdf_buffer)
-    for page in reader_generated.pages:
+    for page in PdfReader(checklist_buffer).pages:
         writer.add_page(page)
 
-    async with httpx.AsyncClient() as client:
-        # 6a. SOP CPKB
-        if sop_url:
-            try:
-                resp = await client.get(sop_url, timeout=30)
-                resp.raise_for_status()
-                sop_reader = PdfReader(io.BytesIO(resp.content))
-                for page in sop_reader.pages:
-                    writer.add_page(page)
-            except Exception as e:
-                print(f"Gagal ambil SOP CPKB ({perusahaan}): {e}")
+    async def append_pdf_from_url(client: httpx.AsyncClient, url: str, label: str):
+        """Ambil PDF dari URL Supabase Storage dan tempelin ke writer. Gagal ambil 1 file gak boleh gagalin seluruh dokumen -> di-skip aja + di-print ke log."""
+        if not url:
+            return
+        try:
+            resp = await client.get(url, timeout=30)
+            resp.raise_for_status()
+            reader = PdfReader(io.BytesIO(resp.content))
+            for page in reader.pages:
+                writer.add_page(page)
+        except Exception as e:
+            print(f"Gagal ambil {label}: {e}")
 
-        # 6b. CoA tiap bahan baku (dari batch terbaru masing-masing)
-        for item in materials_data:
+    async with httpx.AsyncClient() as client:
+        # 6a. SOP CPKB (tetap di depan, setelah Checklist)
+        await append_pdf_from_url(client, sop_url, f"SOP CPKB ({perusahaan})")
+
+        # 6b. Per bahan baku, jadi 1 paket berurutan:
+        # Spesifikasi + Catatan Pemeriksaan (di-generate) -> CoA -> Halal -> MSDS
+        for idx, item in enumerate(materials_data, start=1):
+            material = item["material"]
             batch = item["batch"]
+            nama_bahan = material.get("nama_dagang", "?")
+
+            # Render blok spesifikasi + catatan pemeriksaan khusus bahan baku ini
+            material_html = templates.env.get_template("bab2_material_block.html").render(
+                item=item, index=idx
+            )
+            material_buffer = io.BytesIO()
+            material_status = pisa.CreatePDF(src=material_html, dest=material_buffer)
+            if material_status.err:
+                print(f"Gagal generate blok Spesifikasi+Catatan bahan baku {nama_bahan}")
+            else:
+                material_buffer.seek(0)
+                for page in PdfReader(material_buffer).pages:
+                    writer.add_page(page)
+
             coa_url = batch.get("coa_file_url") if batch else None
-            if coa_url:
-                try:
-                    resp = await client.get(coa_url, timeout=30)
-                    resp.raise_for_status()
-                    coa_reader = PdfReader(io.BytesIO(resp.content))
-                    for page in coa_reader.pages:
-                        writer.add_page(page)
-                except Exception as e:
-                    print(f"Gagal ambil CoA bahan baku {item['material'].get('nama_dagang')}: {e}")
+            halal_url = batch.get("halal_batch_file_url") if batch else None
+            msds_url = material.get("msds_file_url")
+
+            await append_pdf_from_url(client, coa_url, f"CoA bahan baku {nama_bahan}")
+            await append_pdf_from_url(client, halal_url, f"Sertifikat Halal bahan baku {nama_bahan}")
+            await append_pdf_from_url(client, msds_url, f"MSDS bahan baku {nama_bahan}")
 
     output_buffer = io.BytesIO()
     writer.write(output_buffer)
