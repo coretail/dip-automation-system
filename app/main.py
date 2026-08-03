@@ -58,6 +58,14 @@ COMPANY_INFO = {
 
 templates.env.filters["clean_pct"] = clean_pct
 
+@app.on_event("startup")
+async def print_routes():
+    for route in app.routes:
+        if hasattr(route, "methods"):
+            print(f"{list(route.methods)} - {route.path}")
+        else:
+            print(f"[MOUNT/STATIC] - {route.path}")
+
 # ================= FUNCTION Login (REPLACEMENT) =================
 async def get_current_user(request: Request):
     # 1. Ambil cookie token dari browser
@@ -275,6 +283,7 @@ async def raw_materials_page(request: Request):
                     nama_dagang,
                     produsen,
                     msds_file_url,
+                    spec_parameters,
                     raw_material_components (
                         inci_name,
                         cas_number
@@ -315,13 +324,29 @@ async def add_raw_material(
     tipe: str = Form(...),
     produsen: str = Form(None),
     msds_file: UploadFile = File(None),
-    # Gunakan Form(None) untuk data list agar FastAPI dinamis
     inci_name: list[str] = Form(None),
     cas_number: list[str] = Form(None),
     function: list[str] = Form(None),
     percent_internal: list[float] = Form(None),
+    spec_parameters: str = Form("[]"), # 👈 SUNTIK PARAMETER BARU DI SINI
     current_user: dict = Depends(get_current_user)
 ):
+    # 1. Parsing string JSONB dari frontend ke Python Object
+    import json
+    try:
+        parsed_specs = json.loads(spec_parameters)
+    except Exception as e:
+        print(f"Gagal parsing spec_parameters pas add: {e}")
+        parsed_specs = []
+
+    # 2. Masukkan ke dalam payload insert raw_materials lu
+    insert_payload = {
+        "nama_dagang": nama_dagang,
+        "kode_bahan_baku": kode_bahan_baku,
+        "tipe": tipe,
+        "produsen": produsen,
+        "spec_parameters": parsed_specs 
+    }
     # KITA PAKSA TULISAN INI KELUAR DI TERMINAL APAPUN YANG TERJADI
     print("\n" + "="*40)
     print("LOG INI HARUSNYA MUNCUL DI TERMINAL!")
@@ -412,6 +437,7 @@ async def edit_raw_material(
     function: List[str] = Form(None),
     percent_internal: List[float] = Form(None),
     msds_file: UploadFile = File(None),
+    spec_parameters: str = Form("[]"), # <-- SUNTIK PARAMETER BARU
     current_user: dict = Depends(get_current_user)
 ):
     print("\n" + "="*40)
@@ -427,38 +453,41 @@ async def edit_raw_material(
     if existing_rm.data:
         raise HTTPException(status_code=400, detail=f"Gagal Edit! Kode '{kode_check}' sudah dipakai oleh bahan baku lain.")
     
+    # PARSING STRING JSONB DARI FRONTEND KE PYTHON OBJECT
+    import json
+    try:
+        parsed_specs = json.loads(spec_parameters)
+    except Exception as e:
+        print(f"Gagal parsing spec_parameters: {e}")
+        parsed_specs = []
+
     # 2. SIAPKAN DICTIONARY DATA UNTUK UPDATE TABLE RAW_MATERIALS
     update_data = {
         "nama_dagang": nama_dagang,
         "kode_bahan_baku": kode_bahan_baku,
-        "tipe": tipe
+        "tipe": tipe,
+        "spec_parameters": parsed_specs # <-- SUNTIK DATA BATCH KE KOLOM JSONB
     }
     
     # 3. LOGIKA PROSES UPLOAD FILE MSDS (JIKA USER UPLOAD FILE BARU)
     if msds_file and msds_file.filename:
         try:
             file_contents = await msds_file.read()
-            # Bersihkan nama file biar aman di URL
             clean_filename = f"msds_{rm_id}_{msds_file.filename.replace(' ', '_')}"
             storage_path = f"msds/{clean_filename}"
             
-            # Upload file biner ke bucket raw-material-docs
             supabase.storage.from_("raw-material-docs").upload(
                 path=storage_path,
                 file=file_contents,
                 file_options={"content-type": msds_file.content_type, "upsert": "true"}
             )
             
-            # Dapatkan URL publik dari file yang berhasil di-upload
             msds_url = supabase.storage.from_("raw-material-docs").get_public_url(storage_path)
-            
-            # Masukkan URL ke data update (Pastikan nama kolom 'msds_file_url' sesuai DB lu ya!)
             update_data["msds_file_url"] = msds_url
             print(f"Sukses upload MSDS baru ke: {msds_url}")
             
         except Exception as e:
             print(f"Gagal proses upload MSDS: {e}")
-            # Opsional: lu bisa throw eror atau biarkan lanjut tanpa ganti file lama
     
     # 4. JALANKAN UPDATE KE TABEL RAW_MATERIALS
     supabase.table("raw_materials").update(update_data).eq("id", rm_id).execute()
@@ -520,19 +549,33 @@ async def add_material_batch(
     raw_material_id: str = Form(...),
     no_batch: str = Form(...),
     supplier: str = Form(...),
-    harga_per_kg: float = Form(...),
     tanggal_terima_sampel: str = Form(...),
-    hasil_pemerian: str = Form(...),
-    # Tangkap file dokumen baru
+    tanggal_ed: str = Form(...),
+    kesimpulan: str = Form(...),
+    tanggal_sampling: str = Form(None),
+    qc_signer: str = Form(None),
+    qa_signer: str = Form(None),
+    qc_results: str = Form("[]"),
+    harga_per_kg: float = Form(0.0),
     coa_file: UploadFile = File(None),
-    halal_file: UploadFile = File(None)
+    halal_file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user) # Memastikan auth login tetap sinkron
 ):
+    import json
+    
     clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
+    
+    # 1. Parse string data QC Aktual dari frontend ke Python list
+    try:
+        parsed_qc = json.loads(qc_results)
+    except Exception as e:
+        print(f"Gagal parsing qc_results: {e}")
+        parsed_qc = []
     
     coa_url = None
     halal_url = None
 
-    # 1. Proses Upload CoA jika ada filenya
+    # 2. Proses Upload CoA jika ada filenya
     if coa_file and coa_file.filename:
         try:
             coa_bytes = await coa_file.read()
@@ -548,7 +591,7 @@ async def add_material_batch(
         except Exception as e:
             print(f"Gagal upload CoA: {e}")
 
-    # 2. Proses Upload Halal Cert jika ada filenya
+    # 3. Proses Upload Halal Cert jika ada filenya
     if halal_file and halal_file.filename:
         try:
             halal_bytes = await halal_file.read()
@@ -564,16 +607,22 @@ async def add_material_batch(
         except Exception as e:
             print(f"Gagal upload Halal Cert: {e}")
 
-    # 3. Simpan record data ke tabel raw_material_batches
+    # 4. Simpan record data lengkap ke tabel raw_material_batches
     batch_data = {
         "raw_material_id": raw_material_id,
-        "no_batch": no_batch,
-        "supplier": supplier,
+        "no_batch": no_batch.strip(),
+        "supplier": supplier.strip(),
         "harga_per_kg": harga_per_kg,
         "tanggal_terima_sampel": tanggal_terima_sampel,
-        "hasil_pemerian": hasil_pemerian,
-        "coa_file_url": coa_url,       # Nilainya akan string URL atau NULL jika tidak upload
-        "halal_batch_file_url": halal_url    # Nilainya akan string URL atau NULL jika tidak upload
+        "tanggal_sampling": tanggal_sampling if tanggal_sampling else None,
+        "tanggal_ed": tanggal_ed,
+        "kesimpulan": kesimpulan,
+        "qc_signer": qc_signer.strip() if qc_signer else None,
+        "qa_signer": qa_signer.strip() if qa_signer else None,
+        "hasil_pemerian": "-", # Nilai default untuk kolom legasi fisik
+        "coa_file_url": coa_url,
+        "halal_batch_file_url": halal_url,
+        "qc_results": parsed_qc # 👈 Array hasil uji lab aktual masuk ke kolom JSONB ini
     }
 
     try:

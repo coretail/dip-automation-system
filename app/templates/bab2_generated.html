@@ -56,33 +56,50 @@
 
     {% for item in materials_data %}
     <div class="material-block">
-        <h2>{{ loop.index }}. {{ item.material.nama_dagang or '-' }} [{{ item.material.kode_bahan_baku or '-' }}]</h2>
+        <h2>{{ loop.index }}. {{ item.get('material', {}).get('nama_dagang') or '-' }} [{{ item.get('material', {}).get('kode_bahan_baku') or '-' }}]</h2>
 
         <h3>Spesifikasi Bahan Baku</h3>
         <table>
-            <tr><td class="label-col">Pemerian</td><td>{{ item.material.pemerian or '-' }}</td></tr>
-            <tr><td class="label-col">Aroma</td><td>{{ item.material.aroma or '-' }}</td></tr>
-            <tr><td class="label-col">pH</td><td>{{ item.material.ph_range or '-' }}</td></tr>
-            <tr><td class="label-col">Viskositas</td><td>{{ item.material.viskositas or '-' }}</td></tr>
-            <tr><td class="label-col">Masa Kedaluwarsa</td><td>{{ item.material.masa_kedaluarsa or '-' }}</td></tr>
-            <tr><td class="label-col">Cara Penyimpanan</td><td>{{ item.material.cara_penyimpanan or '-' }}</td></tr>
-            <tr><td class="label-col">Referensi</td><td>{{ item.material.referensi or '-' }}</td></tr>
-            <tr><td class="label-col">Produsen</td><td>{{ item.material.produsen or '-' }}</td></tr>
+            {# Menggunakan notasi get dict yang aman #}
+            {% if item.get('material') and item.get('material').get('spec_parameters') %}
+                {% for spec in item['material']['spec_parameters'] %}
+                <tr>
+                    <td class="label-col">{{ spec.get('key') }}</td>
+                    <td>{{ spec.get('value') or '-' }}</td>
+                </tr>
+                {% endfor %}
+            {% endif %}
+            
+            <tr>
+                <td class="label-col">Produsen</td>
+                <td>{{ item.get('material', {}).get('produsen') or '-' }}</td>
+            </tr>
         </table>
 
         <h3>Catatan Pemeriksaan Bahan Baku</h3>
-        {% if item.batch %}
+        {% if item.get('batch') %}
         <table>
-            <tr><td class="label-col">No. Batch</td><td>{{ item.batch.no_batch or '-' }}</td></tr>
-            <tr><td class="label-col">Supplier</td><td>{{ item.batch.supplier or '-' }}</td></tr>
-            <tr><td class="label-col">Tanggal Sampling</td><td>{{ item.batch.tanggal_sampling or '-' }}</td></tr>
-            <tr><td class="label-col">Tanggal Terima Sampel</td><td>{{ item.batch.tanggal_terima_sampel or '-' }}</td></tr>
-            <tr><td class="label-col">Tanggal ED</td><td>{{ item.batch.tanggal_ed or '-' }}</td></tr>
-            <tr><td class="label-col">Hasil Pemerian</td><td>{{ item.batch.hasil_pemerian or '-' }}</td></tr>
-            <tr><td class="label-col">Hasil Aroma</td><td>{{ item.batch.hasil_aroma or '-' }}</td></tr>
-            <tr><td class="label-col">Kesimpulan</td><td>{{ item.batch.kesimpulan or '-' }}</td></tr>
-            <tr><td class="label-col">Diperiksa Oleh (QC)</td><td>{{ item.batch.qc_signer or '-' }}</td></tr>
-            <tr><td class="label-col">Disetujui Oleh (QA)</td><td>{{ item.batch.qa_signer or '-' }}</td></tr>
+            <!-- 1. Bagian Administrasi & Logistik (Diubah ke key 'batch') -->
+            <tr><td class="label-col">No. Batch</td><td>{{ item.get('batch', {}).get('no_batch') or '-' }}</td></tr>
+            <tr><td class="label-col">Supplier</td><td>{{ item.get('batch', {}).get('supplier') or '-' }}</td></tr>
+            <tr><td class="label-col">Tanggal Sampling</td><td>{{ item.get('batch', {}).get('tanggal_sampling') or '-' }}</td></tr>
+            <tr><td class="label-col">Tanggal Terima Sampel</td><td>{{ item.get('batch', {}).get('tanggal_terima_sampel') or '-' }}</td></tr>
+            <tr><td class="label-col">Tanggal ED</td><td>{{ item.get('batch', {}).get('tanggal_ed') or '-' }}</td></tr>
+
+            <!-- 2. Bagian Looping QC Results ( JSONB Uji Aktual ) -->
+            {% if item.get('batch').get('qc_results') %}
+                {% for qc in item['batch']['qc_results'] %}
+                <tr>
+                    <td class="label-col">Hasil {{ qc.get('key') }}</td>
+                    <td>{{ qc.get('value') or '-' }}</td>
+                </tr>
+                {% endfor %}
+            {% endif %}
+
+            <!-- 3. Bagian Otorisasi Mutu -->
+            <tr><td class="label-col">Kesimpulan</td><td>{{ item.get('batch', {}).get('kesimpulan') or '-' }}</td></tr>
+            <tr><td class="label-col">Diperiksa Oleh (QC)</td><td>{{ item.get('batch', {}).get('qc_signer') or '-' }}</td></tr>
+            <tr><td class="label-col">Disetujui Oleh (QA)</td><td>{{ item.get('batch', {}).get('qa_signer') or '-' }}</td></tr>
         </table>
         <p style="font-size: 8.5pt; color: #666;">Certificate of Analysis (CoA) dilampirkan setelah halaman ini.</p>
         {% else %}
