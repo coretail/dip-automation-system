@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile, status, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import List
@@ -9,6 +9,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client
 import os
+import io
+import httpx
+from xhtml2pdf import pisa
+from pypdf import PdfReader, PdfWriter
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -156,8 +160,16 @@ async def login_submit(
                 # Kalo ga ketemu di profiles, fallback otomatis pake domain kantor
                 login_identifier = f"{login_identifier.lower()}@erfi.com"
             
-        # 2. Tembak proses sign-in tetap pake client global bawaan aplikasi utama
-        auth_response = supabase.auth.sign_in_with_password({
+        # 2. PENTING: sign-in HARUS pakai client terpisah, BUKAN client global `supabase`.
+        # SDK supabase-py otomatis nempelin sesi user yang baru login ke client yang
+        # dipakai buat sign_in. Client `supabase` global dipakai bareng2 di SELURUH
+        # aplikasi pakai service_role key (biar bypass RLS) -- kalau sign_in numpang
+        # di situ, sesi service_role-nya ketiban sesi user biasa, dan abis itu SEMUA
+        # request lain (termasuk punya orang lain) ikut kena RLS user yang baru login.
+        # Makanya kemarin /admin/users cuma nampilin 1 akun (akun yang lagi login).
+        # `supabase_admin` di atas aman dipake karena dia dibikin fresh tiap request
+        # (variable lokal), bukan client yang di-share ke seluruh server kayak `supabase`.
+        auth_response = supabase_admin.auth.sign_in_with_password({
             "email": login_identifier,
             "password": password
         })
@@ -814,6 +826,113 @@ async def qualitative_quantitative_report(request: Request, product_id: str):
             "pure_breakdown": pure_breakdown,
             "company": company
         }
+    )
+
+# =====================================================================
+#           FASE 2B: GENERATOR DOKUMEN BAB II (PDF GABUNGAN)
+# =====================================================================
+@app.get("/products/{product_id}/bab2/download")
+async def download_bab2_document(product_id: str):
+    # 1. Ambil data produk
+    product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    product = product_resp.data
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+
+    perusahaan = product.get("perusahaan") or "PT Erfi"
+
+    # 2. Ambil semua bahan baku unik yang dipakai di formula produk ini
+    lines_resp = supabase.table("product_formula_lines") \
+        .select("raw_material_id, raw_materials(*)") \
+        .eq("product_id", product_id) \
+        .execute()
+
+    seen_ids = set()
+    raw_materials = []
+    for line in (lines_resp.data or []):
+        rm = line.get("raw_materials")
+        if isinstance(rm, list) and rm:
+            rm = rm[0]
+        if isinstance(rm, dict) and rm.get("id") and rm["id"] not in seen_ids:
+            seen_ids.add(rm["id"])
+            raw_materials.append(rm)
+
+    # 3. Per bahan baku, tarik data batch TERBARU (kesepakatan: pakai batch terbaru)
+    materials_data = []
+    for rm in raw_materials:
+        batch_resp = supabase.table("raw_material_batches") \
+            .select("*") \
+            .eq("raw_material_id", rm["id"]) \
+            .order("created_at", desc=True) \
+            .limit(1) \
+            .execute()
+        latest_batch = batch_resp.data[0] if batch_resp.data else None
+        materials_data.append({"material": rm, "batch": latest_batch})
+
+    # 4. Ambil SOP CPKB sesuai perusahaan produk (tabel cpkb_raw_material)
+    sop_resp = supabase.table("cpkb_raw_material") \
+        .select("file_url") \
+        .eq("perusahaan", perusahaan) \
+        .limit(1) \
+        .execute()
+    sop_url = sop_resp.data[0]["file_url"] if sop_resp.data else None
+
+    # 5. Render bagian yang di-generate (Checklist + Spesifikasi + Catatan) jadi HTML -> PDF
+    html_content = templates.env.get_template("bab2_generated.html").render(
+        product=product,
+        materials_data=materials_data
+    )
+
+    generated_pdf_buffer = io.BytesIO()
+    pisa_status = pisa.CreatePDF(src=html_content, dest=generated_pdf_buffer)
+    if pisa_status.err:
+        raise HTTPException(status_code=500, detail="Gagal generate PDF dari data Bab II.")
+    generated_pdf_buffer.seek(0)
+
+    # 6. Gabungin semua PDF jadi satu: [Generated] + [SOP CPKB] + [CoA per bahan baku]
+    writer = PdfWriter()
+
+    reader_generated = PdfReader(generated_pdf_buffer)
+    for page in reader_generated.pages:
+        writer.add_page(page)
+
+    async with httpx.AsyncClient() as client:
+        # 6a. SOP CPKB
+        if sop_url:
+            try:
+                resp = await client.get(sop_url, timeout=30)
+                resp.raise_for_status()
+                sop_reader = PdfReader(io.BytesIO(resp.content))
+                for page in sop_reader.pages:
+                    writer.add_page(page)
+            except Exception as e:
+                print(f"Gagal ambil SOP CPKB ({perusahaan}): {e}")
+
+        # 6b. CoA tiap bahan baku (dari batch terbaru masing-masing)
+        for item in materials_data:
+            batch = item["batch"]
+            coa_url = batch.get("coa_file_url") if batch else None
+            if coa_url:
+                try:
+                    resp = await client.get(coa_url, timeout=30)
+                    resp.raise_for_status()
+                    coa_reader = PdfReader(io.BytesIO(resp.content))
+                    for page in coa_reader.pages:
+                        writer.add_page(page)
+                except Exception as e:
+                    print(f"Gagal ambil CoA bahan baku {item['material'].get('nama_dagang')}: {e}")
+
+    output_buffer = io.BytesIO()
+    writer.write(output_buffer)
+    output_buffer.seek(0)
+
+    safe_name = "".join(c for c in (product.get("nama_produk") or "Produk") if c.isalnum() or c in (" ", "-", "_")).strip()
+    filename = f"Bab2_{safe_name.replace(' ', '_')}.pdf"
+
+    return StreamingResponse(
+        output_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
 # 1. Halaman Form Edit Produk

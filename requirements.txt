@@ -5,3 +5,6 @@ pydantic-settings
 jinja2
 python-multipart
 tzdata
+xhtml2pdf
+pypdf
+httpx
