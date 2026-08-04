@@ -168,20 +168,22 @@ async def login_submit(
                 # Kalo ga ketemu di profiles, fallback otomatis pake domain kantor
                 login_identifier = f"{login_identifier.lower()}@erfi.com"
             
-        # 2. PENTING: sign-in HARUS pakai client terpisah, BUKAN client global `supabase`.
-        # SDK supabase-py otomatis nempelin sesi user yang baru login ke client yang
-        # dipakai buat sign_in. Client `supabase` global dipakai bareng2 di SELURUH
-        # aplikasi pakai service_role key (biar bypass RLS) -- kalau sign_in numpang
-        # di situ, sesi service_role-nya ketiban sesi user biasa, dan abis itu SEMUA
-        # request lain (termasuk punya orang lain) ikut kena RLS user yang baru login.
-        # Makanya kemarin /admin/users cuma nampilin 1 akun (akun yang lagi login).
-        # `supabase_admin` di atas aman dipake karena dia dibikin fresh tiap request
-        # (variable lokal), bukan client yang di-share ke seluruh server kayak `supabase`.
+        # 2. Authenticate user
         auth_response = supabase_admin.auth.sign_in_with_password({
             "email": login_identifier,
             "password": password
         })
         
+        # 💡 LOG SUCCESS LOGIN
+        user_data = auth_response.user
+        waktu_login = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print("\n" + "="*50)
+        print(f"🔑 [LOGIN SUCCESS]")
+        print(f"   • User ID : {user_data.id}")
+        print(f"   • Email   : {user_data.email}")
+        print(f"   • Waktu   : {waktu_login}")
+        print("="*50 + "\n")
+
         session_token = auth_response.session.access_token
         redirect = RedirectResponse(url="/", status_code=303)
         redirect.set_cookie(
@@ -194,7 +196,9 @@ async def login_submit(
         return redirect
 
     except Exception as e:
-        print(f"Gagal login: {e}")
+        # 💡 LOG FAILED LOGIN
+        waktu_gagal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"\n❌ [LOGIN FAILED] Input: '{email}' | Waktu: {waktu_gagal} | Error: {e}\n")
         return RedirectResponse(url="/login?error=invalid_credentials", status_code=303)
 
 @app.get("/logout")
