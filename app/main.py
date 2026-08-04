@@ -328,7 +328,7 @@ async def add_raw_material(
     cas_number: list[str] = Form(None),
     function: list[str] = Form(None),
     percent_internal: list[float] = Form(None),
-    spec_parameters: str = Form("[]"), # 👈 SUNTIK PARAMETER BARU DI SINI
+    spec_parameters: str = Form("[]"), 
     current_user: dict = Depends(get_current_user)
 ):
     # 1. Parsing string JSONB dari frontend ke Python Object
@@ -387,13 +387,8 @@ async def add_raw_material(
             # Lanjut proses tanpa menggagalkan insert jika upload bermasalah
 
     # --- INSERT DATA UTAMA (Ditambah Produsen & MSDS URL) ---
-    rm_resp = supabase.table("raw_materials").insert({
-        "nama_dagang": nama_dagang,
-        "kode_bahan_baku": kode_bahan_baku,
-        "tipe": tipe,
-        "produsen": produsen,        # <-- Masuk ke database
-        "msds_file_url": msds_url    # <-- Simpan URL link filenya
-    }).execute()
+    insert_payload["msds_file_url"] = msds_url
+    rm_resp = supabase.table("raw_materials").insert(insert_payload).execute()
     new_rm_id = rm_resp.data[0]["id"]
 
     if tipe == "single":
