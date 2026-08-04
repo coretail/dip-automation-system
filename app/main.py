@@ -277,6 +277,93 @@ async def ingredient_report(request: Request, product_id: str):
         context={"product": prod_resp.data, "ingredients": report_resp.data}
     )
 
+@app.get("/products/{product_id}/bab3", response_class=HTMLResponse)
+async def product_bab3_detail(
+    request: Request,
+    product_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    # 1. Ambil data produk
+    prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).single().execute()
+    product = prod_resp.data
+    
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk kagak ketemu men!")
+    
+    perusahaan = product.get("perusahaan", "PT Erfi")
+
+    # 2. Ambil dokumen SOP Master Perusahaan (Poin 3 & Poin 8)
+    sop_resp = supabase.table("company_sop_documents").select("*").eq("perusahaan", perusahaan).execute()
+    company_sop = sop_resp.data[0] if sop_resp.data else {}
+
+    # 3. Ambil riwayat batch produk jadi (Poin 5)
+    batches_resp = supabase.table("product_batches").select("*").eq("product_id", product_id).order("created_at", desc=True).execute()
+    batches = batches_resp.data if batches_resp.data else []
+
+    # 4. Ambil pesan notifikasi dari cookie
+    success_msg = request.cookies.get("success_msg")
+    error_msg = request.cookies.get("error_msg")
+
+    response = templates.TemplateResponse(
+        "product_detail.html",
+        {
+            "request": request,
+            "product": product,
+            "company_sop": company_sop,
+            "batches": batches,
+            "current_user": current_user,
+            "success_msg": success_msg,
+            "error_msg": error_msg
+        }
+    )
+    
+    if success_msg:
+        response.delete_cookie("success_msg")
+    if error_msg:
+        response.delete_cookie("error_msg")
+        
+    return response
+
+@app.post("/products/{product_id}/upload-bab3-doc")
+async def upload_bab3_document(
+    product_id: str,
+    field_name: str = Form(...),
+    pdf_file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    redirect_url = f"/products/{product_id}/bab3"
+    
+    if not pdf_file.filename:
+        response = RedirectResponse(url=redirect_url, status_code=303)
+        response.set_cookie("error_msg", "File PDF kagak boleh kosong men!")
+        return response
+
+    try:
+        file_bytes = await pdf_file.read()
+        file_path = f"bab3/{product_id}/{field_name}.pdf"
+
+        # Upload ke Supabase Storage
+        supabase.storage.from_("raw-material-docs").upload(
+            path=file_path,
+            file=file_bytes,
+            file_options={"content-type": "application/pdf", "upsert": "true"}
+        )
+
+        public_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
+
+        # Update URL file ke kolom tabel products
+        supabase.table("products").update({field_name: public_url}).eq("id", product_id).execute()
+
+        response = RedirectResponse(url=redirect_url, status_code=303)
+        response.set_cookie("success_msg", "Mantap! Dokumen Bab 3 berhasil ter-upload.")
+        return response
+
+    except Exception as e:
+        print(f"Gagal upload dokumen Bab 3: {e}")
+        response = RedirectResponse(url=redirect_url, status_code=303)
+        response.set_cookie("error_msg", f"Gagal upload file: {e}")
+        return response
+
 @app.get("/raw-materials", response_class=HTMLResponse)
 async def raw_materials_page(request: Request):
     rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*)").order("nama_dagang").execute()
@@ -1097,6 +1184,148 @@ async def download_bab1_document(product_id: str):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+@app.get("/products/{product_id}/bab3/download")
+async def download_dip_bab3(
+    product_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    # 1. AMBIL DATA PRODUK
+    prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).single().execute()
+    product = prod_resp.data
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk kagak ketemu men!")
+
+    perusahaan = product.get("perusahaan", "PT Erfi")
+
+    # 2. AMBIL DATA FORMULA KUALITATIF & KUANTITATIF (POIN 1)
+    try:
+        formula_resp = supabase.table("product_formula_lines") \
+            .select("percent_in_formula, raw_materials(*, raw_material_compositions(*))") \
+            .eq("product_id", product_id) \
+            .execute()
+    except Exception:
+        formula_resp = supabase.table("product_formula_lines") \
+            .select("percent_in_formula, raw_materials(*)") \
+            .eq("product_id", product_id) \
+            .execute()
+
+    raw_formula = formula_resp.data if formula_resp.data else []
+    processed_formula = []
+
+    for line in raw_formula:
+        rm = line.get("raw_materials") or {}
+        percent_total = float(line.get("percent_in_formula") or 0)
+        compositions = rm.get("raw_material_compositions") or rm.get("compositions") or []
+        
+        if compositions and len(compositions) > 0:
+            comp_list = []
+            for comp in compositions:
+                pct_in_rm = float(comp.get("percentage_in_rm") or comp.get("percentage") or 100)
+                calc_pct = round((pct_in_rm / 100.0) * percent_total, 4)
+                comp_list.append({
+                    "ingredient": comp.get("inci_name") or comp.get("nama_inci") or comp.get("ingredient") or "-",
+                    "function": comp.get("function") or comp.get("fungsi") or "-",
+                    "percent": calc_pct
+                })
+            processed_formula.append({
+                "nama_dagang": rm.get("nama_dagang") or "-",
+                "kode": rm.get("kode_bahan_baku") or rm.get("kode") or "-",
+                "row_span": len(comp_list),
+                "compositions": comp_list
+            })
+        else:
+            processed_formula.append({
+                "nama_dagang": rm.get("nama_dagang") or "-",
+                "kode": rm.get("kode_bahan_baku") or rm.get("kode") or "-",
+                "row_span": 1,
+                "compositions": [{
+                    "ingredient": rm.get("inci_name") or rm.get("nama_inci") or rm.get("nama_dagang") or "-",
+                    "function": rm.get("fungsi") or rm.get("function") or "-",
+                    "percent": percent_total
+                }]
+            })
+
+    # 3. AMBIL SOP MASTER PERUSAHAAN (POIN 3 & 8) - Safe Fallback
+    company_sop = {}
+    try:
+        sop_resp = supabase.table("company_sop_documents").select("*").eq("perusahaan", perusahaan).execute()
+        if sop_resp.data and len(sop_resp.data) > 0:
+            company_sop = sop_resp.data[0]
+    except Exception as e:
+        print(f"[WARNING] Gagal/belum ada data company_sop_documents: {e}")
+
+    # 4. AMBIL BATCH PRODUK JADI TERBARU (POIN 5) - Safe Fallback
+    latest_batch = {}
+    try:
+        batch_resp = supabase.table("product_batches") \
+            .select("*") \
+            .eq("product_id", product_id) \
+            .order("created_at", desc=True) \
+            .limit(1) \
+            .execute()
+        if batch_resp.data and len(batch_resp.data) > 0:
+            latest_batch = batch_resp.data[0]
+    except Exception as e:
+        print(f"[WARNING] Gagal/belum ada data product_batches: {e}")
+
+    # 5. RENDER COVER & FORMULA VIA TEMPLATE HTML
+    template = templates.get_template("bab3_checklist.html")
+    rendered_html = template.render({
+        "product": product,
+        "perusahaan": perusahaan,
+        "company_sop": company_sop,
+        "latest_batch": latest_batch,
+        "processed_formula": processed_formula
+    })
+
+    cover_pdf_io = io.BytesIO()
+    pisa.CreatePDF(io.StringIO(rendered_html), dest=cover_pdf_io)
+    cover_pdf_io.seek(0)
+
+    # 6. MERGE WITH ATTACHMENTS
+    pdf_writer = PdfWriter()
+    cover_reader = PdfReader(cover_pdf_io)
+    for page in cover_reader.pages:
+        pdf_writer.add_page(page)
+
+    attachment_urls = [
+        product.get("cara_pembuatan_file_url"),              # Poin 2
+        company_sop.get("protap_no_batch_url"),              # Poin 3
+        product.get("sistem_penomoran_batch_file_url"),      # Poin 4
+        latest_batch.get("coa_file_url"),                    # Poin 5
+        product.get("spek_produk_jadi_file_url"),            # Poin 6a
+        product.get("spek_pengemas_file_url"),               # Poin 6b
+        product.get("laporan_uji_sig_file_url"),             # Poin 7
+        company_sop.get("protap_pemeriksaan_fg_url"),        # Poin 8
+        product.get("protokol_stabilitas_file_url"),         # Poin 9
+        product.get("hasil_stabilitas_file_url"),            # Poin 10
+    ]
+
+    async with httpx.AsyncClient() as client:
+        for url in attachment_urls:
+            if url:
+                try:
+                    res = await client.get(url, timeout=15.0)
+                    if res.status_code == 200:
+                        doc_reader = PdfReader(io.BytesIO(res.content))
+                        for page in doc_reader.pages:
+                            pdf_writer.add_page(page)
+                except Exception as e:
+                    print(f"[BAB 3 MERGE ERROR] Gagal mengunduh {url}: {e}")
+
+    output_pdf_io = io.BytesIO()
+    pdf_writer.write(output_pdf_io)
+    output_pdf_io.seek(0)
+
+    safe_product_name = "".join([c for c in product.get('nama_produk', 'Produk') if c.isalnum() or c in (' ', '_')]).rstrip()
+    filename = f"DIP_Bab_3_{safe_product_name}.pdf"
+
+    return Response(
+        content=output_pdf_io.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+    )
+
 # 1. Halaman Form Edit Produk
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def edit_product_page(request: Request, product_id: str):
@@ -1134,10 +1363,18 @@ async def update_product(
     cara_pakai: str = Form(None),
     status_progress: str = Form("R&D / Sample Phase"),
     brand_id: str = Form(None),
+    # --- FILE UPLOAD BAB 1 & BAB 3 ---
     no_notifikasi_file: UploadFile = File(None),
+    cara_pembuatan_file: UploadFile = File(None),
+    sistem_penomoran_batch_file: UploadFile = File(None),
+    spek_produk_jadi_file: UploadFile = File(None), # <-- TAMBAH INI
+    spek_pengemas_file: UploadFile = File(None),
+    laporan_uji_sig_file: UploadFile = File(None),
+    protokol_stabilitas_file: UploadFile = File(None),
+    hasil_stabilitas_file: UploadFile = File(None),
     current_user: dict = Depends(get_current_user)
 ):
-    # 2. Bersihin input tanggal biar tipenya pas di database
+    # ... logic parsing tanggal & payload bawaan ...
     acc_sampel_val = acc_sampel.strip() if acc_sampel else None
     if acc_sampel_val == "":
         acc_sampel_val = None
@@ -1160,23 +1397,47 @@ async def update_product(
         "brand_id": brand_id if brand_id else None
     }
 
-    # Upload Surat No. Notifikasi BPOM kalau ada file baru diupload
-    if no_notifikasi_file and no_notifikasi_file.filename:
-        try:
-            file_bytes = await no_notifikasi_file.read()
-            path = f"products/no_notifikasi_{product_id}.pdf"
-            supabase.storage.from_("legal-documents").upload(
-                path=path,
-                file=file_bytes,
-                file_options={"content-type": no_notifikasi_file.content_type, "upsert": "true"}
-            )
-            update_payload["no_notifikasi_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
-        except Exception as e:
-            print(f"Gagal upload Surat No. Notifikasi BPOM produk {product_id}: {e}")
+    async def process_pdf_upload(file_obj, path_suffix, bucket_name="raw-material-docs"):
+        if file_obj and file_obj.filename:
+            try:
+                file_bytes = await file_obj.read()
+                path = f"products/{product_id}/{path_suffix}.pdf"
+                supabase.storage.from_(bucket_name).upload(
+                    path=path,
+                    file=file_bytes,
+                    file_options={"content-type": "application/pdf", "upsert": "true"}
+                )
+                return supabase.storage.from_(bucket_name).get_public_url(path)
+            except Exception as e:
+                print(f"Gagal upload {path_suffix} produk {product_id}: {e}")
+        return None
+
+    # Upload Surat No. Notifikasi BPOM
+    no_notif_url = await process_pdf_upload(no_notifikasi_file, "no_notifikasi", bucket_name="legal-documents")
+    if no_notif_url:
+        update_payload["no_notifikasi_file_url"] = no_notif_url
+
+    # Dictionary Map File Bab 3
+    bab3_files = {
+        "cara_pembuatan_file_url": (cara_pembuatan_file, "cara_pembuatan"),
+        "sistem_penomoran_batch_file_url": (sistem_penomoran_batch_file, "sistem_penomoran_batch"),
+        "spek_produk_jadi_file_url": (spek_produk_jadi_file, "spek_produk_jadi"), # <-- TAMBAH INI
+        "spek_pengemas_file_url": (spek_pengemas_file, "spek_pengemas"),
+        "laporan_uji_sig_file_url": (laporan_uji_sig_file, "laporan_uji_sig"),
+        "protokol_stabilitas_file_url": (protokol_stabilitas_file, "protokol_stabilitas"),
+        "hasil_stabilitas_file_url": (hasil_stabilitas_file, "hasil_stabilitas"),
+    }
+
+    for db_col, (file_obj, key_suffix) in bab3_files.items():
+        uploaded_url = await process_pdf_upload(file_obj, key_suffix)
+        if uploaded_url:
+            update_payload[db_col] = uploaded_url
 
     supabase.table("products").update(update_payload).eq("id", product_id).execute()
     
-    return RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie("success_msg", f"Data & dokumen DIP produk '{nama_produk}' berhasil diperbarui!")
+    return response
 
 @app.get("/products/delete/{product_id}")
 async def delete_product(product_id: str):

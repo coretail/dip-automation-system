@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page { size: A4; margin: 1.5cm; }
+        body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #1a1a1a; }
+        
+        /* General Header & Table Styling */
+        .header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #333; padding-bottom: 8px; }
+        .title { font-size: 14pt; font-weight: bold; text-transform: uppercase; margin: 0; }
+        .subtitle { font-size: 9.5pt; color: #555; margin-top: 4px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; }
+        th, td { border: 1px solid #999; padding: 5px 7px; text-align: left; font-size: 8.5pt; }
+        th { background-color: #eee; font-weight: bold; }
+        
+        .status-ok { color: #059669; font-weight: bold; }
+        .status-empty { color: #dc2626; font-style: italic; }
+        .label-col { width: 160px; font-weight: bold; background-color: #f5f5f5; }
+        .page-break { page-break-before: always; }
+    </style>
+</head>
+<body>
+
+    <!-- ================= HALAMAN 1: CHECKLIST BAB III ================= -->
+    <div class="header">
+        <h1 class="title">DOKUMEN INFORMASI PRODUK (DIP)</h1>
+        <p class="subtitle"><strong>BAB III: MUTU PRODUK JADI (FINISHED GOODS QUALITY)</strong><br>{{ perusahaan or 'PT Erfi' }}</p>
+    </div>
+
+    <table>
+        <tr>
+            <td class="label-col">Nama Produk</td>
+            <td>{{ product.nama_produk or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Merk / Brand</td>
+            <td>{{ product.brands.name if product.brands else '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Bentuk Sediaan & Netto</td>
+            <td>{{ product.sediaan or '-' }} / {{ product.netto or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Nomor NA BPOM</td>
+            <td>{{ product.no_na_produk or '-' }}</td>
+        </tr>
+    </table>
+
+    <h3 style="font-size: 10.5pt; margin-bottom: 4px; margin-top: 10px;">Checklist Kelengkapan Dokumen Bab III:</h3>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25px;">No</th>
+                <th>Elemen Dokumen</th>
+                <th style="width: 100px;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>1</td><td>Formula Kualitatif & Kuantitatif</td><td class="status-ok">Terlampir (Hal. 2)</td></tr>
+            <tr><td>2</td><td>Ringkasan Cara Pembuatan Kosmetik</td><td class="{{ 'status-ok' if product.cara_pembuatan_file_url else 'status-empty' }}">{{ 'Terlampir' if product.cara_pembuatan_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>3</td><td>Protap No Batch Perusahaan</td><td class="{{ 'status-ok' if company_sop.protap_no_batch_url else 'status-empty' }}">{{ 'Terlampir' if company_sop.protap_no_batch_url else 'Belum Ada' }}</td></tr>
+            <tr><td>4</td><td>Sistem Penomoran Batch Spesifik</td><td class="{{ 'status-ok' if product.sistem_penomoran_batch_file_url else 'status-empty' }}">{{ 'Terlampir' if product.sistem_penomoran_batch_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>5</td><td>Sertifikat Analisa (CoA) Produk Jadi</td><td class="{{ 'status-ok' if latest_batch.coa_file_url else 'status-empty' }}">{{ 'Terlampir' if latest_batch.coa_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>6a</td><td>Spesifikasi Produk Jadi</td><td class="{{ 'status-ok' if product.spek_produk_jadi_file_url else 'status-empty' }}">{{ 'Terlampir' if product.spek_produk_jadi_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>6b</td><td>Spesifikasi Bahan Pengemas</td><td class="{{ 'status-ok' if product.spek_pengemas_file_url else 'status-empty' }}">{{ 'Terlampir' if product.spek_pengemas_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>7</td><td>Laporan Hasil Uji Lab Eksternal (SIG)</td><td class="{{ 'status-ok' if product.laporan_uji_sig_file_url else 'status-empty' }}">{{ 'Terlampir' if product.laporan_uji_sig_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>8</td><td>Protap Pemeriksaan Produk Jadi General</td><td class="{{ 'status-ok' if company_sop.protap_pemeriksaan_fg_url else 'status-empty' }}">{{ 'Terlampir' if company_sop.protap_pemeriksaan_fg_url else 'Belum Ada' }}</td></tr>
+            <tr><td>9</td><td>Protokol Pemantauan Stabilitas</td><td class="{{ 'status-ok' if product.protokol_stabilitas_file_url else 'status-empty' }}">{{ 'Terlampir' if product.protokol_stabilitas_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>10</td><td>Hasil Studi Stabilitas</td><td class="{{ 'status-ok' if product.hasil_stabilitas_file_url else 'status-empty' }}">{{ 'Terlampir' if product.hasil_stabilitas_file_url else 'Belum Ada' }}</td></tr>
+        </tbody>
+    </table>
+
+
+    <!-- ================= HALAMAN 2: FORMULA KUALITATIF & KUANTITATIF ================= -->
+    <div class="page-break"></div>
+
+    <!-- KOP PERUSAHAAN -->
+    <div style="border-bottom: 2.5px solid #f97316; padding-bottom: 6px; margin-bottom: 12px;">
+        <table style="width: 100%; border: none; margin: 0; padding: 0;">
+            <tr style="border: none;">
+                <td style="border: none; width: 12%; vertical-align: middle;">
+                    <strong style="font-size: 16pt; color: #d97706;">EKA</strong>
+                </td>
+                <td style="border: none; width: 88%; vertical-align: middle; padding-left: 5px;">
+                    <h2 style="margin: 0; font-size: 11pt; font-weight: bold; color: #111827; text-transform: uppercase;">
+                        {% if product.perusahaan == 'PT Heka' %}PT. HEKA KARYA ABADI{% else %}PT. ERFI KARYA ABADI{% endif %}
+                    </h2>
+                    <p style="margin: 2px 0 0 0; font-size: 7.5pt; color: #4b5563; line-height: 1.2;">
+                        Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia<br>
+                        Email: contact@erfikaryaabadi.com &nbsp;|&nbsp; Website: www.erfikaryaabadi.com
+                    </p>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- JUDUL DOKUMEN FORMULA -->
+    <div style="text-align: center; margin-bottom: 12px;">
+        <h2 style="font-size: 11pt; font-weight: bold; text-decoration: underline; margin: 0; text-transform: uppercase;">
+            FORMULA KUALITATIF & KUANTITATIF
+        </h2>
+    </div>
+
+    <!-- INFO DETAIL PRODUK -->
+    <table style="width: 100%; border: none; margin-bottom: 12px; font-size: 8.5pt;">
+        <tr style="border: none;"><td style="width: 130px; border: none; font-weight: bold;">Nama Produk</td><td style="border: none;">: {{ product.nama_produk or '-' }}</td></tr>
+        <tr style="border: none;"><td style="border: none; font-weight: bold;">Warna</td><td style="border: none;">: {{ product.warna or '-' }}</td></tr>
+        <tr style="border: none;"><td style="border: none; font-weight: bold;">Sediaan</td><td style="border: none;">: {{ product.sediaan or '-' }}</td></tr>
+        <tr style="border: none;"><td style="border: none; font-weight: bold;">Kemasan</td><td style="border: none;">: {{ product.kemasan or '-' }}</td></tr>
+        <tr style="border: none;"><td style="border: none; font-weight: bold;">Netto</td><td style="border: none;">: {{ product.netto or '-' }}</td></tr>
+        <tr style="border: none;"><td style="border: none; font-weight: bold;">Nama Customer</td><td style="border: none;">: {{ product.nama_customer or '-' }}</td></tr>
+        <tr style="border: none;"><td style="border: none; font-weight: bold;">Tanggal Acc Sampel</td><td style="border: none;">: {{ product.acc_sampel or '-' }}</td></tr>
+    </table>
+
+    <!-- TABEL FORMULA LENGKAP -->
+    {% if processed_formula %}
+    <table style="width: 100%; border-collapse: collapse; font-size: 8pt;">
+        <thead>
+            <tr style="background-color: #fdebd0;">
+                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: left; width: 22%;">Nama Dagang</th>
+                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: left; width: 15%;">Kode</th>
+                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: left; width: 33%;">Ingredients</th>
+                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: left; width: 20%;">Function</th>
+                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: right; width: 10%;">% w/w</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in processed_formula %}
+                {% for comp in item.compositions %}
+                <tr>
+                    {% if loop.first %}
+                    <td rowspan="{{ item.row_span }}" style="border: 1px solid #b3b3b3; padding: 5px; font-weight: bold; vertical-align: top;">
+                        {{ item.nama_dagang }}
+                    </td>
+                    <td rowspan="{{ item.row_span }}" style="border: 1px solid #b3b3b3; padding: 5px; vertical-align: top; font-family: monospace;">
+                        {{ item.kode }}
+                    </td>
+                    {% endif %}
+                    <td style="border: 1px solid #b3b3b3; padding: 5px; vertical-align: top;">
+                        {{ comp.ingredient }}
+                    </td>
+                    <td style="border: 1px solid #b3b3b3; padding: 5px; vertical-align: top;">
+                        {{ comp.function }}
+                    </td>
+                    <td style="border: 1px solid #b3b3b3; padding: 5px; text-align: right; vertical-align: top;">
+                        {{ comp.percent }}
+                    </td>
+                </tr>
+                {% endfor %}
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="font-style: italic; color: #777; text-align: center; padding: 15px 0;">
+        Belum ada data formula kualitatif & kuantitatif yang diracik untuk produk ini.
+    </p>
+    {% endif %}
+
+</body>
+</html>
