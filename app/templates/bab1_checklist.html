@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    body { font-family: Helvetica, sans-serif; font-size: 10pt; color: #1a1a1a; }
+    h1 { font-size: 14pt; margin-bottom: 2px; }
+    p.subtitle { font-size: 9pt; color: #555; margin-top: 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    td, th { border: 1px solid #999; padding: 5px 7px; font-size: 9pt; text-align: left; vertical-align: top; }
+    th { background-color: #eeeeee; }
+    .status-ada { color: #1a7f37; font-weight: bold; }
+    .status-kosong { color: #b91c1c; font-weight: bold; }
+</style>
+</head>
+<body>
+    <h1>BAB I — DATA ADMINISTRATIF</h1>
+    <p class="subtitle">Produk: <strong>{{ product.nama_produk or '-' }}</strong> &nbsp;|&nbsp; Perusahaan: {{ product.perusahaan or '-' }}</p>
+
+    <table>
+        <tr>
+            <th style="width: 30px;">No</th>
+            <th>Item</th>
+            <th style="width: 110px;">Status</th>
+        </tr>
+        <tr>
+            <td>1</td><td>Nomor Induk Berusaha (NIB)</td>
+            <td class="{{ 'status-ada' if status.nib else 'status-kosong' }}">{{ 'Terlampir' if status.nib else 'Belum tersedia' }}</td>
+        </tr>
+        <tr>
+            <td>2</td><td>Sertifikat CPKB</td>
+            <td class="{{ 'status-ada' if status.cpkb else 'status-kosong' }}">{{ 'Terlampir' if status.cpkb else 'Belum tersedia' }}</td>
+        </tr>
+        <tr>
+            <td>3</td><td>Lisensi Merk</td>
+            <td class="{{ 'status-ada' if status.lisensi else 'status-kosong' }}">{{ 'Terlampir' if status.lisensi else 'Belum tersedia' }}</td>
+        </tr>
+        <tr>
+            <td>4</td><td>Hak Merk</td>
+            <td class="{{ 'status-ada' if status.hak_merk else 'status-kosong' }}">{{ 'Terlampir' if status.hak_merk else 'Belum tersedia' }}</td>
+        </tr>
+        <tr>
+            <td>5</td><td>Surat Pernyataan Tidak Terlibat Tindak Pidana</td>
+            <td class="{{ 'status-ada' if status.tidak_pidana else 'status-kosong' }}">{{ 'Terlampir' if status.tidak_pidana else 'Belum tersedia' }}</td>
+        </tr>
+        <tr>
+            <td>6</td><td>Surat Nomor Notifikasi BPOM</td>
+            <td class="{{ 'status-ada' if status.notifikasi else 'status-kosong' }}">{{ 'Terlampir' if status.notifikasi else 'Belum tersedia' }}</td>
+        </tr>
+    </table>
+
+    <p style="font-size: 8.5pt; color: #666; margin-top: 12px;">
+        Catatan: dokumen dengan status "Belum tersedia" berarti file-nya belum diupload ke sistem, jadi tidak ikut dilampirkan.
+        Dokumen dilampirkan sesuai urutan di atas pada halaman-halaman selanjutnya.
+    </p>
+</body>
+</html>

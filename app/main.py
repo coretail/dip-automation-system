@@ -994,14 +994,113 @@ async def download_bab2_document(product_id: str):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+# =====================================================================
+#           GENERATOR DOKUMEN BAB I (DATA ADMINISTRATIF, PDF GABUNGAN)
+# =====================================================================
+@app.get("/products/{product_id}/bab1/download")
+async def download_bab1_document(product_id: str):
+    # 1. Ambil data produk
+    product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    product = product_resp.data
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+
+    perusahaan = product.get("perusahaan") or "PT Erfi"
+    brand_id = product.get("brand_id")
+
+    # 2. NIB & Sertifikat CPKB & Surat Tidak Pidana -> statis per PT
+    nib_resp = supabase.table("nib_documents").select("file_url").eq("perusahaan", perusahaan).limit(1).execute()
+    nib_url = nib_resp.data[0]["file_url"] if nib_resp.data else None
+
+    cpkb_resp = supabase.table("sertifikat_cpkb_documents").select("file_url").eq("perusahaan", perusahaan).limit(1).execute()
+    cpkb_url = cpkb_resp.data[0]["file_url"] if cpkb_resp.data else None
+
+    pidana_resp = supabase.table("surat_tidak_pidana_documents").select("file_url").eq("perusahaan", perusahaan).limit(1).execute()
+    pidana_url = pidana_resp.data[0]["file_url"] if pidana_resp.data else None
+
+    # 3. Lisensi Merk & Hak Merk -> dari brand yang di-link ke produk (kalau ada)
+    lisensi_url = None
+    hak_merk_url = None
+    if brand_id:
+        brand_resp = supabase.table("brands").select("lisensi_merk_file_url, hak_merk_file_url").eq("id", brand_id).limit(1).execute()
+        if brand_resp.data:
+            lisensi_url = brand_resp.data[0].get("lisensi_merk_file_url")
+            hak_merk_url = brand_resp.data[0].get("hak_merk_file_url")
+
+    # 4. Surat No. Notifikasi BPOM -> langsung dari kolom produk
+    notifikasi_url = product.get("no_notifikasi_file_url")
+
+    status = {
+        "nib": bool(nib_url),
+        "cpkb": bool(cpkb_url),
+        "lisensi": bool(lisensi_url),
+        "hak_merk": bool(hak_merk_url),
+        "tidak_pidana": bool(pidana_url),
+        "notifikasi": bool(notifikasi_url)
+    }
+
+    # 5. Render Checklist jadi PDF
+    checklist_html = templates.env.get_template("bab1_checklist.html").render(product=product, status=status)
+    checklist_buffer = io.BytesIO()
+    checklist_status = pisa.CreatePDF(src=checklist_html, dest=checklist_buffer)
+    if checklist_status.err:
+        raise HTTPException(status_code=500, detail="Gagal generate halaman Checklist Bab I.")
+    checklist_buffer.seek(0)
+
+    # 6. Gabung sesuai urutan: Checklist -> NIB -> Sertifikat CPKB -> Lisensi Merk -> Hak Merk -> Surat Tidak Pidana -> Surat No. Notifikasi BPOM
+    writer = PdfWriter()
+    for page in PdfReader(checklist_buffer).pages:
+        writer.add_page(page)
+
+    async def append_pdf_from_url(client: httpx.AsyncClient, url: str, label: str):
+        if not url:
+            return
+        try:
+            resp = await client.get(url, timeout=30)
+            resp.raise_for_status()
+            reader = PdfReader(io.BytesIO(resp.content))
+            for page in reader.pages:
+                writer.add_page(page)
+        except Exception as e:
+            print(f"Gagal ambil {label}: {e}")
+
+    async with httpx.AsyncClient() as client:
+        await append_pdf_from_url(client, nib_url, f"NIB ({perusahaan})")
+        await append_pdf_from_url(client, cpkb_url, f"Sertifikat CPKB ({perusahaan})")
+        await append_pdf_from_url(client, lisensi_url, "Lisensi Merk")
+        await append_pdf_from_url(client, hak_merk_url, "Hak Merk")
+        await append_pdf_from_url(client, pidana_url, f"Surat Tidak Pidana ({perusahaan})")
+        await append_pdf_from_url(client, notifikasi_url, "Surat No. Notifikasi BPOM")
+
+    output_buffer = io.BytesIO()
+    writer.write(output_buffer)
+    output_buffer.seek(0)
+
+    safe_name = "".join(c for c in (product.get("nama_produk") or "Produk") if c.isalnum() or c in (" ", "-", "_")).strip()
+    filename = f"Bab1_{safe_name.replace(' ', '_')}.pdf"
+
+    return StreamingResponse(
+        output_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
 # 1. Halaman Form Edit Produk
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def edit_product_page(request: Request, product_id: str):
     prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+
+    try:
+        brands_resp = supabase.table("brands").select("id, name, producers(name)").order("name").execute()
+        brands = brands_resp.data or []
+    except Exception as e:
+        print(f"Gagal ambil data brands buat dropdown: {e}")
+        brands = []
+
     return templates.TemplateResponse(
         request=request,
         name="edit_product.html",
-        context={"product": prod_resp.data}
+        context={"product": prod_resp.data, "brands": brands}
     )
 
 # 2. Proses Simpan Perubahan Info Produk (PERBAIKAN: Kolom disinkronkan dengan add_product)
@@ -1022,6 +1121,8 @@ async def update_product(
     teks_marketing: str = Form(None),
     cara_pakai: str = Form(None),
     status_progress: str = Form("R&D / Sample Phase"),
+    brand_id: str = Form(None),
+    no_notifikasi_file: UploadFile = File(None),
     current_user: dict = Depends(get_current_user)
 ):
     # 2. Bersihin input tanggal biar tipenya pas di database
@@ -1029,7 +1130,7 @@ async def update_product(
     if acc_sampel_val == "":
         acc_sampel_val = None
 
-    supabase.table("products").update({
+    update_payload = {
         "nama_produk": nama_produk,
         "perusahaan": perusahaan,
         "nama_customer": nama_customer,
@@ -1043,8 +1144,25 @@ async def update_product(
         "tanggal_text_design": tanggal_text_design or None,
         "teks_marketing": teks_marketing,
         "cara_pakai": cara_pakai,
-        "status_progress": status_progress 
-    }).eq("id", product_id).execute()
+        "status_progress": status_progress,
+        "brand_id": brand_id if brand_id else None
+    }
+
+    # Upload Surat No. Notifikasi BPOM kalau ada file baru diupload
+    if no_notifikasi_file and no_notifikasi_file.filename:
+        try:
+            file_bytes = await no_notifikasi_file.read()
+            path = f"products/no_notifikasi_{product_id}.pdf"
+            supabase.storage.from_("legal-documents").upload(
+                path=path,
+                file=file_bytes,
+                file_options={"content-type": no_notifikasi_file.content_type, "upsert": "true"}
+            )
+            update_payload["no_notifikasi_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
+        except Exception as e:
+            print(f"Gagal upload Surat No. Notifikasi BPOM produk {product_id}: {e}")
+
+    supabase.table("products").update(update_payload).eq("id", product_id).execute()
     
     return RedirectResponse(url="/", status_code=303)
 
@@ -1235,6 +1353,125 @@ async def create_sample_submission(
         
     # UBAH REDIRECT KE HALAMAN PREVIEW BERDASARKAN ID BARU
     return RedirectResponse(url=f"/sample-submissions/preview/{new_id}", status_code=303)
+
+# =====================================================================
+#                     MODUL KELOLA MERK (BRAND)
+# =====================================================================
+@app.post("/brands/add")
+async def add_brand(
+    producer_name: str = Form(...),
+    brand_name: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    producer_name = producer_name.strip()
+    brand_name = brand_name.strip()
+
+    if not producer_name or not brand_name:
+        response = RedirectResponse(url="/brands", status_code=303)
+        response.set_cookie("error_msg", "Nama Produsen dan Nama Merk wajib diisi.")
+        return response
+
+    try:
+        # 1. Cek/get-or-create Produsen (case-insensitive, biar 'Seruni' & 'seruni' gak dobel)
+        prod_check = supabase.table("producers").select("id").ilike("name", producer_name).execute()
+        if prod_check.data:
+            producer_id = prod_check.data[0]["id"]
+        else:
+            new_prod = supabase.table("producers").insert({"name": producer_name}).execute()
+            producer_id = new_prod.data[0]["id"]
+
+        # 2. Cek/get-or-create Brand di bawah produsen itu
+        brand_check = supabase.table("brands") \
+            .select("id") \
+            .eq("producer_id", producer_id) \
+            .ilike("name", brand_name) \
+            .execute()
+
+        if brand_check.data:
+            response = RedirectResponse(url="/brands", status_code=303)
+            response.set_cookie("error_msg", f"Merk '{brand_name}' sudah terdaftar di bawah produsen '{producer_name}'.")
+            return response
+
+        supabase.table("brands").insert({
+            "producer_id": producer_id,
+            "name": brand_name
+        }).execute()
+
+        response = RedirectResponse(url="/brands", status_code=303)
+        response.set_cookie("success_msg", f"Merk '{brand_name}' berhasil ditambahkan.")
+        return response
+
+    except Exception as e:
+        print(f"Gagal tambah brand baru: {e}")
+        response = RedirectResponse(url="/brands", status_code=303)
+        response.set_cookie("error_msg", "Gagal menambahkan merk. Coba lagi.")
+        return response
+
+
+@app.get("/brands", response_class=HTMLResponse)
+async def brands_page(request: Request, current_user: dict = Depends(get_current_user)):
+    try:
+        brands_resp = supabase.table("brands").select("*, producers(*)").order("name").execute()
+        brands = brands_resp.data or []
+    except Exception as e:
+        print(f"Gagal ambil data brands: {e}")
+        brands = []
+
+    success_msg = request.cookies.get("success_msg")
+    error_msg = request.cookies.get("error_msg")
+
+    response = templates.TemplateResponse(
+        request=request,
+        name="brands.html",
+        context={"brands": brands, "success_msg": success_msg, "error_msg": error_msg}
+    )
+    response.delete_cookie("success_msg")
+    response.delete_cookie("error_msg")
+    return response
+
+
+@app.post("/brands/{brand_id}/update-documents")
+async def update_brand_documents(
+    brand_id: str,
+    lisensi_merk_file: UploadFile = File(None),
+    hak_merk_file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    update_data = {}
+
+    try:
+        if lisensi_merk_file and lisensi_merk_file.filename:
+            file_bytes = await lisensi_merk_file.read()
+            path = f"brands/lisensi_merk_{brand_id}.pdf"
+            supabase.storage.from_("legal-documents").upload(
+                path=path,
+                file=file_bytes,
+                file_options={"content-type": lisensi_merk_file.content_type, "upsert": "true"}
+            )
+            update_data["lisensi_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
+
+        if hak_merk_file and hak_merk_file.filename:
+            file_bytes = await hak_merk_file.read()
+            path = f"brands/hak_merk_{brand_id}.pdf"
+            supabase.storage.from_("legal-documents").upload(
+                path=path,
+                file=file_bytes,
+                file_options={"content-type": hak_merk_file.content_type, "upsert": "true"}
+            )
+            update_data["hak_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
+
+        if update_data:
+            supabase.table("brands").update(update_data).eq("id", brand_id).execute()
+
+        response = RedirectResponse(url="/brands", status_code=303)
+        response.set_cookie("success_msg", "Dokumen merk berhasil diperbarui.")
+        return response
+
+    except Exception as e:
+        print(f"Gagal update dokumen brand {brand_id}: {e}")
+        response = RedirectResponse(url="/brands", status_code=303)
+        response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
+        return response
 
 @app.get("/sample-submissions", response_class=HTMLResponse)
 async def sample_submissions_list(request: Request, search: str = None):

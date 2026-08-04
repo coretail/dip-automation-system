@@ -7,7 +7,7 @@
     <h2 class="text-lg font-bold text-gray-900">Edit Informasi Produk</h2>
     <p class="text-xs text-gray-500 mb-6">Ubah meta data dokumen formula maklon</p>
 
-    <form method="POST" action="/products/{{ product.id }}/edit">
+    <form method="POST" action="/products/{{ product.id }}/edit" enctype="multipart/form-data">
         <div class="mb-4">
             <label class="block text-sm font-semibold mb-1">Nama Produk *</label>
             <input type="text" name="nama_produk" value="{{ product.nama_produk or '' }}" required
@@ -21,6 +21,30 @@
                 <option value="PT Heka" {{ 'selected' if product.perusahaan == 'PT Heka' else '' }}>PT Heka</option>
                 <option value="PT Erfi" {{ 'selected' if product.perusahaan == 'PT Erfi' else '' }}>PT Erfi</option>
             </select>
+        </div>
+
+        <div class="mb-4">
+            <label class="block text-sm font-semibold mb-1">Merk (Brand)</label>
+            <select name="brand_id" class="w-full border rounded-md px-3 py-2">
+                <option value="">-- Belum dipilih --</option>
+                {% for b in brands %}
+                <option value="{{ b.id }}" {{ 'selected' if product.brand_id == b.id else '' }}>
+                    {{ b.name }}{% if b.producers %} ({{ b.producers.name }}){% endif %}
+                </option>
+                {% endfor %}
+            </select>
+            <p class="text-xs text-gray-400 mt-1">Dipakai buat narik Lisensi Merk & Hak Merk pas generate Bab I.</p>
+        </div>
+
+        <div class="mb-4">
+            <label class="block text-sm font-semibold mb-1">Surat No. Notifikasi BPOM (PDF)</label>
+            {% if product.no_notifikasi_file_url %}
+            <p class="text-xs text-green-600 mb-1"><i class="fa-solid fa-circle-check mr-1"></i>
+                <a href="{{ product.no_notifikasi_file_url }}" target="_blank" class="hover:underline">Sudah ada file - lihat di sini</a>
+            </p>
+            {% endif %}
+            <input type="file" name="no_notifikasi_file" accept=".pdf" class="w-full border rounded-md px-3 py-2 text-sm">
+            <p class="text-xs text-gray-400 mt-1">Kosongkan kalau tidak mau ganti file yang sudah ada.</p>
         </div>
 
         <div class="mb-4">
