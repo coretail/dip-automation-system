@@ -218,11 +218,16 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             .limit(5) \
             .execute()
         recent_samples = response_sample.data or []
+
+        # 3. Tambahan: Data brands buat dropdown Merk di modal Tambah Produk
+        response_brands = supabase.table("brands").select("id, name, producers(name)").order("name").execute()
+        brands = response_brands.data or []
         
     except Exception as e:
         print(f"Gagal ambil data dashboard: {e}")
         products = []
         recent_samples = []
+        brands = []
     
     return templates.TemplateResponse(
         request=request,
@@ -232,7 +237,8 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             "request": request, 
             "products": products, 
             "recent_samples": recent_samples,
-            "user": current_user
+            "user": current_user,
+            "brands": brands
         }
     )
 
@@ -644,6 +650,7 @@ async def add_product(
     tanggal_text_design: str = Form(None),
     teks_marketing: str = Form(None),
     cara_pakai: str = Form(None),
+    brand_id: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     # Bersihkan input tanggal kosong menjadi None agar Supabase tidak error
@@ -664,7 +671,8 @@ async def add_product(
         "acc_sampel": acc_sampel_val,
         "tanggal_text_design": tanggal_text_design or None,
         "teks_marketing": teks_marketing,
-        "cara_pakai": cara_pakai
+        "cara_pakai": cara_pakai,
+        "brand_id": brand_id if brand_id else None
     }
     
     supabase.table("products").insert(product_data).execute()
