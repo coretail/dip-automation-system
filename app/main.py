@@ -1198,16 +1198,13 @@ async def download_dip_bab3(
     perusahaan = product.get("perusahaan", "PT Erfi")
 
     # 2. AMBIL DATA FORMULA KUALITATIF & KUANTITATIF (POIN 1)
-    try:
-        formula_resp = supabase.table("product_formula_lines") \
-            .select("percent_in_formula, raw_materials(*, raw_material_compositions(*))") \
-            .eq("product_id", product_id) \
-            .execute()
-    except Exception:
-        formula_resp = supabase.table("product_formula_lines") \
-            .select("percent_in_formula, raw_materials(*)") \
-            .eq("product_id", product_id) \
-            .execute()
+    # Catatan: nama tabel yang bener "raw_material_components" (bukan "compositions"),
+    # dan kolom persentase-nya "percent_internal" -- ini yang dipakai konsisten di
+    # seluruh app (Formula Builder, Ingredient Report, Bab II).
+    formula_resp = supabase.table("product_formula_lines") \
+        .select("percent_in_formula, raw_materials(*, raw_material_components(*))") \
+        .eq("product_id", product_id) \
+        .execute()
 
     raw_formula = formula_resp.data if formula_resp.data else []
     processed_formula = []
@@ -1215,32 +1212,32 @@ async def download_dip_bab3(
     for line in raw_formula:
         rm = line.get("raw_materials") or {}
         percent_total = float(line.get("percent_in_formula") or 0)
-        compositions = rm.get("raw_material_compositions") or rm.get("compositions") or []
+        compositions = rm.get("raw_material_components") or []
         
         if compositions and len(compositions) > 0:
             comp_list = []
             for comp in compositions:
-                pct_in_rm = float(comp.get("percentage_in_rm") or comp.get("percentage") or 100)
+                pct_in_rm = float(comp.get("percent_internal") or 100)
                 calc_pct = round((pct_in_rm / 100.0) * percent_total, 4)
                 comp_list.append({
-                    "ingredient": comp.get("inci_name") or comp.get("nama_inci") or comp.get("ingredient") or "-",
-                    "function": comp.get("function") or comp.get("fungsi") or "-",
+                    "ingredient": comp.get("inci_name") or "-",
+                    "function": comp.get("function") or "-",
                     "percent": calc_pct
                 })
             processed_formula.append({
                 "nama_dagang": rm.get("nama_dagang") or "-",
-                "kode": rm.get("kode_bahan_baku") or rm.get("kode") or "-",
+                "kode": rm.get("kode_bahan_baku") or "-",
                 "row_span": len(comp_list),
                 "compositions": comp_list
             })
         else:
             processed_formula.append({
                 "nama_dagang": rm.get("nama_dagang") or "-",
-                "kode": rm.get("kode_bahan_baku") or rm.get("kode") or "-",
+                "kode": rm.get("kode_bahan_baku") or "-",
                 "row_span": 1,
                 "compositions": [{
-                    "ingredient": rm.get("inci_name") or rm.get("nama_inci") or rm.get("nama_dagang") or "-",
-                    "function": rm.get("fungsi") or rm.get("function") or "-",
+                    "ingredient": rm.get("nama_dagang") or "-",
+                    "function": "-",
                     "percent": percent_total
                 }]
             })
