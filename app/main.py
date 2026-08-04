@@ -324,46 +324,6 @@ async def product_bab3_detail(
         
     return response
 
-@app.post("/products/{product_id}/upload-bab3-doc")
-async def upload_bab3_document(
-    product_id: str,
-    field_name: str = Form(...),
-    pdf_file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user)
-):
-    redirect_url = f"/products/{product_id}/bab3"
-    
-    if not pdf_file.filename:
-        response = RedirectResponse(url=redirect_url, status_code=303)
-        response.set_cookie("error_msg", "File PDF kagak boleh kosong men!")
-        return response
-
-    try:
-        file_bytes = await pdf_file.read()
-        file_path = f"bab3/{product_id}/{field_name}.pdf"
-
-        # Upload ke Supabase Storage
-        supabase.storage.from_("raw-material-docs").upload(
-            path=file_path,
-            file=file_bytes,
-            file_options={"content-type": "application/pdf", "upsert": "true"}
-        )
-
-        public_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
-
-        # Update URL file ke kolom tabel products
-        supabase.table("products").update({field_name: public_url}).eq("id", product_id).execute()
-
-        response = RedirectResponse(url=redirect_url, status_code=303)
-        response.set_cookie("success_msg", "Mantap! Dokumen Bab 3 berhasil ter-upload.")
-        return response
-
-    except Exception as e:
-        print(f"Gagal upload dokumen Bab 3: {e}")
-        response = RedirectResponse(url=redirect_url, status_code=303)
-        response.set_cookie("error_msg", f"Gagal upload file: {e}")
-        return response
-
 @app.get("/raw-materials", response_class=HTMLResponse)
 async def raw_materials_page(request: Request):
     rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*)").order("nama_dagang").execute()
@@ -615,7 +575,7 @@ async def edit_raw_material(
     return RedirectResponse(url="/raw-materials", status_code=303)
 
 @app.get("/raw-materials/delete/{rm_id}")
-async def delete_raw_material(rm_id: str):
+async def delete_raw_material(rm_id: str, current_user: dict = Depends(get_current_user)):
     # Cek dulu apakah bahan baku ini masih dipakai di formula produk manapun
     usage_check = supabase.table("product_formula_lines").select("id").eq("raw_material_id", rm_id).execute()
 
@@ -1437,7 +1397,7 @@ async def update_product(
     return response
 
 @app.get("/products/delete/{product_id}")
-async def delete_product(product_id: str):
+async def delete_product(product_id: str, current_user: dict = Depends(get_current_user)):
     try:
         # Hapus dulu baris formula terkait (kalau FK belum di-set CASCADE)
         supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
