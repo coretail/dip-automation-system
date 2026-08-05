@@ -2040,3 +2040,99 @@ async def update_user_role(
     except Exception as e:
         print(f"Gagal update role: {e}")
         return RedirectResponse(url="/admin/users?error=update_failed", status_code=303)
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, current_user: dict = Depends(get_current_user)):
+    products, brands = [], []
+    try:
+        # 1. Ambil data produk master
+        response_prod = supabase.table("products").select("*, brands(name)").order("created_at", desc=True).execute()
+        products = response_prod.data or []
+
+        # 2. Ambil ID produk yang udah punya formula (Bab 2)
+        prods_with_formula = set()
+        try:
+            formula_prods_resp = supabase.table("product_formula_lines").select("product_id").execute()
+            prods_with_formula = set([item["product_id"] for item in (formula_prods_resp.data or []) if item.get("product_id")])
+        except Exception as e:
+            print(f"Gagal tarik formula lines: {e}")
+
+        # 3. Hitung status NA dan matriks kelengkapan dokumen Bab I - IV per produk
+        for p in products:
+            # INI KUNCI UTAMA: Inisialisasi default value dulu biar Jinja2 gak bingung/crash
+            p["dip_summary"] = {
+                "b1_ok": False,
+                "b2_ok": False,
+                "b3_ok": False,
+                "b3_ratio": "0/7",
+                "b4_ok": False,
+                "b4_ratio": "0/5",
+                "progress_pct": 0,
+                "is_complete": False
+            }
+
+            try:
+                p["status_na"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
+                
+                b1_ok = bool(p.get("no_notifikasi_file_url"))
+                b2_ok = p.get("id") in prods_with_formula
+                
+                b3_files = [
+                    p.get("cara_pembuatan_file_url"),
+                    p.get("sistem_penomoran_batch_file_url"),
+                    p.get("spek_produk_jadi_file_url"),
+                    p.get("spek_pengemas_file_url"),
+                    p.get("laporan_uji_sig_file_url"),
+                    p.get("protokol_stabilitas_file_url"),
+                    p.get("hasil_stabilitas_file_url")
+                ]
+                b3_count = sum(1 for f in b3_files if f)
+                b3_ok = (b3_count == len(b3_files))
+                
+                b4_files = [
+                    p.get("laporan_keamanan_file_url"),
+                    p.get("monitoring_efek_samping_file_url"),
+                    p.get("data_klaim_file_url"),
+                    p.get("desain_primer_file_url"),
+                    p.get("desain_sekunder_file_url")
+                ]
+                b4_count = sum(1 for f in b4_files if f)
+                b4_ok = (b4_count == len(b4_files))
+                
+                total_checks = 1 + 1 + len(b3_files) + len(b4_files)
+                current_checks = (1 if b1_ok else 0) + (1 if b2_ok else 0) + b3_count + b4_count
+                progress_pct = int((current_checks / total_checks) * 100)
+                
+                p["dip_summary"] = {
+                    "b1_ok": b1_ok,
+                    "b2_ok": b2_ok,
+                    "b3_ok": b3_ok,
+                    "b3_ratio": f"{b3_count}/{len(b3_files)}",
+                    "b4_ok": b4_ok,
+                    "b4_ratio": f"{b4_count}/{len(b4_files)}",
+                    "progress_pct": progress_pct,
+                    "is_complete": progress_pct == 100
+                }
+            except Exception as err:
+                print(f"Error hitung dip_summary produk {p.get('id')}: {err}")
+
+        # Data brands buat modal Tambah Produk
+        try:
+            response_brands = supabase.table("brands").select("id, name, producers(name)").order("name").execute()
+            brands = response_brands.data or []
+        except Exception as e:
+            print(f"Gagal tarik brands: {e}")
+        
+    except Exception as e:
+        print(f"Gagal ambil data dashboard: {e}")
+    
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html", 
+        context={
+            "request": request, 
+            "products": products, 
+            "user": current_user,
+            "brands": brands
+        }
+    )

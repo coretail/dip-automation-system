@@ -126,17 +126,12 @@
 
 <!-- === 1. NAVIGATION TABS (Model Master Bahan Baku) === -->
 <div class="border-b border-gray-200 mb-6">
-    <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-        <!-- Tab Master Produk (Aktif Pertama) -->
-        <button onclick="switchDashboardTab('master-produk-tab', this)" 
-                class="tab-btn border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all focus:outline-none">
-            Master Produk Terbaru
+    <nav class="-mb-px flex space-x-8">
+        <button type="button" onclick="switchDashboardTab('tab-master-produk', this)" class="dash-tab-btn border-indigo-500 text-indigo-600 py-3 px-1 border-b-2 font-semibold text-sm focus:outline-none">
+            <i class="fa-solid fa-boxes-stacked mr-1.5"></i> Master Produk Terbaru
         </button>
-        
-        <!-- Tab Pengajuan Sample -->
-        <button onclick="switchDashboardTab('pengajuan-sample-tab', this)" 
-                class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all focus:outline-none">
-            Pengajuan Sample Terbaru (FSP)
+        <button type="button" onclick="switchDashboardTab('tab-checklist-dip', this)" class="dash-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm focus:outline-none">
+            <i class="fa-solid fa-list-check mr-1.5"></i> Checklist Kelengkapan DIP (Bab I - IV)
         </button>
     </nav>
 </div>
@@ -145,7 +140,7 @@
 <div class="bg-white shadow-sm rounded-lg border border-gray-200">
     
     <!-- ================= CONTEN TAB 1: MASTER PRODUK ================= -->
-    <div id="master-produk-tab" class="tab-content block overflow-x-auto">
+    <div id="tab-master-produk" class="dash-tab-content block overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 text-left text-sm">
             <thead class="bg-gray-50 text-gray-700 uppercase font-semibold text-xs border-b">
                 <tr>
@@ -245,49 +240,108 @@
     </div>
 
     <!-- ================= CONTEN TAB 2: PENGAJUAN SAMPLE ================= -->
-    <div id="pengajuan-sample-tab" class="tab-content hidden overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200 text-left text-sm">
-            <thead class="bg-gray-50 text-gray-700 uppercase font-semibold text-xs border-b">
-                <tr>
-                    <th class="px-6 py-3">Kode Sample</th>
-                    <th class="px-6 py-3">Nama Produk / Formula</th>
-                    <th class="px-6 py-3">Perusahaan</th>
-                    <th class="px-6 py-3 text-right">Aksi</th>
-                </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-                {% for sample in recent_samples %}
-                <tr class="hover:bg-gray-50 transition">
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="text-xs font-mono font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-200">
-                            {{ sample.sample_code }}
-                        </span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-bold text-gray-900 uppercase">{{ sample.product_name }}</div>
-                        <div class="text-xs text-gray-400">Trial / Revisi Ke-{{ sample.revision_number }}</div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        {% if sample.company == 'Heka' or sample.company == 'PT Heka' %}
-                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">PT Heka</span>
-                        {% else %}
-                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">PT Erfi</span>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <a href="/sample-submissions/preview/{{ sample.id }}" 
-                           class="inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded border border-amber-200 transition">
-                            <i class="fa-solid fa-file-pdf"></i> Preview FSP
-                        </a>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="4" class="px-6 py-8 text-center text-gray-400">Belum ada riwayat pengajuan sample masuk.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div id="tab-checklist-dip" class="dash-tab-content hidden">
+        <div class="overflow-x-auto border rounded-lg bg-white shadow-xs">
+            <table class="w-full text-sm text-left text-gray-500">
+                <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b">
+                    <tr>
+                        <th class="px-4 py-3">Nama Produk / Brand</th>
+                        <th class="px-4 py-3 text-center">Bab I<br><span class="text-[10px] text-gray-400 font-normal">Legalitas</span></th>
+                        <th class="px-4 py-3 text-center">Bab II<br><span class="text-[10px] text-gray-400 font-normal">Formula</span></th>
+                        <th class="px-4 py-3 text-center">Bab III<br><span class="text-[10px] text-gray-400 font-normal">Mutu FG</span></th>
+                        <th class="px-4 py-3 text-center">Bab IV<br><span class="text-[10px] text-gray-400 font-normal">Keamanan</span></th>
+                        <th class="px-4 py-3 text-center">Progress DIP</th>
+                        <th class="px-4 py-3 text-center">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                    {% for p in products %}
+                    <tr class="hover:bg-gray-50 bg-white">
+                        <!-- Nama Produk & Brand -->
+                        <td class="px-4 py-3">
+                            <div class="font-bold text-gray-900">{{ p.nama_produk }}</div>
+                            <div class="text-xs text-gray-500">
+                                {{ p.brands.name if p.brands else '-' }} ({{ p.perusahaan or '-' }})
+                            </div>
+                        </td>
+
+                        <!-- Bab I Status -->
+                        <td class="px-4 py-3 text-center">
+                            {% if p.dip_summary and p.dip_summary.b1_ok %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800" title="Surat Notifikasi Uploaded">
+                                    <i class="fa-solid fa-circle-check mr-1"></i> Lengkap
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700" title="Surat Notifikasi Belum Diupload">
+                                    <i class="fa-solid fa-circle-xmark mr-1"></i> Belum
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <!-- Bab II Status -->
+                        <td class="px-4 py-3 text-center">
+                            {% if p.dip_summary and p.dip_summary.b2_ok %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800" title="Formula Sudah Diisi">
+                                    <i class="fa-solid fa-circle-check mr-1"></i> Ada
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800" title="Formula Masih Kosong">
+                                    <i class="fa-solid fa-triangle-exclamation mr-1"></i> Kosong
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <!-- Bab III Status -->
+                        <td class="px-4 py-3 text-center">
+                            {% if p.dip_summary and p.dip_summary.b3_ok %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                    <i class="fa-solid fa-circle-check mr-1"></i> 7/7
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                    {{ p.dip_summary.b3_ratio if p.dip_summary else '0/7' }} File
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <!-- Bab IV Status -->
+                        <td class="px-4 py-3 text-center">
+                            {% if p.dip_summary and p.dip_summary.b4_ok %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                                    <i class="fa-solid fa-circle-check mr-1"></i> 5/5
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                    {{ p.dip_summary.b4_ratio if p.dip_summary else '0/5' }} File
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <!-- Progress Bar Overall -->
+                        <td class="px-4 py-3 text-center">
+                            <div class="w-full bg-gray-200 rounded-full h-2.5 max-w-[100px] mx-auto mb-1">
+                                <div class="{% if p.dip_summary and p.dip_summary.is_complete %}bg-emerald-600{% else %}bg-indigo-600{% endif %} h-2.5 rounded-full" style="width: {{ p.dip_summary.progress_pct if p.dip_summary else 0 }}%"></div>
+                            </div>
+                            <span class="text-[11px] font-bold {% if p.dip_summary and p.dip_summary.is_complete %}text-emerald-600{% else %}text-gray-600{% endif %}">
+                                {{ p.dip_summary.progress_pct if p.dip_summary else 0 }}%
+                            </span>
+                        </td>
+
+                        <!-- Tombol Aksi -->
+                        <td class="px-4 py-3 text-center">
+                            <a href="/products/{{ p.id }}/edit" class="inline-flex items-center px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded text-xs font-semibold transition" title="Lengkapi Dokumen">
+                                <i class="fa-solid fa-pen-to-square mr-1"></i> Lengkapi
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="px-4 py-8 text-center text-gray-400">Belum ada data produk.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -438,21 +492,14 @@ function resetFilter() {
 }
 
 function switchDashboardTab(tabId, element) {
-    // 1. Sembunyikan semua isi tabel konten
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.replace('block', 'hidden');
-    });
-    
-    // 2. Tampilkan konten tab yang dipilih
+    document.querySelectorAll('.dash-tab-content').forEach(el => el.classList.replace('block', 'hidden'));
     document.getElementById(tabId).classList.replace('hidden', 'block');
     
-    // 3. Reset style border tombol nav menjadi transparan abu-abu
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    document.querySelectorAll('.dash-tab-btn').forEach(btn => {
         btn.classList.remove('border-indigo-500', 'text-indigo-600');
         btn.classList.add('border-transparent', 'text-gray-500');
     });
     
-    // 4. Kasih highlight border indigo ke tombol tab yang lagi aktif
     element.classList.remove('border-transparent', 'text-gray-500');
     element.classList.add('border-indigo-500', 'text-indigo-600');
 }
