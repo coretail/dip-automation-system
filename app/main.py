@@ -243,49 +243,6 @@ async def logout():
     response.delete_cookie(key="access_token")
     return response
 
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, current_user: dict = Depends(get_current_user)):
-    try:
-        # 1. Mengambil data produk master terbaru
-        response_prod = supabase.table("products").select("*").order("created_at", desc=True).execute()
-        products = response_prod.data or []
-
-        # 1b. Hitung ulang status_na otomatis dari tanggal_aktif_na (NA berlaku 5 tahun).
-        # Kalau tanggal_aktif_na belum diisi, tetap pakai status_na manual yang lama.
-        for p in products:
-            p["status_na"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
-        
-        # 2. Tambahan: Tarik 5 data pengajuan sample (FSP) paling baru
-        response_sample = supabase.table("sample_submissions") \
-            .select("id, sample_code, product_name, company, created_at, revision_number") \
-            .order("created_at", desc=True) \
-            .limit(5) \
-            .execute()
-        recent_samples = response_sample.data or []
-
-        # 3. Tambahan: Data brands buat dropdown Merk di modal Tambah Produk
-        response_brands = supabase.table("brands").select("id, name, producers(name)").order("name").execute()
-        brands = response_brands.data or []
-        
-    except Exception as e:
-        print(f"Gagal ambil data dashboard: {e}")
-        products = []
-        recent_samples = []
-        brands = []
-    
-    return templates.TemplateResponse(
-        request=request,
-        name="dashboard.html", 
-        # Oper variabel 'products' dan 'recent_samples' ke HTML
-        context={
-            "request": request, 
-            "products": products, 
-            "recent_samples": recent_samples,
-            "user": current_user,
-            "brands": brands
-        }
-    )
-
 @app.get("/products/{product_id}", response_class=HTMLResponse)
 async def product_detail(request: Request, product_id: str):
     prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
