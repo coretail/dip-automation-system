@@ -750,6 +750,10 @@ async def add_product(
     if acc_sampel_val == "":
         acc_sampel_val = None
 
+    tgl_aktif_na_val = tanggal_aktif_na.strip() if tanggal_aktif_na else None
+    if tgl_aktif_na_val == "":
+        tgl_aktif_na_val = None
+
     product_data = {
         "nama_produk": nama_produk,
         "perusahaan": perusahaan,
