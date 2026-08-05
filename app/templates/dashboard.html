@@ -190,7 +190,16 @@
                             {% endif %}
                         </div>
                         <div class="text-xs font-mono text-gray-500">
-                            BPOM: {% if product.status_na == 'aktif' %}<span class="text-green-600 font-medium">{{ product.no_na_produk }}</span>{% else %}Belum Terdaftar{% endif %}
+                            BPOM:
+                            {% if product.status_na == 'aktif' %}
+                                <span class="text-green-600 font-medium">{{ product.no_na_produk }}</span>
+                            {% elif product.status_na == 'akan_expired' %}
+                                <span class="text-amber-600 font-medium" title="Masa berlaku NA akan habis dalam 6 bulan">⚠ {{ product.no_na_produk }} (Akan Expired)</span>
+                            {% elif product.status_na == 'expired' %}
+                                <span class="text-red-600 font-medium" title="Masa berlaku NA sudah habis">{{ product.no_na_produk }} (Expired)</span>
+                            {% else %}
+                                Belum Terdaftar
+                            {% endif %}
                         </div>
                     </td>
                     <!-- Kolom Aksi -->
@@ -339,6 +348,10 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Nomor NA (Notifikasi BPOM)</label>
                         <input type="text" name="no_na_produk" placeholder="NA18xxxxxxxx" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Tanggal Awal Berlaku NA</label>
+                        <input type="date" name="tanggal_aktif_na" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Status Registrasi NA</label>

@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from typing import List
 from app.database import supabase
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from supabase import create_client
 import os
@@ -20,6 +20,41 @@ load_dotenv()
 # (kode FSP, hitungan revisi) biar gak geser gara-gara server jalan di UTC.
 WIB = ZoneInfo("Asia/Jakarta")
 import uuid
+
+def _add_years(d: date, years: int) -> date:
+    """Tambah tahun ke tanggal, aman buat kasus 29 Feb kena tahun non-kabisat."""
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:
+        return d.replace(year=d.year + years, day=28)
+
+def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
+    """
+    Hitung status NA otomatis dari tanggal_aktif_na (NA BPOM berlaku 5 tahun sejak
+    tanggal aktif). Kalau tanggal_aktif_na belum diisi, tetap pakai status manual
+    yang lama (fallback_status) -- ini yang nutup kasus 'belum_terdaftar'.
+    """
+    if not tanggal_aktif_na:
+        return fallback_status
+
+    try:
+        if isinstance(tanggal_aktif_na, str):
+            start = datetime.strptime(tanggal_aktif_na[:10], "%Y-%m-%d").date()
+        else:
+            start = tanggal_aktif_na
+    except Exception:
+        return fallback_status
+
+    expired_date = _add_years(start, 5)
+    today = datetime.now(WIB).date()
+    warning_date = expired_date - timedelta(days=180)  # ~6 bulan sebelum expired
+
+    if today > expired_date:
+        return "expired"
+    elif today >= warning_date:
+        return "akan_expired"
+    else:
+        return "aktif"
 
 app = FastAPI(title="DIP Kosmetik Automation")
 
@@ -214,6 +249,11 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
         # 1. Mengambil data produk master terbaru
         response_prod = supabase.table("products").select("*").order("created_at", desc=True).execute()
         products = response_prod.data or []
+
+        # 1b. Hitung ulang status_na otomatis dari tanggal_aktif_na (NA berlaku 5 tahun).
+        # Kalau tanggal_aktif_na belum diisi, tetap pakai status_na manual yang lama.
+        for p in products:
+            p["status_na"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
         
         # 2. Tambahan: Tarik 5 data pengajuan sample (FSP) paling baru
         response_sample = supabase.table("sample_submissions") \
@@ -697,6 +737,7 @@ async def add_product(
     netto: str = Form(None),
     no_na_produk: str = Form(None),
     status_na: str = Form("belum_terdaftar"),
+    tanggal_aktif_na: str = Form(None),
     acc_sampel: str = Form(None),
     tanggal_text_design: str = Form(None),
     teks_marketing: str = Form(None),
@@ -719,6 +760,7 @@ async def add_product(
         "netto": netto,
         "no_na_produk": no_na_produk,
         "status_na": status_na,
+        "tanggal_aktif_na": tgl_aktif_na_val,
         "acc_sampel": acc_sampel_val,
         "tanggal_text_design": tanggal_text_design or None,
         "teks_marketing": teks_marketing,
@@ -1314,6 +1356,7 @@ async def update_product(
     kemasan: str = Form(None),
     no_na_produk: str = Form(None),
     status_na: str = Form("aktif"),
+    tanggal_aktif_na: str = Form(None),
     acc_sampel: str = Form(None),
     tanggal_text_design: str = Form(None),
     teks_marketing: str = Form(None),
@@ -1346,6 +1389,7 @@ async def update_product(
         "kemasan": kemasan,
         "no_na_produk": no_na_produk,
         "status_na": status_na,
+        "tanggal_aktif_na": tgl_aktif_na_val,
         "acc_sampel": acc_sampel_val,
         "tanggal_text_design": tanggal_text_design or None,
         "teks_marketing": teks_marketing,

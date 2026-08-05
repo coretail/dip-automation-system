@@ -81,6 +81,10 @@
                     <input type="text" name="no_na_produk" value="{{ product.no_na_produk or '' }}" placeholder="NA18xxxxxxxx" class="w-full border rounded-md px-3 py-2 text-sm">
                 </div>
                 <div>
+                    <label class="block text-sm font-semibold mb-1">Tanggal Awal Berlaku NA</label>
+                    <input type="date" name="tanggal_aktif_na" value="{{ product.tanggal_aktif_na or '' }}" class="w-full border rounded-md px-3 py-2 text-sm">
+                </div>  
+                <div>
                     <label class="block text-sm font-semibold mb-1">Status Registrasi NA</label>
                     <select name="status_na" class="w-full border rounded-md px-3 py-2 text-sm">
                         <option value="aktif" {{ 'selected' if product.status_na == 'aktif' else '' }}>Aktif</option>
