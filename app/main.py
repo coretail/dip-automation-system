@@ -1325,6 +1325,80 @@ async def download_dip_bab3(
         headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
     )
 
+@app.get("/products/{product_id}/bab4/download")
+async def download_dip_bab4(
+    product_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    # 1. AMBIL DATA PRODUK
+    prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).single().execute()
+    product = prod_resp.data
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk kagak ketemu men!")
+
+    perusahaan = product.get("perusahaan", "PT Erfi")
+
+    # 2. AMBIL SOP MASTER PERUSAHAAN (Poin 2 & Poin 3)
+    company_sop = {}
+    try:
+        sop_resp = supabase.table("company_sop_documents").select("*").eq("perusahaan", perusahaan).execute()
+        if sop_resp.data and len(sop_resp.data) > 0:
+            company_sop = sop_resp.data[0]
+    except Exception as e:
+        print(f"[WARNING] Gagal/belum ada data company_sop_documents: {e}")
+
+    # 3. RENDER CHECKLIST BAB 4 VIA TEMPLATE HTML
+    template = templates.get_template("bab4_checklist.html")
+    rendered_html = template.render({
+        "product": product,
+        "perusahaan": perusahaan,
+        "company_sop": company_sop
+    })
+
+    cover_pdf_io = io.BytesIO()
+    pisa.CreatePDF(io.StringIO(rendered_html), dest=cover_pdf_io)
+    cover_pdf_io.seek(0)
+
+    # 4. MERGE PDF COVER + LAMPIRAN BAB 4
+    pdf_writer = PdfWriter()
+    cover_reader = PdfReader(cover_pdf_io)
+    for page in cover_reader.pages:
+        pdf_writer.add_page(page)
+
+    attachment_urls = [
+        product.get("laporan_keamanan_file_url"),      # Poin 1
+        company_sop.get("cv_safety_assessor_url"),     # Poin 2
+        company_sop.get("monitoring_efek_samping_file_url"),    # Poin 3
+        product.get("data_klaim_file_url"),            # Poin 4
+        product.get("desain_primer_file_url"),         # Poin 5a
+        product.get("desain_sekunder_file_url"),       # Poin 5b
+    ]
+
+    async with httpx.AsyncClient() as client:
+        for url in attachment_urls:
+            if url:
+                try:
+                    res = await client.get(url, timeout=15.0)
+                    if res.status_code == 200:
+                        doc_reader = PdfReader(io.BytesIO(res.content))
+                        for page in doc_reader.pages:
+                            pdf_writer.add_page(page)
+                except Exception as e:
+                    print(f"[BAB 4 MERGE ERROR] Gagal mengunduh {url}: {e}")
+
+    output_pdf_io = io.BytesIO()
+    pdf_writer.write(output_pdf_io)
+    output_pdf_io.seek(0)
+
+    safe_product_name = "".join([c for c in product.get('nama_produk', 'Produk') if c.isalnum() or c in (' ', '_')]).rstrip()
+    filename = f"DIP_Bab_4_{safe_product_name}.pdf"
+
+    return Response(
+        content=output_pdf_io.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+    )
+
 # 1. Halaman Form Edit Produk
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def edit_product_page(request: Request, product_id: str):
@@ -1363,21 +1437,29 @@ async def update_product(
     cara_pakai: str = Form(None),
     status_progress: str = Form("R&D / Sample Phase"),
     brand_id: str = Form(None),
-    # --- FILE UPLOAD BAB 1 & BAB 3 ---
+    # File Bab 1
     no_notifikasi_file: UploadFile = File(None),
+    # File Bab 3
     cara_pembuatan_file: UploadFile = File(None),
     sistem_penomoran_batch_file: UploadFile = File(None),
-    spek_produk_jadi_file: UploadFile = File(None), # <-- TAMBAH INI
+    spek_produk_jadi_file: UploadFile = File(None),
     spek_pengemas_file: UploadFile = File(None),
     laporan_uji_sig_file: UploadFile = File(None),
     protokol_stabilitas_file: UploadFile = File(None),
     hasil_stabilitas_file: UploadFile = File(None),
+    # File Bab 4 (NEW)
+    laporan_keamanan_file: UploadFile = File(None),
+    monitoring_efek_samping_file: UploadFile = File(None),
+    data_klaim_file: UploadFile = File(None),
+    desain_primer_file: UploadFile = File(None),
+    desain_sekunder_file: UploadFile = File(None),
     current_user: dict = Depends(get_current_user)
 ):
-    # ... logic parsing tanggal & payload bawaan ...
     acc_sampel_val = acc_sampel.strip() if acc_sampel else None
-    if acc_sampel_val == "":
-        acc_sampel_val = None
+    if acc_sampel_val == "": acc_sampel_val = None
+
+    tgl_aktif_na_val = tanggal_aktif_na.strip() if tanggal_aktif_na else None
+    if tgl_aktif_na_val == "": tgl_aktif_na_val = None
 
     update_payload = {
         "nama_produk": nama_produk,
@@ -1413,23 +1495,29 @@ async def update_product(
                 print(f"Gagal upload {path_suffix} produk {product_id}: {e}")
         return None
 
-    # Upload Surat No. Notifikasi BPOM
+    # Upload Bab 1
     no_notif_url = await process_pdf_upload(no_notifikasi_file, "no_notifikasi", bucket_name="legal-documents")
-    if no_notif_url:
-        update_payload["no_notifikasi_file_url"] = no_notif_url
+    if no_notif_url: update_payload["no_notifikasi_file_url"] = no_notif_url
 
-    # Dictionary Map File Bab 3
-    bab3_files = {
+    # Upload Map File Bab 3 & Bab 4
+    file_mappings = {
+        # Bab 3
         "cara_pembuatan_file_url": (cara_pembuatan_file, "cara_pembuatan"),
         "sistem_penomoran_batch_file_url": (sistem_penomoran_batch_file, "sistem_penomoran_batch"),
-        "spek_produk_jadi_file_url": (spek_produk_jadi_file, "spek_produk_jadi"), # <-- TAMBAH INI
+        "spek_produk_jadi_file_url": (spek_produk_jadi_file, "spek_produk_jadi"),
         "spek_pengemas_file_url": (spek_pengemas_file, "spek_pengemas"),
         "laporan_uji_sig_file_url": (laporan_uji_sig_file, "laporan_uji_sig"),
         "protokol_stabilitas_file_url": (protokol_stabilitas_file, "protokol_stabilitas"),
         "hasil_stabilitas_file_url": (hasil_stabilitas_file, "hasil_stabilitas"),
+        # Bab 4
+        "laporan_keamanan_file_url": (laporan_keamanan_file, "laporan_keamanan"),
+        "monitoring_efek_samping_file_url": (monitoring_efek_samping_file, "monitoring_efek_samping"),
+        "data_klaim_file_url": (data_klaim_file, "data_klaim"),
+        "desain_primer_file_url": (desain_primer_file, "desain_primer"),
+        "desain_sekunder_file_url": (desain_sekunder_file, "desain_sekunder"),
     }
 
-    for db_col, (file_obj, key_suffix) in bab3_files.items():
+    for db_col, (file_obj, key_suffix) in file_mappings.items():
         uploaded_url = await process_pdf_upload(file_obj, key_suffix)
         if uploaded_url:
             update_payload[db_col] = uploaded_url

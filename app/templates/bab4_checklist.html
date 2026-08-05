@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page { size: A4; margin: 1.5cm; }
+        body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; line-height: 1.4; color: #1a1a1a; }
+        .header { text-align: center; margin-bottom: 15px; border-bottom: 2px solid #333; padding-bottom: 8px; }
+        .title { font-size: 14pt; font-weight: bold; text-transform: uppercase; margin: 0; }
+        .subtitle { font-size: 9.5pt; color: #555; margin-top: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; }
+        th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; font-size: 8.5pt; }
+        th { background-color: #eee; font-weight: bold; }
+        .status-ok { color: #059669; font-weight: bold; }
+        .status-empty { color: #dc2626; font-style: italic; }
+        .label-col { width: 160px; font-weight: bold; background-color: #f5f5f5; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="title">DOKUMEN INFORMASI PRODUK (DIP)</h1>
+        <p class="subtitle"><strong>BAB IV: PENILAIAN KEAMANAN DAN KLAIM (SAFETY ASSESSMENT & CLAIMS)</strong><br>{{ perusahaan or 'PT Erfi' }}</p>
+    </div>
+
+    <table>
+        <tr>
+            <td class="label-col">Nama Produk</td>
+            <td>{{ product.nama_produk or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Merk / Brand</td>
+            <td>{{ product.brands.name if product.brands else '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Bentuk Sediaan & Netto</td>
+            <td>{{ product.sediaan or '-' }} / {{ product.netto or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Nomor NA BPOM</td>
+            <td>{{ product.no_na_produk or '-' }}</td>
+        </tr>
+    </table>
+
+    <h3 style="font-size: 10.5pt; margin-bottom: 4px; margin-top: 10px;">Checklist Kelengkapan Dokumen Bab IV:</h3>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25px;">No</th>
+                <th>Elemen Dokumen</th>
+                <th style="width: 100px;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td>1</td><td>Laporan Penilaian Keamanan Kosmetik</td><td class="{{ 'status-ok' if product.laporan_keamanan_file_url else 'status-empty' }}">{{ 'Terlampir' if product.laporan_keamanan_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>2</td><td>CV / Kualifikasi Safety Assessor</td><td class="{{ 'status-ok' if company_sop.cv_safety_assessor_url else 'status-empty' }}">{{ 'Terlampir' if company_sop.cv_safety_assessor_url else 'Belum Ada' }}</td></tr>
+            <tr><td>3</td><td class="{{ 'status-ok' if product.monitoring_efek_samping_file_url else 'status-empty' }}">{{ 'Terlampir' if product.monitoring_efek_samping_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>4</td><td>Data Pendukung Klaim Kosmetik</td><td class="{{ 'status-ok' if product.data_klaim_file_url else 'status-empty' }}">{{ 'Terlampir' if product.data_klaim_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>5a</td><td>Penandaan & Desain Kemasan Primer</td><td class="{{ 'status-ok' if product.desain_primer_file_url else 'status-empty' }}">{{ 'Terlampir' if product.desain_primer_file_url else 'Belum Ada' }}</td></tr>
+            <tr><td>5b</td><td>Penandaan & Desain Kemasan Sekunder</td><td class="{{ 'status-ok' if product.desain_sekunder_file_url else 'status-empty' }}">{{ 'Terlampir' if product.desain_sekunder_file_url else 'Belum Ada' }}</td></tr>
+        </tbody>
+    </table>
+
+    <p style="font-size: 8.5pt; color: #666; margin-top: 10px;">
+        Catatan: Berkas fisik dokumen di atas dilampirkan secara berurutan setelah halaman checklist ini.
+    </p>
+</body>
+</html>

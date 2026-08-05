@@ -7,27 +7,46 @@
     <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
         <div>
             <h2 class="text-xl font-bold text-gray-900">Edit Informasi & Dokumen Produk</h2>
-            <p class="text-xs text-gray-500">Ubah meta data dan kelola kelengkapan dokumen DIP Bab 1 & Bab 3</p>
+            <p class="text-xs text-gray-500">Kelola meta data dan kelengkapan dokumen DIP (Bab 1 s/d Bab 4)</p>
         </div>
-        <a href="/products/{{ product.id }}/bab3/download" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
-            <i class="fa-solid fa-file-pdf"></i> Preview DIP Bab 3
-        </a>
+        <div class="flex gap-2">
+            <a href="/products/{{ product.id }}/bab3/download" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                <i class="fa-solid fa-file-pdf"></i> Preview Bab 3
+            </a>
+            <a href="/products/{{ product.id }}/bab4/download" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700">
+                <i class="fa-solid fa-file-pdf"></i> Preview Bab 4
+            </a>
+        </div>
+    </div>
+
+    <!-- ================= NAVIGASI TABS ================= -->
+    <div class="border-b border-gray-200 mb-6">
+        <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+            <button type="button" onclick="switchEditTab('tab-info', this)" class="edit-tab-btn border-indigo-500 text-indigo-600 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+                <i class="fa-solid fa-circle-info mr-1.5"></i> Informasi Dasar
+            </button>
+            <button type="button" onclick="switchEditTab('tab-bab1', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+                <i class="fa-solid fa-folder mr-1.5"></i> Bab 1
+            </button>
+            <button type="button" onclick="switchEditTab('tab-bab3', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+                <i class="fa-solid fa-flask mr-1.5"></i> Bab 3
+            </button>
+            <button type="button" onclick="switchEditTab('tab-bab4', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+                <i class="fa-solid fa-shield-halved mr-1.5"></i> Bab 4
+            </button>
+        </nav>
     </div>
 
     <form method="POST" action="/products/{{ product.id }}/edit" enctype="multipart/form-data">
         
-        <!-- ================= SECTION 1: METADATA UTAMA ================= -->
-        <div class="mb-8">
-            <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider mb-4 text-indigo-600 flex items-center gap-2">
-                <i class="fa-solid fa-circle-info"></i> Informasi Dasar Produk
-            </h3>
-
+        <!-- ================= TAB 1: INFORMASI DASAR ================= -->
+        <div id="tab-info" class="edit-tab-content block space-y-4">
             <div class="mb-4">
                 <label class="block text-sm font-semibold mb-1">Nama Produk *</label>
                 <input type="text" name="nama_produk" value="{{ product.nama_produk or '' }}" required class="w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
             </div>
 
-            <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-semibold mb-1">Perusahaan *</label>
                     <select name="perusahaan" required class="w-full border rounded-md px-3 py-2 text-sm">
@@ -49,7 +68,7 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-semibold mb-1">Nama Customer / Klien</label>
                     <input type="text" name="nama_customer" value="{{ product.nama_customer or '' }}" class="w-full border rounded-md px-3 py-2 text-sm">
@@ -60,7 +79,7 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-3 gap-4 mb-4">
+            <div class="grid grid-cols-3 gap-4">
                 <div>
                     <label class="block text-sm font-semibold mb-1">Warna Sediaan</label>
                     <input type="text" name="warna" value="{{ product.warna or '' }}" placeholder="Putih / Transparan" class="w-full border rounded-md px-3 py-2 text-sm">
@@ -75,15 +94,15 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="grid grid-cols-3 gap-4">
                 <div>
                     <label class="block text-sm font-semibold mb-1">Nomor NA (Notifikasi BPOM)</label>
-                    <input type="text" name="no_na_produk" value="{{ product.no_na_produk or '' }}" placeholder="NA18xxxxxxxx" class="w-full border rounded-md px-3 py-2 text-sm">
+                    <input type="text" name="no_na_produk" value="{{ product.no_na_produk or '' }}" placeholder="NA18xxxxxxxx" class="w-full border rounded-md px-3 py-2 text-sm font-mono">
                 </div>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Tanggal Awal Berlaku NA</label>
                     <input type="date" name="tanggal_aktif_na" value="{{ product.tanggal_aktif_na or '' }}" class="w-full border rounded-md px-3 py-2 text-sm">
-                </div>  
+                </div>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Status Registrasi NA</label>
                     <select name="status_na" class="w-full border rounded-md px-3 py-2 text-sm">
@@ -95,17 +114,17 @@
                 </div>
             </div>
 
-            <div class="mb-4">
+            <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Progres Internal (R&D / BPOM)</label>
                 <select name="status_progress" class="w-full border rounded-md p-2 text-sm bg-gray-50/50">
-                    <option value="R&D / Sample Phase" {% if product.status_progress == 'R&D / Sample Phase' %}selected{% endif %}>🧪 R&D / Sample Phase (Proses Trial Formulasi)</option>
-                    <option value="BPOM Registration" {% if product.status_progress == 'BPOM Registration' %}selected{% endif %}>📋 BPOM Registration (Pengajuan Nomor NA)</option>
-                    <option value="Production Ready" {% if product.status_progress == 'Production Ready' %}selected{% endif %}>🚀 Production Ready (Siap Produksi Massal)</option>
-                    <option value="Discontinued" {% if product.status_progress == 'Discontinued' %}selected{% endif %}>❌ Discontinued (Tidak Diproduksi Lagi)</option>
+                    <option value="R&D / Sample Phase" {% if product.status_progress == 'R&D / Sample Phase' %}selected{% endif %}>🧪 R&D / Sample Phase</option>
+                    <option value="BPOM Registration" {% if product.status_progress == 'BPOM Registration' %}selected{% endif %}>📋 BPOM Registration</option>
+                    <option value="Production Ready" {% if product.status_progress == 'Production Ready' %}selected{% endif %}>🚀 Production Ready</option>
+                    <option value="Discontinued" {% if product.status_progress == 'Discontinued' %}selected{% endif %}>❌ Discontinued</option>
                 </select>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal ACC Sampel</label>
                     <input type="date" name="acc_sampel" value="{{ product.acc_sampel or '' }}" class="w-full border rounded-md px-3 py-2 text-sm">
@@ -116,138 +135,144 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Teks (Deskripsi Marketing)</label>
-                    <textarea name="teks_marketing" rows="2" placeholder="Deskripsi produk untuk kemasan/label" class="w-full border rounded-md px-3 py-2 text-sm">{{ product.teks_marketing or '' }}</textarea>
+                    <textarea name="teks_marketing" rows="2" class="w-full border rounded-md px-3 py-2 text-sm">{{ product.teks_marketing or '' }}</textarea>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Cara Pakai</label>
-                    <textarea name="cara_pakai" rows="2" placeholder="Instruksi penggunaan produk" class="w-full border rounded-md px-3 py-2 text-sm">{{ product.cara_pakai or '' }}</textarea>
+                    <textarea name="cara_pakai" rows="2" class="w-full border rounded-md px-3 py-2 text-sm">{{ product.cara_pakai or '' }}</textarea>
                 </div>
             </div>
         </div>
 
-        <hr class="my-8 border-gray-200">
+        <!-- ================= TAB 2: DOKUMEN BAB 1 ================= -->
+        <div id="tab-bab1" class="edit-tab-content hidden space-y-4">
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">Surat No. Notifikasi BPOM (DIP Bab 1)</label>
+                {% if product.no_notifikasi_file_url %}
+                <p class="text-xs text-emerald-600 font-semibold mb-2">
+                    <i class="fa-solid fa-circle-check mr-1"></i>
+                    <a href="{{ product.no_notifikasi_file_url }}" target="_blank" class="hover:underline">File terdaftar - Lihat PDF</a>
+                </p>
+                {% endif %}
+                <input type="file" name="no_notifikasi_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
+        </div>
 
-        <!-- ================= SECTION 2: DOKUMEN DIP BAB 1 & BAB 3 ================= -->
-        <div class="mb-8">
-            <h3 class="text-sm font-bold text-gray-800 uppercase tracking-wider mb-2 text-indigo-600 flex items-center gap-2">
-                <i class="fa-solid fa-file-pdf"></i> Upload Dokumen Lampiran DIP (PDF)
-            </h3>
-            <p class="text-xs text-gray-500 mb-6">Upload berkas PDF pendukung untuk keperluan kompilasi otomatis DIP Bab 1 & Bab 3.</p>
+        <!-- ================= TAB 3: DOKUMEN BAB 3 ================= -->
+        <div id="tab-bab3" class="edit-tab-content hidden space-y-4">
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">2. Ringkasan Cara Pembuatan Kosmetik</label>
+                {% if product.cara_pembuatan_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.cara_pembuatan_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
+                <input type="file" name="cara_pembuatan_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">4. Sistem Penomoran Batch Spesifik</label>
+                {% if product.sistem_penomoran_batch_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.sistem_penomoran_batch_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
+                <input type="file" name="sistem_penomoran_batch_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">5. Spesifikasi Produk Jadi</label>
+                {% if product.spek_produk_jadi_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.spek_produk_jadi_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
+                <input type="file" name="spek_produk_jadi_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">6. Spesifikasi Bahan Pengemas</label>
+                {% if product.spek_pengemas_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.spek_pengemas_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
+                <input type="file" name="spek_pengemas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">7. Laporan Hasil Uji Lab Eksternal / SIG</label>
+                {% if product.laporan_uji_sig_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.laporan_uji_sig_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
+                <input type="file" name="laporan_uji_sig_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">9. Protokol Pemantauan Stabilitas</label>
+                {% if product.protokol_stabilitas_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.protokol_stabilitas_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
+                <input type="file" name="protokol_stabilitas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">10. Hasil Studi Stabilitas</label>
+                {% if product.hasil_stabilitas_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.hasil_stabilitas_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
+                <input type="file" name="hasil_stabilitas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
+        </div>
 
-            <div class="space-y-4">
-                <!-- Bab 1: Surat Notifikasi BPOM -->
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label class="block text-sm font-semibold text-gray-900 mb-1">1. Surat No. Notifikasi BPOM (PDF DIP Bab 1)</label>
-                    {% if product.no_notifikasi_file_url %}
-                    <p class="text-xs text-emerald-600 font-semibold mb-2">
-                        <i class="fa-solid fa-circle-check mr-1"></i>
-                        <a href="{{ product.no_notifikasi_file_url }}" target="_blank" class="hover:underline">File terdaftar - Klik untuk lihat</a>
-                    </p>
-                    {% endif %}
-                    <input type="file" name="no_notifikasi_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-                </div>
+        <!-- TAB 4: DOKUMEN BAB 4 (KEAMANAN & KLAIM) -->
+        <div id="tab-bab4" class="edit-tab-content hidden space-y-4">
+            <!-- 1. Safety Assessment -->
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">1. Laporan Penilaian Keamanan Kosmetik (Safety Assessment)</label>
+                <p class="text-xs text-gray-500 mb-2">Dokumen evaluasi & penilaian keamanan produk dari Qualified Safety Assessor.</p>
+                {% if product.laporan_keamanan_file_url %}
+                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.laporan_keamanan_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
+                {% endif %}
+                <input type="file" name="laporan_keamanan_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
 
-                <!-- Bab 3 Poin 2: Cara Pembuatan -->
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label class="block text-sm font-semibold text-gray-900 mb-1">2. Ringkasan Cara Pembuatan Kosmetik (DIP Bab 3)</label>
-                    <p class="text-xs text-gray-500 mb-2">Prosedur alur produksi (Mixing, Filling, Packing).</p>
-                    {% if product.cara_pembuatan_file_url %}
-                    <p class="text-xs text-emerald-600 font-semibold mb-2">
-                        <i class="fa-solid fa-circle-check mr-1"></i>
-                        <a href="{{ product.cara_pembuatan_file_url }}" target="_blank" class="hover:underline">File terdaftar - Klik untuk lihat</a>
-                    </p>
-                    {% endif %}
-                    <input type="file" name="cara_pembuatan_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-                </div>
+            <!-- 3. Monitoring Efek Samping (PER PRODUK) -->
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">3. Laporan / Data Monitoring Efek Samping (Cosmetovigilance)</label>
+                <p class="text-xs text-gray-500 mb-2">Catatan/rekapan evaluasi efek tidak diinginkan khusus untuk produk ini.</p>
+                {% if product.monitoring_efek_samping_file_url %}
+                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.monitoring_efek_samping_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
+                {% endif %}
+                <input type="file" name="monitoring_efek_samping_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
 
-                <!-- Bab 3 Poin 4: Sistem Penomoran Batch -->
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label class="block text-sm font-semibold text-gray-900 mb-1">4. Sistem Penomoran Batch Spesifik (DIP Bab 3)</label>
-                    <p class="text-xs text-gray-500 mb-2">Penjelasan struktur kode batch produk ini.</p>
-                    {% if product.sistem_penomoran_batch_file_url %}
-                    <p class="text-xs text-emerald-600 font-semibold mb-2">
-                        <i class="fa-solid fa-circle-check mr-1"></i>
-                        <a href="{{ product.sistem_penomoran_batch_file_url }}" target="_blank" class="hover:underline">File terdaftar - Klik untuk lihat</a>
-                    </p>
-                    {% endif %}
-                    <input type="file" name="sistem_penomoran_batch_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-                </div>
-                
-                <!-- Bab 3 Poin 5: Spesifikasi Produk Jadi -->
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label class="block text-sm font-semibold text-gray-900 mb-1">5. Spesifikasi Produk Jadi (DIP Bab 3)</label>
-                    <p class="text-xs text-gray-500 mb-2">Dokumen standar mutu produk jadi (pH, Viskositas, Organoleptik, Cemaran, dll).</p>
-                    {% if product.spek_produk_jadi_file_url %}
-                    <p class="text-xs text-emerald-600 font-semibold mb-2">
-                        <i class="fa-solid fa-circle-check mr-1"></i>
-                        <a href="{{ product.spek_produk_jadi_file_url }}" target="_blank" class="hover:underline">File terdaftar - Klik untuk lihat</a>
-                    </p>
-                    {% endif %}
-                    <input type="file" name="spek_produk_jadi_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-                </div>
+            <!-- 4. Data Klaim -->
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">4. Data Pendukung Klaim Kosmetik (Claim Substantiation)</label>
+                <p class="text-xs text-gray-500 mb-2">Dokumen bukti klaim (Uji Klinis, Dermatologically Tested, Patch Test, Jurnal Efikasi).</p>
+                {% if product.data_klaim_file_url %}
+                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.data_klaim_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
+                {% endif %}
+                <input type="file" name="data_klaim_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
 
-                <!-- Bab 3 Poin 6: Spek Bahan Pengemas -->
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label class="block text-sm font-semibold text-gray-900 mb-1">6. Spesifikasi Bahan Pengemas (DIP Bab 3)</label>
-                    <p class="text-xs text-gray-500 mb-2">Dokumen standar mutu botol, jar, stiker, atau kemasan sekunder.</p>
-                    {% if product.spek_pengemas_file_url %}
-                    <p class="text-xs text-emerald-600 font-semibold mb-2">
-                        <i class="fa-solid fa-circle-check mr-1"></i>
-                        <a href="{{ product.spek_pengemas_file_url }}" target="_blank" class="hover:underline">File terdaftar - Klik untuk lihat</a>
-                    </p>
-                    {% endif %}
-                    <input type="file" name="spek_pengemas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-                </div>
+            <!-- 5a. Desain Kemasan Primer -->
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">5a. Desain Kemasan Primer (Penandaan)</label>
+                <p class="text-xs text-gray-500 mb-2">Layout/Desain cetak fisik kemasan primer (botol/jar/tube).</p>
+                {% if product.desain_primer_file_url %}
+                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.desain_primer_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
+                {% endif %}
+                <input type="file" name="desain_primer_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+            </div>
 
-                <!-- Bab 3 Poin 7: Laporan Uji Lab SIG -->
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label class="block text-sm font-semibold text-gray-900 mb-1">7. Laporan Hasil Uji Lab Eksternal / SIG (DIP Bab 3)</label>
-                    <p class="text-xs text-gray-500 mb-2">Hasil pengujian cemaran logam berat & mikrobiologi dari lab independen.</p>
-                    {% if product.laporan_uji_sig_file_url %}
-                    <p class="text-xs text-emerald-600 font-semibold mb-2">
-                        <i class="fa-solid fa-circle-check mr-1"></i>
-                        <a href="{{ product.laporan_uji_sig_file_url }}" target="_blank" class="hover:underline">File terdaftar - Klik untuk lihat</a>
-                    </p>
-                    {% endif %}
-                    <input type="file" name="laporan_uji_sig_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-                </div>
-
-                <!-- Bab 3 Poin 9: Protokol Pemantauan Stabilitas -->
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label class="block text-sm font-semibold text-gray-900 mb-1">9. Protokol Pemantauan Stabilitas (DIP Bab 3)</label>
-                    <p class="text-xs text-gray-500 mb-2">Rencana & desain metodologi pengujian stabilitas.</p>
-                    {% if product.protokol_stabilitas_file_url %}
-                    <p class="text-xs text-emerald-600 font-semibold mb-2">
-                        <i class="fa-solid fa-circle-check mr-1"></i>
-                        <a href="{{ product.protokol_stabilitas_file_url }}" target="_blank" class="hover:underline">File terdaftar - Klik untuk lihat</a>
-                    </p>
-                    {% endif %}
-                    <input type="file" name="protokol_stabilitas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-                </div>
-
-                <!-- Bab 3 Poin 10: Hasil Studi Stabilitas -->
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <label class="block text-sm font-semibold text-gray-900 mb-1">10. Hasil Studi Stabilitas (DIP Bab 3)</label>
-                    <p class="text-xs text-gray-500 mb-2">Laporan real-time / accelerated stability test.</p>
-                    {% if product.hasil_stabilitas_file_url %}
-                    <p class="text-xs text-emerald-600 font-semibold mb-2">
-                        <i class="fa-solid fa-circle-check mr-1"></i>
-                        <a href="{{ product.hasil_stabilitas_file_url }}" target="_blank" class="hover:underline">File terdaftar - Klik untuk lihat</a>
-                    </p>
-                    {% endif %}
-                    <input type="file" name="hasil_stabilitas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-                </div>
+            <!-- 5b. Desain Kemasan Sekunder -->
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-semibold text-gray-900 mb-1">5b. Desain Kemasan Sekunder (Penandaan)</label>
+                <p class="text-xs text-gray-500 mb-2">Layout/Desain cetak fisik kemasan luar (Dus/Box).</p>
+                {% if product.desain_sekunder_file_url %}
+                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.desain_sekunder_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
+                {% endif %}
+                <input type="file" name="desain_sekunder_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
             </div>
         </div>
 
         <!-- BUTTON ACTION -->
-        <div class="flex justify-end gap-3 pt-4 border-t border-gray-200">
-            <a href="/qualitative-quantitative" class="bg-gray-100 text-gray-700 px-5 py-2.5 rounded-md hover:bg-gray-200 text-sm font-semibold">Batal</a>
+        <div class="flex justify-end gap-3 pt-6 border-t border-gray-200 mt-6">
+            <a href="/" class="bg-gray-100 text-gray-700 px-5 py-2.5 rounded-md hover:bg-gray-200 text-sm font-semibold">Batal</a>
             <button type="submit" class="bg-indigo-600 text-white px-6 py-2.5 rounded-md hover:bg-indigo-700 text-sm font-semibold shadow-xs">Simpan Semua Perubahan</button>
         </div>
     </form>
 </div>
+
+<script>
+function switchEditTab(tabId, element) {
+    document.querySelectorAll('.edit-tab-content').forEach(el => el.classList.replace('block', 'hidden'));
+    document.getElementById(tabId).classList.replace('hidden', 'block');
+    
+    document.querySelectorAll('.edit-tab-btn').forEach(btn => {
+        btn.classList.remove('border-indigo-500', 'text-indigo-600');
+        btn.classList.add('border-transparent', 'text-gray-500');
+    });
+    
+    element.classList.remove('border-transparent', 'text-gray-500');
+    element.classList.add('border-indigo-500', 'text-indigo-600');
+}
+</script>
 {% endblock %}
