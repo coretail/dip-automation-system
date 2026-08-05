@@ -68,9 +68,24 @@
                         v{{ s.revision_number }}
                     </td>
                     <td class="px-4 py-3 text-center whitespace-nowrap">
-                        <a href="/sample-submissions/preview/{{ s.id }}" class="inline-flex items-center px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded font-medium text-xs transition">
-                            <i class="fa-solid fa-eye mr-1"></i> Lihat / Print PDF
-                        </a>
+                        <div class="flex items-center justify-center gap-1.5">
+                            <!-- 1. Preview / Print PDF -->
+                            <a href="/sample-submissions/preview/{{ s.id }}" class="inline-flex items-center px-2.5 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded font-medium text-xs transition" title="Lihat / Print PDF">
+                                <i class="fa-solid fa-eye mr-1"></i> Preview
+                            </a>
+
+                            <!-- 2. Edit Pengajuan Sample -->
+                            <a href="/sample-submissions/edit/{{ s.id }}" class="inline-flex items-center p-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded font-medium text-xs transition" title="Edit Dokumen">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </a>
+
+                            <!-- 3. Delete Pengajuan Sample -->
+                            <a href="/sample-submissions/delete/{{ s.id }}" 
+                               onclick="return confirm('Yakin mau hapus pengajuan sample {{ s.sample_code }} ini?')" 
+                               class="inline-flex items-center p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded font-medium text-xs transition" title="Hapus Dokumen">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </a>
+                        </div>
                     </td>
                 </tr>
                 {% else %}

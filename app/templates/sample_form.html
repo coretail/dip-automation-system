@@ -2,22 +2,32 @@
 {% block content %}
 <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow mt-6">
     <h2 class="text-xl font-bold mb-6 text-gray-800 border-b pb-3">
-        <i class="fa-solid fa-flask mr-2 text-indigo-600"></i>Form Pengajuan Sample Produk
+        <i class="fa-solid fa-flask mr-2 text-indigo-600"></i>
+        {{ 'Edit' if submission else 'Form' }} Pengajuan Sample Produk
     </h2>
 
-    <form action="/sample-submissions/create" method="POST" class="space-y-6">
+    <form action="{% if submission %}/sample-submissions/edit/{{ submission.id }}{% else %}/sample-submissions/create{% endif %}" method="POST" class="space-y-6">
         
+        <!-- BAGIAN KODE FSP (INPUT MANUAL R&D) -->
+        <div class="bg-indigo-50/70 p-4 rounded-lg border border-indigo-100">
+            <label class="block text-sm font-bold text-indigo-950 mb-1">Kode Dokumen FSP (Manual Input) *</label>
+            <input type="text" name="sample_code" value="{{ submission.sample_code if submission else '' }}" 
+                   class="w-full border border-indigo-200 rounded p-2 text-sm font-mono font-bold text-indigo-900 bg-white focus:ring-2 focus:ring-indigo-500" 
+                   placeholder="Contoh: FSP/05-08-2026/1.1" required>
+            <p class="text-xs text-indigo-600 mt-1">Format kode FSP bebas ditentukan manual oleh R&D.</p>
+        </div>
+
         <!-- BAGIAN 1: PRODUSEN & MERK -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="mb-4">
+            <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Perusahaan / PT *</label>
                 <div class="flex space-x-6">
                     <label class="inline-flex items-center cursor-pointer">
-                        <input type="radio" name="company" value="Erfi" class="text-indigo-600 focus:ring-indigo-500" required>
+                        <input type="radio" name="company" value="Erfi" class="text-indigo-600 focus:ring-indigo-500" {% if not submission or submission.company == 'Erfi' or submission.company == 'PT Erfi' %}checked{% endif %} required>
                         <span class="ml-2 text-sm font-medium text-gray-700">Erfi</span>
                     </label>
                     <label class="inline-flex items-center cursor-pointer">
-                        <input type="radio" name="company" value="Heka" class="text-indigo-600 focus:ring-indigo-500" required>
+                        <input type="radio" name="company" value="Heka" class="text-indigo-600 focus:ring-indigo-500" {% if submission and (submission.company == 'Heka' or submission.company == 'PT Heka') %}checked{% endif %} required>
                         <span class="ml-2 text-sm font-medium text-gray-700">Heka</span>
                     </label>
                 </div>
@@ -27,33 +37,36 @@
                 <select name="brand_id" id="brand_id" onchange="toggleDraftInput()" class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500" required>
                     <option value="">-- Pilih Merk --</option>
                     {% for b in brands %}
-                        <option value="{{ b.id }}">{{ b.producers.name }} - {{ b.name }}</option>
+                        <option value="{{ b.id }}" {% if submission and submission.brand_id == b.id %}selected{% endif %}>
+                            {{ b.producers.name }} - {{ b.name }}
+                        </option>
                     {% endfor %}
-                    <option value="new" class="text-indigo-600 font-medium">++ Ketik Baru (Draft/Belum Terdaftar) ++</option>
+                    <option value="new" class="text-indigo-600 font-medium" {% if submission and not submission.brand_id %}selected{% endif %}>++ Ketik Baru (Draft/Belum Terdaftar) ++</option>
                 </select>
             </div>
         </div>
 
-        <!-- KOLOM INPUT DRAFT (MUNCUL HANYA JIKA PILIH KETIK BARU) -->
-        <div id="draft_brand_fields" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded border border-dashed border-gray-300">
+        <!-- KOLOM INPUT DRAFT -->
+        <div id="draft_brand_fields" class="{% if submission and submission.brand_id %}hidden{% endif %} grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded border border-dashed border-gray-300">
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Produsen Baru (Draft)</label>
-                <input type="text" name="custom_producer" id="custom_producer" class="w-full border rounded p-2 text-sm bg-white" placeholder="Masukkan nama produsen">
+                <input type="text" name="custom_producer" id="custom_producer" value="{{ submission.draft_producer if submission else '' }}" class="w-full border rounded p-2 text-sm bg-white" placeholder="Masukkan nama produsen">
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Merk Baru (Draft)</label>
-                <input type="text" name="custom_brand" id="custom_brand" class="w-full border rounded p-2 text-sm bg-white" placeholder="Masukkan nama merk">
+                <input type="text" name="custom_brand" id="custom_brand" value="{{ submission.draft_brand if submission else '' }}" class="w-full border rounded p-2 text-sm bg-white" placeholder="Masukkan nama merk">
             </div>
         </div>
 
         <!-- BAGIAN 2: DATA PRODUK -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
-            <div class="mb-4">
-                <label class="block text-sm font-semibold text-gray-700 mb-2">Pilih Produk Eksisting (Opsional)</label>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Pilih Produk Eksisting (Opsional)</label>
                 <select name="product_id" id="product_id_select" class="w-full border rounded-lg p-2 text-sm focus:ring-indigo-500">
                     <option value="">-- Buat Produk Baru / Manual --</option>
                     {% for p in existing_products %}
                     <option value="{{ p.id }}"
+                            {% if submission and submission.product_id == p.id %}selected{% endif %}
                             data-nama="{{ p.nama_produk }}"
                             data-company="{{ p.perusahaan }}"
                             data-netto="{{ p.netto or '' }}"
@@ -66,22 +79,22 @@
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Produk *</label>
-                <input type="text" name="product_name" id="product_name" class="w-full border rounded p-2 text-sm" required>
+                <input type="text" name="product_name" id="product_name" value="{{ submission.product_name if submission else '' }}" class="w-full border rounded p-2 text-sm" required>
             </div>
         </div>
 
         <div class="grid grid-cols-3 gap-4">
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Netto</label>
-                <input type="text" name="netto" id="netto" class="w-full border rounded p-2 text-sm">
+                <input type="text" name="netto" id="netto" value="{{ submission.netto if submission else '' }}" class="w-full border rounded p-2 text-sm">
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Sediaan</label>
-                <input type="text" name="sediaan" id="sediaan" class="w-full border rounded p-2 text-sm">
+                <input type="text" name="sediaan" id="sediaan" value="{{ submission.sediaan if submission else '' }}" class="w-full border rounded p-2 text-sm">
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Kemasan</label>
-                <input type="text" name="kemasan" id="kemasan" class="w-full border rounded p-2 text-sm">
+                <input type="text" name="kemasan" id="kemasan" value="{{ submission.kemasan if submission else '' }}" class="w-full border rounded p-2 text-sm">
             </div>
         </div>
 
@@ -89,11 +102,11 @@
         <div class="border-t pt-4 space-y-4">
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Bahan Aktif (Hero Ingredient)</label>
-                <input type="text" name="hero_ingredient" class="w-full border rounded p-2 text-sm" placeholder="Contoh: Niacinamide 5%, Retinol 1%">
+                <input type="text" name="hero_ingredient" value="{{ submission.hero_ingredient if submission else '' }}" class="w-full border rounded p-2 text-sm" placeholder="Contoh: Niacinamide 5%, Retinol 1%">
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Keterangan / Deskripsi</label>
-                <textarea name="description" rows="3" class="w-full border rounded p-2 text-sm" placeholder="Catatan detail pengajuan..."></textarea>
+                <textarea name="description" rows="3" class="w-full border rounded p-2 text-sm" placeholder="Catatan detail pengajuan...">{{ submission.description if submission else '' }}</textarea>
             </div>
         </div>
 
@@ -101,15 +114,15 @@
         <div class="grid grid-cols-3 gap-4 bg-indigo-50/50 p-4 rounded border border-indigo-100">
             <div>
                 <label class="block text-sm font-medium text-indigo-900 mb-1">Target pH</label>
-                <input type="text" name="ph_value" class="w-full border rounded p-2 text-sm bg-white" placeholder="5.5 - 6.0">
+                <input type="text" name="ph_value" value="{{ submission.additional_notes.ph if submission and submission.additional_notes else '' }}" class="w-full border rounded p-2 text-sm bg-white" placeholder="5.5 - 6.0">
             </div>
             <div>
                 <label class="block text-sm font-medium text-indigo-900 mb-1">Viskositas</label>
-                <input type="text" name="viscosity_value" class="w-full border rounded p-2 text-sm bg-white" placeholder="Gel / Liquid">
+                <input type="text" name="viscosity_value" value="{{ submission.additional_notes.viscosity if submission and submission.additional_notes else '' }}" class="w-full border rounded p-2 text-sm bg-white" placeholder="Gel / Liquid">
             </div>
             <div>
                 <label class="block text-sm font-medium text-indigo-900 mb-1">Warna Sediaan</label>
-                <input type="text" name="color_value" class="w-full border rounded p-2 text-sm bg-white" placeholder="Transparan / Putih">
+                <input type="text" name="color_value" value="{{ submission.additional_notes.color if submission and submission.additional_notes else '' }}" class="w-full border rounded p-2 text-sm bg-white" placeholder="Transparan / Putih">
             </div>
         </div>
 
@@ -117,11 +130,11 @@
         <div class="grid grid-cols-2 gap-4 border-t pt-4">
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Pemeriksa (QC) *</label>
-                <input type="text" name="qc_signer" class="w-full border rounded p-2 text-sm" placeholder="Nama Personel QC" required>
+                <input type="text" name="qc_signer" value="{{ submission.qc_signer if submission else '' }}" class="w-full border rounded p-2 text-sm" placeholder="Nama Personel QC" required>
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Penyetuju (R&D) *</label>
-                <input type="text" name="rd_signer" class="w-full border rounded p-2 text-sm" placeholder="Nama Personel R&D" required>
+                <input type="text" name="rd_signer" value="{{ submission.rd_signer if submission else '' }}" class="w-full border rounded p-2 text-sm" placeholder="Nama Personel R&D" required>
             </div>
         </div>
 
@@ -129,13 +142,12 @@
         <div class="flex justify-end space-x-2 border-t pt-4">
             <a href="/sample-submissions" class="px-4 py-2 border rounded text-sm text-gray-600 hover:bg-gray-50">Batal</a>
             <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded text-sm transition cursor-pointer">
-                <i class="fa-solid fa-floppy-disk mr-2"></i>Simpan & Buat Dokumen
+                <i class="fa-solid fa-floppy-disk mr-2"></i>{{ 'Simpan Perubahan' if submission else 'Simpan & Buat Dokumen' }}
             </button>
         </div>
     </form>
 </div>
 
-<!-- JAVASCRIPT LOGIC INTERAKTIF -->
 <script>
 function toggleDraftInput() {
     const brandSelect = document.getElementById('brand_id');
@@ -157,8 +169,6 @@ function toggleDraftInput() {
 document.getElementById('product_id_select').addEventListener('change', function() {
     const selectedOption = this.options[this.selectedIndex];
     const masterName = selectedOption.getAttribute('data-nama');
-    // data-company isinya "PT Erfi"/"PT Heka" (dari kolom perusahaan),
-    // sedangkan value radio "company" formatnya pendek "Erfi"/"Heka" -> disamakan dulu
     const masterCompanyRaw = selectedOption.getAttribute('data-company') || '';
     const masterCompany = masterCompanyRaw.replace('PT ', '').trim();
 
@@ -169,7 +179,6 @@ document.getElementById('product_id_select').addEventListener('change', function
     const inputKemasan = document.getElementById('kemasan');
 
     if (this.value) {
-        // Jika pilih produk eksisting, isi otomatis dan disable inputannya biar ga typo
         inputNamaProduk.value = masterName;
         inputNamaProduk.readOnly = true;
 
@@ -181,17 +190,15 @@ document.getElementById('product_id_select').addEventListener('change', function
             if (radio.value === masterCompany) {
                 radio.checked = true;
             }
-            radio.disabled = true; // Kunci pilihan PT-nya
+            radio.disabled = true;
         });
     } else {
-        // Jika balik ke manual, reset dan buka gemboknya
         inputNamaProduk.value = '';
         inputNamaProduk.readOnly = false;
         if (inputNetto) inputNetto.value = '';
         if (inputSediaan) inputSediaan.value = '';
         if (inputKemasan) inputKemasan.value = '';
         radioCompany.forEach(radio => {
-            radio.checked = false;
             radio.disabled = false;
         });
     }

@@ -10,6 +10,10 @@
     </div>
         
     <div class="flex items-center gap-2">
+        <!-- Tombol Cetak / PDF -->
+        <button onclick="window.print()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded shadow-xs transition duration-200 cursor-pointer flex items-center h-9">
+            <i class="fa-solid fa-print mr-1.5"></i> Cetak / Save ke PDF
+        </button>
         <!-- Tombol Export Excel -->
         <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Export ke Excel">
             <i class="fa-solid fa-file-excel mr-1.5"></i> Export Excel
@@ -34,11 +38,6 @@
         <a href="/products/{{ product.id }}/bab4/download" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab IV (PDF)">
             <i class="fa-solid fa-file-pdf mr-1.5"></i> Bab IV
         </a>
-            
-        <!-- Tombol Cetak / PDF -->
-        <button onclick="window.print()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded shadow-xs transition duration-200 cursor-pointer flex items-center h-9">
-            <i class="fa-solid fa-print mr-1.5"></i> Cetak / Save ke PDF
-        </button>
     </div>
 </div>
 
