@@ -8,13 +8,19 @@
 
     <form action="{% if submission %}/sample-submissions/edit/{{ submission.id }}{% else %}/sample-submissions/create{% endif %}" method="POST" class="space-y-6">
         
-        <!-- BAGIAN KODE FSP (INPUT MANUAL R&D) -->
+        <!-- BAGIAN PREFIX KODE FSP (EDITABLE PREFIX, SUFFIX AUTO) -->
         <div class="bg-indigo-50/70 p-4 rounded-lg border border-indigo-100">
-            <label class="block text-sm font-bold text-indigo-950 mb-1">Kode Dokumen FSP (Manual Input) *</label>
-            <input type="text" name="sample_code" value="{{ submission.sample_code if submission else '' }}" 
-                   class="w-full border border-indigo-200 rounded p-2 text-sm font-mono font-bold text-indigo-900 bg-white focus:ring-2 focus:ring-indigo-500" 
-                   placeholder="Contoh: FSP/05-08-2026/1.1" required>
-            <p class="text-xs text-indigo-600 mt-1">Format kode FSP bebas ditentukan manual oleh R&D.</p>
+            <label class="block text-sm font-bold text-indigo-950 mb-1">Prefix Kode Dokumen FSP *</label>
+            <div class="flex items-center gap-2">
+                <input type="text" name="sample_prefix" 
+                    value="{% if submission %}{{ submission.sample_code.split('/')[0] }}{% else %}FSP{% endif %}" 
+                    class="w-48 border border-indigo-200 rounded p-2 text-sm font-mono font-bold text-indigo-900 bg-white focus:ring-2 focus:ring-indigo-500 uppercase" 
+                    placeholder="FSP" required>
+                <span class="text-sm font-mono font-bold text-gray-600 bg-gray-100 px-3 py-2 rounded border border-gray-200">
+                    / {% if submission %}{{ submission.sample_code.split('/', 1)[1] }}{% else %}&lt;TGL_HARI_INI&gt;/&lt;X.Y_OTOMATIS&gt;{% endif %}
+                </span>
+            </div>
+            <p class="text-xs text-indigo-600 mt-1.5">Ketik prefix saja (misal: FSP / FSP-RD / TRIAL). Tanggal & urutan trial (/TGL/X.Y) dibikin otomatis oleh sistem.</p>
         </div>
 
         <!-- BAGIAN 1: PRODUSEN & MERK -->

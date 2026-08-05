@@ -1547,7 +1547,7 @@ async def delete_product(product_id: str, current_user: dict = Depends(get_curre
 @app.post("/sample-submissions/create")
 async def create_sample_submission(
     request: Request,
-    sample_code: str = Form(...),          # <-- MANUAL INPUT
+    sample_prefix: str = Form("FSP"),     # <-- Cuma nangkep Prefix
     brand_id: str = Form(...),
     company: str = Form(None),
     custom_producer: str = Form(None),
@@ -1579,7 +1579,40 @@ async def create_sample_submission(
         final_product_name = product_name
         final_company = company
 
-    # AUTO SAVE DRAFT PRODUSEN / BRAND JIKA BARU
+    # --- 1. HITUNG SUFFIX /TGL/X.Y OTOMATIS ---
+    prefix_clean = sample_prefix.strip().upper() if sample_prefix and sample_prefix.strip() else "FSP"
+    today_str = datetime.now(WIB).strftime("%d-%m-%Y")
+
+    try:
+        start_of_day = datetime.now(WIB).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_submissions = supabase.table("sample_submissions") \
+            .select("sample_code, product_name") \
+            .gte("created_at", start_of_day) \
+            .execute()
+        
+        existing_records = today_submissions.data or []
+        distinct_products = list(dict.fromkeys([r['product_name'] for r in existing_records]))
+        
+        if final_product_name in distinct_products:
+            x_index = distinct_products.index(final_product_name) + 1
+        else:
+            x_index = len(distinct_products) + 1
+            
+        same_product_trials = [r for r in existing_records if r['product_name'] == final_product_name]
+        y_index = len(same_product_trials) + 1
+        
+        # Gabungin Prefix + Tanggal + X.Y
+        sample_code = f"{prefix_clean}/{today_str}/{x_index}.{y_index}"[cite: 1]
+
+        all_time_trials = supabase.table("sample_submissions").select("id").eq("product_name", final_product_name).execute()
+        revision_number = (len(all_time_trials.data) or 0) + 1[cite: 1]
+
+    except Exception as e:
+        print(f"Gagal hitung logic FSP: {e}")
+        sample_code = f"{prefix_clean}/{today_str}/1.1"
+        revision_number = 1
+
+    # AUTO SAVE BRAND DRAFT JIKA PILIH "NEW"
     if brand_id == "new":
         try:
             prod_check = supabase.table("producers").select("id").ilike("name", custom_producer.strip()).execute()
@@ -1597,7 +1630,7 @@ async def create_sample_submission(
 
     try:
         data_to_insert = {
-            "sample_code": sample_code.strip(),    # <-- PAKAI KODE MANUAL
+            "sample_code": sample_code,
             "product_id": final_product_id,
             "company": final_company,
             "brand_id": final_brand_id,
@@ -1606,7 +1639,7 @@ async def create_sample_submission(
             "netto": netto,
             "sediaan": sediaan,
             "kemasan": kemasan,
-            "revision_number": 1,
+            "revision_number": revision_number,
             "hero_ingredient": hero_ingredient,
             "description": description,
             "additional_notes": additional_notes,
@@ -1653,7 +1686,7 @@ async def edit_sample_submission_page(request: Request, submission_id: str):
 @app.post("/sample-submissions/edit/{submission_id}")
 async def update_sample_submission(
     submission_id: str,
-    sample_code: str = Form(...),
+    sample_prefix: str = Form("FSP"),     # <-- Cuma nangkep Prefix
     brand_id: str = Form(...),
     company: str = Form(None),
     custom_producer: str = Form(None),
@@ -1672,6 +1705,19 @@ async def update_sample_submission(
     viscosity_value: str = Form(None),
     color_value: str = Form(None)
 ):
+    # 1. Ambil data lama buat nemuin suffix /TGL/X.Y aslinya
+    sub_resp = supabase.table("sample_submissions").select("sample_code").eq("id", submission_id).single().execute()
+    old_code = sub_resp.data.get("sample_code", "FSP/01-01-2026/1.1") if sub_resp.data else "FSP/01-01-2026/1.1"
+
+    prefix_clean = sample_prefix.strip().upper() if sample_prefix and sample_prefix.strip() else "FSP"
+
+    # 2. Pertahankan suffix /TGL/X.Y lama
+    if "/" in old_code:
+        suffix = old_code.split('/', 1)[1]
+        new_sample_code = f"{prefix_clean}/{suffix}"
+    else:
+        new_sample_code = f"{prefix_clean}/{datetime.now(WIB).strftime('%d-%m-%Y')}/1.1"
+
     final_product_id = None if not product_id else product_id
     final_product_name = product_name
     final_company = company
@@ -1684,7 +1730,7 @@ async def update_sample_submission(
     additional_notes = {"ph": ph_value, "viscosity": viscosity_value, "color": color_value}
 
     update_payload = {
-        "sample_code": sample_code.strip(),
+        "sample_code": new_sample_code,   # <-- KODE TERSIMPAN DENGAN PREFIX BARU
         "product_id": final_product_id,
         "company": final_company,
         "brand_id": final_brand_id,
