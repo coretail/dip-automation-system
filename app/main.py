@@ -1602,10 +1602,10 @@ async def create_sample_submission(
         y_index = len(same_product_trials) + 1
         
         # Gabungin Prefix + Tanggal + X.Y
-        sample_code = f"{prefix_clean}/{today_str}/{x_index}.{y_index}"[cite: 1]
+        sample_code = f"{prefix_clean}/{today_str}/{x_index}.{y_index}"
 
         all_time_trials = supabase.table("sample_submissions").select("id").eq("product_name", final_product_name).execute()
-        revision_number = (len(all_time_trials.data) or 0) + 1[cite: 1]
+        revision_number = (len(all_time_trials.data) or 0) + 1
 
     except Exception as e:
         print(f"Gagal hitung logic FSP: {e}")
