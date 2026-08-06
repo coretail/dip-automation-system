@@ -1998,6 +1998,62 @@ async def update_user_role(
         print(f"Gagal update role: {e}")
         return RedirectResponse(url="/admin/users?error=update_failed", status_code=303)
 
+# 4. PROSES RESET PASSWORD USER (POST)
+@app.post("/admin/users/reset-password")
+async def admin_reset_user_password(
+    target_uid: str = Form(...),
+    new_password: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+
+    try:
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        supabase_admin = create_client(supabase_url, supabase_service_key)
+
+        # Update password user via Auth Admin API
+        supabase_admin.auth.admin.update_user_by_id(
+            target_uid,
+            {"password": new_password}
+        )
+
+        return RedirectResponse(url="/admin/users?status=reset_success", status_code=303)
+    except Exception as e:
+        print(f"Gagal reset password user {target_uid}: {e}")
+        return RedirectResponse(url="/admin/users?error=reset_failed", status_code=303)
+
+
+# 5. PROSES HAPUS USER (POST)
+@app.post("/admin/users/delete")
+async def admin_delete_user(
+    target_uid: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+
+    # Mencegah admin ngehapus akun sendiri
+    if target_uid == current_user["id"]:
+        return RedirectResponse(url="/admin/users?error=cannot_delete_self", status_code=303)
+
+    try:
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        supabase_admin = create_client(supabase_url, supabase_service_key)
+
+        # 1. Hapus user dari Supabase Auth
+        supabase_admin.auth.admin.delete_user(target_uid)
+
+        # 2. Hapus record profil dari tabel profiles
+        supabase.table("profiles").delete().eq("id", target_uid).execute()
+
+        return RedirectResponse(url="/admin/users?status=delete_success", status_code=303)
+    except Exception as e:
+        print(f"Gagal hapus user {target_uid}: {e}")
+        return RedirectResponse(url="/admin/users?error=delete_failed", status_code=303)
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, current_user: dict = Depends(get_current_user)):
     products, brands = [], []

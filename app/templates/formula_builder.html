@@ -19,7 +19,7 @@
 
 <!-- Form Rangkaian Formula -->
 <form action="/products/{{ product.id }}/formula/save" method="POST" onsubmit="return validateFormulaForm()">
-    <div class="bg-white shadow-xs rounded-lg border border-gray-200 overflow-hidden p-6 mb-6">
+    <div class="bg-white shadow-xs rounded-lg border border-gray-200 overflow-visible p-6 mb-6">
         <div class="flex justify-between items-center mb-4">
             <h3 class="text-base font-semibold text-gray-950">Susunan Formula Komposisi</h3>
             <button type="button" onclick="addFormulaRow()" class="inline-flex items-center text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer">
@@ -30,17 +30,45 @@
         <div id="formula-rows-container" class="space-y-3">
             <!-- Jika sudah ada formula ter-save sebelumnya, render di sini -->
             {% for line in formula %}
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end bg-gray-50 p-3 rounded-md border border-gray-200 class-formula-row">
+            {% set ns = namespace(label="") %}
+            {% for rm in raw_materials %}
+                {% if rm.id == line.raw_material_id %}
+                    {% set ns.label = rm.nama_dagang ~ " [" ~ rm.kode_bahan_baku ~ "]" %}
+                {% endif %}
+            {% endfor %}
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end bg-gray-50 p-3 rounded-md border border-gray-200 class-formula-row relative">
                 <div class="sm:col-span-2">
-                    <label class="block text-xs font-medium text-gray-500 mb-1">Pilih Bahan Baku</label>
-                    <select name="raw_material_id" required class="block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500">
-                        <option value="">-- Pilih dari Master Bahan Baku --</option>
-                        {% for rm in raw_materials %}
-                        <option value="{{ rm.id }}" {{ 'selected' if rm.id == line.raw_material_id }}>
-                            {{ rm.nama_dagang }} [{{ rm.kode_bahan_baku }}]
-                        </option>
-                        {% endfor %}
-                    </select>
+                    <label class="block text-xs font-medium text-gray-500 mb-1">Cari / Pilih Bahan Baku</label>
+                    <div class="relative custom-select-container" data-selected-label="{{ ns.label }}">
+                        <input type="hidden" name="raw_material_id" value="{{ line.raw_material_id }}" required>
+                        <div class="relative">
+                            <input type="text" 
+                                   placeholder="Ketik nama dagang atau kode bahan baku..." 
+                                   value="{{ ns.label }}"
+                                   class="rm-search-input block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500 pr-8"
+                                   autocomplete="off"
+                                   onfocus="openRmDropdown(this)"
+                                   oninput="filterRmDropdown(this)">
+                            <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
+                        </div>
+
+                        <!-- Dropdown List Filterable -->
+                        <div class="rm-dropdown-menu hidden absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto text-sm">
+                            <div class="py-1 rm-options-list">
+                                {% for rm in raw_materials %}
+                                <div class="rm-option cursor-pointer px-3 py-2 hover:bg-indigo-50 flex justify-between items-center border-b border-gray-50 last:border-b-0"
+                                     data-value="{{ rm.id }}"
+                                     data-label="{{ rm.nama_dagang }} [{{ rm.kode_bahan_baku }}]"
+                                     data-search="{{ rm.nama_dagang | lower }} {{ rm.kode_bahan_baku | lower }}"
+                                     onclick="selectRmOption(this)">
+                                    <span class="font-medium text-gray-900">{{ rm.nama_dagang }}</span>
+                                    <span class="text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded">{{ rm.kode_bahan_baku }}</span>
+                                </div>
+                                {% endfor %}
+                                <div class="no-match-msg hidden px-3 py-3 text-xs text-gray-400 italic text-center">Bahan baku tidak ditemukan.</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="flex items-center space-x-2">
                     <div class="w-full">
@@ -72,14 +100,39 @@
 
 <!-- Template Row Dinamis JavaScript -->
 <div id="row-template" class="hidden">
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end bg-gray-50 p-3 rounded-md border border-gray-200 class-formula-row">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end bg-gray-50 p-3 rounded-md border border-gray-200 class-formula-row relative">
         <div class="sm:col-span-2">
-            <select name="raw_material_id" required class="block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500">
-                <option value="">-- Pilih dari Master Bahan Baku --</option>
-                {% for rm in raw_materials %}
-                <option value="{{ rm.id }}">{{ rm.nama_dagang }} [{{ rm.kode_bahan_baku }}]</option>
-                {% endfor %}
-            </select>
+            <label class="block text-xs font-medium text-gray-500 mb-1 sm:hidden">Cari / Pilih Bahan Baku</label>
+            <div class="relative custom-select-container">
+                <input type="hidden" name="raw_material_id" value="" required>
+                <div class="relative">
+                    <input type="text" 
+                           placeholder="Ketik nama dagang atau kode bahan baku..." 
+                           value=""
+                           class="rm-search-input block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500 pr-8"
+                           autocomplete="off"
+                           onfocus="openRmDropdown(this)"
+                           oninput="filterRmDropdown(this)">
+                    <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
+                </div>
+
+                <!-- Dropdown List Filterable -->
+                <div class="rm-dropdown-menu hidden absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto text-sm">
+                    <div class="py-1 rm-options-list">
+                        {% for rm in raw_materials %}
+                        <div class="rm-option cursor-pointer px-3 py-2 hover:bg-indigo-50 flex justify-between items-center border-b border-gray-50 last:border-b-0"
+                             data-value="{{ rm.id }}"
+                             data-label="{{ rm.nama_dagang }} [{{ rm.kode_bahan_baku }}]"
+                             data-search="{{ rm.nama_dagang | lower }} {{ rm.kode_bahan_baku | lower }}"
+                             onclick="selectRmOption(this)">
+                            <span class="font-medium text-gray-900">{{ rm.nama_dagang }}</span>
+                            <span class="text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded">{{ rm.kode_bahan_baku }}</span>
+                        </div>
+                        {% endfor %}
+                        <div class="no-match-msg hidden px-3 py-3 text-xs text-gray-400 italic text-center">Bahan baku tidak ditemukan.</div>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="flex items-center space-x-2">
             <div class="w-full">
@@ -93,12 +146,83 @@
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     const container = document.getElementById('formula-rows-container');
-    // Jika belum ada baris racikan sama sekali, kasih 1 baris kosong default
     if (container.children.length === 0) {
         addFormulaRow();
     }
     calculateFormulaTotal();
+
+    // Tutup dropdown kalau ngeklik area luar
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.custom-select-container')) {
+            hideAllRmDropdowns();
+        }
+    });
 });
+
+function hideAllRmDropdowns() {
+    document.querySelectorAll('.rm-dropdown-menu').forEach(menu => {
+        menu.classList.add('hidden');
+    });
+}
+
+function openRmDropdown(inputElem) {
+    hideAllRmDropdowns();
+    const container = inputElem.closest('.custom-select-container');
+    const dropdown = container.querySelector('.rm-dropdown-menu');
+    dropdown.classList.remove('hidden');
+    filterRmDropdown(inputElem);
+}
+
+function filterRmDropdown(inputElem) {
+    const container = inputElem.closest('.custom-select-container');
+    const dropdown = container.querySelector('.rm-dropdown-menu');
+    const hiddenInput = container.querySelector('input[name="raw_material_id"]');
+    const query = inputElem.value.toLowerCase().trim();
+    
+    // Reset ID jika teks pencarian diedit/diubah
+    const selectedLabel = container.getAttribute('data-selected-label');
+    if (inputElem.value !== selectedLabel) {
+        hiddenInput.value = "";
+    }
+
+    dropdown.classList.remove('hidden');
+
+    const options = container.querySelectorAll('.rm-option');
+    const noMatchMsg = container.querySelector('.no-match-msg');
+    let visibleCount = 0;
+
+    options.forEach(opt => {
+        const searchVal = opt.getAttribute('data-search');
+        if (searchVal.includes(query)) {
+            opt.classList.remove('hidden');
+            visibleCount++;
+        } else {
+            opt.classList.add('hidden');
+        }
+    });
+
+    if (visibleCount === 0) {
+        noMatchMsg.classList.remove('hidden');
+    } else {
+        noMatchMsg.classList.add('hidden');
+    }
+}
+
+function selectRmOption(optionElem) {
+    const container = optionElem.closest('.custom-select-container');
+    const hiddenInput = container.querySelector('input[name="raw_material_id"]');
+    const searchInput = container.querySelector('.rm-search-input');
+    const dropdown = container.querySelector('.rm-dropdown-menu');
+
+    const val = optionElem.getAttribute('data-value');
+    const label = optionElem.getAttribute('data-label');
+
+    hiddenInput.value = val;
+    searchInput.value = label;
+    container.setAttribute('data-selected-label', label);
+
+    dropdown.classList.add('hidden');
+}
 
 function addFormulaRow() {
     const container = document.getElementById('formula-rows-container');
@@ -126,6 +250,14 @@ function calculateFormulaTotal() {
 }
 
 function validateFormulaForm() {
+    const idInputs = document.getElementsByName('raw_material_id');
+    for (let input of idInputs) {
+        if (!input.value) {
+            alert('Ada bahan baku yang belum dipilih dari list pencarian! Klik opsi dari dropdown yang muncul pas ngetik.');
+            return false;
+        }
+    }
+
     const pctInputs = document.getElementsByName('percentage');
     let total = 0;
     for (let input of pctInputs) {
