@@ -25,8 +25,13 @@
         </a>
 
         <!-- Tombol Download Bab II (PDF gabungan: Checklist + SOP CPKB + Spesifikasi + Catatan + CoA per bahan baku) -->
-        <a href="/products/{{ product.id }}/bab2/download" class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab II (PDF)">
+        <a href="/products/{{ product.id }}/bab2/download" class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab II (satu PDF gabungan)">
             <i class="fa-solid fa-file-pdf mr-1.5"></i> Bab II
+        </a>
+
+        <!-- Tombol Download Bab II versi Folder/ZIP: 1 folder per bahan baku (Spesifikasi, CoA, Halal, MSDS terpisah) -->
+        <a href="/products/{{ product.id }}/bab2/download-zip" class="bg-amber-800 hover:bg-amber-900 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab II (ZIP, terpisah per bahan baku)">
+            <i class="fa-solid fa-folder-tree mr-1.5"></i> Bab II (Folder)
         </a>
 
         <!-- Tombol Download Bab III (PDF gabungan: Cara Pembuatan + Protap/SOP Batch + CoA FG + Spek Kemasan + Hasil Uji Lab + Stabilitas) -->
@@ -159,7 +164,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for comp in pure_breakdown | sort(attribute='pct_ww', reverse=True) %}
+            {% for comp in pure_breakdown %}
             <tr>
                 <td class="p-2 font-medium" style="border: 1px solid #c0c0c0;">{{ comp.inci_name }}</td>
                 <td class="p-2 text-gray-600" style="border: 1px solid #c0c0c0;">{{ comp.function }}</td>
@@ -221,7 +226,7 @@
         </tr>
         <tr style="border: 1px solid #c0c0c0;">
             <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Komposisi</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ pure_breakdown | sort(attribute='pct_ww', reverse=True) | map(attribute='inci_name') | join(', ') }}.</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ pure_breakdown | map(attribute='inci_name') | join(', ') }}.</td>
         </tr>
         <tr style="border: 1px solid #c0c0c0;">
             <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Teks</td>

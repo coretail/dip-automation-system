@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 from supabase import create_client
 import os
 import io
+import re
+import zipfile
 import httpx
 from xhtml2pdf import pisa
 from pypdf import PdfReader, PdfWriter
@@ -911,7 +913,6 @@ async def qualitative_quantitative_report(request: Request, product_id: str):
             "function": item["function"],
             "pct_ww": clean_sum
         })
-    pure_breakdown = sorted(pure_breakdown, key=lambda x: x["pct_ww"], reverse=True)
 
     clean_product = {}
     if isinstance(product, list) and len(product) > 0:
@@ -1056,6 +1057,154 @@ async def download_bab2_document(product_id: str):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+def _safe_zip_name(name: str) -> str:
+    """Bersihin nama biar aman dipakai sebagai nama file/folder di dalam ZIP
+    (buang karakter yang gak diizinkan di Windows/macOS: < > : " / \\ | ? *)."""
+    name = (name or "").strip()
+    name = re.sub(r'[<>:"/\\|?*]', "", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    return name or "Tanpa_Nama"
+
+
+# =====================================================================
+#   GENERATOR DOKUMEN BAB II (VERSI FOLDER/ZIP -- per bahan baku terpisah)
+# =====================================================================
+@app.get("/products/{product_id}/bab2/download-zip")
+async def download_bab2_document_zip(product_id: str):
+    # 1. Ambil data produk
+    product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    product = product_resp.data
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+
+    perusahaan = product.get("perusahaan") or "PT Erfi"
+
+    # 2. Ambil semua bahan baku unik yang dipakai di formula produk ini
+    lines_resp = supabase.table("product_formula_lines") \
+        .select("raw_material_id, raw_materials(*)") \
+        .eq("product_id", product_id) \
+        .execute()
+
+    seen_ids = set()
+    raw_materials = []
+    for line in (lines_resp.data or []):
+        rm = line.get("raw_materials")
+        if isinstance(rm, list) and rm:
+            rm = rm[0]
+        if isinstance(rm, dict) and rm.get("id") and rm["id"] not in seen_ids:
+            seen_ids.add(rm["id"])
+            raw_materials.append(rm)
+
+    # 3. Per bahan baku, tarik data batch TERBARU (kesepakatan: pakai batch terbaru)
+    materials_data = []
+    for rm in raw_materials:
+        batch_resp = supabase.table("raw_material_batches") \
+            .select("*") \
+            .eq("raw_material_id", rm["id"]) \
+            .order("created_at", desc=True) \
+            .limit(1) \
+            .execute()
+        latest_batch = batch_resp.data[0] if batch_resp.data else None
+        materials_data.append({"material": rm, "batch": latest_batch})
+
+    # 4. Ambil SOP CPKB sesuai perusahaan produk
+    sop_resp = supabase.table("cpkb_raw_material") \
+        .select("file_url") \
+        .eq("perusahaan", perusahaan) \
+        .limit(1) \
+        .execute()
+    sop_url = sop_resp.data[0]["file_url"] if sop_resp.data else None
+
+    # 5. Siapin ZIP di memory
+    zip_buffer = io.BytesIO()
+    root_folder = _safe_zip_name(f"BAB II Data Mutu Bahan Baku - {product.get('nama_produk', 'Produk')}")
+
+    async def fetch_bytes(client: httpx.AsyncClient, url: str, label: str):
+        if not url:
+            return None
+        try:
+            resp = await client.get(url, timeout=30)
+            resp.raise_for_status()
+            return resp.content
+        except Exception as e:
+            print(f"[BAB II ZIP] Gagal ambil {label}: {e}")
+            return None
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 5a. Checklist Bab II (halaman pembuka) -> PDF
+        checklist_html = templates.env.get_template("bab2_checklist.html").render(product=product)
+        checklist_buffer = io.BytesIO()
+        checklist_status = pisa.CreatePDF(src=checklist_html, dest=checklist_buffer)
+        if not checklist_status.err:
+            zf.writestr(f"{root_folder}/00_Checklist_Bab_II.pdf", checklist_buffer.getvalue())
+
+        async with httpx.AsyncClient() as client:
+            # 5b. SOP CPKB perusahaan (kalau ada)
+            sop_bytes = await fetch_bytes(client, sop_url, f"SOP CPKB ({perusahaan})")
+            if sop_bytes:
+                zf.writestr(f"{root_folder}/00_SOP_CPKB_{_safe_zip_name(perusahaan)}.pdf", sop_bytes)
+
+            # 5c. Per bahan baku -> 1 subfolder isinya: Spesifikasi+Catatan, CoA, Halal, MSDS
+            for idx, item in enumerate(materials_data, start=1):
+                material = item["material"]
+                batch = item["batch"]
+                nama_bahan = material.get("nama_dagang") or f"Bahan {idx}"
+                folder_name = f"{idx:02d}_{_safe_zip_name(nama_bahan)}"
+
+                # Spesifikasi + Catatan Pemeriksaan (di-generate dari data)
+                material_html = templates.env.get_template("bab2_material_block.html").render(
+                    item=item, index=idx
+                )
+                material_buffer = io.BytesIO()
+                material_status = pisa.CreatePDF(src=material_html, dest=material_buffer)
+                if not material_status.err:
+                    zf.writestr(
+                        f"{root_folder}/{folder_name}/1_Spesifikasi_dan_Hasil_Pemeriksaan.pdf",
+                        material_buffer.getvalue()
+                    )
+                else:
+                    print(f"[BAB II ZIP] Gagal generate blok Spesifikasi+Catatan bahan baku {nama_bahan}")
+
+                coa_url = batch.get("coa_file_url") if batch else None
+                halal_url = batch.get("halal_batch_file_url") if batch else None
+                msds_url = material.get("msds_file_url")
+
+                coa_bytes = await fetch_bytes(client, coa_url, f"CoA bahan baku {nama_bahan}")
+                if coa_bytes:
+                    zf.writestr(f"{root_folder}/{folder_name}/2_CoA.pdf", coa_bytes)
+
+                halal_bytes = await fetch_bytes(client, halal_url, f"Sertifikat Halal bahan baku {nama_bahan}")
+                if halal_bytes:
+                    zf.writestr(f"{root_folder}/{folder_name}/3_Sertifikat_Halal.pdf", halal_bytes)
+
+                msds_bytes = await fetch_bytes(client, msds_url, f"MSDS bahan baku {nama_bahan}")
+                if msds_bytes:
+                    zf.writestr(f"{root_folder}/{folder_name}/4_MSDS.pdf", msds_bytes)
+
+                # Kasih catatan kalau ada dokumen yang belum diupload, biar ketauan pas dibuka foldernya
+                missing = []
+                if not coa_bytes:
+                    missing.append("CoA")
+                if not halal_bytes:
+                    missing.append("Sertifikat Halal")
+                if not msds_bytes:
+                    missing.append("MSDS")
+                if missing:
+                    note = "Dokumen berikut belum tersedia/gagal diunduh untuk bahan baku ini:\n- " + "\n- ".join(missing)
+                    zf.writestr(f"{root_folder}/{folder_name}/PERHATIAN.txt", note)
+
+    zip_buffer.seek(0)
+    safe_name = _safe_zip_name(product.get("nama_produk") or "Produk").replace(" ", "_")
+    filename = f"Bab2_Folder_{safe_name}.zip"
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
 
 # =====================================================================
 #           GENERATOR DOKUMEN BAB I (DATA ADMINISTRATIF, PDF GABUNGAN)
@@ -1998,62 +2147,6 @@ async def update_user_role(
     except Exception as e:
         print(f"Gagal update role: {e}")
         return RedirectResponse(url="/admin/users?error=update_failed", status_code=303)
-
-# 4. PROSES RESET PASSWORD USER (POST)
-@app.post("/admin/users/reset-password")
-async def admin_reset_user_password(
-    target_uid: str = Form(...),
-    new_password: str = Form(...),
-    current_user: dict = Depends(get_current_user)
-):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
-
-    try:
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        supabase_admin = create_client(supabase_url, supabase_service_key)
-
-        # Update password user via Auth Admin API
-        supabase_admin.auth.admin.update_user_by_id(
-            target_uid,
-            {"password": new_password}
-        )
-
-        return RedirectResponse(url="/admin/users?status=reset_success", status_code=303)
-    except Exception as e:
-        print(f"Gagal reset password user {target_uid}: {e}")
-        return RedirectResponse(url="/admin/users?error=reset_failed", status_code=303)
-
-
-# 5. PROSES HAPUS USER (POST)
-@app.post("/admin/users/delete")
-async def admin_delete_user(
-    target_uid: str = Form(...),
-    current_user: dict = Depends(get_current_user)
-):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
-
-    # Mencegah admin ngehapus akun sendiri
-    if target_uid == current_user["id"]:
-        return RedirectResponse(url="/admin/users?error=cannot_delete_self", status_code=303)
-
-    try:
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        supabase_admin = create_client(supabase_url, supabase_service_key)
-
-        # 1. Hapus user dari Supabase Auth
-        supabase_admin.auth.admin.delete_user(target_uid)
-
-        # 2. Hapus record profil dari tabel profiles
-        supabase.table("profiles").delete().eq("id", target_uid).execute()
-
-        return RedirectResponse(url="/admin/users?status=delete_success", status_code=303)
-    except Exception as e:
-        print(f"Gagal hapus user {target_uid}: {e}")
-        return RedirectResponse(url="/admin/users?error=delete_failed", status_code=303)
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, current_user: dict = Depends(get_current_user)):
