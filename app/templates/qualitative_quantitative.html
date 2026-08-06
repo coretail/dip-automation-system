@@ -159,7 +159,7 @@
             </tr>
         </thead>
         <tbody>
-            {% for comp in pure_breakdown %}
+            {% for comp in pure_breakdown | sort(attribute='pct_ww', reverse=True) %}
             <tr>
                 <td class="p-2 font-medium" style="border: 1px solid #c0c0c0;">{{ comp.inci_name }}</td>
                 <td class="p-2 text-gray-600" style="border: 1px solid #c0c0c0;">{{ comp.function }}</td>
@@ -221,7 +221,7 @@
         </tr>
         <tr style="border: 1px solid #c0c0c0;">
             <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Komposisi</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ pure_breakdown | map(attribute='inci_name') | join(', ') }}.</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ pure_breakdown | sort(attribute='pct_ww', reverse=True) | map(attribute='inci_name') | join(', ') }}.</td>
         </tr>
         <tr style="border: 1px solid #c0c0c0;">
             <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Teks</td>

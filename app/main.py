@@ -911,6 +911,7 @@ async def qualitative_quantitative_report(request: Request, product_id: str):
             "function": item["function"],
             "pct_ww": clean_sum
         })
+    pure_breakdown = sorted(pure_breakdown, key=lambda x: x["pct_ww"], reverse=True)
 
     clean_product = {}
     if isinstance(product, list) and len(product) > 0:

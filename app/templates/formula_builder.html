@@ -99,12 +99,13 @@
 </form>
 
 <!-- Template Row Dinamis JavaScript -->
-<div id="row-template" class="hidden">
+<template id="row-template">
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end bg-gray-50 p-3 rounded-md border border-gray-200 class-formula-row relative">
         <div class="sm:col-span-2">
             <label class="block text-xs font-medium text-gray-500 mb-1 sm:hidden">Cari / Pilih Bahan Baku</label>
             <div class="relative custom-select-container">
-                <input type="hidden" name="raw_material_id" value="" required>
+                <!-- Hapus name="raw_material_id", ganti pakai class="input-rm-id" -->
+                <input type="hidden" class="input-rm-id" value="" required>
                 <div class="relative">
                     <input type="text" 
                            placeholder="Ketik nama dagang atau kode bahan baku..." 
@@ -136,12 +137,13 @@
         </div>
         <div class="flex items-center space-x-2">
             <div class="w-full">
-                <input type="number" step="0.001" name="percentage" required oninput="calculateFormulaTotal()" placeholder="0.000" class="block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-indigo-500">
+                <!-- Hapus name="percentage", ganti pakai class="input-percentage" -->
+                <input type="number" step="0.001" class="input-percentage block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-indigo-500" required oninput="calculateFormulaTotal()" placeholder="0.000">
             </div>
             <button type="button" onclick="this.parentElement.parentElement.remove(); calculateFormulaTotal();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash text-base"></i></button>
         </div>
     </div>
-</div>
+</template>
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -226,19 +228,26 @@ function selectRmOption(optionElem) {
 
 function addFormulaRow() {
     const container = document.getElementById('formula-rows-container');
-    const template = document.getElementById('row-template').firstElementChild.cloneNode(true);
-    container.appendChild(template);
+    const template = document.getElementById('row-template');
+    const clone = template.content.cloneNode(true);
+
+    // Tempel atribut name cuma pas baris masuk ke form
+    clone.querySelector('.input-rm-id').setAttribute('name', 'raw_material_id');
+    clone.querySelector('.input-percentage').setAttribute('name', 'percentage');
+
+    container.appendChild(clone);
     calculateFormulaTotal();
 }
 
 function calculateFormulaTotal() {
-    const pctInputs = document.getElementsByName('percentage');
+    const container = document.getElementById('formula-rows-container');
+    const pctInputs = container.querySelectorAll('input[name="percentage"]');
     const indicator = document.getElementById('formula-total-indicator');
     let total = 0;
     
-    for (let input of pctInputs) {
+    pctInputs.forEach(input => {
         total += parseFloat(input.value || 0);
-    }
+    });
     
     indicator.innerText = total.toFixed(3) + '%';
     
@@ -250,7 +259,9 @@ function calculateFormulaTotal() {
 }
 
 function validateFormulaForm() {
-    const idInputs = document.getElementsByName('raw_material_id');
+    const container = document.getElementById('formula-rows-container');
+    const idInputs = container.querySelectorAll('input[name="raw_material_id"]');
+    
     for (let input of idInputs) {
         if (!input.value) {
             alert('Ada bahan baku yang belum dipilih dari list pencarian! Klik opsi dari dropdown yang muncul pas ngetik.');
@@ -258,11 +269,12 @@ function validateFormulaForm() {
         }
     }
 
-    const pctInputs = document.getElementsByName('percentage');
+    const pctInputs = container.querySelectorAll('input[name="percentage"]');
     let total = 0;
-    for (let input of pctInputs) {
+    pctInputs.forEach(input => {
         total += parseFloat(input.value || 0);
-    }
+    });
+
     if (Math.abs(total - 100) > 0.001) {
         alert('Amsyong! Total racikan seluruh bahan baku harus pas 100.000%. Total racikan saat ini: ' + total.toFixed(3) + '%');
         return false;
