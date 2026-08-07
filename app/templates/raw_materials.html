@@ -99,6 +99,11 @@
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ rm.nama_dagang }}</div>
                         <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
+                        {% set companies_with_data = rm.raw_material_company_docs | map(attribute='perusahaan') | list %}
+                        <div class="mt-1 space-x-1">
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium {{ 'bg-green-100 text-green-700' if 'PT Erfi' in companies_with_data else 'bg-gray-100 text-gray-400' }}">Erfi {{ '✓' if 'PT Erfi' in companies_with_data else '✗' }}</span>
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium {{ 'bg-green-100 text-green-700' if 'PT Heka' in companies_with_data else 'bg-gray-100 text-gray-400' }}">Heka {{ '✓' if 'PT Heka' in companies_with_data else '✗' }}</span>
+                        </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ 'bg-purple-100 text-purple-800' if rm.tipe == 'komposit' else 'bg-blue-100 text-blue-800' }}">
@@ -146,12 +151,12 @@
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 text-xs font-semibold text-gray-700 uppercase tracking-wider text-left">
                 <tr>
+                    <th class="px-4 py-3">Perusahaan</th>
                     <th class="px-4 py-3">Tgl Terima</th>
                     <th class="px-4 py-3">Tgl ED</th>
                     <th class="px-4 py-3">Supplier</th>
                     <th class="px-4 py-3">Nama Bahan Baku</th>
                     <th class="px-4 py-3">Lot / Batch No.</th>
-                    <th class="px-4 py-3">INCI Name</th>
                     <th class="px-4 py-3">Harga / KG</th>
                     <th class="px-4 py-3">Produsen</th>
                     <th class="px-4 py-3">Dokumen</th>
@@ -159,7 +164,23 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200 text-sm text-gray-900">
                 {% for b in batches %}
+                {% set batch_msds_url = None %}
+                {% if b.raw_materials and b.raw_materials.raw_material_company_docs %}
+                    {% for doc in b.raw_materials.raw_material_company_docs %}
+                        {% if doc.perusahaan == b.perusahaan and doc.msds_file_url %}
+                            {% set batch_msds_url = doc.msds_file_url %}
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
                 <tr class="hover:bg-gray-50 batch-row">
+                    <!-- Perusahaan -->
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        {% if b.perusahaan %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ 'bg-sky-100 text-sky-700' if b.perusahaan == 'PT Erfi' else 'bg-fuchsia-100 text-fuchsia-700' }}">{{ b.perusahaan }}</span>
+                        {% else %}
+                            <span class="text-xs text-gray-300">-</span>
+                        {% endif %}
+                    </td>
                     <!-- Tanggal Terima -->
                     <td class="px-4 py-3 whitespace-nowrap font-mono text-xs">{{ b.tanggal_terima_sampel or '-' }}</td>
 
@@ -176,19 +197,6 @@
                     
                     <!-- Lot / Batch No -->
                     <td class="px-4 py-3 font-mono text-xs">{{ b.no_batch or '-' }}</td>
-                    
-                    <!-- INCI Name Breakdown -->
-                    <td class="px-4 py-3">
-                        <span class="text-xs text-gray-600 block max-w-xs truncate">
-                            {% if b.raw_materials and b.raw_materials.raw_material_components %}
-                                {% for comp in b.raw_materials.raw_material_components %}
-                                    {{ comp.inci_name }}{% if not loop.last %}, {% endif %}
-                                {% endfor %}
-                            {% else %}
-                                -
-                            {% endif %}
-                        </span>
-                    </td>
                     
                     <!-- Harga per KG -->
                     <td class="px-4 py-3 font-mono text-green-700">
@@ -221,9 +229,9 @@
                             <span class="text-gray-300 w-8 text-center inline-flex items-center justify-center">-</span>
                         {% endif %}
 
-                        <!-- Tombol MSDS -->
-                        {% if b.raw_materials and b.raw_materials.msds_file_url %}
-                            <a href="{{ b.raw_materials.msds_file_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded bg-yellow-50 text-yellow-700 hover:bg-yellow-100 font-medium cursor-pointer">
+                        <!-- Tombol MSDS (di-resolve sesuai perusahaan batch ini) -->
+                        {% if batch_msds_url %}
+                            <a href="{{ batch_msds_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded bg-yellow-50 text-yellow-700 hover:bg-yellow-100 font-medium cursor-pointer">
                                 <i class="fa-solid fa-shield-halving mr-1"></i> MSDS
                             </a>
                         {% else %}
@@ -265,15 +273,11 @@
                 </div>
             </div>
 
-            <!-- PERBAIKAN 2: Tambah Grid baru untuk Produsen & Upload MSDS -->
+            <!-- Produsen (MSDS pindah ke section Spesifikasi per-perusahaan di bawah) -->
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Produsen (Pabrik Asal)</label>
                     <input type="text" name="produsen" placeholder="Contoh: BASF Germany, Merck" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Dokumen MSDS (Format: PDF)</label>
-                    <input type="file" name="msds_file" accept=".pdf" class="mt-1 block w-full rounded-md border border-gray-300 px-2 py-1.5 shadow-sm focus:border-indigo-500 focus:outline-none text-sm file:mr-4 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
                 </div>
             </div>
 
@@ -329,47 +333,69 @@
                 <span id="total-pct-indicator" class="font-mono font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded">100.000%</span>
             </div>
 
-            <!-- SECTION SPESIFIKASI STANDAR QUALITY CONTROL -->
+            <!-- SECTION SPESIFIKASI STANDAR & MSDS -- DIPISAH PER PERUSAHAAN -->
             <div class="mt-4 pt-4 border-t border-gray-200">
-                <h4 class="text-sm font-semibold text-gray-800 mb-3">Spesifikasi Standar Quality Control</h4>
-                
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Pemerian Standar</label>
-                        <input type="text" id="edit_spec_pemerian" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Aroma Standar</label>
-                        <input type="text" id="edit_spec_aroma" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
-                    </div>
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-sm font-semibold text-gray-800">Spesifikasi Standar & MSDS per Perusahaan</h4>
+                </div>
+                <p class="text-xs text-gray-400 mb-3">Boleh diisi salah satu dulu (misal cuma PT Erfi), tab satunya bisa disusulin belakangan.</p>
+
+                <input type="hidden" name="spec_parameters_erfi" id="spec_parameters_hidden_erfi" value="[]">
+                <input type="hidden" name="spec_parameters_heka" id="spec_parameters_hidden_heka" value="[]">
+
+                <!-- Tab Switcher -->
+                <div class="flex space-x-2 mb-4">
+                    <button type="button" onclick="switchCompanyDocTab('erfi')" id="tab-btn-erfi" class="px-3 py-1.5 text-xs font-semibold rounded-md bg-indigo-600 text-white transition cursor-pointer">PT Erfi</button>
+                    <button type="button" onclick="switchCompanyDocTab('heka')" id="tab-btn-heka" class="px-3 py-1.5 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition cursor-pointer">PT Heka</button>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4 mt-3">
-                    <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Batas pH</label>
-                        <input type="text" id="edit_spec_ph" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" placeholder="Contoh: 5.0 - 7.0 atau -">
+                {% for slug, label in [('erfi', 'PT Erfi'), ('heka', 'PT Heka')] %}
+                <div id="company-doc-panel-{{ slug }}" class="company-doc-panel {{ 'hidden' if slug != 'erfi' else '' }}">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Pemerian Standar</label>
+                            <input type="text" id="edit_spec_pemerian_{{ slug }}" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Aroma Standar</label>
+                            <input type="text" id="edit_spec_aroma_{{ slug }}" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Batas Viskositas</label>
-                        <input type="text" id="edit_spec_viskositas" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" placeholder="Contoh: 45.000 cps atau -">
-                    </div>
-                </div>
 
-                <div class="grid grid-cols-2 gap-4 mt-3">
-                    <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Standar Masa Kedaluwarsa</label>
-                        <input type="text" id="edit_spec_expired" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" placeholder="Contoh: 2 Tahun / 24 Bulan">
+                    <div class="grid grid-cols-2 gap-4 mt-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Batas pH</label>
+                            <input type="text" id="edit_spec_ph_{{ slug }}" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" placeholder="Contoh: 5.0 - 7.0 atau -">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Batas Viskositas</label>
+                            <input type="text" id="edit_spec_viskositas_{{ slug }}" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" placeholder="Contoh: 45.000 cps atau -">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-700 mb-1">Referensi Acuan</label>
-                        <input type="text" id="edit_spec_referensi" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" value="COA">
-                    </div>
-                </div>
 
-                <div class="mt-3">
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Cara Penyimpanan</label>
-                    <textarea id="edit_spec_penyimpanan" rows="2" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" placeholder="Contoh: Simpan di tempat sejuk dan kering, wadah tertutup rapat..."></textarea>
+                    <div class="grid grid-cols-2 gap-4 mt-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Standar Masa Kedaluwarsa</label>
+                            <input type="text" id="edit_spec_expired_{{ slug }}" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" placeholder="Contoh: 2 Tahun / 24 Bulan">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Referensi Acuan</label>
+                            <input type="text" id="edit_spec_referensi_{{ slug }}" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" value="COA">
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Cara Penyimpanan</label>
+                        <textarea id="edit_spec_penyimpanan_{{ slug }}" rows="2" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm" placeholder="Contoh: Simpan di tempat sejuk dan kering, wadah tertutup rapat..."></textarea>
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Dokumen MSDS {{ label }} (Format: PDF)</label>
+                        <input type="file" name="msds_file_{{ slug }}" accept=".pdf" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 shadow-sm focus:border-indigo-500 focus:outline-none text-sm file:mr-4 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                        <p id="msds_current_{{ slug }}" class="text-xs text-gray-400 mt-1"></p>
+                    </div>
                 </div>
+                {% endfor %}
             </div>
 
             <div class="mt-6 flex justify-end space-x-3 border-t pt-4">
@@ -395,6 +421,15 @@
 
             <!-- DATA ADMINISTRASI BATCH -->
             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">1. Data Administrasi & Logistik</h4>
+            <div class="mb-4">
+                <label class="block text-xs font-medium text-gray-700 mb-1">Perusahaan *</label>
+                <select name="perusahaan" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm bg-white">
+                    <option value="">-- Pilih Perusahaan --</option>
+                    <option value="PT Erfi">PT Erfi</option>
+                    <option value="PT Heka">PT Heka</option>
+                </select>
+                <p class="text-xs text-gray-400 mt-1">Batch, CoA, dan Halal ini khusus buat perusahaan yang dipilih.</p>
+            </div>
             <div class="grid grid-cols-2 gap-4 mb-4">
                 <div>
                     <label class="block text-xs font-medium text-gray-700 mb-1">Nomor Batch *</label>
@@ -509,11 +544,40 @@ function closeCpkbModal() {
 }
 const masterRawMaterials = {{ raw_materials | tojson | safe }};
 
+function switchCompanyDocTab(slug) {
+    document.querySelectorAll('.company-doc-panel').forEach(panel => {
+        panel.classList.toggle('hidden', panel.id !== `company-doc-panel-${slug}`);
+    });
+    ['erfi', 'heka'].forEach(s => {
+        const btn = document.getElementById(`tab-btn-${s}`);
+        if (s === slug) {
+            btn.className = "px-3 py-1.5 text-xs font-semibold rounded-md bg-indigo-600 text-white transition cursor-pointer";
+        } else {
+            btn.className = "px-3 py-1.5 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition cursor-pointer";
+        }
+    });
+}
+
+function resetCompanyDocFields() {
+    ['erfi', 'heka'].forEach(slug => {
+        ['pemerian', 'aroma', 'ph', 'viskositas', 'expired', 'penyimpanan'].forEach(field => {
+            const el = document.getElementById(`edit_spec_${field}_${slug}`);
+            if (el) el.value = '';
+        });
+        const referensi = document.getElementById(`edit_spec_referensi_${slug}`);
+        if (referensi) referensi.value = 'COA';
+        const msdsNote = document.getElementById(`msds_current_${slug}`);
+        if (msdsNote) msdsNote.innerHTML = '';
+    });
+    switchCompanyDocTab('erfi');
+}
+
 function toggleModal(show) {
     document.getElementById('crud-modal').classList.toggle('hidden', !show);
     if (show) {
         modal.querySelector('h3').innerText = "Tambah Master Bahan Baku";
         modal.querySelector('form').action = "/raw-materials/add";
+        resetCompanyDocFields();
         updateTotalCalculated(); 
     }
 }
@@ -574,20 +638,20 @@ function updateTotalCalculated() {
 }
 
 function validateForm() {
-    // ==================== GENERATE & SUNTIK JSONB SPEK BATCH ====================
-    const specParameters = [
-        { key: "Pemerian", value: document.getElementById('edit_spec_pemerian').value },
-        { key: "Aroma", value: document.getElementById('edit_spec_aroma').value },
-        { key: "pH", value: document.getElementById('edit_spec_ph').value },
-        { key: "Viskositas", value: document.getElementById('edit_spec_viskositas').value },
-        { key: "Masa Kedaluwarsa", value: document.getElementById('edit_spec_expired').value },
-        { key: "Cara Penyimpanan", value: document.getElementById('edit_spec_penyimpanan').value },
-        { key: "Referensi", value: document.getElementById('edit_spec_referensi').value }
-    ];
-    
-    // Simpan string JSON ke input hidden sebelum form bener-bener dikirim
-    document.getElementById('spec_parameters_hidden').value = JSON.stringify(specParameters);
-    // ============================================================================
+    // ==================== GENERATE & SUNTIK JSONB SPEK PER PERUSAHAAN ====================
+    ['erfi', 'heka'].forEach(slug => {
+        const specParameters = [
+            { key: "Pemerian", value: document.getElementById(`edit_spec_pemerian_${slug}`).value },
+            { key: "Aroma", value: document.getElementById(`edit_spec_aroma_${slug}`).value },
+            { key: "pH", value: document.getElementById(`edit_spec_ph_${slug}`).value },
+            { key: "Viskositas", value: document.getElementById(`edit_spec_viskositas_${slug}`).value },
+            { key: "Masa Kedaluwarsa", value: document.getElementById(`edit_spec_expired_${slug}`).value },
+            { key: "Cara Penyimpanan", value: document.getElementById(`edit_spec_penyimpanan_${slug}`).value },
+            { key: "Referensi", value: document.getElementById(`edit_spec_referensi_${slug}`).value }
+        ];
+        document.getElementById(`spec_parameters_hidden_${slug}`).value = JSON.stringify(specParameters);
+    });
+    // ======================================================================================
 
     const tipe = document.querySelector('input[name="tipe"]:checked').value;
     if (tipe === 'komposit') {
@@ -650,19 +714,34 @@ function openEditModal(rm) {
         });
     }
 
-    // ==================== INTEGRASI PARSING JSONB BAB II ====================
-    const specs = rm.spec_parameters || [];
-    const specMap = {};
-    specs.forEach(item => { specMap[item.key] = item.value; });
+    // ==================== INTEGRASI PARSING JSONB BAB II (PER PERUSAHAAN) ====================
+    resetCompanyDocFields();
+    const companyDocs = rm.raw_material_company_docs || [];
+    const perusahaanSlugMap = { 'PT Erfi': 'erfi', 'PT Heka': 'heka' };
 
-    document.getElementById('edit_spec_pemerian').value = specMap['Pemerian'] || '';
-    document.getElementById('edit_spec_aroma').value = specMap['Aroma'] || '';
-    document.getElementById('edit_spec_ph').value = specMap['pH'] || '';
-    document.getElementById('edit_spec_viskositas').value = specMap['Viskositas'] || '';
-    document.getElementById('edit_spec_expired').value = specMap['Masa Kedaluwarsa'] || '';
-    document.getElementById('edit_spec_referensi').value = specMap['Referensi'] || 'COA';
-    document.getElementById('edit_spec_penyimpanan').value = specMap['Cara Penyimpanan'] || '';
-    // =================================================================================
+    ['erfi', 'heka'].forEach(slug => {
+        const label = slug === 'erfi' ? 'PT Erfi' : 'PT Heka';
+        const doc = companyDocs.find(d => perusahaanSlugMap[d.perusahaan] === slug) || {};
+        const specs = doc.spec_parameters || [];
+        const specMap = {};
+        specs.forEach(item => { specMap[item.key] = item.value; });
+
+        document.getElementById(`edit_spec_pemerian_${slug}`).value = specMap['Pemerian'] || '';
+        document.getElementById(`edit_spec_aroma_${slug}`).value = specMap['Aroma'] || '';
+        document.getElementById(`edit_spec_ph_${slug}`).value = specMap['pH'] || '';
+        document.getElementById(`edit_spec_viskositas_${slug}`).value = specMap['Viskositas'] || '';
+        document.getElementById(`edit_spec_expired_${slug}`).value = specMap['Masa Kedaluwarsa'] || '';
+        document.getElementById(`edit_spec_referensi_${slug}`).value = specMap['Referensi'] || 'COA';
+        document.getElementById(`edit_spec_penyimpanan_${slug}`).value = specMap['Cara Penyimpanan'] || '';
+
+        const msdsNote = document.getElementById(`msds_current_${slug}`);
+        if (doc.msds_file_url) {
+            msdsNote.innerHTML = `MSDS ${label} udah ke-upload: <a href="${doc.msds_file_url}" target="_blank" class="text-indigo-600 underline">lihat file</a>. Upload file baru buat ganti.`;
+        } else {
+            msdsNote.innerHTML = `<span class="text-amber-600">Belum ada MSDS buat ${label}.</span>`;
+        }
+    });
+    // ============================================================================================
 
     modal.classList.remove('hidden');
     updateTotalCalculated();

@@ -325,7 +325,7 @@ async def product_bab3_detail(
 
 @app.get("/raw-materials", response_class=HTMLResponse)
 async def raw_materials_page(request: Request):
-    rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*)").order("nama_dagang").execute()
+    rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*), raw_material_company_docs(*)").order("nama_dagang").execute()
     
     success_msg = request.cookies.get("success_msg")
     error_msg = request.cookies.get("error_msg")
@@ -338,11 +338,13 @@ async def raw_materials_page(request: Request):
                 raw_materials (
                     nama_dagang,
                     produsen,
-                    msds_file_url,
-                    spec_parameters,
                     raw_material_components (
                         inci_name,
                         cas_number
+                    ),
+                    raw_material_company_docs (
+                        perusahaan,
+                        msds_file_url
                     )
                 )
             """)
@@ -372,6 +374,52 @@ async def raw_materials_page(request: Request):
         
     return response
 
+async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, perusahaan: str, spec_parameters_raw: str, msds_file: UploadFile):
+    """Helper: parse spec_parameters (JSON), upload MSDS (kalau ada file baru), lalu upsert
+    1 baris ke raw_material_company_docs buat kombinasi (rm_id, perusahaan) tersebut.
+    Kalau spec kosong semua & gak ada file MSDS (baik baru maupun lama), gak perlu insert apa-apa."""
+    import json
+    try:
+        parsed_specs = json.loads(spec_parameters_raw) if spec_parameters_raw else []
+    except Exception as e:
+        print(f"Gagal parsing spec_parameters ({perusahaan}): {e}")
+        parsed_specs = []
+
+    has_spec_content = any((item.get("value") or "").strip() for item in parsed_specs if isinstance(item, dict))
+
+    msds_url = None
+    if msds_file and msds_file.filename:
+        try:
+            file_bytes = await msds_file.read()
+            clean_kode = "".join(c for c in kode_bahan_baku if c.isalnum() or c in ('-', '_')).strip()
+            company_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
+            file_path = f"msds/msds_{clean_kode}_{company_slug}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=file_path,
+                file=file_bytes,
+                file_options={"content-type": msds_file.content_type, "upsert": "true"}
+            )
+            msds_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
+        except Exception as e:
+            print(f"Gagal upload MSDS ({perusahaan}): {e}")
+
+    if not has_spec_content and not msds_url:
+        # Belum ada data sama sekali buat company ini -> jangan bikin baris kosong
+        return
+
+    doc_payload = {
+        "raw_material_id": rm_id,
+        "perusahaan": perusahaan,
+        "spec_parameters": parsed_specs,
+    }
+    if msds_url:
+        doc_payload["msds_file_url"] = msds_url
+
+    supabase.table("raw_material_company_docs").upsert(
+        doc_payload, on_conflict="raw_material_id,perusahaan"
+    ).execute()
+
+
 @app.post("/raw-materials/add")
 async def add_raw_material(
     request: Request,
@@ -379,37 +427,23 @@ async def add_raw_material(
     kode_bahan_baku: str = Form(...),
     tipe: str = Form(...),
     produsen: str = Form(None),
-    msds_file: UploadFile = File(None),
+    msds_file_erfi: UploadFile = File(None),
+    msds_file_heka: UploadFile = File(None),
     inci_name: list[str] = Form(None),
     cas_number: list[str] = Form(None),
     function: list[str] = Form(None),
     percent_internal: list[float] = Form(None),
-    spec_parameters: str = Form("[]"), 
+    spec_parameters_erfi: str = Form("[]"),
+    spec_parameters_heka: str = Form("[]"),
     current_user: dict = Depends(get_current_user)
 ):
-    # 1. Parsing string JSONB dari frontend ke Python Object
-    import json
-    try:
-        parsed_specs = json.loads(spec_parameters)
-    except Exception as e:
-        print(f"Gagal parsing spec_parameters pas add: {e}")
-        parsed_specs = []
-
-    # 2. Masukkan ke dalam payload insert raw_materials lu
+    # Payload raw_materials sekarang cuma identitas -- spec & MSDS udah pindah ke raw_material_company_docs
     insert_payload = {
         "nama_dagang": nama_dagang,
         "kode_bahan_baku": kode_bahan_baku,
         "tipe": tipe,
         "produsen": produsen,
-        "spec_parameters": parsed_specs 
     }
-    # KITA PAKSA TULISAN INI KELUAR DI TERMINAL APAPUN YANG TERJADI
-    print("\n" + "="*40)
-    print("LOG INI HARUSNYA MUNCUL DI TERMINAL!")
-    print(f"Nama Dagang: {nama_dagang}")
-    print(f"Produsen: {produsen}")
-    print(f"File MSDS: {msds_file.filename if msds_file else 'Kosong'}")
-    print("="*40 + "\n")
 
     kode_check = kode_bahan_baku.strip()
     existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).execute()
@@ -419,33 +453,13 @@ async def add_raw_material(
         response = RedirectResponse(url="/raw-materials", status_code=303)
         response.set_cookie("error_msg", f"Kode '{kode_check}' udah terdaftar. Gunakan kode lain.")
         return response
-        
-    # --- LOGIC UPLOAD MSDS KE SUPABASE STORAGE ---
-    msds_url = None
-    if msds_file and msds_file.filename:
-        try:
-            file_bytes = await msds_file.read()
-            # Bersihkan nama kode buat nama file agar aman di URL
-            clean_kode = "".join(c for c in kode_check if c.isalnum() or c in ('-', '_')).strip()
-            file_path = f"msds/msds_{clean_kode}.pdf"
-            
-            # Upload fisik file ke bucket 'raw-material-docs'
-            supabase.storage.from_("raw-material-docs").upload(
-                path=file_path,
-                file=file_bytes,
-                file_options={"content-type": msds_file.content_type}
-            )
-            
-            # Dapatkan Link Public-nya
-            msds_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
-        except Exception as e:
-            print(f"Gagal upload MSDS: {e}")
-            # Lanjut proses tanpa menggagalkan insert jika upload bermasalah
 
-    # --- INSERT DATA UTAMA (Ditambah Produsen & MSDS URL) ---
-    insert_payload["msds_file_url"] = msds_url
     rm_resp = supabase.table("raw_materials").insert(insert_payload).execute()
     new_rm_id = rm_resp.data[0]["id"]
+
+    # --- Simpan spec + MSDS per perusahaan (kalau diisi) ---
+    await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi)
+    await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka)
 
     if tipe == "single":
         given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
@@ -483,65 +497,35 @@ async def edit_raw_material(
     nama_dagang: str = Form(...),
     kode_bahan_baku: str = Form(...),
     tipe: str = Form(...),
+    produsen: str = Form(None),
     inci_name: List[str] = Form(None),
     cas_number: List[str] = Form(None),
     function: List[str] = Form(None),
     percent_internal: List[float] = Form(None),
-    msds_file: UploadFile = File(None),
-    spec_parameters: str = Form("[]"), # <-- SUNTIK PARAMETER BARU
+    msds_file_erfi: UploadFile = File(None),
+    msds_file_heka: UploadFile = File(None),
+    spec_parameters_erfi: str = Form("[]"),
+    spec_parameters_heka: str = Form("[]"),
     current_user: dict = Depends(get_current_user)
 ):
-    print("\n" + "="*40)
-    print("LOG INI MUNCUL PAS LU KLIK EDIT!")
-    print(f"ID Bahan Baku: {rm_id}")
-    print(f"Nama Dagang: {nama_dagang}")
-    print(f"File MSDS Baru: {msds_file.filename if msds_file else 'Tidak Ada File Baru'}")
-    print("="*40 + "\n")
-    
     kode_check = kode_bahan_baku.strip()
     existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).neq("id", rm_id).execute()
     
     if existing_rm.data:
         raise HTTPException(status_code=400, detail=f"Gagal Edit! Kode '{kode_check}' sudah dipakai oleh bahan baku lain.")
-    
-    # PARSING STRING JSONB DARI FRONTEND KE PYTHON OBJECT
-    import json
-    try:
-        parsed_specs = json.loads(spec_parameters)
-    except Exception as e:
-        print(f"Gagal parsing spec_parameters: {e}")
-        parsed_specs = []
 
-    # 2. SIAPKAN DICTIONARY DATA UNTUK UPDATE TABLE RAW_MATERIALS
+    # 1. UPDATE IDENTITAS DI RAW_MATERIALS (spec & MSDS udah pindah ke raw_material_company_docs)
     update_data = {
         "nama_dagang": nama_dagang,
         "kode_bahan_baku": kode_bahan_baku,
         "tipe": tipe,
-        "spec_parameters": parsed_specs # <-- SUNTIK DATA BATCH KE KOLOM JSONB
+        "produsen": produsen,
     }
-    
-    # 3. LOGIKA PROSES UPLOAD FILE MSDS (JIKA USER UPLOAD FILE BARU)
-    if msds_file and msds_file.filename:
-        try:
-            file_contents = await msds_file.read()
-            clean_filename = f"msds_{rm_id}_{msds_file.filename.replace(' ', '_')}"
-            storage_path = f"msds/{clean_filename}"
-            
-            supabase.storage.from_("raw-material-docs").upload(
-                path=storage_path,
-                file=file_contents,
-                file_options={"content-type": msds_file.content_type, "upsert": "true"}
-            )
-            
-            msds_url = supabase.storage.from_("raw-material-docs").get_public_url(storage_path)
-            update_data["msds_file_url"] = msds_url
-            print(f"Sukses upload MSDS baru ke: {msds_url}")
-            
-        except Exception as e:
-            print(f"Gagal proses upload MSDS: {e}")
-    
-    # 4. JALANKAN UPDATE KE TABEL RAW_MATERIALS
     supabase.table("raw_materials").update(update_data).eq("id", rm_id).execute()
+
+    # 2. UPSERT SPEC + MSDS PER PERUSAHAAN
+    await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi)
+    await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka)
 
     # --- Sisa kode management komponen INCI lu di bawah biarkan utuh ---
     supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
@@ -603,6 +587,7 @@ async def add_material_batch(
     tanggal_terima_sampel: str = Form(...),
     tanggal_ed: str = Form(...),
     kesimpulan: str = Form(...),
+    perusahaan: str = Form(...),
     tanggal_sampling: str = Form(None),
     qc_signer: str = Form(None),
     qa_signer: str = Form(None),
@@ -661,6 +646,7 @@ async def add_material_batch(
     # 4. Simpan record data lengkap ke tabel raw_material_batches
     batch_data = {
         "raw_material_id": raw_material_id,
+        "perusahaan": perusahaan,
         "no_batch": no_batch.strip(),
         "supplier": supplier.strip(),
         "harga_per_kg": harga_per_kg,
@@ -936,6 +922,23 @@ async def qualitative_quantitative_report(request: Request, product_id: str):
         }
     )
 
+def _apply_company_specific_docs(rm: dict, perusahaan: str) -> dict:
+    """Timpa spec_parameters & msds_file_url pada dict raw_material dengan data
+    yang company-specific dari raw_material_company_docs (kalau ada). Kalau data
+    buat perusahaan ini belum diisi, dikosongin (bukan fallback ke company lain) --
+    biar dokumen legal gak salah nampilin data company yang bukan pemiliknya."""
+    doc_resp = supabase.table("raw_material_company_docs") \
+        .select("spec_parameters, msds_file_url") \
+        .eq("raw_material_id", rm["id"]) \
+        .eq("perusahaan", perusahaan) \
+        .limit(1) \
+        .execute()
+    company_doc = doc_resp.data[0] if doc_resp.data else None
+    rm["spec_parameters"] = (company_doc or {}).get("spec_parameters") or []
+    rm["msds_file_url"] = (company_doc or {}).get("msds_file_url")
+    return rm
+
+
 # =====================================================================
 #           FASE 2B: GENERATOR DOKUMEN BAB II (PDF GABUNGAN)
 # =====================================================================
@@ -965,12 +968,17 @@ async def download_bab2_document(product_id: str):
             seen_ids.add(rm["id"])
             raw_materials.append(rm)
 
-    # 3. Per bahan baku, tarik data batch TERBARU (kesepakatan: pakai batch terbaru)
+    # 2b. Timpa spec_parameters & msds_file_url tiap bahan baku dengan data company-specific
+    for rm in raw_materials:
+        _apply_company_specific_docs(rm, perusahaan)
+
+    # 3. Per bahan baku, tarik data batch TERBARU khusus company ini (kesepakatan: pakai batch terbaru)
     materials_data = []
     for rm in raw_materials:
         batch_resp = supabase.table("raw_material_batches") \
             .select("*") \
             .eq("raw_material_id", rm["id"]) \
+            .eq("perusahaan", perusahaan) \
             .order("created_at", desc=True) \
             .limit(1) \
             .execute()
@@ -1097,12 +1105,17 @@ async def download_bab2_document_zip(product_id: str):
             seen_ids.add(rm["id"])
             raw_materials.append(rm)
 
-    # 3. Per bahan baku, tarik data batch TERBARU (kesepakatan: pakai batch terbaru)
+    # 2b. Timpa spec_parameters & msds_file_url tiap bahan baku dengan data company-specific
+    for rm in raw_materials:
+        _apply_company_specific_docs(rm, perusahaan)
+
+    # 3. Per bahan baku, tarik data batch TERBARU khusus company ini (kesepakatan: pakai batch terbaru)
     materials_data = []
     for rm in raw_materials:
         batch_resp = supabase.table("raw_material_batches") \
             .select("*") \
             .eq("raw_material_id", rm["id"]) \
+            .eq("perusahaan", perusahaan) \
             .order("created_at", desc=True) \
             .limit(1) \
             .execute()
