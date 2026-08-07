@@ -1100,6 +1100,7 @@ async def download_bab2_document_zip(product_id: str):
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
+    company = get_company_info(perusahaan)
 
     # 2. Ambil semua bahan baku unik yang dipakai di formula produk ini
     lines_resp = supabase.table("product_formula_lines") \
@@ -1159,7 +1160,10 @@ async def download_bab2_document_zip(product_id: str):
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         # 5a. Checklist Bab II (halaman pembuka) -> PDF
-        checklist_html = templates.env.get_template("bab2_checklist.html").render(product=product)
+        checklist_html = templates.env.get_template("bab2_checklist.html").render(
+            product=product,
+            company=company
+            )
         checklist_buffer = io.BytesIO()
         checklist_status = pisa.CreatePDF(src=checklist_html, dest=checklist_buffer)
         if not checklist_status.err:
