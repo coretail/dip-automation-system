@@ -60,16 +60,26 @@
     <div class="flex flex-col sm:flex-row gap-3">
         <div class="flex-1 relative">
             <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-            <input type="text" id="search-input" placeholder="Cari nama dagang, kode, atau INCI..."
+            <input type="text" id="search-input" placeholder="Cari nama dagang, kode, batch, atau supplier..."
                    oninput="filterTable()"
                    class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:border-indigo-500 focus:outline-none">
         </div>
+        
+        <!-- DROPDOWN FILTER PERUSAHAAN (BARU) -->
+        <select id="filter-company" onchange="filterTable()"
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:border-indigo-500 focus:outline-none">
+            <option value="">Semua Perusahaan</option>
+            <option value="PT Erfi">PT Erfi</option>
+            <option value="PT Heka">PT Heka</option>
+        </select>
+
         <select id="filter-tipe" onchange="filterTable()"
                 class="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:border-indigo-500 focus:outline-none">
             <option value="">Semua Tipe</option>
             <option value="single">Single</option>
             <option value="komposit">Komposit</option>
         </select>
+
         <button onclick="resetFilter()" title="Reset Filter"
                 class="border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition">
             <i class="fa-solid fa-rotate-left"></i>
@@ -95,6 +105,7 @@
                     data-nama="{{ rm.nama_dagang | lower }}"
                     data-kode="{{ (rm.kode_bahan_baku or '') | lower }}"
                     data-tipe="{{ rm.tipe or '' }}"
+                    data-company="{{ rm.raw_material_company_docs | map(attribute='perusahaan') | join(' ') }}"
                     data-inci="{{ rm.raw_material_components | map(attribute='inci_name') | join(' ') | lower }}">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ rm.nama_dagang }}</div>
@@ -172,7 +183,12 @@
                         {% endif %}
                     {% endfor %}
                 {% endif %}
-                <tr class="hover:bg-gray-50 batch-row">
+                <tr class="hover:bg-gray-50 batch-row"
+                    data-company="{{ b.perusahaan or '' }}"
+                    data-nama="{{ (b.raw_materials.nama_dagang if b.raw_materials else '') | lower }}"
+                    data-supplier="{{ (b.supplier or '') | lower }}"
+                    data-batch="{{ (b.no_batch or '') | lower }}"
+                    data-produsen="{{ (b.raw_materials.produsen if b.raw_materials and b.raw_materials.produsen else '') | lower }}">
                     <!-- Perusahaan -->
                     <td class="px-4 py-3 whitespace-nowrap">
                         {% if b.perusahaan %}
@@ -750,38 +766,68 @@ function openEditModal(rm) {
 function filterTable() {
     const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
     const tipeVal = document.getElementById('filter-tipe').value;
-    const rows = document.querySelectorAll('.rm-row');
+    const companyVal = document.getElementById('filter-company').value;
+    
+    const isMasterActive = !document.getElementById('master-tab').classList.contains('hidden');
 
-    let visibleCount = 0;
+    if (isMasterActive) {
+        const rows = document.querySelectorAll('.rm-row');
+        let visibleCount = 0;
 
-    rows.forEach(row => {
-        const batchTab = document.getElementById('batch-tab');
-        if (batchTab && !batchTab.classList.contains('hidden')) return;
-        const nama = row.dataset.nama || '';
-        const kode = row.dataset.kode || '';
-        const inci = row.dataset.inci || '';
-        const tipe = row.dataset.tipe || '';
+        rows.forEach(row => {
+            const nama = row.dataset.nama || '';
+            const kode = row.dataset.kode || '';
+            const inci = row.dataset.inci || '';
+            const tipe = row.dataset.tipe || '';
+            const company = row.dataset.company || '';
 
-        const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal) || inci.includes(searchVal);
-        const matchTipe = !tipeVal || tipe === tipeVal;
+            const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal) || inci.includes(searchVal);
+            const matchTipe = !tipeVal || tipe === tipeVal;
+            const matchCompany = !companyVal || company.includes(companyVal);
 
-        const show = matchSearch && matchTipe;
-        row.style.display = show ? '' : 'none';
-        if (show) visibleCount++;
-    });
+            const show = matchSearch && matchTipe && matchCompany;
+            row.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
 
-    const countEl = document.getElementById('filter-count');
-    const totalRows = rows.length;
-    if (searchVal || tipeVal) {
-        countEl.textContent = `Menampilkan ${visibleCount} dari ${totalRows} bahan baku`;
+        const countEl = document.getElementById('filter-count');
+        if (searchVal || tipeVal || companyVal) {
+            countEl.textContent = `Menampilkan ${visibleCount} dari ${rows.length} bahan baku`;
+        } else {
+            countEl.textContent = '';
+        }
     } else {
-        countEl.textContent = '';
+        const rows = document.querySelectorAll('.batch-row');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const nama = row.dataset.nama || '';
+            const supplier = row.dataset.supplier || '';
+            const batch = row.dataset.batch || '';
+            const produsen = row.dataset.produsen || '';
+            const company = row.dataset.company || '';
+
+            const matchSearch = !searchVal || nama.includes(searchVal) || supplier.includes(searchVal) || batch.includes(searchVal) || produsen.includes(searchVal);
+            const matchCompany = !companyVal || company === companyVal;
+
+            const show = matchSearch && matchCompany;
+            row.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+
+        const countEl = document.getElementById('filter-count');
+        if (searchVal || companyVal) {
+            countEl.textContent = `Menampilkan ${visibleCount} dari ${rows.length} record batch`;
+        } else {
+            countEl.textContent = '';
+        }
     }
 }
 
 function resetFilter() {
     document.getElementById('search-input').value = '';
     document.getElementById('filter-tipe').value = '';
+    document.getElementById('filter-company').value = '';
     filterTable();
 }
 
@@ -854,7 +900,6 @@ function switchTab(showId, hideId) {
     document.getElementById(showId).classList.remove('hidden');
     document.getElementById(hideId).classList.add('hidden');
     
-    // Switch styling button tab active
     const btnMaster = document.getElementById('btn-master');
     const btnBatch = document.getElementById('btn-batch');
     
@@ -865,6 +910,9 @@ function switchTab(showId, hideId) {
         btnBatch.className = "border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer";
         btnMaster.className = "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer";
     }
+
+    // Panggil filterTable biar pas pindah tab, hasil filternya langsung menyesuaikan
+    filterTable();
 }
 </script>
 {% endblock %}
