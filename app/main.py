@@ -101,8 +101,8 @@ def get_company_info(perusahaan_key: str) -> dict:
 
 templates.env.filters["clean_pct"] = clean_pct
 
-@app.head("/")
-@app.get("/")
+@app.head("/health")
+@app.get("/health")
 async def health_check():
     return {"status": "ok"}
 
