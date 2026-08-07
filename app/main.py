@@ -23,6 +23,11 @@ load_dotenv()
 WIB = ZoneInfo("Asia/Jakarta")
 import uuid
 
+@app.head("/")
+@app.get("/")
+async def health_check():
+    return {"status": "ok"}
+
 def _add_years(d: date, years: int) -> date:
     """Tambah tahun ke tanggal, aman buat kasus 29 Feb kena tahun non-kabisat."""
     try:
