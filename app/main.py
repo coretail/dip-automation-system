@@ -93,6 +93,12 @@ COMPANY_INFO = {
     }
 }
 
+def get_company_info(perusahaan_key: str) -> dict:
+    """Helper buat narik detail perusahaan resmi berdasarkan key DB ('PT Erfi' / 'PT Heka')"""
+    if not perusahaan_key:
+        return COMPANY_INFO["PT Erfi"]
+    return COMPANY_INFO.get(perusahaan_key, COMPANY_INFO["PT Erfi"])
+
 templates.env.filters["clean_pct"] = clean_pct
 
 @app.on_event("startup")
@@ -951,6 +957,7 @@ async def download_bab2_document(product_id: str):
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
+    company = get_company_info(perusahaan)
 
     # 2. Ambil semua bahan baku unik yang dipakai di formula produk ini
     lines_resp = supabase.table("product_formula_lines") \
@@ -994,7 +1001,10 @@ async def download_bab2_document(product_id: str):
     sop_url = sop_resp.data[0]["file_url"] if sop_resp.data else None
 
     # 5. Render Checklist (halaman pembuka) jadi PDF sendiri
-    checklist_html = templates.env.get_template("bab2_checklist.html").render(product=product)
+    checklist_html = templates.env.get_template("bab2_checklist.html").render(
+        product=product,
+        company=company
+        )
     checklist_buffer = io.BytesIO()
     checklist_status = pisa.CreatePDF(src=checklist_html, dest=checklist_buffer)
     if checklist_status.err:
@@ -1034,7 +1044,9 @@ async def download_bab2_document(product_id: str):
 
             # Render blok spesifikasi + catatan pemeriksaan khusus bahan baku ini
             material_html = templates.env.get_template("bab2_material_block.html").render(
-                item=item, index=idx
+                item=item,
+                index=idx,
+                company=company
             )
             material_buffer = io.BytesIO()
             material_status = pisa.CreatePDF(src=material_html, dest=material_buffer)
@@ -1231,6 +1243,7 @@ async def download_bab1_document(product_id: str):
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
+    company = get_company_info(perusahaan)
     brand_id = product.get("brand_id")
 
     # 2. NIB & Sertifikat CPKB & Surat Tidak Pidana -> statis per PT
@@ -1265,7 +1278,11 @@ async def download_bab1_document(product_id: str):
     }
 
     # 5. Render Checklist jadi PDF
-    checklist_html = templates.env.get_template("bab1_checklist.html").render(product=product, status=status)
+    checklist_html = templates.env.get_template("bab1_checklist.html").render(
+        product=product,
+        status=status,
+        company=company
+        )
     checklist_buffer = io.BytesIO()
     checklist_status = pisa.CreatePDF(src=checklist_html, dest=checklist_buffer)
     if checklist_status.err:
@@ -1322,6 +1339,7 @@ async def download_dip_bab3(
         raise HTTPException(status_code=404, detail="Produk kagak ketemu men!")
 
     perusahaan = product.get("perusahaan", "PT Erfi")
+    company = get_company_info(perusahaan)
 
     # 2. AMBIL DATA FORMULA KUALITATIF & KUANTITATIF (POIN 1)
     # Catatan: nama tabel yang bener "raw_material_components" (bukan "compositions"),
@@ -1396,6 +1414,7 @@ async def download_dip_bab3(
     rendered_html = template.render({
         "product": product,
         "perusahaan": perusahaan,
+        "company": company,
         "company_sop": company_sop,
         "latest_batch": latest_batch,
         "processed_formula": processed_formula
@@ -1454,15 +1473,16 @@ async def download_dip_bab4(
     product_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    # 1. AMBIL DATA PRODUK
+    # 1. AMBIL DATA PRODUK & PERUSAHAAN
     prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).single().execute()
     product = prod_resp.data
     if not product:
         raise HTTPException(status_code=404, detail="Produk kagak ketemu men!")
 
     perusahaan = product.get("perusahaan", "PT Erfi")
+    company = get_company_info(perusahaan)
 
-    # 2. AMBIL SOP MASTER PERUSAHAAN (Poin 2 & Poin 3)
+    # 2. AMBIL SOP MASTER PERUSAHAAN
     company_sop = {}
     try:
         sop_resp = supabase.table("company_sop_documents").select("*").eq("perusahaan", perusahaan).execute()
@@ -1471,11 +1491,47 @@ async def download_dip_bab4(
     except Exception as e:
         print(f"[WARNING] Gagal/belum ada data company_sop_documents: {e}")
 
-    # 3. RENDER CHECKLIST BAB 4 VIA TEMPLATE HTML
+    # 3. HITUNG KOMPOSISI INCI MURNI (TEXT DESIGN)
+    komposisi_text = "-"
+    try:
+        formula_resp = supabase.table("product_formula_lines") \
+            .select("percent_in_formula, raw_materials(nama_dagang, raw_material_components(*))") \
+            .eq("product_id", product_id) \
+            .execute()
+        
+        grouped_pure = {}
+        for line in (formula_resp.data or []):
+            pct_in_formula = float(line.get("percent_in_formula") or 0)
+            rm = line.get("raw_materials") or {}
+            components = rm.get("raw_material_components") or []
+            
+            if components:
+                for comp in components:
+                    inci_name = comp.get("inci_name") or "-"
+                    pct_internal = float(comp.get("percent_internal") or 100)
+                    abs_pct = (pct_in_formula * pct_internal) / 100.0
+                    if inci_name not in grouped_pure:
+                        grouped_pure[inci_name] = Decimal('0.0')
+                    grouped_pure[inci_name] += Decimal(str(abs_pct))
+            else:
+                nama_dagang = rm.get("nama_dagang") or "Unknown"
+                if nama_dagang not in grouped_pure:
+                    grouped_pure[nama_dagang] = Decimal('0.0')
+                grouped_pure[nama_dagang] += Decimal(str(pct_in_formula))
+
+        sorted_inci = sorted(grouped_pure.items(), key=lambda x: x[1], reverse=True)
+        komposisi_list = [item[0] for item in sorted_inci]
+        if komposisi_list:
+            komposisi_text = ", ".join(komposisi_list) + "."
+    except Exception as e:
+        print(f"[BAB 4 WARNING] Gagal kalkulasi komposisi Text Design: {e}")
+
+    # 4. RENDER CHECKLIST BAB 4
     template = templates.get_template("bab4_checklist.html")
     rendered_html = template.render({
         "product": product,
         "perusahaan": perusahaan,
+        "company": company,
         "company_sop": company_sop
     })
 
@@ -1483,23 +1539,54 @@ async def download_dip_bab4(
     pisa.CreatePDF(io.StringIO(rendered_html), dest=cover_pdf_io)
     cover_pdf_io.seek(0)
 
-    # 4. MERGE PDF COVER + LAMPIRAN BAB 4
+    # 5. RENDER HALAMAN TEXT DESIGN PDF
+    text_design_template = templates.get_template("text_design_block.html")
+    text_design_rendered = text_design_template.render({
+        "product": product,
+        "company": company,
+        "komposisi_text": komposisi_text
+    })
+    text_design_pdf_io = io.BytesIO()
+    pisa.CreatePDF(io.StringIO(text_design_rendered), dest=text_design_pdf_io)
+    text_design_pdf_io.seek(0)
+
+    # 6. MERGE PDF COVER + LAMPIRAN BAB 4 (TEXT DESIGN MASUK SEBELUM DESAIN PRIMER)
     pdf_writer = PdfWriter()
     cover_reader = PdfReader(cover_pdf_io)
     for page in cover_reader.pages:
         pdf_writer.add_page(page)
 
     attachment_urls = [
-        product.get("laporan_keamanan_file_url"),      # Poin 1
-        company_sop.get("cv_safety_assessor_url"),     # Poin 2
-        company_sop.get("monitoring_efek_samping_file_url"),    # Poin 3
-        product.get("data_klaim_file_url"),            # Poin 4
-        product.get("desain_primer_file_url"),         # Poin 5a
-        product.get("desain_sekunder_file_url"),       # Poin 5b
+        product.get("laporan_keamanan_file_url"),               # Poin 1
+        company_sop.get("cv_safety_assessor_url"),              # Poin 2
+        company_sop.get("monitoring_efek_samping_file_url") or product.get("monitoring_efek_samping_file_url"), # Poin 3
+        product.get("data_klaim_file_url"),                     # Poin 4
     ]
 
     async with httpx.AsyncClient() as client:
+        # Append Lampiran Poin 1-4
         for url in attachment_urls:
+            if url:
+                try:
+                    res = await client.get(url, timeout=15.0)
+                    if res.status_code == 200:
+                        doc_reader = PdfReader(io.BytesIO(res.content))
+                        for page in doc_reader.pages:
+                            pdf_writer.add_page(page)
+                except Exception as e:
+                    print(f"[BAB 4 MERGE ERROR] Gagal mengunduh {url}: {e}")
+
+        # APPEND TEXT DESIGN (SEBELUM DESAIN KEMASAN PRIMER)
+        text_design_reader = PdfReader(text_design_pdf_io)
+        for page in text_design_reader.pages:
+            pdf_writer.add_page(page)
+
+        # Append Desain Kemasan Primer & Sekunder
+        design_urls = [
+            product.get("desain_primer_file_url"),              # Poin 5a / 6a
+            product.get("desain_sekunder_file_url"),            # Poin 5b / 6b
+        ]
+        for url in design_urls:
             if url:
                 try:
                     res = await client.get(url, timeout=15.0)

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page { size: A4; margin: 1.5cm; }
+        body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; line-height: 1.4; color: #1a1a1a; }
+        .letterhead { border-bottom: 2px solid #f97316; padding-bottom: 6px; margin-bottom: 12px; }
+        .title { text-align: center; font-size: 11pt; font-weight: bold; text-decoration: underline; margin-bottom: 15px; text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        td { border: 1px solid #999; padding: 6px 8px; font-size: 8.5pt; vertical-align: top; }
+        .label-col { width: 130px; font-weight: bold; background-color: #f8f8f8; }
+        .note-box { background-color: #fef08a; text-align: center; font-weight: bold; font-size: 8pt; padding: 6px; border: 1px solid #999; border-top: none; }
+    </style>
+</head>
+<body>
+    <!-- KOP PERUSAHAAN -->
+    <div class="letterhead">
+        <table style="width: 100%; border: none; margin: 0; padding: 0;">
+            <tr style="border: none;">
+                <td style="border: none; width: 100%; vertical-align: middle;">
+                    <h2 style="margin: 0; font-size: 11pt; font-weight: bold; color: #111827; text-transform: uppercase;">
+                        {{ company.nama or '-' }}
+                    </h2>
+                    <p style="margin: 2px 0 0 0; font-size: 7.5pt; color: #4b5563; line-height: 1.2;">
+                        {{ company.alamat or '-' }}<br>
+                        Email: {{ company.email or '-' }} &nbsp;|&nbsp; Website: {{ company.website or '-' }}
+                    </p>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="title">RANCANGAN TEKS LABEL / KEMASAN (TEXT DESIGN)</div>
+
+    <table>
+        <tr>
+            <td class="label-col">Tanggal</td>
+            <td>{{ product.tanggal_text_design or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Nama Produk</td>
+            <td>{{ product.nama_produk or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Netto</td>
+            <td>{{ product.netto or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">No NA BPOM</td>
+            <td>{{ product.no_na_produk or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Diproduksi Oleh</td>
+            <td>{{ company.nama or '-' }}<br>{{ company.alamat or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Komposisi</td>
+            <td>{{ komposisi_text or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Teks / Klaim</td>
+            <td>{{ product.teks_marketing or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="label-col">Cara Pakai</td>
+            <td>{{ product.cara_pakai or '-' }}</td>
+        </tr>
+    </table>
+
+    <div class="note-box">
+        Keterangan tambahan: QR BPOM, No Batch dan Exp Date, Netto yang digunakan.
+    </div>
+</body>
+</html>
