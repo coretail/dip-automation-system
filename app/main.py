@@ -23,11 +23,6 @@ load_dotenv()
 WIB = ZoneInfo("Asia/Jakarta")
 import uuid
 
-@app.head("/")
-@app.get("/")
-async def health_check():
-    return {"status": "ok"}
-
 def _add_years(d: date, years: int) -> date:
     """Tambah tahun ke tanggal, aman buat kasus 29 Feb kena tahun non-kabisat."""
     try:
@@ -105,6 +100,11 @@ def get_company_info(perusahaan_key: str) -> dict:
     return COMPANY_INFO.get(perusahaan_key, COMPANY_INFO["PT Erfi"])
 
 templates.env.filters["clean_pct"] = clean_pct
+
+@app.head("/")
+@app.get("/")
+async def health_check():
+    return {"status": "ok"}
 
 @app.on_event("startup")
 async def print_routes():
