@@ -2371,3 +2371,34 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             "brands": brands
         }
     )
+
+@app.post("/admin/users/delete")
+async def delete_user(
+    target_uid: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    # Proteksi: cuma admin yang boleh hapus user
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+
+    # Cek biar admin gak ketidaksengajaan ngapus akunnya sendiri
+    if target_uid == current_user["id"]:
+        return RedirectResponse(url="/admin/users?error=cannot_delete_self", status_code=303)
+
+    try:
+        # Inisialisasi admin client buat hapus user dari Supabase Auth
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        supabase_admin = create_client(supabase_url, supabase_service_key)
+
+        # 1. Hapus dari Supabase Auth Service
+        supabase_admin.auth.admin.delete_user(target_uid)
+
+        # 2. Hapus dari tabel profiles
+        supabase.table("profiles").delete().eq("id", target_uid).execute()
+
+        return RedirectResponse(url="/admin/users?status=delete_success", status_code=303)
+
+    except Exception as e:
+        print(f"Gagal hapus user: {e}")
+        return RedirectResponse(url="/admin/users?error=delete_failed", status_code=303)
