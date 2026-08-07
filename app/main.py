@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile, status, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import List
@@ -114,10 +114,9 @@ async def get_current_user(request: Request):
     # 1. Ambil cookie token dari browser
     token_cookie = request.cookies.get("access_token")
     if not token_cookie:
-        # PENTING: Pakai raise HTTPException 307 biar FastAPI paksa browser redirect!
         raise HTTPException(
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={"Location": "/login"}
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token tidak ditemukan"
         )
     
     try:
@@ -128,10 +127,15 @@ async def get_current_user(request: Request):
         user_auth = supabase.auth.get_user(token)
         user_data = user_auth.user
         
-        # 4. Tarik info nama & role dari tabel profiles yg baru lu buat
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User tidak valid"
+            )
+        
+        # 4. Tarik info nama & role dari tabel profiles
         profile_res = supabase.table("profiles").select("full_name", "role").eq("id", user_data.id).execute()
         
-        # Default value aman kalau data profile di DB lu belum lengkap
         user_role = "staff"
         full_name = "User Lab"
         
@@ -139,7 +143,6 @@ async def get_current_user(request: Request):
             user_role = profile_res.data[0].get("role", "staff")
             full_name = profile_res.data[0].get("full_name", "User Lab")
             
-        # Balikin dictionary komplit biar bisa dipakai di route-route lain ntar
         return {
             "id": user_data.id,
             "email": user_data.email,
@@ -149,29 +152,27 @@ async def get_current_user(request: Request):
         
     except Exception as e:
         print(f"Token invalid atau expired: {e}")
-        # Kalo tokennya ngaco/expired, hapus cookie dan tendang balik ke login.
-        # PENTING: instruksi hapus cookie harus nempel di header HTTPException yang
-        # di-raise, bukan di response terpisah yang nggak pernah dipakai/dibuang.
+        # Lempar 401 biar ditangkap handler
         raise HTTPException(
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-            headers={
-                "Location": "/login",
-                "Set-Cookie": "access_token=; Max-Age=0; Path=/; HttpOnly; SameSite=lax"
-            }
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired"
         )
 
 
 # ================= 1. ROUTE TAMPILAN LOGIN =================
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    # Cek dulu kalau tokennya udah ada di cookie, langsung lempar ke dashboard
-    if request.cookies.get("access_token"):
+async def login_page(request: Request, warning: str = None, error: str = None):
+    # Cek kalau token ada di cookie DAN gak lagi dapet warning/error, langsung ke dashboard
+    if request.cookies.get("access_token") and not warning and not error:
         return RedirectResponse(url="/", status_code=303)
-        
+
     return templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={}
+        context={
+            "warning": warning,
+            "error": error
+        }
     )
 
 # ================= 2. ROUTE PROSES LOGIN (POST) =================
@@ -250,6 +251,24 @@ async def logout():
     # Hapus cookie token yang tersimpan di browser
     response.delete_cookie(key="access_token")
     return response
+
+from fastapi import HTTPException, Request, status
+from fastapi.responses import RedirectResponse
+
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    # Kalau error-nya 401 (Unauthorized / Sesi Habis)
+    if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+        return RedirectResponse(
+            url="/login?warning=session_expired", 
+            status_code=status.HTTP_303_SEE_OTHER
+        )
+    
+    # Untuk error HTTP lainnya tetap kembalikan bawaan
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
 
 @app.get("/products/{product_id}", response_class=HTMLResponse)
 async def product_detail(request: Request, product_id: str):
@@ -665,7 +684,7 @@ async def add_material_batch(
         "hasil_pemerian": "-", # Nilai default untuk kolom legasi fisik
         "coa_file_url": coa_url,
         "halal_batch_file_url": halal_url,
-        "qc_results": parsed_qc # 👈 Array hasil uji lab aktual masuk ke kolom JSONB ini
+        "qc_results": parsed_qc
     }
 
     try:
