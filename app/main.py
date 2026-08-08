@@ -1274,13 +1274,13 @@ async def download_bab2_document_zip(product_id: str):
                     spec_bytes = None
 
                 if spec_bytes:
-                    zf.writestr(f"{root_folder}/{folder_name}/1_Spesifikasi_Standar.pdf", spec_bytes)
+                    zf.writestr(f"{root_folder}/{folder_name}/1_Spesifikasi_Bahan_Baku.pdf", spec_bytes)
                 else:
                     spec_html = templates.env.get_template("bab2_spec_block.html").render(item=item, index=idx)
                     spec_buffer = io.BytesIO()
                     spec_status = pisa.CreatePDF(src=spec_html, dest=spec_buffer)
                     if not spec_status.err:
-                        zf.writestr(f"{root_folder}/{folder_name}/1_Spesifikasi_Standar.pdf", spec_buffer.getvalue())
+                        zf.writestr(f"{root_folder}/{folder_name}/1_Spesifikasi_Bahan_Baku.pdf", spec_buffer.getvalue())
                     else:
                         print(f"[BAB II ZIP] Gagal generate blok Spesifikasi bahan baku {nama_bahan}")
 
@@ -1292,13 +1292,13 @@ async def download_bab2_document_zip(product_id: str):
                     qc_bytes = None
 
                 if qc_bytes:
-                    zf.writestr(f"{root_folder}/{folder_name}/2_Catatan_Pemeriksaan_Aktual.pdf", qc_bytes)
+                    zf.writestr(f"{root_folder}/{folder_name}/2_Catatan_Pemeriksaan_Bahan_Baku.pdf", qc_bytes)
                 else:
                     qc_html = templates.env.get_template("bab2_qc_block.html").render(item=item, index=idx)
                     qc_buffer = io.BytesIO()
                     qc_status = pisa.CreatePDF(src=qc_html, dest=qc_buffer)
                     if not qc_status.err:
-                        zf.writestr(f"{root_folder}/{folder_name}/2_Catatan_Pemeriksaan_Aktual.pdf", qc_buffer.getvalue())
+                        zf.writestr(f"{root_folder}/{folder_name}/2_Catatan_Pemeriksaan_Bahan_Baku.pdf", qc_buffer.getvalue())
                     else:
                         print(f"[BAB II ZIP] Gagal generate blok Catatan Pemeriksaan bahan baku {nama_bahan}")
 
