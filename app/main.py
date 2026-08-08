@@ -104,7 +104,7 @@ templates.env.filters["clean_pct"] = clean_pct
 @app.head("/health")
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "i know i'm strong, but ya Allah tolong"}
 
 @app.on_event("startup")
 async def print_routes():
