@@ -245,6 +245,15 @@
                             <span class="text-gray-300 w-8 text-center inline-flex items-center justify-center">-</span>
                         {% endif %}
 
+                        <!-- Tombol Laporan Pemeriksaan Aktual (PDF asli, kalau ada) -->
+                        {% if b.qc_report_file_url %}
+                            <a href="{{ b.qc_report_file_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded bg-sky-50 text-sky-700 hover:bg-sky-100 font-medium cursor-pointer">
+                                <i class="fa-solid fa-file-lines mr-1"></i> Laporan
+                            </a>
+                        {% else %}
+                            <span class="text-gray-300 w-8 text-center inline-flex items-center justify-center">-</span>
+                        {% endif %}
+
                         <!-- Tombol MSDS (di-resolve sesuai perusahaan batch ini) -->
                         {% if batch_msds_url %}
                             <a href="{{ batch_msds_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded bg-yellow-50 text-yellow-700 hover:bg-yellow-100 font-medium cursor-pointer">
@@ -406,6 +415,13 @@
                     </div>
 
                     <div class="mt-3">
+                        <label class="block text-xs font-medium text-gray-700 mb-1">PDF Spesifikasi Asli dari Supplier {{ label }} (opsional)</label>
+                        <input type="file" name="spec_sheet_file_{{ slug }}" accept=".pdf" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 shadow-sm focus:border-indigo-500 focus:outline-none text-sm file:mr-4 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                        <p id="spec_sheet_current_{{ slug }}" class="text-xs text-gray-400 mt-1"></p>
+                        <p class="text-xs text-gray-400 mt-1">Kalau ada, PDF ini yang dipakai langsung di Bab II (versi ZIP) -- kalau kosong, dipakai versi generate dari field di atas.</p>
+                    </div>
+
+                    <div class="mt-3">
                         <label class="block text-xs font-medium text-gray-700 mb-1">Dokumen MSDS {{ label }} (Format: PDF)</label>
                         <input type="file" name="msds_file_{{ slug }}" accept=".pdf" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 shadow-sm focus:border-indigo-500 focus:outline-none text-sm file:mr-4 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
                         <p id="msds_current_{{ slug }}" class="text-xs text-gray-400 mt-1"></p>
@@ -481,6 +497,12 @@
                     <label class="block text-xs font-medium text-gray-700 mb-1">Dokumen Sertifikat Halal Batch (Format: PDF)</label>
                     <input type="file" name="halal_file" accept=".pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 border border-gray-300 rounded-md p-1">
                 </div>
+            </div>
+
+            <div class="mb-5">
+                <label class="block text-xs font-medium text-gray-700 mb-1">Catatan Pemeriksaan Bahan Baku (PDF, opsional)</label>
+                <input type="file" name="qc_report_file" accept=".pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 border border-gray-300 rounded-md p-1">
+                <p class="text-xs text-gray-400 mt-1">Kalau ada laporan pemeriksaan fisik/scan dari QC, upload di sini -- PDF ini yang dipakai langsung di Bab II (versi ZIP). Kalau kosong, dipakai versi generate dari field manual di bawah.</p>
             </div>
 
             <!-- HASIL PEMERIKSAAN AKTUAL QC -->
@@ -584,6 +606,8 @@ function resetCompanyDocFields() {
         if (referensi) referensi.value = 'COA';
         const msdsNote = document.getElementById(`msds_current_${slug}`);
         if (msdsNote) msdsNote.innerHTML = '';
+        const specSheetNote = document.getElementById(`spec_sheet_current_${slug}`);
+        if (specSheetNote) specSheetNote.innerHTML = '';
     });
     switchCompanyDocTab('erfi');
 }
@@ -755,6 +779,13 @@ function openEditModal(rm) {
             msdsNote.innerHTML = `MSDS ${label} udah ke-upload: <a href="${doc.msds_file_url}" target="_blank" class="text-indigo-600 underline">lihat file</a>. Upload file baru buat ganti.`;
         } else {
             msdsNote.innerHTML = `<span class="text-amber-600">Belum ada MSDS buat ${label}.</span>`;
+        }
+
+        const specSheetNote = document.getElementById(`spec_sheet_current_${slug}`);
+        if (doc.spec_sheet_file_url) {
+            specSheetNote.innerHTML = `PDF Spesifikasi Asli ${label} udah ke-upload: <a href="${doc.spec_sheet_file_url}" target="_blank" class="text-indigo-600 underline">lihat file</a>. Upload file baru buat ganti.`;
+        } else {
+            specSheetNote.innerHTML = `<span class="text-gray-400">Belum ada PDF asli, bakal dipakai versi generate dari field di atas.</span>`;
         }
     });
     // ============================================================================================

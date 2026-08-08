@@ -404,10 +404,12 @@ async def raw_materials_page(request: Request):
         
     return response
 
-async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, perusahaan: str, spec_parameters_raw: str, msds_file: UploadFile):
-    """Helper: parse spec_parameters (JSON), upload MSDS (kalau ada file baru), lalu upsert
-    1 baris ke raw_material_company_docs buat kombinasi (rm_id, perusahaan) tersebut.
-    Kalau spec kosong semua & gak ada file MSDS (baik baru maupun lama), gak perlu insert apa-apa."""
+async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, perusahaan: str, spec_parameters_raw: str, msds_file: UploadFile, spec_sheet_file: UploadFile = None):
+    """Helper: parse spec_parameters (JSON), upload MSDS & PDF Spesifikasi Asli Supplier
+    (kalau ada file baru), lalu upsert 1 baris ke raw_material_company_docs buat
+    kombinasi (rm_id, perusahaan) tersebut.
+    Kalau spec kosong semua & gak ada file MSDS/spec sheet (baik baru maupun lama),
+    gak perlu insert apa-apa."""
     import json
     try:
         parsed_specs = json.loads(spec_parameters_raw) if spec_parameters_raw else []
@@ -417,12 +419,13 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
 
     has_spec_content = any((item.get("value") or "").strip() for item in parsed_specs if isinstance(item, dict))
 
+    company_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
+    clean_kode = "".join(c for c in kode_bahan_baku if c.isalnum() or c in ('-', '_')).strip()
+
     msds_url = None
     if msds_file and msds_file.filename:
         try:
             file_bytes = await msds_file.read()
-            clean_kode = "".join(c for c in kode_bahan_baku if c.isalnum() or c in ('-', '_')).strip()
-            company_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
             file_path = f"msds/msds_{clean_kode}_{company_slug}.pdf"
             supabase.storage.from_("raw-material-docs").upload(
                 path=file_path,
@@ -433,7 +436,21 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
         except Exception as e:
             print(f"Gagal upload MSDS ({perusahaan}): {e}")
 
-    if not has_spec_content and not msds_url:
+    spec_sheet_url = None
+    if spec_sheet_file and spec_sheet_file.filename:
+        try:
+            file_bytes = await spec_sheet_file.read()
+            file_path = f"spec-sheets/specsheet_{clean_kode}_{company_slug}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=file_path,
+                file=file_bytes,
+                file_options={"content-type": spec_sheet_file.content_type, "upsert": "true"}
+            )
+            spec_sheet_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
+        except Exception as e:
+            print(f"Gagal upload Spesifikasi Asli Supplier ({perusahaan}): {e}")
+
+    if not has_spec_content and not msds_url and not spec_sheet_url:
         # Belum ada data sama sekali buat company ini -> jangan bikin baris kosong
         return
 
@@ -444,6 +461,8 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
     }
     if msds_url:
         doc_payload["msds_file_url"] = msds_url
+    if spec_sheet_url:
+        doc_payload["spec_sheet_file_url"] = spec_sheet_url
 
     supabase.table("raw_material_company_docs").upsert(
         doc_payload, on_conflict="raw_material_id,perusahaan"
@@ -459,6 +478,8 @@ async def add_raw_material(
     produsen: str = Form(None),
     msds_file_erfi: UploadFile = File(None),
     msds_file_heka: UploadFile = File(None),
+    spec_sheet_file_erfi: UploadFile = File(None),
+    spec_sheet_file_heka: UploadFile = File(None),
     inci_name: list[str] = Form(None),
     cas_number: list[str] = Form(None),
     function: list[str] = Form(None),
@@ -488,8 +509,8 @@ async def add_raw_material(
     new_rm_id = rm_resp.data[0]["id"]
 
     # --- Simpan spec + MSDS per perusahaan (kalau diisi) ---
-    await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi)
-    await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka)
+    await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi)
+    await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
 
     if tipe == "single":
         given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
@@ -534,6 +555,8 @@ async def edit_raw_material(
     percent_internal: List[float] = Form(None),
     msds_file_erfi: UploadFile = File(None),
     msds_file_heka: UploadFile = File(None),
+    spec_sheet_file_erfi: UploadFile = File(None),
+    spec_sheet_file_heka: UploadFile = File(None),
     spec_parameters_erfi: str = Form("[]"),
     spec_parameters_heka: str = Form("[]"),
     current_user: dict = Depends(get_current_user)
@@ -554,8 +577,8 @@ async def edit_raw_material(
     supabase.table("raw_materials").update(update_data).eq("id", rm_id).execute()
 
     # 2. UPSERT SPEC + MSDS PER PERUSAHAAN
-    await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi)
-    await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka)
+    await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi)
+    await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
 
     # --- Sisa kode management komponen INCI lu di bawah biarkan utuh ---
     supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
@@ -625,6 +648,7 @@ async def add_material_batch(
     harga_per_kg: float = Form(0.0),
     coa_file: UploadFile = File(None),
     halal_file: UploadFile = File(None),
+    qc_report_file: UploadFile = File(None),
     current_user: dict = Depends(get_current_user) # Memastikan auth login tetap sinkron
 ):
     import json
@@ -673,6 +697,24 @@ async def add_material_batch(
         except Exception as e:
             print(f"Gagal upload Halal Cert: {e}")
 
+    # 3b. Proses Upload Laporan Pemeriksaan Aktual (opsional) -- kalau QC punya dokumen
+    # fisik/scan hasil pemeriksaan, ini dipake nanti jadi prioritas dibanding versi generate dari qc_results
+    qc_report_url = None
+    if qc_report_file and qc_report_file.filename:
+        try:
+            qc_report_bytes = await qc_report_file.read()
+            qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
+
+            supabase.storage.from_("raw-material-docs").upload(
+                path=qc_report_path,
+                file=qc_report_bytes,
+                file_options={"content-type": qc_report_file.content_type, "upsert": "true"}
+            )
+            qc_report_url = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
+            print(f"--> Sukses upload Laporan Pemeriksaan Aktual ke: {qc_report_url}")
+        except Exception as e:
+            print(f"Gagal upload Laporan Pemeriksaan Aktual: {e}")
+
     # 4. Simpan record data lengkap ke tabel raw_material_batches
     batch_data = {
         "raw_material_id": raw_material_id,
@@ -689,6 +731,7 @@ async def add_material_batch(
         "hasil_pemerian": "-", # Nilai default untuk kolom legasi fisik
         "coa_file_url": coa_url,
         "halal_batch_file_url": halal_url,
+        "qc_report_file_url": qc_report_url,
         "qc_results": parsed_qc
     }
 
@@ -958,7 +1001,7 @@ def _apply_company_specific_docs(rm: dict, perusahaan: str) -> dict:
     buat perusahaan ini belum diisi, dikosongin (bukan fallback ke company lain) --
     biar dokumen legal gak salah nampilin data company yang bukan pemiliknya."""
     doc_resp = supabase.table("raw_material_company_docs") \
-        .select("spec_parameters, msds_file_url") \
+        .select("spec_parameters, msds_file_url, spec_sheet_file_url") \
         .eq("raw_material_id", rm["id"]) \
         .eq("perusahaan", perusahaan) \
         .limit(1) \
@@ -966,6 +1009,7 @@ def _apply_company_specific_docs(rm: dict, perusahaan: str) -> dict:
     company_doc = doc_resp.data[0] if doc_resp.data else None
     rm["spec_parameters"] = (company_doc or {}).get("spec_parameters") or []
     rm["msds_file_url"] = (company_doc or {}).get("msds_file_url")
+    rm["spec_sheet_file_url"] = (company_doc or {}).get("spec_sheet_file_url")
     return rm
 
 
@@ -1066,19 +1110,35 @@ async def download_bab2_document(product_id: str):
             batch = item["batch"]
             nama_bahan = material.get("nama_dagang", "?")
 
-            # Render blok spesifikasi + catatan pemeriksaan khusus bahan baku ini
-            material_html = templates.env.get_template("bab2_material_block.html").render(
+            # Render blok Spesifikasi (selalu di-generate dari text -- versi PDF gabungan
+            # sengaja gak pake logic PDF-priority biar layout dokumen tetap seragam)
+            spec_html = templates.env.get_template("bab2_spec_block.html").render(
                 item=item,
                 index=idx,
                 company=company
             )
-            material_buffer = io.BytesIO()
-            material_status = pisa.CreatePDF(src=material_html, dest=material_buffer)
-            if material_status.err:
-                print(f"Gagal generate blok Spesifikasi+Catatan bahan baku {nama_bahan}")
+            spec_buffer = io.BytesIO()
+            spec_status = pisa.CreatePDF(src=spec_html, dest=spec_buffer)
+            if spec_status.err:
+                print(f"Gagal generate blok Spesifikasi bahan baku {nama_bahan}")
             else:
-                material_buffer.seek(0)
-                for page in PdfReader(material_buffer).pages:
+                spec_buffer.seek(0)
+                for page in PdfReader(spec_buffer).pages:
+                    writer.add_page(page)
+
+            # Render blok Catatan Pemeriksaan Aktual (selalu di-generate dari data batch)
+            qc_html = templates.env.get_template("bab2_qc_block.html").render(
+                item=item,
+                index=idx,
+                company=company
+            )
+            qc_buffer = io.BytesIO()
+            qc_status = pisa.CreatePDF(src=qc_html, dest=qc_buffer)
+            if qc_status.err:
+                print(f"Gagal generate blok Catatan Pemeriksaan bahan baku {nama_bahan}")
+            else:
+                qc_buffer.seek(0)
+                for page in PdfReader(qc_buffer).pages:
                     writer.add_page(page)
 
             coa_url = batch.get("coa_file_url") if batch else None
@@ -1206,19 +1266,41 @@ async def download_bab2_document_zip(product_id: str):
                 nama_bahan = material.get("nama_dagang") or f"Bahan {idx}"
                 folder_name = f"{idx:02d}_{_safe_zip_name(nama_bahan)}"
 
-                # Spesifikasi + Catatan Pemeriksaan (di-generate dari data)
-                material_html = templates.env.get_template("bab2_material_block.html").render(
-                    item=item, index=idx
-                )
-                material_buffer = io.BytesIO()
-                material_status = pisa.CreatePDF(src=material_html, dest=material_buffer)
-                if not material_status.err:
-                    zf.writestr(
-                        f"{root_folder}/{folder_name}/1_Spesifikasi_dan_Hasil_Pemeriksaan.pdf",
-                        material_buffer.getvalue()
-                    )
+                # --- 1. Spesifikasi Standar: prioritas PDF asli dari supplier, fallback generate dari text ---
+                spec_sheet_url = material.get("spec_sheet_file_url")
+                if spec_sheet_url:
+                    spec_bytes = await fetch_bytes(client, spec_sheet_url, f"PDF Spesifikasi Asli {nama_bahan}")
                 else:
-                    print(f"[BAB II ZIP] Gagal generate blok Spesifikasi+Catatan bahan baku {nama_bahan}")
+                    spec_bytes = None
+
+                if spec_bytes:
+                    zf.writestr(f"{root_folder}/{folder_name}/1_Spesifikasi_Standar.pdf", spec_bytes)
+                else:
+                    spec_html = templates.env.get_template("bab2_spec_block.html").render(item=item, index=idx)
+                    spec_buffer = io.BytesIO()
+                    spec_status = pisa.CreatePDF(src=spec_html, dest=spec_buffer)
+                    if not spec_status.err:
+                        zf.writestr(f"{root_folder}/{folder_name}/1_Spesifikasi_Standar.pdf", spec_buffer.getvalue())
+                    else:
+                        print(f"[BAB II ZIP] Gagal generate blok Spesifikasi bahan baku {nama_bahan}")
+
+                # --- 2. Catatan Pemeriksaan Aktual: prioritas PDF laporan asli, fallback generate dari qc_results ---
+                qc_report_url = batch.get("qc_report_file_url") if batch else None
+                if qc_report_url:
+                    qc_bytes = await fetch_bytes(client, qc_report_url, f"PDF Laporan Pemeriksaan {nama_bahan}")
+                else:
+                    qc_bytes = None
+
+                if qc_bytes:
+                    zf.writestr(f"{root_folder}/{folder_name}/2_Catatan_Pemeriksaan_Aktual.pdf", qc_bytes)
+                else:
+                    qc_html = templates.env.get_template("bab2_qc_block.html").render(item=item, index=idx)
+                    qc_buffer = io.BytesIO()
+                    qc_status = pisa.CreatePDF(src=qc_html, dest=qc_buffer)
+                    if not qc_status.err:
+                        zf.writestr(f"{root_folder}/{folder_name}/2_Catatan_Pemeriksaan_Aktual.pdf", qc_buffer.getvalue())
+                    else:
+                        print(f"[BAB II ZIP] Gagal generate blok Catatan Pemeriksaan bahan baku {nama_bahan}")
 
                 coa_url = batch.get("coa_file_url") if batch else None
                 halal_url = batch.get("halal_batch_file_url") if batch else None
@@ -1226,15 +1308,15 @@ async def download_bab2_document_zip(product_id: str):
 
                 coa_bytes = await fetch_bytes(client, coa_url, f"CoA bahan baku {nama_bahan}")
                 if coa_bytes:
-                    zf.writestr(f"{root_folder}/{folder_name}/2_CoA.pdf", coa_bytes)
+                    zf.writestr(f"{root_folder}/{folder_name}/3_CoA.pdf", coa_bytes)
 
                 halal_bytes = await fetch_bytes(client, halal_url, f"Sertifikat Halal bahan baku {nama_bahan}")
                 if halal_bytes:
-                    zf.writestr(f"{root_folder}/{folder_name}/3_Sertifikat_Halal.pdf", halal_bytes)
+                    zf.writestr(f"{root_folder}/{folder_name}/4_Sertifikat_Halal.pdf", halal_bytes)
 
                 msds_bytes = await fetch_bytes(client, msds_url, f"MSDS bahan baku {nama_bahan}")
                 if msds_bytes:
-                    zf.writestr(f"{root_folder}/{folder_name}/4_MSDS.pdf", msds_bytes)
+                    zf.writestr(f"{root_folder}/{folder_name}/5_MSDS.pdf", msds_bytes)
 
                 # Kasih catatan kalau ada dokumen yang belum diupload, biar ketauan pas dibuka foldernya
                 missing = []
