@@ -276,7 +276,7 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
     )
 
 @app.get("/products/{product_id}", response_class=HTMLResponse)
-async def product_detail(request: Request, product_id: str):
+async def product_detail(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
     prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
     
     formula_resp = supabase.table("product_formula_lines") \
@@ -296,7 +296,7 @@ async def product_detail(request: Request, product_id: str):
     )
 
 @app.get("/products/{product_id}/report", response_class=HTMLResponse)
-async def ingredient_report(request: Request, product_id: str):
+async def ingredient_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
     prod_resp = supabase.table("products").select("nama_produk, no_na_produk").eq("id", product_id).single().execute()
     report_resp = supabase.table("view_ingredient_reports").select("*").eq("product_id", product_id).execute()
     
@@ -354,7 +354,7 @@ async def product_bab3_detail(
     return response
 
 @app.get("/raw-materials", response_class=HTMLResponse)
-async def raw_materials_page(request: Request):
+async def raw_materials_page(request: Request, current_user: dict = Depends(get_current_user)):
     rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*), raw_material_company_docs(*)").order("nama_dagang").execute()
     
     success_msg = request.cookies.get("success_msg")
@@ -610,7 +610,7 @@ async def edit_raw_material(
 
     return RedirectResponse(url="/raw-materials", status_code=303)
 
-@app.get("/raw-materials/delete/{rm_id}")
+@app.post("/raw-materials/delete/{rm_id}")
 async def delete_raw_material(rm_id: str, current_user: dict = Depends(get_current_user)):
     # Cek dulu apakah bahan baku ini masih dipakai di formula produk manapun
     usage_check = supabase.table("product_formula_lines").select("id").eq("raw_material_id", rm_id).execute()
@@ -816,7 +816,7 @@ async def save_product_formula(
     return RedirectResponse(url=f"/products/{product_id}", status_code=303)
 
 @app.get("/products/{product_id}/inci-breakdown/report", response_class=HTMLResponse)
-async def generate_inci_report(request: Request, product_id: str):
+async def generate_inci_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
     prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
     formula_resp = supabase.table("product_formula_lines").select("*").eq("product_id", product_id).execute()
     
@@ -872,7 +872,7 @@ async def generate_inci_report(request: Request, product_id: str):
     )
 
 @app.get("/products/{product_id}/qualitative-quantitative", response_class=HTMLResponse)
-async def qualitative_quantitative_report(request: Request, product_id: str):
+async def qualitative_quantitative_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
     product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
     product = product_resp.data
 
@@ -1017,7 +1017,7 @@ def _apply_company_specific_docs(rm: dict, perusahaan: str) -> dict:
 #           FASE 2B: GENERATOR DOKUMEN BAB II (PDF GABUNGAN)
 # =====================================================================
 @app.get("/products/{product_id}/bab2/download")
-async def download_bab2_document(product_id: str):
+async def download_bab2_document(product_id: str, current_user: dict = Depends(get_current_user)):
     # 1. Ambil data produk
     product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
     product = product_resp.data
@@ -1176,7 +1176,7 @@ def _safe_zip_name(name: str) -> str:
 #   GENERATOR DOKUMEN BAB II (VERSI FOLDER/ZIP -- per bahan baku terpisah)
 # =====================================================================
 @app.get("/products/{product_id}/bab2/download-zip")
-async def download_bab2_document_zip(product_id: str):
+async def download_bab2_document_zip(product_id: str, current_user: dict = Depends(get_current_user)):
     # 1. Ambil data produk
     product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
     product = product_resp.data
@@ -1345,7 +1345,7 @@ async def download_bab2_document_zip(product_id: str):
 #           GENERATOR DOKUMEN BAB I (DATA ADMINISTRATIF, PDF GABUNGAN)
 # =====================================================================
 @app.get("/products/{product_id}/bab1/download")
-async def download_bab1_document(product_id: str):
+async def download_bab1_document(product_id: str, current_user: dict = Depends(get_current_user)):
     # 1. Ambil data produk
     product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
     product = product_resp.data
@@ -1722,7 +1722,7 @@ async def download_dip_bab4(
 
 # 1. Halaman Form Edit Produk
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
-async def edit_product_page(request: Request, product_id: str):
+async def edit_product_page(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
     prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
 
     try:
@@ -1849,7 +1849,7 @@ async def update_product(
     response.set_cookie("success_msg", f"Data & dokumen DIP produk '{nama_produk}' berhasil diperbarui!")
     return response
 
-@app.get("/products/delete/{product_id}")
+@app.post("/products/delete/{product_id}")
 async def delete_product(product_id: str, current_user: dict = Depends(get_current_user)):
     try:
         # Hapus dulu baris formula terkait (kalau FK belum di-set CASCADE)
@@ -1976,7 +1976,7 @@ async def create_sample_submission(
 
 # 2. HALAMAN FORM EDIT SAMPLE
 @app.get("/sample-submissions/edit/{submission_id}", response_class=HTMLResponse)
-async def edit_sample_submission_page(request: Request, submission_id: str):
+async def edit_sample_submission_page(request: Request, submission_id: str, current_user: dict = Depends(get_current_user)):
     try:
         sub_resp = supabase.table("sample_submissions").select("*").eq("id", submission_id).single().execute()
         submission = sub_resp.data
@@ -2075,8 +2075,8 @@ async def update_sample_submission(
 
 
 # 4. PROSES HAPUS SAMPLE
-@app.get("/sample-submissions/delete/{submission_id}")
-async def delete_sample_submission(submission_id: str):
+@app.post("/sample-submissions/delete/{submission_id}")
+async def delete_sample_submission(submission_id: str, current_user: dict = Depends(get_current_user)):
     try:
         supabase.table("sample_submissions").delete().eq("id", submission_id).execute()
     except Exception as e:
@@ -2203,7 +2203,7 @@ async def update_brand_documents(
         return response
 
 @app.get("/sample-submissions", response_class=HTMLResponse)
-async def sample_submissions_list(request: Request, search: str = None):
+async def sample_submissions_list(request: Request, search: str = None, current_user: dict = Depends(get_current_user)):
     try:
         # Inisialisasi query dasar
         query = supabase.table("sample_submissions").select("*, brands(*, producers(*))")
@@ -2228,7 +2228,7 @@ async def sample_submissions_list(request: Request, search: str = None):
     )
 
 @app.get("/sample-submissions/form", response_class=HTMLResponse)
-async def sample_submission_form(request: Request):
+async def sample_submission_form(request: Request, current_user: dict = Depends(get_current_user)):
     try:
         brand_query = supabase.table("brands").select("*, producers(*)").execute()
         brands = brand_query.data or []
@@ -2249,7 +2249,7 @@ async def sample_submission_form(request: Request):
 
 
 @app.get("/sample-submissions/preview/{submission_id}", response_class=HTMLResponse)
-async def sample_submission_preview(request: Request, submission_id: str):
+async def sample_submission_preview(request: Request, submission_id: str, current_user: dict = Depends(get_current_user)):
     try:
         # Ambil data submission spesifik beserta join brand & produsen
         query = supabase.table("sample_submissions") \

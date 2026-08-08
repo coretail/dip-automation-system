@@ -80,11 +80,11 @@
                             </a>
 
                             <!-- 3. Delete Pengajuan Sample -->
-                            <a href="/sample-submissions/delete/{{ s.id }}" 
-                               onclick="return confirm('Yakin mau hapus pengajuan sample {{ s.sample_code }} ini?')" 
-                               class="inline-flex items-center p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded font-medium text-xs transition" title="Hapus Dokumen">
-                                <i class="fa-solid fa-trash-can"></i>
-                            </a>
+                            <form action="/sample-submissions/delete/{{ s.id }}" method="POST" style="display: inline;" onsubmit="return confirm('Yakin mau hapus pengajuan sample {{ s.sample_code }} ini?')">
+                                <button type="submit" class="inline-flex items-center p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded font-medium text-xs transition cursor-pointer" title="Hapus Dokumen">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </form>
                         </div>
                     </td>
                 </tr>

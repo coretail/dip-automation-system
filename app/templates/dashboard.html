@@ -221,12 +221,11 @@
                             </a>
 
                             <!-- 5. Tombol Hapus Produk (Merah) -->
-                            <a href="/products/delete/{{ product.id }}" 
-                            onclick="return confirm('Yakin mau hapus produk ini? Semua formula di dalamnya bakal ikut kehapus men.')"
-                            class="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100" 
-                            title="Hapus Produk">
-                                <i class="fa-solid fa-trash-can text-xs"></i>
-                            </a>
+                            <form action="/products/delete/{{ product.id }}" method="POST" style="display: inline;" onsubmit="return confirm('Yakin mau hapus produk ini? Semua formula di dalamnya bakal ikut kehapus men.')">
+                                <button type="submit" class="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 cursor-pointer" title="Hapus Produk">
+                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                </button>
+                            </form>
                         </div>
                     </td>
                 </tr>

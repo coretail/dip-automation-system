@@ -139,9 +139,11 @@
                         <button onclick='openEditModal({{ rm | tojson }})' class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition cursor-pointer">
                             <i class="fa-solid fa-pen-to-square"></i> Edit
                         </button>
-                        <a href="/raw-materials/delete/{{ rm.id }}" onclick="return confirm('Yakin mau hapus bahan baku ini? Jika masih dipakai di produk aktif akan ditolak oleh sistem.')" class="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition">
-                            <i class="fa-solid fa-trash"></i>
-                        </a>
+                        <form action="/raw-materials/delete/{{ rm.id }}" method="POST" style="display: inline;" onsubmit="return confirm('Yakin mau hapus bahan baku ini? Jika masih dipakai di produk aktif akan ditolak oleh sistem.')">
+                            <button type="submit" class="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition cursor-pointer">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </form>
                     </td>
                 </tr>
                 {% else %}
