@@ -19,6 +19,21 @@
             <p class="text-sm text-gray-400 mt-1">Sistem Manajemen Lab & Dokumen FSP</p>
         </div>
 
+        <!-- ALERT AREA: Cuma nampil kalau nilai variabelnya sesuai -->
+        {% if error == 'invalid_credentials' %}
+        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
+            <i class="fa-solid fa-circle-xmark mr-2 text-red-600"></i>
+            <div>Email/Username atau password salah!</div>
+        </div>
+        {% endif %}
+
+        {% if warning == 'session_expired' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
+            <i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i>
+            <div><strong>Sesi Berakhir!</strong> Sesi kamu telah habis, silakan login kembali.</div>
+        </div>
+        {% endif %}
+
         <!-- Form Login -->
         <form action="/login" method="POST" class="space-y-5">
             <div>
@@ -49,21 +64,7 @@
                     class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
                 <i class="fa-solid fa-right-to-bracket"></i> Masuk ke Aplikasi
             </button>
-        </form><br>
-        {% if error == 'invalid_credentials' %}
-        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center">
-            <i class="fa-solid fa-circle-xmark mr-2 text-red-600"></i>
-            <div>Email/Username atau password salah!</div>
-        </div>
-        {% endif %}
-
-        <!-- Alert 2: Sesi Habis (dari Exception Handler 401) -->
-        {% if warning == 'session_expired' %}
-        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-md mb-4 text-sm flex items-center">
-            <i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i>
-            <div><strong>Sesi Berakhir!</strong> Sesi kamu telah habis, silakan login kembali.</div>
-        </div>
-        {% endif %}
+        </form>
 
         <!-- Cari bagian akhir form login lu, lalu selipin div ini di bawahnya -->
         <div class="mt-6 text-center border-t border-gray-100 pt-4">
