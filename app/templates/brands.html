@@ -26,8 +26,7 @@
             <tr>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Nama Merk</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Produsen</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Lisensi Merk</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Hak Merk</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Hak & Lisensi Merk</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Aksi</th>
             </tr>
         </thead>
@@ -39,13 +38,6 @@
                 <td class="px-4 py-3">
                     {% if b.lisensi_merk_file_url %}
                     <a href="{{ b.lisensi_merk_file_url }}" target="_blank" class="text-green-600 hover:underline"><i class="fa-solid fa-circle-check mr-1"></i>Ada</a>
-                    {% else %}
-                    <span class="text-gray-300"><i class="fa-solid fa-circle-xmark mr-1"></i>Kosong</span>
-                    {% endif %}
-                </td>
-                <td class="px-4 py-3">
-                    {% if b.hak_merk_file_url %}
-                    <a href="{{ b.hak_merk_file_url }}" target="_blank" class="text-green-600 hover:underline"><i class="fa-solid fa-circle-check mr-1"></i>Ada</a>
                     {% else %}
                     <span class="text-gray-300"><i class="fa-solid fa-circle-xmark mr-1"></i>Kosong</span>
                     {% endif %}
@@ -98,13 +90,8 @@
 
         <form id="edit-brand-form" method="POST" enctype="multipart/form-data">
             <div class="mb-4">
-                <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Lisensi Merk (PDF)</label>
+                <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Hak & Lisensi Merk (PDF)</label>
                 <input type="file" name="lisensi_merk_file" accept=".pdf" class="w-full border rounded-md px-3 py-2 text-sm">
-                <p class="text-[11px] text-gray-400 mt-1">Kosongkan kalau tidak mau ganti file yang sudah ada.</p>
-            </div>
-            <div class="mb-4">
-                <label class="block text-xs font-semibold text-gray-600 uppercase mb-1">Hak Merk (PDF)</label>
-                <input type="file" name="hak_merk_file" accept=".pdf" class="w-full border rounded-md px-3 py-2 text-sm">
                 <p class="text-[11px] text-gray-400 mt-1">Kosongkan kalau tidak mau ganti file yang sudah ada.</p>
             </div>
             <div class="flex justify-end gap-2">
