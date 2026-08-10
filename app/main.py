@@ -2563,6 +2563,45 @@ async def admin_create_user(
         print(f"Gagal bikin user baru (admin): {e}")
         return RedirectResponse(url="/admin/users?error=create_failed", status_code=303)
 
+# 2. PROSES RESET PASSWORD USER (KHUSUS ADMIN)
+@app.post("/admin/users/reset-password")
+async def admin_reset_password(
+    target_uid: str = Form(...),
+    new_password: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    # Proteksi: cuma admin yang boleh reset password user
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+
+    # Validasi minimal: password baru minimal 6 karakter (sama kayak minlength di form modal)
+    if len(new_password.strip()) < 6:
+        return RedirectResponse(url="/admin/users?error=password_too_short", status_code=303)
+
+    try:
+        # Ambil nama user target buat activity log
+        target_res = supabase.table("profiles").select("full_name").eq("id", target_uid).execute()
+        target_name = target_res.data[0].get("full_name") if target_res.data else None
+
+        # Update password di Supabase Auth Service.
+        # Dipakai update_user_by_id karena di supabase-py v2 method update_user sudah dihapus.
+        supabase.auth.admin.update_user_by_id(target_uid, {"password": new_password})
+
+        # Catat activity log
+        log_activity(
+            current_user,
+            "reset_password",
+            "user",
+            target_uid,
+            target_name or f"User {target_uid}"
+        )
+
+        return RedirectResponse(url="/admin/users?status=reset_success", status_code=303)
+
+    except Exception as e:
+        print(f"Gagal reset password user {target_uid}: {e}")
+        return RedirectResponse(url="/admin/users?error=reset_failed", status_code=303)
+
 # 3. PROSES UPDATE ROLE USER (POST)
 @app.post("/admin/users/update-role")
 async def update_user_role(

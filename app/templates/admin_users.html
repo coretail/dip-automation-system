@@ -43,6 +43,16 @@
             <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Username sudah dipakai! Pilih username lain yang unik.</span>
             <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        {% elif request.query_params.get('error') == 'reset_failed' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Gagal reset password. Cek apakah user masih terdaftar di Supabase Auth, lalu coba lagi.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'password_too_short' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i> Password baru minimal 6 karakter!</span>
+            <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
         {% elif request.query_params.get('error') %}
         <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
             <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Terjadi kesalahan sistem. Coba lagi nanti.</span>
