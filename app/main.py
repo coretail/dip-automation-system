@@ -165,10 +165,18 @@ async def get_current_user(request: Request):
 
 
 def log_activity(current_user: dict, action: str, entity_type: str, entity_id: str, entity_label: str, changes: list = None):
-    """Catat 1 baris log aktivitas (create/update/delete) ke tabel activity_logs.
-    Dipanggil di ujung endpoint add/edit/delete. Sengaja dibungkus try/except biar
-    kalau gagal nyatet log, itu gak sampe nge-gagalin operasi utamanya (add/edit/delete
-    tetep jalan biarpun log-nya gagal kesimpen)."""
+    """Catat activity log ke DB Supabase + cetak log rapi ke terminal Render."""
+    # 1. Cetak log ke terminal Render
+    print_activity_terminal(
+        current_user=current_user,
+        action=action,
+        entity_type=entity_type,
+        entity_label=entity_label,
+        entity_id=entity_id,
+        changes=changes
+    )
+
+    # 2. Simpan ke tabel activity_logs Supabase
     try:
         supabase.table("activity_logs").insert({
             "actor_id": current_user.get("id") if current_user else None,
@@ -180,7 +188,40 @@ def log_activity(current_user: dict, action: str, entity_type: str, entity_id: s
             "changes": changes or [],
         }).execute()
     except Exception as e:
-        print(f"Gagal catat activity log ({entity_type}/{action}/{entity_id}): {e}")
+        print(f"Gagal catat activity log ke DB ({entity_type}/{action}/{entity_id}): {e}")
+
+def print_activity_terminal(current_user: dict, action: str, entity_type: str, entity_label: str, entity_id: str = None, changes: list = None):
+    """
+    Format dan cetak log aktivitas ke stdout/terminal Render.
+    """
+    now_str = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
+    actor_name = current_user.get("full_name", "System") if current_user else "System"
+    actor_email = current_user.get("email", "-") if current_user else "-"
+    
+    # Mapping badge aksi biar gampang di-scan mata di log Render
+    action_badges = {
+        "create": "🟢 [CREATED]",
+        "update": "🟡 [UPDATED]",
+        "delete": "🔴 [DELETED]"
+    }
+    badge = action_badges.get(action.lower(), f"🔵 [{action.upper()}]")
+
+    print("\n" + "="*60)
+    print(f"📝 {badge} ACTIVITY LOG | {now_str}")
+    print(f"   • Actor    : {actor_name} ({actor_email})")
+    print(f"   • Entity   : {entity_type.upper()} -> '{entity_label}'" + (f" (ID: {entity_id})" if entity_id else ""))
+    
+    if changes:
+        print("   • Changes  :")
+        for c in changes:
+            field = c.get("field", "Unknown Field")
+            if "note" in c:
+                print(f"     - {field}: {c['note']}")
+            else:
+                old_val = c.get("old") if c.get("old") is not None else "-"
+                new_val = c.get("new") if c.get("new") is not None else "-"
+                print(f"     - {field}: '{old_val}'  ➔  '{new_val}'")
+    print("="*60 + "\n")
 
 
 def _build_diff_changes(old_row: dict, update_payload: dict, field_labels: dict, file_fields: set = None) -> list:
