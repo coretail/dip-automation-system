@@ -113,10 +113,12 @@
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ rm.nama_dagang }}</div>
                         <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
-                        {% set companies_with_data = rm.raw_material_company_docs | map(attribute='perusahaan') | list %}
+                        {% set status = doc_status.get(rm.id, {}) %}
+                        {% set s_erfi = status.get('PT Erfi', {}) %}
+                        {% set s_heka = status.get('PT Heka', {}) %}
                         <div class="mt-1 space-x-1">
-                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium {{ 'bg-green-100 text-green-700' if 'PT Erfi' in companies_with_data else 'bg-gray-100 text-gray-400' }}">Erfi {{ '✓' if 'PT Erfi' in companies_with_data else '✗' }}</span>
-                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium {{ 'bg-green-100 text-green-700' if 'PT Heka' in companies_with_data else 'bg-gray-100 text-gray-400' }}">Heka {{ '✓' if 'PT Heka' in companies_with_data else '✗' }}</span>
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium {{ 'bg-green-100 text-green-700' if s_erfi.spec_ok else 'bg-gray-100 text-gray-400' }}" title="{{ 'Spesifikasi terisi' if s_erfi.spec_ok else 'Belum ada spesifikasi' }}">Erfi {{ '✓' if s_erfi.spec_ok else '✗' }}</span>
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium {{ 'bg-green-100 text-green-700' if s_heka.spec_ok else 'bg-gray-100 text-gray-400' }}" title="{{ 'Spesifikasi terisi' if s_heka.spec_ok else 'Belum ada spesifikasi' }}">Heka {{ '✓' if s_heka.spec_ok else '✗' }}</span>
                         </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">

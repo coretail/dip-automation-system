@@ -617,7 +617,26 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
             print(f"Gagal upload Spesifikasi Asli Supplier ({perusahaan}): {e}")
 
     if not has_spec_content and not msds_url and not spec_sheet_url:
-        # Belum ada data sama sekali buat company ini -> jangan bikin baris kosong
+        # Belum ada data sama sekali buat company ini -> jangan bikin baris kosong.
+        # Kalau kebetulan baris lama (sisa data sebelum guard ini ada) juga kosong
+        # total, hapus biar badge kelengkapan gak salah ke-centang.
+        try:
+            existing_resp = (
+                supabase.table("raw_material_company_docs")
+                .select("spec_parameters, msds_file_url, spec_sheet_file_url")
+                .eq("raw_material_id", rm_id)
+                .eq("perusahaan", perusahaan)
+                .execute()
+            )
+            existing = existing_resp.data[0] if existing_resp.data else None
+            if existing:
+                old_specs = existing.get("spec_parameters") or []
+                old_spec_filled = any((item.get("value") or "").strip() for item in old_specs if isinstance(item, dict))
+                if not old_spec_filled and not existing.get("msds_file_url") and not existing.get("spec_sheet_file_url"):
+                    supabase.table("raw_material_company_docs").delete() \
+                        .eq("raw_material_id", rm_id).eq("perusahaan", perusahaan).execute()
+        except Exception as e:
+            print(f"Gagal bersihkan baris kosong company_docs ({perusahaan}): {e}")
         return
 
     doc_payload = {
