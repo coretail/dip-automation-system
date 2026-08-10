@@ -164,6 +164,45 @@ async def get_current_user(request: Request):
         )
 
 
+def log_activity(current_user: dict, action: str, entity_type: str, entity_id: str, entity_label: str, changes: list = None):
+    """Catat 1 baris log aktivitas (create/update/delete) ke tabel activity_logs.
+    Dipanggil di ujung endpoint add/edit/delete. Sengaja dibungkus try/except biar
+    kalau gagal nyatet log, itu gak sampe nge-gagalin operasi utamanya (add/edit/delete
+    tetep jalan biarpun log-nya gagal kesimpen)."""
+    try:
+        supabase.table("activity_logs").insert({
+            "actor_id": current_user.get("id") if current_user else None,
+            "actor_name": current_user.get("full_name") if current_user else "System",
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "entity_label": entity_label,
+            "changes": changes or [],
+        }).execute()
+    except Exception as e:
+        print(f"Gagal catat activity log ({entity_type}/{action}/{entity_id}): {e}")
+
+
+def _build_diff_changes(old_row: dict, update_payload: dict, field_labels: dict, file_fields: set = None) -> list:
+    """Bandingin old_row (data sebelum update) vs update_payload (data yang mau disimpen),
+    return list perubahan buat activity log. Field yang gak berubah di-skip.
+    Field jenis file (file_fields) cuma dicatet 'File diganti' tanpa link lama, soalnya
+    upload sekarang overwrite in-place (url lama = url baru abis di-upsert -> percuma dicatet)."""
+    file_fields = file_fields or set()
+    changes = []
+    for field, label in field_labels.items():
+        if field not in update_payload:
+            continue
+        if field in file_fields:
+            changes.append({"field": label, "note": "File diganti"})
+            continue
+        old_val = old_row.get(field)
+        new_val = update_payload.get(field)
+        if (old_val or None) != (new_val or None):
+            changes.append({"field": label, "old": old_val, "new": new_val})
+    return changes
+
+
 # ================= 1. ROUTE TAMPILAN LOGIN =================
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, warning: str = None, error: str = None):
@@ -545,6 +584,8 @@ async def add_raw_material(
     rm_resp = supabase.table("raw_materials").insert(insert_payload).execute()
     new_rm_id = rm_resp.data[0]["id"]
 
+    log_activity(current_user, "create", "raw_material", new_rm_id, nama_dagang)
+
     # --- Simpan spec + MSDS per perusahaan (kalau diisi) ---
     await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi)
     await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
@@ -604,6 +645,12 @@ async def edit_raw_material(
     if existing_rm.data:
         raise HTTPException(status_code=400, detail=f"Gagal Edit! Kode '{kode_check}' sudah dipakai oleh bahan baku lain.")
 
+    # --- Ambil data LAMA dulu sebelum diubah, buat dibandingin di activity log ---
+    old_rm_resp = supabase.table("raw_materials").select("*").eq("id", rm_id).single().execute()
+    old_rm = old_rm_resp.data or {}
+    old_company_docs_resp = supabase.table("raw_material_company_docs").select("*").eq("raw_material_id", rm_id).execute()
+    old_company_docs = {d["perusahaan"]: d for d in (old_company_docs_resp.data or [])}
+
     # 1. UPDATE IDENTITAS DI RAW_MATERIALS (spec & MSDS udah pindah ke raw_material_company_docs)
     update_data = {
         "nama_dagang": nama_dagang,
@@ -613,9 +660,43 @@ async def edit_raw_material(
     }
     supabase.table("raw_materials").update(update_data).eq("id", rm_id).execute()
 
+    # --- Bandingin perubahan identitas buat activity log ---
+    field_labels = {
+        "nama_dagang": "Nama Dagang",
+        "kode_bahan_baku": "Kode Bahan Baku",
+        "tipe": "Tipe",
+        "produsen": "Produsen",
+    }
+    changes = _build_diff_changes(old_rm, update_data, field_labels)
+
+    # --- Bandingin perubahan spesifikasi & dokumen per perusahaan ---
+    import json as _json_diff
+    for company, spec_raw, msds_file, spec_sheet_file in [
+        ("PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi),
+        ("PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka),
+    ]:
+        old_doc = old_company_docs.get(company, {})
+        try:
+            new_specs = _json_diff.loads(spec_raw) if spec_raw else []
+        except Exception:
+            new_specs = []
+        old_specs = old_doc.get("spec_parameters") or []
+        old_map = {i.get("key"): (i.get("value") or "").strip() for i in old_specs if isinstance(i, dict)}
+        new_map = {i.get("key"): (i.get("value") or "").strip() for i in new_specs if isinstance(i, dict)}
+        for key in set(list(old_map.keys()) + list(new_map.keys())):
+            if old_map.get(key, "") != new_map.get(key, ""):
+                changes.append({"field": f"Spek {key} ({company})", "old": old_map.get(key) or "-", "new": new_map.get(key) or "-"})
+        if msds_file and msds_file.filename:
+            changes.append({"field": f"MSDS ({company})", "note": "File diganti"})
+        if spec_sheet_file and spec_sheet_file.filename:
+            changes.append({"field": f"PDF Spesifikasi ({company})", "note": "File diganti"})
+
     # 2. UPSERT SPEC + MSDS PER PERUSAHAAN
     await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi)
     await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
+
+    if changes:
+        log_activity(current_user, "update", "raw_material", rm_id, nama_dagang, changes)
 
     # --- Sisa kode management komponen INCI lu di bawah biarkan utuh ---
     supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
@@ -659,12 +740,18 @@ async def delete_raw_material(rm_id: str, current_user: dict = Depends(get_curre
             status_code=303
         )
 
+    # Ambil nama-nya dulu sebelum dihapus, biar activity log masih kebaca gak "id doang"
+    rm_before = supabase.table("raw_materials").select("nama_dagang").eq("id", rm_id).single().execute()
+    nama_sebelum_hapus = rm_before.data.get("nama_dagang") if rm_before.data else rm_id
+
     try:
         # Hapus komponen internal dulu (kalau bahan komposit)
         supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
         supabase.table("raw_materials").delete().eq("id", rm_id).execute()
     except Exception as e:
         return RedirectResponse(url=f"/raw-materials?error=Gagal+menghapus:+{str(e)}", status_code=303)
+
+    log_activity(current_user, "delete", "raw_material", rm_id, nama_sebelum_hapus)
 
     return RedirectResponse(url="/raw-materials?success=Bahan+baku+berhasil+dihapus", status_code=303)
 
@@ -827,7 +914,9 @@ async def add_product(
         "brand_id": brand_id if brand_id else None
     }
     
-    supabase.table("products").insert(product_data).execute()
+    new_product_resp = supabase.table("products").insert(product_data).execute()
+    new_product_id = new_product_resp.data[0]["id"] if new_product_resp.data else None
+    log_activity(current_user, "create", "product", new_product_id, nama_produk)
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/products/{product_id}/formula/save")
@@ -1819,6 +1908,10 @@ async def update_product(
     tgl_aktif_na_val = tanggal_aktif_na.strip() if tanggal_aktif_na else None
     if tgl_aktif_na_val == "": tgl_aktif_na_val = None
 
+    # Ambil data lama dulu sebelum diubah, buat dibandingin di activity log
+    old_product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    old_product = old_product_resp.data or {}
+
     update_payload = {
         "nama_produk": nama_produk,
         "perusahaan": perusahaan,
@@ -1881,6 +1974,43 @@ async def update_product(
             update_payload[db_col] = uploaded_url
 
     supabase.table("products").update(update_payload).eq("id", product_id).execute()
+
+    # --- Catat activity log: field teks dibandingin beneran, field file cuma dicatet "diganti" ---
+    product_field_labels = {
+        "nama_produk": "Nama Produk",
+        "perusahaan": "Perusahaan",
+        "nama_customer": "Nama Customer",
+        "sediaan": "Sediaan",
+        "warna": "Warna",
+        "netto": "Netto",
+        "kemasan": "Kemasan",
+        "no_na_produk": "No. NA Produk",
+        "status_na": "Status NA",
+        "tanggal_aktif_na": "Tanggal Aktif NA",
+        "acc_sampel": "Tanggal Acc Sampel",
+        "tanggal_text_design": "Tanggal Text Design",
+        "teks_marketing": "Teks Marketing",
+        "cara_pakai": "Cara Pakai",
+        "status_progress": "Status Progress",
+        "brand_id": "Brand",
+        "no_notifikasi_file_url": "File No. Notifikasi",
+        "cara_pembuatan_file_url": "File Cara Pembuatan",
+        "sistem_penomoran_batch_file_url": "File Sistem Penomoran Batch",
+        "spek_produk_jadi_file_url": "File Spek Produk Jadi",
+        "spek_pengemas_file_url": "File Spek Pengemas",
+        "laporan_uji_sig_file_url": "File Laporan Uji SIG",
+        "protokol_stabilitas_file_url": "File Protokol Stabilitas",
+        "hasil_stabilitas_file_url": "File Hasil Stabilitas",
+        "laporan_keamanan_file_url": "File Laporan Keamanan",
+        "monitoring_efek_samping_file_url": "File Monitoring Efek Samping",
+        "data_klaim_file_url": "File Data Klaim",
+        "desain_primer_file_url": "File Desain Primer",
+        "desain_sekunder_file_url": "File Desain Sekunder",
+    }
+    product_file_fields = {k for k in product_field_labels if k.endswith("_file_url")}
+    product_changes = _build_diff_changes(old_product, update_payload, product_field_labels, product_file_fields)
+    if product_changes:
+        log_activity(current_user, "update", "product", product_id, nama_produk, product_changes)
     
     response = RedirectResponse(url="/", status_code=303)
     response.set_cookie("success_msg", f"Data & dokumen DIP produk '{nama_produk}' berhasil diperbarui!")
@@ -1888,6 +2018,10 @@ async def update_product(
 
 @app.post("/products/delete/{product_id}")
 async def delete_product(product_id: str, current_user: dict = Depends(get_current_user)):
+    # Ambil nama-nya dulu sebelum dihapus, biar activity log masih kebaca gak "id doang"
+    product_before = supabase.table("products").select("nama_produk").eq("id", product_id).single().execute()
+    nama_sebelum_hapus = product_before.data.get("nama_produk") if product_before.data else product_id
+
     try:
         # Hapus dulu baris formula terkait (kalau FK belum di-set CASCADE)
         supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
@@ -1895,6 +2029,9 @@ async def delete_product(product_id: str, current_user: dict = Depends(get_curre
         supabase.table("products").delete().eq("id", product_id).execute()
     except Exception as e:
         print(f"Gagal hapus produk {product_id}: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    log_activity(current_user, "delete", "product", product_id, nama_sebelum_hapus)
     return RedirectResponse(url="/", status_code=303)
 
 # 1. PROSES POST CREATION SAMPLE (Kode FSP Manual)
