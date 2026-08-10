@@ -385,6 +385,43 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
     except Exception as e:
         print(f"Gagal ambil data batches: {e}")
         batches_data = []
+
+    sorted_batches = sorted(batches_data, key=lambda b: b.get("created_at") or "", reverse=True)
+    latest_batch_map = {}
+    for b in sorted_batches:
+        key = (b.get("raw_material_id"), b.get("perusahaan"))
+        if key not in latest_batch_map:
+            latest_batch_map[key] = b
+
+    doc_status = {}
+    for rm in rm_resp.data:
+        company_docs = {d["perusahaan"]: d for d in (rm.get("raw_material_company_docs") or [])}
+        status_per_company = {}
+        for company in ["PT Erfi", "PT Heka"]:
+            doc = company_docs.get(company, {})
+            spec_params = doc.get("spec_parameters") or []
+            spec_text_filled = any((item.get("value") or "").strip() for item in spec_params if isinstance(item, dict))
+            spec_sheet_url = doc.get("spec_sheet_file_url")
+            msds_url = doc.get("msds_file_url")
+
+            batch = latest_batch_map.get((rm["id"], company))
+            qc_results = (batch.get("qc_results") if batch else None) or []
+            qc_text_filled = any((item.get("value") or "").strip() for item in qc_results if isinstance(item, dict))
+            qc_report_url = batch.get("qc_report_file_url") if batch else None
+            coa_url = batch.get("coa_file_url") if batch else None
+            halal_url = batch.get("halal_batch_file_url") if batch else None
+
+            status_per_company[company] = {
+                "spec_ok": bool(spec_text_filled or spec_sheet_url),
+                "spec_sheet_url": spec_sheet_url,
+                "msds_url": msds_url,
+                "coa_url": coa_url,
+                "halal_url": halal_url,
+                "qc_report_url": qc_report_url,
+                "qc_ok": bool(qc_text_filled or qc_report_url),
+                "has_batch": batch is not None,
+            }
+        doc_status[rm["id"]] = status_per_company
     
     response = templates.TemplateResponse(
         request=request,
@@ -392,6 +429,7 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
         context={
             "raw_materials": rm_resp.data,
             "batches": batches_data,
+            "doc_status": doc_status,
             "success_msg": success_msg,
             "error_msg": error_msg
         }

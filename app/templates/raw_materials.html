@@ -26,11 +26,14 @@
 <!-- NAVIGASI TAB -->
 <div class="border-b border-gray-200 mb-6">
     <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-        <button onclick="switchTab('master-tab', 'batch-tab')" id="btn-master" class="border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
+        <button onclick="switchTab('master-tab')" id="btn-master" class="border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
             Master Bahan Baku
         </button>
-        <button onclick="switchTab('batch-tab', 'master-tab')" id="btn-batch" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
+        <button onclick="switchTab('batch-tab')" id="btn-batch" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
             Log Kedatangan Batch (Spreadsheet View)
+        </button>
+        <button onclick="switchTab('docs-tab')" id="btn-docs" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
+            Cek Kelengkapan Dokumen
         </button>
     </nav>
 </div>
@@ -275,6 +278,120 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<!-- ============ TAB 3: CEK KELENGKAPAN DOKUMEN ============ -->
+<div id="docs-tab" class="hidden">
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th rowspan="2" class="px-4 py-3 text-left align-bottom">Bahan Baku</th>
+                        <th colspan="5" class="px-4 py-2 text-center border-l border-gray-200 bg-sky-50 text-sky-700">PT Erfi</th>
+                        <th colspan="5" class="px-4 py-2 text-center border-l border-gray-200 bg-fuchsia-50 text-fuchsia-700">PT Heka</th>
+                    </tr>
+                    <tr class="text-xs text-gray-500">
+                        {% for _ in range(2) %}
+                        <th class="px-2 py-2 text-center border-l border-gray-200">Spek</th>
+                        <th class="px-2 py-2 text-center">MSDS</th>
+                        <th class="px-2 py-2 text-center">CoA</th>
+                        <th class="px-2 py-2 text-center">Halal</th>
+                        <th class="px-2 py-2 text-center">Catatan Periksa</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for rm in raw_materials %}
+                    {% set status = doc_status.get(rm.id, {}) %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            <div class="font-medium text-gray-900">{{ rm.nama_dagang }}</div>
+                            <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
+                        </td>
+                        {% for company in ['PT Erfi', 'PT Heka'] %}
+                        {% set s = status.get(company, {}) %}
+                        <!-- Spesifikasi -->
+                        <td class="px-2 py-3 text-center border-l border-gray-100">
+                            {% if s.spec_sheet_url %}
+                                <button type="button" onclick="openDocPreview('{{ s.spec_sheet_url }}', 'Spesifikasi - {{ rm.nama_dagang }} ({{ company }})')" class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview PDF Spesifikasi">
+                                    <i class="fa-solid fa-circle-check"></i>
+                                </button>
+                            {% elif s.spec_ok %}
+                                <span class="text-amber-500" title="Terisi (text), belum ada PDF asli"><i class="fa-solid fa-circle-check"></i></span>
+                            {% else %}
+                                <span class="text-gray-300" title="Belum diisi"><i class="fa-solid fa-circle-xmark"></i></span>
+                            {% endif %}
+                        </td>
+                        <!-- MSDS -->
+                        <td class="px-2 py-3 text-center">
+                            {% if s.msds_url %}
+                                <button type="button" onclick="openDocPreview('{{ s.msds_url }}', 'MSDS - {{ rm.nama_dagang }} ({{ company }})')" class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview MSDS">
+                                    <i class="fa-solid fa-circle-check"></i>
+                                </button>
+                            {% else %}
+                                <span class="text-gray-300" title="Belum ada"><i class="fa-solid fa-circle-xmark"></i></span>
+                            {% endif %}
+                        </td>
+                        <!-- CoA -->
+                        <td class="px-2 py-3 text-center">
+                            {% if s.coa_url %}
+                                <button type="button" onclick="openDocPreview('{{ s.coa_url }}', 'CoA - {{ rm.nama_dagang }} ({{ company }})')" class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview CoA">
+                                    <i class="fa-solid fa-circle-check"></i>
+                                </button>
+                            {% else %}
+                                <span class="text-gray-300" title="Belum ada"><i class="fa-solid fa-circle-xmark"></i></span>
+                            {% endif %}
+                        </td>
+                        <!-- Halal -->
+                        <td class="px-2 py-3 text-center">
+                            {% if s.halal_url %}
+                                <button type="button" onclick="openDocPreview('{{ s.halal_url }}', 'Sertifikat Halal - {{ rm.nama_dagang }} ({{ company }})')" class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview Sertifikat Halal">
+                                    <i class="fa-solid fa-circle-check"></i>
+                                </button>
+                            {% else %}
+                                <span class="text-gray-300" title="Belum ada"><i class="fa-solid fa-circle-xmark"></i></span>
+                            {% endif %}
+                        </td>
+                        <!-- Catatan Pemeriksaan -->
+                        <td class="px-2 py-3 text-center">
+                            {% if s.qc_report_url %}
+                                <button type="button" onclick="openDocPreview('{{ s.qc_report_url }}', 'Laporan Pemeriksaan - {{ rm.nama_dagang }} ({{ company }})')" class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview Laporan Pemeriksaan">
+                                    <i class="fa-solid fa-circle-check"></i>
+                                </button>
+                            {% elif s.qc_ok %}
+                                <span class="text-amber-500" title="Terisi (text), belum ada PDF laporan"><i class="fa-solid fa-circle-check"></i></span>
+                            {% elif s.has_batch %}
+                                <span class="text-gray-300" title="Ada batch, tapi catatan pemeriksaan belum diisi"><i class="fa-solid fa-circle-xmark"></i></span>
+                            {% else %}
+                                <span class="text-gray-300" title="Belum pernah ada batch"><i class="fa-solid fa-minus"></i></span>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">Belum ada bahan baku terdaftar.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <p class="text-xs text-gray-400 mt-3">
+        <i class="fa-solid fa-circle-check text-green-600"></i> = ada file PDF, klik buat preview &nbsp;|&nbsp;
+        <i class="fa-solid fa-circle-check text-amber-500"></i> = terisi text, belum ada PDF &nbsp;|&nbsp;
+        <i class="fa-solid fa-circle-xmark text-gray-300"></i> = belum diisi
+    </p>
+</div>
+
+<!-- Modal Preview Dokumen (PDF) -->
+<div id="doc-preview-modal" class="hidden fixed inset-0 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[85vh] flex flex-col">
+        <div class="flex justify-between items-center px-4 py-3 border-b">
+            <h3 id="doc-preview-title" class="text-sm font-semibold text-gray-800"></h3>
+            <button onclick="closeDocPreview()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <iframe id="doc-preview-iframe" class="flex-1 w-full" src=""></iframe>
     </div>
 </div>
 
@@ -929,23 +1046,35 @@ function closeBatchModal() {
     modal.querySelector('form').reset();
 }
 
-function switchTab(showId, hideId) {
-    document.getElementById(showId).classList.remove('hidden');
-    document.getElementById(hideId).classList.add('hidden');
-    
-    const btnMaster = document.getElementById('btn-master');
-    const btnBatch = document.getElementById('btn-batch');
-    
-    if(showId === 'master-tab') {
-        btnMaster.className = "border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer";
-        btnBatch.className = "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer";
-    } else {
-        btnBatch.className = "border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer";
-        btnMaster.className = "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer";
-    }
+function switchTab(tabId) {
+    const tabs = { 'master-tab': 'btn-master', 'batch-tab': 'btn-batch', 'docs-tab': 'btn-docs' };
 
-    // Panggil filterTable biar pas pindah tab, hasil filternya langsung menyesuaikan
-    filterTable();
+    Object.keys(tabs).forEach(id => {
+        document.getElementById(id).classList.toggle('hidden', id !== tabId);
+        const btn = document.getElementById(tabs[id]);
+        if (id === tabId) {
+            btn.className = "border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer";
+        } else {
+            btn.className = "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer";
+        }
+    });
+
+    // filterTable cuma relevan buat tab Master & Batch (docs-tab punya filter sendiri)
+    if (tabId === 'master-tab' || tabId === 'batch-tab') {
+        filterTable();
+    }
+}
+
+function openDocPreview(url, title) {
+    if (!url) return;
+    document.getElementById('doc-preview-title').innerText = title;
+    document.getElementById('doc-preview-iframe').src = url;
+    document.getElementById('doc-preview-modal').classList.remove('hidden');
+}
+
+function closeDocPreview() {
+    document.getElementById('doc-preview-modal').classList.add('hidden');
+    document.getElementById('doc-preview-iframe').src = '';
 }
 </script>
 {% endblock %}
