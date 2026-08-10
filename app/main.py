@@ -2532,6 +2532,14 @@ async def admin_create_user(
         clean_username = username.strip().lower()
         clean_email = email.strip().lower()
 
+        # VALIDASI: Username wajib unik (case-insensitive). Login via username memakai
+        # kolom full_name di tabel profiles, jadi kalau dobel, login bisa ambigu.
+        existing_profiles = supabase.table("profiles").select("full_name").execute()
+        existing_usernames = {str(pf.get("full_name") or "").strip().lower() for pf in (existing_profiles.data or [])}
+        if clean_username in existing_usernames:
+            print(f"Tolak buat akun: username '{clean_username}' sudah dipakai.")
+            return RedirectResponse(url="/admin/users?error=username_exists", status_code=303)
+
         # Daftarin ke Supabase Auth Service, langsung confirmed (dibuat admin, bukan self-register)
         auth_res = supabase.auth.admin.create_user({
             "email": clean_email,
