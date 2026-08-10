@@ -1601,13 +1601,11 @@ async def download_bab1_document(product_id: str, current_user: dict = Depends(g
     pidana_resp = supabase.table("surat_tidak_pidana_documents").select("file_url").eq("perusahaan", perusahaan).limit(1).execute()
     pidana_url = pidana_resp.data[0]["file_url"] if pidana_resp.data else None
 
-    # 3. Lisensi Merk & Hak Merk -> dari brand yang di-link ke produk (kalau ada)
-    lisensi_url = None
+    # 3. Hak & Lisensi Merk -> dari brand yang di-link ke produk (kalau ada)
     hak_merk_url = None
     if brand_id:
-        brand_resp = supabase.table("brands").select("lisensi_merk_file_url, hak_merk_file_url").eq("id", brand_id).limit(1).execute()
+        brand_resp = supabase.table("brands").select("hak_merk_file_url").eq("id", brand_id).limit(1).execute()
         if brand_resp.data:
-            lisensi_url = brand_resp.data[0].get("lisensi_merk_file_url")
             hak_merk_url = brand_resp.data[0].get("hak_merk_file_url")
 
     # 4. Surat No. Notifikasi BPOM -> langsung dari kolom produk
@@ -1616,7 +1614,6 @@ async def download_bab1_document(product_id: str, current_user: dict = Depends(g
     status = {
         "nib": bool(nib_url),
         "cpkb": bool(cpkb_url),
-        "lisensi": bool(lisensi_url),
         "hak_merk": bool(hak_merk_url),
         "tidak_pidana": bool(pidana_url),
         "notifikasi": bool(notifikasi_url)
@@ -1634,7 +1631,7 @@ async def download_bab1_document(product_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=500, detail="Gagal generate halaman Checklist Bab I.")
     checklist_buffer.seek(0)
 
-    # 6. Gabung sesuai urutan: Checklist -> NIB -> Sertifikat CPKB -> Lisensi Merk -> Hak Merk -> Surat Tidak Pidana -> Surat No. Notifikasi BPOM
+    # 6. Gabung sesuai urutan: Checklist -> NIB -> Sertifikat CPKB -> Hak & Lisensi Merk -> Surat Tidak Pidana -> Surat No. Notifikasi BPOM
     writer = PdfWriter()
     for page in PdfReader(checklist_buffer).pages:
         writer.add_page(page)
@@ -1654,8 +1651,7 @@ async def download_bab1_document(product_id: str, current_user: dict = Depends(g
     async with httpx.AsyncClient() as client:
         await append_pdf_from_url(client, nib_url, f"NIB ({perusahaan})")
         await append_pdf_from_url(client, cpkb_url, f"Sertifikat CPKB ({perusahaan})")
-        await append_pdf_from_url(client, lisensi_url, "Lisensi Merk")
-        await append_pdf_from_url(client, hak_merk_url, "Hak Merk")
+        await append_pdf_from_url(client, hak_merk_url, "Hak & Lisensi Merk")
         await append_pdf_from_url(client, pidana_url, f"Surat Tidak Pidana ({perusahaan})")
         await append_pdf_from_url(client, notifikasi_url, "Surat No. Notifikasi BPOM")
 
@@ -2445,23 +2441,12 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
 @app.post("/brands/{brand_id}/update-documents")
 async def update_brand_documents(
     brand_id: str,
-    lisensi_merk_file: UploadFile = File(None),
     hak_merk_file: UploadFile = File(None),
     current_user: dict = Depends(get_current_user)
 ):
     update_data = {}
 
     try:
-        if lisensi_merk_file and lisensi_merk_file.filename:
-            file_bytes = await lisensi_merk_file.read()
-            path = f"brands/lisensi_merk_{brand_id}.pdf"
-            supabase.storage.from_("legal-documents").upload(
-                path=path,
-                file=file_bytes,
-                file_options={"content-type": lisensi_merk_file.content_type, "upsert": "true"}
-            )
-            update_data["lisensi_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
-
         if hak_merk_file and hak_merk_file.filename:
             file_bytes = await hak_merk_file.read()
             path = f"brands/hak_merk_{brand_id}.pdf"
