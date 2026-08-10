@@ -11,6 +11,9 @@ from supabase import create_client
 import os
 import io
 import re
+import json
+import base64
+import sys
 import zipfile
 import httpx
 from xhtml2pdf import pisa
@@ -18,10 +21,28 @@ from pypdf import PdfReader, PdfWriter
 
 from dotenv import load_dotenv
 load_dotenv()
+# Pastikan stdout/stderr selalu UTF-8 biar log emoji aman di semua terminal
+# (Windows console default cp1252 gak support emoji, terutama pas output di-redirect/pipe).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 # Zona waktu bisnis (WIB) — dipakai buat semua logika berbasis "hari ini"
 # (kode FSP, hitungan revisi) biar gak geser gara-gara server jalan di UTC.
 WIB = ZoneInfo("Asia/Jakarta")
 import uuid
+
+def _extract_jwt_email(token: str):
+    """Best-effort baca email/sub dari payload JWT (buat log doang, tanpa validasi signature)."""
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)  # padding base64url biar valid
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return payload.get("email") or payload.get("sub") or "-"
+    except Exception:
+        return "-"
 
 def _add_years(d: date, years: int) -> date:
     """Tambah tahun ke tanggal, aman buat kasus 29 Feb kena tahun non-kabisat."""
@@ -305,7 +326,7 @@ async def login_submit(
         
         # 💡 LOG SUCCESS LOGIN
         user_data = auth_response.user
-        waktu_login = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        waktu_login = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
         print("\n" + "="*50)
         print(f"🔑 [LOGIN SUCCESS]")
         print(f"   • User ID : {user_data.id}")
@@ -326,15 +347,29 @@ async def login_submit(
 
     except Exception as e:
         # 💡 LOG FAILED LOGIN
-        waktu_gagal = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        waktu_gagal = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
         print(f"\n❌ [LOGIN FAILED] Input: '{email}' | Waktu: {waktu_gagal} | Error: {e}\n")
         return RedirectResponse(url="/login?error=invalid_credentials", status_code=303)
 
 @app.get("/logout")
-async def logout():
+async def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
     # Hapus cookie token yang tersimpan di browser
     response.delete_cookie(key="access_token")
+
+    # 💡 LOG LOGOUT
+    waktu_logout = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
+    try:
+        token_cookie = request.cookies.get("access_token")
+        email_log = _extract_jwt_email(token_cookie.replace("Bearer ", "")) if token_cookie else "-"
+    except Exception:
+        email_log = "-"
+    print("\n" + "="*50)
+    print(f"🚪 [LOGOUT]")
+    print(f"   • User  : {email_log}")
+    print(f"   • Waktu : {waktu_logout}")
+    print("="*50 + "\n")
+
     return response
 
 from fastapi import HTTPException, Request, status
@@ -344,6 +379,20 @@ from fastapi.responses import RedirectResponse
 async def custom_http_exception_handler(request: Request, exc: HTTPException):
     # Kalau error-nya 401 (Unauthorized / Sesi Habis)
     if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+        # 💡 LOG SESSION EXPIRED / UNAUTHORIZED (token sudah kadaluarsa, email dibaca
+        # dari payload JWT best-effort tanpa validasi signature)
+        waktu_exp = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
+        try:
+            token_cookie = request.cookies.get("access_token")
+            email_log = _extract_jwt_email(token_cookie.replace("Bearer ", "")) if token_cookie else "-"
+        except Exception:
+            email_log = "-"
+        print("\n" + "="*50)
+        print(f"⏰ [SESSION EXPIRED] Path: {request.url.path}")
+        print(f"   • User  : {email_log}")
+        print(f"   • Waktu : {waktu_exp}")
+        print("="*50 + "\n")
+
         return RedirectResponse(
             url="/login?warning=session_expired", 
             status_code=status.HTTP_303_SEE_OTHER
