@@ -255,7 +255,12 @@
                 </thead>
                 <tbody class="divide-y">
                     {% for p in products %}
-                    <tr class="hover:bg-gray-50 bg-white">
+                    <tr class="product-row hover:bg-gray-50 bg-white"
+                        data-nama="{{ (p.nama_produk or '') | lower }}" 
+                        data-customer="{{ (p.nama_customer or '') | lower }}" 
+                        data-perusahaan="{{ p.perusahaan or '' }}" 
+                        data-status="{{ p.status_na or '' }}"
+                        data-brand="{{ (p.brands.name if p.brands else '') | lower }}">
                         <!-- Nama Produk & Brand -->
                         <td class="px-4 py-3">
                             <div class="font-bold text-gray-900">{{ p.nama_produk }}</div>
@@ -455,17 +460,21 @@ function filterTable() {
     const searchVal = document.getElementById('search-input').value.toLowerCase().trim();
     const ptVal = document.getElementById('filter-perusahaan').value;
     const statusVal = document.getElementById('filter-status').value;
-    const rows = document.querySelectorAll('.product-row');
+    
+    // Ambil baris produk di tab yang sedang aktif aja
+    const activeTab = document.querySelector('.dash-tab-content.block');
+    const rows = activeTab ? activeTab.querySelectorAll('.product-row') : [];
 
     let visibleCount = 0;
 
     rows.forEach(row => {
         const nama = row.dataset.nama || '';
         const customer = row.dataset.customer || '';
+        const brand = row.dataset.brand || '';
         const perusahaan = row.dataset.perusahaan || '';
         const status = row.dataset.status || '';
 
-        const matchSearch = !searchVal || nama.includes(searchVal) || customer.includes(searchVal);
+        const matchSearch = !searchVal || nama.includes(searchVal) || customer.includes(searchVal) || brand.includes(searchVal);
         const matchPt = !ptVal || perusahaan === ptVal;
         const matchStatus = !statusVal || status === statusVal;
 
@@ -501,6 +510,9 @@ function switchDashboardTab(tabId, element) {
     
     element.classList.remove('border-transparent', 'text-gray-500');
     element.classList.add('border-indigo-500', 'text-indigo-600');
+
+    // Trigger ulang filter biar tab yang baru langsung ngikutin filter/search yang lagi aktif
+    filterTable();
 }
 </script>
 
