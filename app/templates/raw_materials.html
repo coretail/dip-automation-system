@@ -305,7 +305,7 @@
                 <tbody class="divide-y divide-gray-100">
                     {% for rm in raw_materials %}
                     {% set status = doc_status.get(rm.id, {}) %}
-                    <tr class="hover:bg-gray-50">
+                    <tr class="hover:bg-gray-50 docs-row" data-nama="{{ rm.nama_dagang|lower }}" data-kode="{{ rm.kode_bahan_baku|lower }}">
                         <td class="px-4 py-3 whitespace-nowrap">
                             <div class="font-medium text-gray-900">{{ rm.nama_dagang }}</div>
                             <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
@@ -379,7 +379,7 @@
     </div>
     <p class="text-xs text-gray-400 mt-3">
         <i class="fa-solid fa-circle-check text-green-600"></i> = ada file PDF, klik buat preview &nbsp;|&nbsp;
-        <i class="fa-solid fa-circle-check text-amber-500"></i> = terisi text, belum ada PDF &nbsp;|&nbsp;
+        <i class="fa-solid fa-circle-check text-amber-500"></i> = terisi text doang, belum ada PDF &nbsp;|&nbsp;
         <i class="fa-solid fa-circle-xmark text-gray-300"></i> = belum diisi
     </p>
 </div>
@@ -919,6 +919,7 @@ function filterTable() {
     const companyVal = document.getElementById('filter-company').value;
     
     const isMasterActive = !document.getElementById('master-tab').classList.contains('hidden');
+    const isDocsActive = !document.getElementById('docs-tab').classList.contains('hidden');
 
     if (isMasterActive) {
         const rows = document.querySelectorAll('.rm-row');
@@ -942,6 +943,26 @@ function filterTable() {
 
         const countEl = document.getElementById('filter-count');
         if (searchVal || tipeVal || companyVal) {
+            countEl.textContent = `Menampilkan ${visibleCount} dari ${rows.length} bahan baku`;
+        } else {
+            countEl.textContent = '';
+        }
+    } else if (isDocsActive) {
+        const rows = document.querySelectorAll('.docs-row');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const nama = row.dataset.nama || '';
+            const kode = row.dataset.kode || '';
+
+            const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal);
+            const show = matchSearch;
+            row.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+
+        const countEl = document.getElementById('filter-count');
+        if (searchVal) {
             countEl.textContent = `Menampilkan ${visibleCount} dari ${rows.length} bahan baku`;
         } else {
             countEl.textContent = '';
@@ -1059,10 +1080,8 @@ function switchTab(tabId) {
         }
     });
 
-    // filterTable cuma relevan buat tab Master & Batch (docs-tab punya filter sendiri)
-    if (tabId === 'master-tab' || tabId === 'batch-tab') {
-        filterTable();
-    }
+    // filterTable dipanggil di semua tab biar search bar konsisten kerja di mana aja
+    filterTable();
 }
 
 function openDocPreview(url, title) {
