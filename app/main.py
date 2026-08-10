@@ -381,7 +381,6 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
             .execute()
         )
         batches_data = query_batches.data
-        print(batches_data[0] if batches_data else "KOSONG")
     except Exception as e:
         print(f"Gagal ambil data batches: {e}")
         batches_data = []
