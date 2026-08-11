@@ -19,31 +19,6 @@
             <i class="fa-solid fa-file-excel mr-1.5"></i> Export Excel
         </button>
 
-        <!-- Tombol Download Bab I (PDF gabungan: Checklist + NIB + Sertifikat CPKB + Hak & Lisensi Merk + Surat Tidak Pidana + Surat Notifikasi BPOM) -->
-        <a href="/products/{{ product.id }}/bab1/download" class="bg-sky-600 hover:bg-sky-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab I (PDF)">
-            <i class="fa-solid fa-file-pdf mr-1.5"></i> Bab I
-        </a>
-
-        <!-- Tombol Download Bab II (PDF gabungan: Checklist + SOP CPKB + Spesifikasi + Catatan + CoA per bahan baku) -->
-        <a href="/products/{{ product.id }}/bab2/download" class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab II (satu PDF gabungan)">
-            <i class="fa-solid fa-file-pdf mr-1.5"></i> Bab II
-        </a>
-
-        <!-- Tombol Download Bab II versi Folder/ZIP: 1 folder per bahan baku (Spesifikasi, CoA, Halal, MSDS terpisah) -->
-        <a href="/products/{{ product.id }}/bab2/download-zip" class="bg-amber-800 hover:bg-amber-900 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab II (ZIP, terpisah per bahan baku)">
-            <i class="fa-solid fa-folder-tree mr-1.5"></i> Bab II (Folder)
-        </a>
-
-        <!-- Tombol Download Bab III (PDF gabungan: Cara Pembuatan + Protap/SOP Batch + CoA FG + Spek Kemasan + Hasil Uji Lab + Stabilitas) -->
-        <a href="/products/{{ product.id }}/bab3/download" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab III (PDF)">
-            <i class="fa-solid fa-file-pdf mr-1.5"></i> Bab III
-        </a>
-
-        <!-- Tombol Download Bab IV (PDF gabungan: Safety Assessment + CV Assessor + Monitoring Efek Samping + Data Klaim + Desain Kemasan) -->
-        <a href="/products/{{ product.id }}/bab4/download" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab IV (PDF)">
-            <i class="fa-solid fa-file-pdf mr-1.5"></i> Bab IV
-        </a>
-
         <!-- Tombol Copy Public Link BPOM (permalink dokumen DIP) untuk dilampirkan ke portal e-registration BPOM -->
         <button onclick="copyBpomLink()" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Salin Public Link BPOM (permalink dokumen DIP) untuk dilampirkan ke portal e-registration BPOM">
             <i class="fa-solid fa-link mr-1.5"></i> Copy Link BPOM
