@@ -2029,19 +2029,41 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "-"
 
 
-def _audit_public_link(product_id: str, ip_address: str, user_agent: str):
+def _get_audit_username(request: Request) -> str:
+    """Best-effort ambil username (full_name) user yang sedang login, buat log audit
+    public link. Kalau tidak login / token invalid / query gagal, return '-' supaya
+    log tetap jalan. Dipanggil di route publik yang TIDAK boleh gagal gara-gara ini."""
+    token_cookie = request.cookies.get("access_token")
+    if not token_cookie:
+        return "-"
+    try:
+        token = token_cookie.replace("Bearer ", "")
+        user_auth = supabase.auth.get_user(token)
+        user_data = user_auth.user
+        if not user_data:
+            return "-"
+        profile_res = supabase.table("profiles").select("full_name").eq("id", user_data.id).execute()
+        if profile_res.data and profile_res.data[0].get("full_name"):
+            return profile_res.data[0]["full_name"]
+        return user_data.email or "-"
+    except Exception:
+        return "-"
+
+
+def _audit_public_link(product_id: str, product_name: str, ip_address: str, user_agent: str, username: str = "-"):
     """Catat setiap akses ke public link DIP (/dip/v/:uuid).
-    Field: product_id, visited_at (timestamp), ip_address, user_agent.
+    Field DB: product_id, visited_at (timestamp), ip_address, user_agent.
     1) Simpan ke tabel khusus public_link_audits (sudah dibuat di Supabase).
     2) Fallback ke activity_logs kalau tabel khusus belum dibuat, biar tidak ada akses yang hilang.
     Kegagalan logging TIDAK pernah mengganggu halaman (diamankan try/except)."""
-    # 1. Cetak ke terminal supaya terpantau realtime
+    # 1. Cetak ke terminal supaya terpantau realtime (produk ditampilkan sebagai NAMA, bukan id)
     now_str = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
     print("\n" + "=" * 60)
     print(f"🔗 [PUBLIC LINK OPENED] | {now_str}")
-    print(f"   • Product   : {product_id}")
+    print(f"   • Product   : {product_name or product_id}")
     print(f"   • IP        : {ip_address}")
     print(f"   • User-Agent: {(user_agent or '-')[:120]}")
+    print(f"   • Username  : {username or '-'}")
     print("=" * 60)
 
     # 2. Simpan ke tabel audit khusus (public_link_audits)
@@ -2064,10 +2086,11 @@ def _audit_public_link(product_id: str, ip_address: str, user_agent: str):
             "action": "public_link_visit",
             "entity_type": "product",
             "entity_id": product_id,
-            "entity_label": "Public link DIP dibuka",
+            "entity_label": product_name or "Public link DIP dibuka",
             "changes": [
                 {"field": "ip_address", "note": ip_address},
                 {"field": "user_agent", "note": (user_agent or "-")[:500]},
+                {"field": "username", "note": username or "-"},
             ],
         }).execute()
     except Exception as e:
@@ -2090,11 +2113,13 @@ async def dip_public_hub(request: Request, product_id: str):
     if not product:
         raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
 
-    # Audit log: catat setiap kali public link dibuka (product_id, timestamp, IP, user-agent)
+    # Audit log: catat setiap kali public link dibuka (product_id, timestamp, IP, user-agent, username)
     _audit_public_link(
         product_id=product_id,
+        product_name=product.get("nama_produk") or "Produk",
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent") or "-",
+        username=_get_audit_username(request),
     )
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
@@ -2594,7 +2619,7 @@ async def edit_sample_submission_page(request: Request, submission_id: str, curr
 @app.post("/sample-submissions/edit/{submission_id}")
 async def update_sample_submission(
     submission_id: str,
-    sample_prefix: str = Form("FSP"),     # <-- Cuma nangkep Prefix
+    sample_prefix: str = Form("FSP"),   
     brand_id: str = Form(...),
     company: str = Form(None),
     custom_producer: str = Form(None),
@@ -2652,7 +2677,7 @@ async def update_sample_submission(
     additional_notes = {"ph": ph_value, "viscosity": viscosity_value, "color": color_value}
 
     update_payload = {
-        "sample_code": new_sample_code,   # <-- KODE TERSIMPAN DENGAN PREFIX BARU
+        "sample_code": new_sample_code,  
         "product_id": final_product_id,
         "company": final_company,
         "brand_id": final_brand_id,
