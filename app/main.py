@@ -1965,6 +1965,238 @@ async def preview_dip_bab4(product_id: str, current_user: dict = Depends(get_cur
     resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
     return resp
 
+# =====================================================================
+#  PUBLIC LINK BPOM - PERMALINK UNTUK VERIFIKATOR BPOM
+#  Route /dip/v/{product_id} bersifat PUBLIK (tanpa login) & permanen
+#  (tidak ada masa expired) supaya bisa dilampirkan ke portal
+#  e-registration BPOM dan tetap hidup bertahun-tahun.
+#
+#  Keamanan akses file:
+#   - PDF gabungan tiap Bab (I, II, III, IV) -> di-stream lewat backend
+#     (proxy), browser tidak pernah menyentuh storage langsung.
+#   - File individu di Supabase Storage (CoA, Halal, MSDS, Spesifikasi)
+#     -> short-lived signed URL (default 1 jam) yang di-generate otomatis
+#     tiap kali halaman hub dibuka.
+# =====================================================================
+
+def _parse_storage_url(url: str):
+    """Ekstrak (bucket, path) dari public URL Supabase Storage.
+    Contoh:
+      https://xxxx.supabase.co/storage/v1/object/public/raw-material-docs/products/123/a.pdf
+      -> ('raw-material-docs', 'products/123/a.pdf')
+    Kalau formatnya bukan public storage URL, return (None, None)."""
+    if not url:
+        return None, None
+    marker = "/storage/v1/object/public/"
+    if marker not in url:
+        return None, None
+    rest = url.split(marker, 1)[1].split("?", 1)[0]
+    if "/" not in rest:
+        return None, None
+    bucket, path = rest.split("/", 1)
+    return bucket, path
+
+
+def _storage_signed_url(public_url: str, expires_in: int = 3600):
+    """Generate short-lived signed URL dari public URL Supabase Storage.
+    URL asli storage tidak dibocorkan ke browser; yang dikirim cuma signed URL
+    sementara (default 1 jam). Kalau parsing/generate gagal, fallback ke URL
+    asli supaya link tetap jalan di halaman publik."""
+    if not public_url:
+        return None
+    bucket, path = _parse_storage_url(public_url)
+    if not bucket or not path:
+        return public_url
+    try:
+        resp = supabase.storage.from_(bucket).create_signed_url(path, expires_in)
+        signed = resp.get("signedURL") or resp.get("signedUrl")
+        return signed or public_url
+    except Exception as e:
+        print(f"Gagal generate signed URL ({bucket}/{path}): {e}")
+        return public_url
+
+
+@app.get("/dip/v/{product_id}", response_class=HTMLResponse)
+async def dip_public_hub(request: Request, product_id: str):
+    """Landing page/hub publik khusus verifikator BPOM untuk 1 produk."""
+    try:
+        prod_resp = supabase.table("products") \
+            .select("*, brands(name, producers(name))") \
+            .eq("id", product_id) \
+            .single() \
+            .execute()
+        product = prod_resp.data if prod_resp.data else None
+    except Exception as e:
+        print(f"[PUBLIC HUB] Produk {product_id} tidak ditemukan: {e}")
+        product = None
+    if not product:
+        raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+
+    perusahaan = product.get("perusahaan") or "PT Erfi"
+    company = get_company_info(perusahaan)
+
+    # Normalisasi relasi brand (supabase bisa return dict atau list tergantung setup)
+    brand_info = product.get("brands") or {}
+    if isinstance(brand_info, list):
+        brand_info = brand_info[0] if brand_info else {}
+    producers = brand_info.get("producers") or {}
+    if isinstance(producers, list):
+        producers = producers[0] if producers else {}
+    brand_name = brand_info.get("name")
+    producer_name = producers.get("name")
+
+    # --- Kumpulin daftar file Bab II per bahan baku (Spesifikasi, CoA, Halal, MSDS) ---
+    bab2_materials = []
+    try:
+        lines_resp = supabase.table("product_formula_lines") \
+            .select("raw_material_id, raw_materials(*)") \
+            .eq("product_id", product_id) \
+            .execute()
+
+        seen_ids = set()
+        raw_materials = []
+        for line in (lines_resp.data or []):
+            rm = line.get("raw_materials")
+            if isinstance(rm, list) and rm:
+                rm = rm[0]
+            if isinstance(rm, dict) and rm.get("id") and rm["id"] not in seen_ids:
+                seen_ids.add(rm["id"])
+                raw_materials.append(rm)
+
+        for rm in raw_materials:
+            # Timpa spec/msds dengan data company-specific (biar gak tertukar antar-PT)
+            _apply_company_specific_docs(rm, perusahaan)
+
+            batch = None
+            try:
+                batch_resp = supabase.table("raw_material_batches") \
+                    .select("*") \
+                    .eq("raw_material_id", rm["id"]) \
+                    .eq("perusahaan", perusahaan) \
+                    .order("created_at", desc=True) \
+                    .limit(1) \
+                    .execute()
+                batch = batch_resp.data[0] if batch_resp.data else None
+            except Exception as e:
+                print(f"[PUBLIC HUB] Gagal ambil batch bahan baku: {e}")
+
+            candidate_files = [
+                {"label": "Spesifikasi Bahan Baku", "url": rm.get("spec_sheet_file_url"), "icon": "fa-file-lines"},
+                {"label": "CoA (Certificate of Analysis)", "url": batch.get("coa_file_url") if batch else None, "icon": "fa-file-circle-check"},
+                {"label": "Sertifikat Halal", "url": batch.get("halal_batch_file_url") if batch else None, "icon": "fa-file-shield"},
+                {"label": "MSDS (Material Safety Data Sheet)", "url": rm.get("msds_file_url"), "icon": "fa-file-triangle"},
+            ]
+            files = []
+            for f in candidate_files:
+                if f["url"]:
+                    files.append({
+                        "label": f["label"],
+                        "icon": f["icon"],
+                        "url": _storage_signed_url(f["url"])
+                    })
+            if files:
+                bab2_materials.append({
+                    "nama": rm.get("nama_dagang") or "Unknown",
+                    "kode": rm.get("kode_bahan_baku") or "-",
+                    "files": files
+                })
+    except Exception as e:
+        print(f"[PUBLIC HUB] Gagal kumpulin file Bab II: {e}")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="dip_public_hub.html",
+        context={
+            "product": product,
+            "company": company,
+            "perusahaan": perusahaan,
+            "brand_name": brand_name,
+            "producer_name": producer_name,
+            "bab2_materials": bab2_materials,
+            "tanggal_generate": datetime.now(WIB).strftime("%d %B %Y %H:%M WIB"),
+        }
+    )
+
+
+def _dip_public_check_product(product_id: str) -> bool:
+    """Validasi UUID produk eksis (buat route publik /dip/v)."""
+    try:
+        check = supabase.table("products").select("id").eq("id", product_id).single().execute()
+        return bool(check.data)
+    except Exception:
+        return False
+
+
+_DIP_BAB_GENERATORS = {
+    "1": download_bab1_document,
+    "2": download_bab2_document,
+    "3": download_dip_bab3,
+    "4": download_dip_bab4,
+}
+
+
+async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool):
+    """Stream PDF gabungan Bab I-IV lewat backend (proxy), tanpa login."""
+    if not _dip_public_check_product(product_id):
+        raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+    gen = _DIP_BAB_GENERATORS.get(bab_num)
+    if not gen:
+        raise HTTPException(status_code=404, detail="Bab tidak ditemukan.")
+    resp = await gen(product_id, None)
+    disposition = "attachment" if as_attachment else "inline"
+    current = resp.headers.get("Content-Disposition") or f"{disposition}; filename=document.pdf"
+    resp.headers["Content-Disposition"] = re.sub(r"^(attachment|inline)", disposition, current, flags=re.IGNORECASE)
+    return resp
+
+
+@app.get("/dip/v/{product_id}/bab1")
+async def dip_public_bab1(product_id: str):
+    return await _dip_stream_bab(product_id, "1", False)
+
+
+@app.get("/dip/v/{product_id}/bab1/download")
+async def dip_public_bab1_download(product_id: str):
+    return await _dip_stream_bab(product_id, "1", True)
+
+
+@app.get("/dip/v/{product_id}/bab2")
+async def dip_public_bab2(product_id: str):
+    return await _dip_stream_bab(product_id, "2", False)
+
+
+@app.get("/dip/v/{product_id}/bab2/download")
+async def dip_public_bab2_download(product_id: str):
+    return await _dip_stream_bab(product_id, "2", True)
+
+
+@app.get("/dip/v/{product_id}/bab3")
+async def dip_public_bab3(product_id: str):
+    return await _dip_stream_bab(product_id, "3", False)
+
+
+@app.get("/dip/v/{product_id}/bab3/download")
+async def dip_public_bab3_download(product_id: str):
+    return await _dip_stream_bab(product_id, "3", True)
+
+
+@app.get("/dip/v/{product_id}/bab4")
+async def dip_public_bab4(product_id: str):
+    return await _dip_stream_bab(product_id, "4", False)
+
+
+@app.get("/dip/v/{product_id}/bab4/download")
+async def dip_public_bab4_download(product_id: str):
+    return await _dip_stream_bab(product_id, "4", True)
+
+
+@app.get("/dip/v/{product_id}/bab2/zip")
+async def dip_public_bab2_zip(product_id: str):
+    """Stream ZIP Bab II (folder per bahan baku) lewat backend, tanpa login."""
+    if not _dip_public_check_product(product_id):
+        raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+    return await download_bab2_document_zip(product_id, None)
+
+
 # 1. Halaman Form Edit Produk
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def edit_product_page(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):

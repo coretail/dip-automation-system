@@ -43,6 +43,11 @@
         <a href="/products/{{ product.id }}/bab4/download" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Download Dokumen Bab IV (PDF)">
             <i class="fa-solid fa-file-pdf mr-1.5"></i> Bab IV
         </a>
+
+        <!-- Tombol Copy Public Link BPOM (permalink dokumen DIP) untuk dilampirkan ke portal e-registration BPOM -->
+        <button onclick="copyBpomLink()" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Salin Public Link BPOM (permalink dokumen DIP) untuk dilampirkan ke portal e-registration BPOM">
+            <i class="fa-solid fa-link mr-1.5"></i> Copy Link BPOM
+        </button>
     </div>
 </div>
 
@@ -433,5 +438,129 @@ function applyBordersToDataTable(ws, headerRowIndex, range) {
     }
 }
 {% endraw %}
+</script>
+
+<!-- ==================== MODAL PUBLIC LINK BPOM ==================== -->
+<div id="bpomLinkModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+    <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <i class="fa-solid fa-link text-rose-600"></i> Public Link BPOM
+            </h3>
+            <button onclick="closeBpomModal()" class="text-gray-400 hover:text-gray-600 cursor-pointer" title="Tutup">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+        <p class="text-xs text-gray-500 mb-4">
+            Link permanen dokumen DIP produk <b>{{ product.nama_produk }}</b> untuk dilampirkan ke portal e-registration BPOM. Dapat diakses tanpa login &amp; tanpa masa kedaluwarsa.
+        </p>
+        <div class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg p-2 mb-4">
+            <input id="bpomLinkInput" type="text" readonly value="" class="flex-1 text-xs text-gray-700 bg-transparent outline-none">
+            <button onclick="copyBpomModalUrl()" class="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3 py-2 rounded cursor-pointer flex items-center gap-1">
+                <i class="fa-solid fa-copy"></i> Copy
+            </button>
+        </div>
+        <div class="flex gap-2">
+            <a id="bpomLinkOpen" href="#" target="_blank" rel="noopener"
+               class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-3 py-2 rounded-md cursor-pointer text-center flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-up-right-from-square"></i> Buka Link
+            </a>
+            <button onclick="closeBpomModal()" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold px-3 py-2 rounded-md cursor-pointer">
+                Tutup
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== TOAST NOTIFICATION ==================== -->
+<div id="bpomToast" class="fixed bottom-6 right-6 z-[60] hidden items-center gap-2 bg-gray-900 text-white text-sm px-4 py-3 rounded-lg shadow-xl">
+    <i class="fa-solid fa-circle-check text-emerald-400"></i>
+    <span>Link Public BPOM berhasil disalin!</span>
+</div>
+
+<!-- ==================== SCRIPT PUBLIC LINK BPOM ==================== -->
+<script>
+    function bpomPublicUrl() {
+        return window.location.origin + '/dip/v/' + '{{ product.id }}';
+    }
+
+    function showBpomToast(msg) {
+        var toast = document.getElementById('bpomToast');
+        var label = toast.querySelector('span');
+        if (msg) label.textContent = msg;
+        toast.classList.remove('hidden');
+        toast.classList.add('flex');
+        clearTimeout(window.__bpomToastTimer);
+        window.__bpomToastTimer = setTimeout(function () {
+            toast.classList.add('hidden');
+            toast.classList.remove('flex');
+        }, 3000);
+    }
+
+    function copyTextToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+        // Fallback buat koneksi HTTP / browser lama
+        return new Promise(function (resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+                document.execCommand('copy');
+                resolve();
+            } catch (e) {
+                reject(e);
+            } finally {
+                document.body.removeChild(ta);
+            }
+        });
+    }
+
+    function copyBpomLink() {
+        var url = bpomPublicUrl();
+        copyTextToClipboard(url).then(function () {
+            showBpomToast('Link Public BPOM berhasil disalin!');
+            openBpomModal(url);
+        }).catch(function () {
+            showBpomToast('Gagal menyalin link, coba lagi.');
+        });
+    }
+
+    function openBpomModal(url) {
+        document.getElementById('bpomLinkInput').value = url;
+        document.getElementById('bpomLinkOpen').href = url;
+        var modal = document.getElementById('bpomLinkModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+    }
+
+    function closeBpomModal() {
+        var modal = document.getElementById('bpomLinkModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+
+    function copyBpomModalUrl() {
+        var input = document.getElementById('bpomLinkInput');
+        copyTextToClipboard(input.value).then(function () {
+            showBpomToast('Link Public BPOM berhasil disalin!');
+        }).catch(function () {
+            showBpomToast('Gagal menyalin link, coba lagi.');
+        });
+    }
+
+    // Tutup modal saat klik backdrop
+    document.getElementById('bpomLinkModal').addEventListener('click', function (e) {
+        if (e.target === this) closeBpomModal();
+    });
+    // Tutup modal dengan tombol ESC
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeBpomModal();
+    });
 </script>
 {% endblock %}

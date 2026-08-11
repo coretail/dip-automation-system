@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dokumen DIP — {{ product.nama_produk }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" type="image/png" href="/static/images/favicon.png">
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- ==================== HEADER ==================== -->
+    <header class="bg-indigo-700 text-white shadow-md">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+            <div class="flex items-center gap-4">
+                <img src="{{ company.logo }}" alt="Logo" class="h-14 w-14 object-contain bg-white rounded-lg p-1">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-widest text-indigo-200">
+                        <i class="fa-solid fa-file-shield mr-1"></i> Dokumen DIP (Data Informasi Produk)
+                    </p>
+                    <h1 class="text-xl sm:text-2xl font-bold leading-tight">{{ product.nama_produk }}</h1>
+                    <p class="text-sm text-indigo-100">{{ company.nama }}</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ==================== MAIN ==================== -->
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-8 w-full flex-1">
+
+        <!-- Info ringkas produk -->
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-8">
+            <h2 class="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">
+                <i class="fa-solid fa-circle-info text-indigo-600 mr-1.5"></i> Informasi Produk
+            </h2>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">Perusahaan</p>
+                    <p class="font-medium text-gray-800">{{ perusahaan }}</p>
+                </div>
+                {% if brand_name %}
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">Merk</p>
+                    <p class="font-medium text-gray-800">{{ brand_name }}</p>
+                </div>
+                {% endif %}
+                {% if producer_name %}
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">Produsen</p>
+                    <p class="font-medium text-gray-800">{{ producer_name }}</p>
+                </div>
+                {% endif %}
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">Sediaan</p>
+                    <p class="font-medium text-gray-800">{{ product.sediaan or '-' }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">Netto</p>
+                    <p class="font-medium text-gray-800">{{ product.netto or '-' }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">Kemasan</p>
+                    <p class="font-medium text-gray-800">{{ product.kemasan or '-' }}</p>
+                </div>
+                {% if product.nama_customer %}
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">Customer</p>
+                    <p class="font-medium text-gray-800">{{ product.nama_customer }}</p>
+                </div>
+                {% endif %}
+                {% if product.no_na_produk %}
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">No. NA Produk</p>
+                    <p class="font-medium text-gray-800">{{ product.no_na_produk }}</p>
+                </div>
+                {% endif %}
+                {% if product.status_na %}
+                <div>
+                    <p class="text-xs text-gray-400 font-medium">Status</p>
+                    {% set status_map = {'aktif': 'bg-green-100 text-green-700', 'akan_expired': 'bg-amber-100 text-amber-700', 'expired': 'bg-red-100 text-red-700', 'belum_terdaftar': 'bg-gray-100 text-gray-600'} %}
+                    <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {{ status_map.get(product.status_na, 'bg-gray-100 text-gray-600') }}">{{ product.status_na|replace('_', ' ')|capitalize }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- Kartu dokumen per Bab -->
+        <div class="grid md:grid-cols-2 gap-6">
+
+            <!-- BAB I -->
+            <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-lg font-bold text-gray-900">Bab I</h2>
+                    <span class="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-medium">Kelengkapan Administrasi</span>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">NIB, Sertifikat CPKB, Hak &amp; Lisensi Merk, Surat Tidak Pidana, dan Surat Notifikasi BPOM.</p>
+                <div class="flex gap-2 mt-auto">
+                    <a href="/dip/v/{{ product.id }}/bab1" target="_blank" class="bg-sky-600 hover:bg-sky-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-eye"></i> Preview
+                    </a>
+                    <a href="/dip/v/{{ product.id }}/bab1/download" class="bg-sky-600/90 hover:bg-sky-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> Download PDF
+                    </a>
+                </div>
+            </section>
+
+            <!-- BAB II -->
+            <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-lg font-bold text-gray-900">Bab II</h2>
+                    <span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Data Mutu &amp; Keamanan Bahan</span>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">Spesifikasi, CoA, Sertifikat Halal, dan MSDS per bahan baku, plus checklist SOP CPKB.</p>
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <a href="/dip/v/{{ product.id }}/bab2" target="_blank" class="bg-amber-600 hover:bg-amber-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-eye"></i> Preview PDF
+                    </a>
+                    <a href="/dip/v/{{ product.id }}/bab2/download" class="bg-amber-600/90 hover:bg-amber-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> Download PDF
+                    </a>
+                    <a href="/dip/v/{{ product.id }}/bab2/zip" class="bg-amber-800 hover:bg-amber-900 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-folder-tree"></i> Folder (ZIP)
+                    </a>
+                </div>
+
+                <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
+                    <i class="fa-solid fa-folder-open text-amber-600 mr-1"></i> File per Bahan Baku
+                </h3>
+                {% if bab2_materials %}
+                <div class="border border-gray-200 rounded-lg divide-y divide-gray-100 overflow-hidden">
+                    {% for m in bab2_materials %}
+                    <details class="group">
+                        <summary class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-50 list-none">
+                            <span class="flex items-center gap-2 text-sm font-medium text-gray-800">
+                                <i class="fa-solid fa-flask text-gray-400"></i> {{ m.nama }}
+                                {% if m.kode and m.kode != '-' %}
+                                <span class="text-xs text-gray-400 font-normal">({{ m.kode }})</span>
+                                {% endif %}
+                            </span>
+                            <span class="flex items-center gap-1.5">
+                                <span class="text-xs text-gray-400">{{ m.files|length }} file</span>
+                                <i class="fa-solid fa-chevron-down text-gray-400 text-xs group-open:rotate-180 transition-transform"></i>
+                            </span>
+                        </summary>
+                        <ul class="px-3 pb-3 space-y-1">
+                            {% for f in m.files %}
+                            <li class="flex items-center justify-between gap-2 text-sm py-0.5">
+                                <span class="flex items-center gap-2 text-gray-600 min-w-0">
+                                    <i class="fa-solid {{ f.icon }} text-gray-400"></i>
+                                    <span class="truncate">{{ f.label }}</span>
+                                </span>
+                                <a href="{{ f.url }}" target="_blank" rel="noopener"
+                                   class="shrink-0 text-indigo-600 hover:text-indigo-800 hover:underline font-medium text-xs flex items-center gap-1">
+                                    <i class="fa-solid fa-up-right-from-square"></i> Buka
+                                </a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <i class="fa-solid fa-triangle-exclamation mr-1"></i> Belum ada file bahan baku yang tersedia untuk ditampilkan.
+                </p>
+                {% endif %}
+            </section>
+
+            <!-- BAB III -->
+            <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-lg font-bold text-gray-900">Bab III</h2>
+                    <span class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Cara Pembuatan &amp; Mutu Produk Jadi</span>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">Cara pembuatan, protap/SOP batch, CoA produk jadi, spek kemasan, hasil uji lab, dan stabilitas.</p>
+                <div class="flex gap-2 mt-auto">
+                    <a href="/dip/v/{{ product.id }}/bab3" target="_blank" class="bg-purple-600 hover:bg-purple-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-eye"></i> Preview
+                    </a>
+                    <a href="/dip/v/{{ product.id }}/bab3/download" class="bg-purple-600/90 hover:bg-purple-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> Download PDF
+                    </a>
+                </div>
+            </section>
+
+            <!-- BAB IV -->
+            <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-lg font-bold text-gray-900">Bab IV</h2>
+                    <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">Safety Assessment</span>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">Safety assessment, CV assessor, monitoring efek samping, data klaim, dan desain kemasan.</p>
+                <div class="flex gap-2 mt-auto">
+                    <a href="/dip/v/{{ product.id }}/bab4" target="_blank" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-eye"></i> Preview
+                    </a>
+                    <a href="/dip/v/{{ product.id }}/bab4/download" class="bg-emerald-600/90 hover:bg-emerald-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> Download PDF
+                    </a>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- ==================== FOOTER ==================== -->
+    <footer class="bg-white border-t border-gray-200 mt-auto">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-gray-400">
+            <p class="flex items-center gap-1.5">
+                <i class="fa-solid fa-infinity text-indigo-400"></i>
+                Link permanen — tidak memiliki masa kedaluwarsa (untuk verifikasi BPOM).
+            </p>
+            <p>Di-generate otomatis pada {{ tanggal_generate }}</p>
+        </div>
+    </footer>
+
+</body>
+</html>
