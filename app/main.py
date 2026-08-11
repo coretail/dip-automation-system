@@ -1026,7 +1026,8 @@ async def add_product(
 async def save_product_formula(
     product_id: str,
     raw_material_id: List[str] = Form(None),
-    percentage: List[float] = Form(None)
+    percentage: List[float] = Form(None),
+    current_user: dict = Depends(get_current_user)
 ):
     supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
 
@@ -2173,7 +2174,8 @@ async def create_sample_submission(
     rd_signer: str = Form(...),
     ph_value: str = Form(None),
     viscosity_value: str = Form(None),
-    color_value: str = Form(None)
+    color_value: str = Form(None),
+    current_user: dict = Depends(get_current_user)
 ):
     final_product_id = None if not product_id else product_id
     if final_product_id:
@@ -2312,7 +2314,8 @@ async def update_sample_submission(
     rd_signer: str = Form(...),
     ph_value: str = Form(None),
     viscosity_value: str = Form(None),
-    color_value: str = Form(None)
+    color_value: str = Form(None),
+    current_user: dict = Depends(get_current_user)
 ):
     # 1. Ambil data lama buat nemuin suffix /TGL/X.Y aslinya
     try:
