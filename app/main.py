@@ -2016,6 +2016,64 @@ def _storage_signed_url(public_url: str, expires_in: int = 3600):
         return public_url
 
 
+def _client_ip(request: Request) -> str:
+    """Ekstrak alamat IP client.
+    Prioritas: X-Forwarded-For (saat app di belakang proxy seperti Render/nginx)
+    -> X-Real-IP -> request.client.host (IP langsung)."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else "-"
+
+
+def _audit_public_link(product_id: str, ip_address: str, user_agent: str):
+    """Catat setiap akses ke public link DIP (/dip/v/:uuid).
+    Field: product_id, visited_at (timestamp), ip_address, user_agent.
+    1) Simpan ke tabel khusus public_link_audits (lihat app/sql/public_link_audits.sql).
+    2) Fallback ke activity_logs kalau tabel khusus belum dibuat, biar tidak ada akses yang hilang.
+    Kegagalan logging TIDAK pernah mengganggu halaman (diamankan try/except)."""
+    # 1. Cetak ke terminal supaya terpantau realtime
+    now_str = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
+    print("\n" + "=" * 60)
+    print(f"🔗 [PUBLIC LINK OPENED] | {now_str}")
+    print(f"   • Product   : {product_id}")
+    print(f"   • IP        : {ip_address}")
+    print(f"   • User-Agent: {(user_agent or '-')[:120]}")
+    print("=" * 60)
+
+    # 2. Simpan ke tabel audit khusus (public_link_audits)
+    try:
+        supabase.table("public_link_audits").insert({
+            "product_id": product_id,
+            "visited_at": datetime.now(ZoneInfo("UTC")).isoformat(),
+            "ip_address": ip_address,
+            "user_agent": (user_agent or "-")[:500],
+        }).execute()
+        return
+    except Exception as e:
+        print(f"[AUDIT PUBLIC LINK] Gagal simpan ke public_link_audits: {e}")
+
+    # 3. Fallback: simpan ke activity_logs (tabel lama) biar akses tetap tercatat
+    try:
+        supabase.table("activity_logs").insert({
+            "actor_id": None,
+            "actor_name": "System",
+            "action": "public_link_visit",
+            "entity_type": "product",
+            "entity_id": product_id,
+            "entity_label": "Public link DIP dibuka",
+            "changes": [
+                {"field": "ip_address", "note": ip_address},
+                {"field": "user_agent", "note": (user_agent or "-")[:500]},
+            ],
+        }).execute()
+    except Exception as e:
+        print(f"[AUDIT PUBLIC LINK] Gagal simpan ke activity_logs: {e}")
+
+
 @app.get("/dip/v/{product_id}", response_class=HTMLResponse)
 async def dip_public_hub(request: Request, product_id: str):
     """Landing page/hub publik khusus verifikator BPOM untuk 1 produk."""
@@ -2031,6 +2089,13 @@ async def dip_public_hub(request: Request, product_id: str):
         product = None
     if not product:
         raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+
+    # Audit log: catat setiap kali public link dibuka (product_id, timestamp, IP, user-agent)
+    _audit_public_link(
+        product_id=product_id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent") or "-",
+    )
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
     company = get_company_info(perusahaan)
