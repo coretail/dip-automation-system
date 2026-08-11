@@ -2032,7 +2032,7 @@ def _client_ip(request: Request) -> str:
 def _audit_public_link(product_id: str, ip_address: str, user_agent: str):
     """Catat setiap akses ke public link DIP (/dip/v/:uuid).
     Field: product_id, visited_at (timestamp), ip_address, user_agent.
-    1) Simpan ke tabel khusus public_link_audits (lihat app/sql/public_link_audits.sql).
+    1) Simpan ke tabel khusus public_link_audits (sudah dibuat di Supabase).
     2) Fallback ke activity_logs kalau tabel khusus belum dibuat, biar tidak ada akses yang hilang.
     Kegagalan logging TIDAK pernah mengganggu halaman (diamankan try/except)."""
     # 1. Cetak ke terminal supaya terpantau realtime
