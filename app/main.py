@@ -32,7 +32,6 @@ except Exception:
 # Zona waktu bisnis (WIB) — dipakai buat semua logika berbasis "hari ini"
 # (kode FSP, hitungan revisi) biar gak geser gara-gara server jalan di UTC.
 WIB = ZoneInfo("Asia/Jakarta")
-import uuid
 
 def _extract_jwt_email(token: str):
     """Best-effort baca email/sub dari payload JWT (buat log doang, tanpa validasi signature)."""
@@ -282,9 +281,6 @@ async def login_page(request: Request, warning: str = None, error: str = None):
     )
 
 # ================= 2. ROUTE PROSES LOGIN (POST) =================
-from supabase import create_client
-import os
-
 @app.post("/login")
 async def login_submit(
     response: Response,
@@ -328,7 +324,7 @@ async def login_submit(
         user_data = auth_response.user
         waktu_login = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
         print("\n" + "="*50)
-        print(f"🔑 [LOGIN SUCCESS]")
+        print("🔑 [LOGIN SUCCESS]")
         print(f"   • User ID : {user_data.id}")
         print(f"   • Email   : {user_data.email}")
         print(f"   • Waktu   : {waktu_login}")
@@ -365,15 +361,12 @@ async def logout(request: Request):
     except Exception:
         email_log = "-"
     print("\n" + "="*50)
-    print(f"🚪 [LOGOUT]")
+    print("🚪 [LOGOUT]")
     print(f"   • User  : {email_log}")
     print(f"   • Waktu : {waktu_logout}")
     print("="*50 + "\n")
 
     return response
-
-from fastapi import HTTPException, Request, status
-from fastapi.responses import RedirectResponse
 
 @app.exception_handler(HTTPException)
 async def custom_http_exception_handler(request: Request, exc: HTTPException):
@@ -406,7 +399,15 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
 
 @app.get("/products/{product_id}", response_class=HTMLResponse)
 async def product_detail(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
-    prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    try:
+        prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not prod_resp.data:
+        return RedirectResponse(url="/", status_code=303)
     
     formula_resp = supabase.table("product_formula_lines") \
         .select("*, raw_materials(nama_dagang, kode_bahan_baku)") \
@@ -2295,8 +2296,11 @@ async def update_sample_submission(
     color_value: str = Form(None)
 ):
     # 1. Ambil data lama buat nemuin suffix /TGL/X.Y aslinya
-    sub_resp = supabase.table("sample_submissions").select("sample_code").eq("id", submission_id).single().execute()
-    old_code = sub_resp.data.get("sample_code", "FSP/01-01-2026/1.1") if sub_resp.data else "FSP/01-01-2026/1.1"
+    try:
+        sub_resp = supabase.table("sample_submissions").select("sample_code").eq("id", submission_id).single().execute()
+        old_code = sub_resp.data.get("sample_code", "FSP/01-01-2026/1.1") if sub_resp.data else "FSP/01-01-2026/1.1"
+    except Exception:
+        raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan")
 
     prefix_clean = sample_prefix.strip().upper() if sample_prefix and sample_prefix.strip() else "FSP"
 
@@ -2311,8 +2315,18 @@ async def update_sample_submission(
     final_product_name = product_name
     final_company = company
 
+    # AUTO-SAVE BRAND BARU saat edit, supaya konsisten dgn create:
+    # kalau user pilih "New", produsen & merk langsung dibuat/diambil di DB
     if brand_id == "new":
-        final_brand_id, draft_prod, draft_brnd = None, custom_producer, custom_brand
+        try:
+            prod_check = supabase.table("producers").select("id").ilike("name", custom_producer.strip()).execute()
+            producer_id = prod_check.data[0]['id'] if prod_check.data else supabase.table("producers").insert({"name": custom_producer.strip()}).execute().data[0]['id']
+
+            brand_check = supabase.table("brands").select("id").eq("producer_id", producer_id).ilike("name", custom_brand.strip()).execute()
+            final_brand_id = brand_check.data[0]['id'] if brand_check.data else supabase.table("brands").insert({"producer_id": producer_id, "name": custom_brand.strip()}).execute().data[0]['id']
+            draft_prod, draft_brnd = custom_producer, custom_brand
+        except Exception:
+            final_brand_id, draft_prod, draft_brnd = None, custom_producer, custom_brand
     else:
         final_brand_id, draft_prod, draft_brnd = brand_id, None, None
 
@@ -2600,7 +2614,9 @@ async def admin_create_user(
             "id": new_uid,
             "full_name": clean_username,
             "role": role if role in ("staff", "admin") else "staff",
-            "updated_at": "now()"
+            # Jangan pakai string "now()" (PostgREST simpan sebagai literal & bisa gagal cast ke timestamptz).
+            # Kirim timestamp ISO nyata dari Python.
+            "updated_at": datetime.now(WIB).isoformat()
         }).execute()
 
         return RedirectResponse(url="/admin/users?status=create_success", status_code=303)
@@ -2660,7 +2676,8 @@ async def update_user_role(
         
     try:
         # Update kolom role di tabel profiles berdasarkan UUID user yang dipilih
-        supabase.table("profiles").update({"role": new_role, "updated_at": "now()"}).eq("id", target_uid).execute()
+        # (updated_at pakai timestamp ISO asli, bukan string "now()" biar gak gagal cast di PostgREST)
+        supabase.table("profiles").update({"role": new_role, "updated_at": datetime.now(WIB).isoformat()}).eq("id", target_uid).execute()
         return RedirectResponse(url="/admin/users?status=update_success", status_code=303)
     except Exception as e:
         print(f"Gagal update role: {e}")

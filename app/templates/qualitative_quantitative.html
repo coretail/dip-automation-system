@@ -62,7 +62,7 @@
         <div>
             <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
             <p class="letterhead-line text-xs text-gray-600">{{ company.alamat }}</p>
-            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email }} &nbsp; Website: {{ company.website }}</p>
+            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email or '-' }} &nbsp; Website: {{ company.website or '-' }}</p>
         </div>
     </div>
 
@@ -199,7 +199,7 @@
         <div>
             <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
             <p class="letterhead-line text-xs text-gray-600">{{ company.alamat }}</p>
-            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email }} &nbsp; Website: {{ company.website }}</p>
+            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email or '-' }} &nbsp; Website: {{ company.website or '-' }}</p>
         </div>
     </div>
 
