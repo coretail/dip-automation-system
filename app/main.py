@@ -53,7 +53,7 @@ def _add_years(d: date, years: int) -> date:
 
 def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
     """
-    Hitung status NA otomatis dari tanggal_aktif_na (NA BPOM berlaku 5 tahun sejak
+    Hitung status NA otomatis dari tanggal_aktif_na (NA BPOM berlaku 3 tahun sejak
     tanggal aktif). Kalau tanggal_aktif_na belum diisi, tetap pakai status manual
     yang lama (fallback_status) -- ini yang nutup kasus 'belum_terdaftar'.
     """
@@ -68,7 +68,7 @@ def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
     except Exception:
         return fallback_status
 
-    expired_date = _add_years(start, 5)
+    expired_date = _add_years(start, 3)
     today = datetime.now(WIB).date()
     warning_date = expired_date - timedelta(days=180)  # ~6 bulan sebelum expired
 
