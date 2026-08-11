@@ -3,6 +3,38 @@
 {% block title %}Edit Info Produk - {{ product.nama_produk }}{% endblock %}
 
 {% block content %}
+{% macro pdf_upload_card(label, field_name, file_url, desc='') %}
+<div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+    <div class="flex items-center justify-between mb-2 gap-2">
+        <label class="block text-sm font-semibold text-gray-900">{{ label }}</label>
+        {% if file_url %}
+        <span class="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">
+            <i class="fa-solid fa-circle-check"></i> PDF terisi
+        </span>
+        {% else %}
+        <span class="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">
+            <i class="fa-solid fa-circle-exclamation"></i> PDF belum terisi
+        </span>
+        {% endif %}
+    </div>
+    {% if desc %}<p class="text-xs text-gray-500 mb-2">{{ desc }}</p>{% endif %}
+
+    {% if file_url %}
+    <div class="bg-white border border-gray-200 rounded-md mb-2 overflow-hidden">
+        <iframe src="{{ file_url }}" class="w-full h-64 border-0" title="Preview {{ label }}"></iframe>
+    </div>
+    <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> Buka PDF di tab baru</a></p>
+    {% else %}
+    <div class="w-full h-40 border-2 border-dashed border-gray-300 rounded-md bg-white flex flex-col items-center justify-center text-gray-400 mb-2">
+        <i class="fa-regular fa-file-pdf text-3xl mb-1.5"></i>
+        <p class="text-xs font-medium">Belum ada PDF terupload</p>
+        <p class="text-[11px]">Upload file PDF di bawah untuk preview</p>
+    </div>
+    {% endif %}
+
+    <input type="file" name="{{ field_name }}" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+</div>
+{% endmacro %}
 <div class="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-xs border border-gray-200">
     <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
         <div>
@@ -10,10 +42,10 @@
             <p class="text-xs text-gray-500">Kelola meta data dan kelengkapan dokumen DIP (Bab 1 s/d Bab 4)</p>
         </div>
         <div class="flex gap-2">
-            <a href="/products/{{ product.id }}/bab3/download" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+            <a href="/products/{{ product.id }}/bab3/preview" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
                 <i class="fa-solid fa-file-pdf"></i> Preview Bab 3
             </a>
-            <a href="/products/{{ product.id }}/bab4/download" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700">
+            <a href="/products/{{ product.id }}/bab4/preview" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700">
                 <i class="fa-solid fa-file-pdf"></i> Preview Bab 4
             </a>
         </div>
@@ -149,108 +181,27 @@
 
         <!-- ================= TAB 2: DOKUMEN BAB 1 ================= -->
         <div id="tab-bab1" class="edit-tab-content hidden space-y-4">
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">Surat No. Notifikasi BPOM (DIP Bab 1)</label>
-                {% if product.no_notifikasi_file_url %}
-                <p class="text-xs text-emerald-600 font-semibold mb-2">
-                    <i class="fa-solid fa-circle-check mr-1"></i>
-                    <a href="{{ product.no_notifikasi_file_url }}" target="_blank" class="hover:underline">File terdaftar - Lihat PDF</a>
-                </p>
-                {% endif %}
-                <input type="file" name="no_notifikasi_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
+            {{ pdf_upload_card('Surat No. Notifikasi BPOM (DIP Bab 1)', 'no_notifikasi_file', product.no_notifikasi_file_url) }}
         </div>
 
         <!-- ================= TAB 3: DOKUMEN BAB 3 ================= -->
         <div id="tab-bab3" class="edit-tab-content hidden space-y-4">
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">2. Ringkasan Cara Pembuatan Kosmetik</label>
-                {% if product.cara_pembuatan_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.cara_pembuatan_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
-                <input type="file" name="cara_pembuatan_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">4. Sistem Penomoran Batch Spesifik</label>
-                {% if product.sistem_penomoran_batch_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.sistem_penomoran_batch_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
-                <input type="file" name="sistem_penomoran_batch_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">5. Spesifikasi Produk Jadi</label>
-                {% if product.spek_produk_jadi_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.spek_produk_jadi_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
-                <input type="file" name="spek_produk_jadi_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">6. Spesifikasi Bahan Pengemas</label>
-                {% if product.spek_pengemas_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.spek_pengemas_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
-                <input type="file" name="spek_pengemas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">7. Laporan Hasil Uji Lab Eksternal / SIG</label>
-                {% if product.laporan_uji_sig_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.laporan_uji_sig_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
-                <input type="file" name="laporan_uji_sig_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">9. Protokol Pemantauan Stabilitas</label>
-                {% if product.protokol_stabilitas_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.protokol_stabilitas_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
-                <input type="file" name="protokol_stabilitas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">10. Hasil Studi Stabilitas</label>
-                {% if product.hasil_stabilitas_file_url %}<p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.hasil_stabilitas_file_url }}" target="_blank" class="hover:underline">File terdaftar</a></p>{% endif %}
-                <input type="file" name="hasil_stabilitas_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
+            {{ pdf_upload_card('2. Ringkasan Cara Pembuatan Kosmetik', 'cara_pembuatan_file', product.cara_pembuatan_file_url) }}
+            {{ pdf_upload_card('4. Sistem Penomoran Batch Spesifik', 'sistem_penomoran_batch_file', product.sistem_penomoran_batch_file_url) }}
+            {{ pdf_upload_card('5. Spesifikasi Produk Jadi', 'spek_produk_jadi_file', product.spek_produk_jadi_file_url) }}
+            {{ pdf_upload_card('6. Spesifikasi Bahan Pengemas', 'spek_pengemas_file', product.spek_pengemas_file_url) }}
+            {{ pdf_upload_card('7. Laporan Hasil Uji Lab Eksternal / SIG', 'laporan_uji_sig_file', product.laporan_uji_sig_file_url) }}
+            {{ pdf_upload_card('9. Protokol Pemantauan Stabilitas', 'protokol_stabilitas_file', product.protokol_stabilitas_file_url) }}
+            {{ pdf_upload_card('10. Hasil Studi Stabilitas', 'hasil_stabilitas_file', product.hasil_stabilitas_file_url) }}
         </div>
 
         <!-- TAB 4: DOKUMEN BAB 4 (KEAMANAN & KLAIM) -->
         <div id="tab-bab4" class="edit-tab-content hidden space-y-4">
-            <!-- 1. Safety Assessment -->
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">1. Laporan Penilaian Keamanan Kosmetik (Safety Assessment)</label>
-                <p class="text-xs text-gray-500 mb-2">Dokumen evaluasi & penilaian keamanan produk dari Qualified Safety Assessor.</p>
-                {% if product.laporan_keamanan_file_url %}
-                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.laporan_keamanan_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
-                {% endif %}
-                <input type="file" name="laporan_keamanan_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-
-            <!-- 3. Monitoring Efek Samping (PER PRODUK) -->
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">3. Laporan / Data Monitoring Efek Samping (Cosmetovigilance)</label>
-                <p class="text-xs text-gray-500 mb-2">Catatan/rekapan evaluasi efek tidak diinginkan khusus untuk produk ini.</p>
-                {% if product.monitoring_efek_samping_file_url %}
-                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.monitoring_efek_samping_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
-                {% endif %}
-                <input type="file" name="monitoring_efek_samping_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-
-            <!-- 4. Data Klaim -->
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">4. Data Pendukung Klaim Kosmetik (Claim Substantiation)</label>
-                <p class="text-xs text-gray-500 mb-2">Dokumen bukti klaim (Uji Klinis, Dermatologically Tested, Patch Test, Jurnal Efikasi).</p>
-                {% if product.data_klaim_file_url %}
-                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.data_klaim_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
-                {% endif %}
-                <input type="file" name="data_klaim_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-
-            <!-- 5a. Desain Kemasan Primer -->
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">5a. Desain Kemasan Primer (Penandaan)</label>
-                <p class="text-xs text-gray-500 mb-2">Layout/Desain cetak fisik kemasan primer (botol/jar/tube).</p>
-                {% if product.desain_primer_file_url %}
-                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.desain_primer_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
-                {% endif %}
-                <input type="file" name="desain_primer_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
-
-            <!-- 5b. Desain Kemasan Sekunder -->
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <label class="block text-sm font-semibold text-gray-900 mb-1">5b. Desain Kemasan Sekunder (Penandaan)</label>
-                <p class="text-xs text-gray-500 mb-2">Layout/Desain cetak fisik kemasan luar (Dus/Box).</p>
-                {% if product.desain_sekunder_file_url %}
-                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="{{ product.desain_sekunder_file_url }}" target="_blank" class="hover:underline"><i class="fa-solid fa-circle-check mr-1"></i> File terdaftar - Lihat PDF</a></p>
-                {% endif %}
-                <input type="file" name="desain_sekunder_file" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
-            </div>
+            {{ pdf_upload_card('1. Laporan Penilaian Keamanan Kosmetik (Safety Assessment)', 'laporan_keamanan_file', product.laporan_keamanan_file_url, 'Dokumen evaluasi & penilaian keamanan produk dari Qualified Safety Assessor.') }}
+            {{ pdf_upload_card('3. Laporan / Data Monitoring Efek Samping (Cosmetovigilance)', 'monitoring_efek_samping_file', product.monitoring_efek_samping_file_url, 'Catatan/rekapan evaluasi efek tidak diinginkan khusus untuk produk ini.') }}
+            {{ pdf_upload_card('4. Data Pendukung Klaim Kosmetik (Claim Substantiation)', 'data_klaim_file', product.data_klaim_file_url, 'Dokumen bukti klaim (Uji Klinis, Dermatologically Tested, Patch Test, Jurnal Efikasi).') }}
+            {{ pdf_upload_card('5a. Desain Kemasan Primer (Penandaan)', 'desain_primer_file', product.desain_primer_file_url, 'Layout/Desain cetak fisik kemasan primer (botol/jar/tube).') }}
+            {{ pdf_upload_card('5b. Desain Kemasan Sekunder (Penandaan)', 'desain_sekunder_file', product.desain_sekunder_file_url, 'Layout/Desain cetak fisik kemasan luar (Dus/Box).') }}
         </div>
 
         <!-- BUTTON ACTION -->

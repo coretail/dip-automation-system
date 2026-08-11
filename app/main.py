@@ -1803,6 +1803,16 @@ async def download_dip_bab3(
         headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
     )
 
+
+@app.get("/products/{product_id}/bab3/preview")
+async def preview_dip_bab3(product_id: str, current_user: dict = Depends(get_current_user)):
+    # Preview Bab 3: generate PDF yang sama persis dengan /bab3/download, tapi disajikan
+    # inline (browser menampilkan preview di tab baru) -- bukan force-download.
+    resp = await download_dip_bab3(product_id, current_user)
+    resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
+    return resp
+
+
 @app.get("/products/{product_id}/bab4/download")
 async def download_dip_bab4(
     product_id: str,
@@ -1944,6 +1954,15 @@ async def download_dip_bab4(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
     )
+
+
+@app.get("/products/{product_id}/bab4/preview")
+async def preview_dip_bab4(product_id: str, current_user: dict = Depends(get_current_user)):
+    # Preview Bab 4: generate PDF yang sama persis dengan /bab4/download, tapi disajikan
+    # inline (browser menampilkan preview di tab baru) -- bukan force-download.
+    resp = await download_dip_bab4(product_id, current_user)
+    resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
+    return resp
 
 # 1. Halaman Form Edit Produk
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
