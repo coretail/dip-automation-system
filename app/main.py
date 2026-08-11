@@ -424,64 +424,6 @@ async def product_detail(request: Request, product_id: str, current_user: dict =
         }
     )
 
-@app.get("/products/{product_id}/report", response_class=HTMLResponse)
-async def ingredient_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
-    prod_resp = supabase.table("products").select("nama_produk, no_na_produk").eq("id", product_id).single().execute()
-    report_resp = supabase.table("view_ingredient_reports").select("*").eq("product_id", product_id).execute()
-    
-    return templates.TemplateResponse(
-        request=request,
-        name="ingredient_report.html", 
-        context={"product": prod_resp.data, "ingredients": report_resp.data}
-    )
-
-@app.get("/products/{product_id}/bab3", response_class=HTMLResponse)
-async def product_bab3_detail(
-    request: Request,
-    product_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    # 1. Ambil data produk
-    prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).single().execute()
-    product = prod_resp.data
-    
-    if not product:
-        raise HTTPException(status_code=404, detail="Produk kagak ketemu men!")
-    
-    perusahaan = product.get("perusahaan", "PT Erfi")
-
-    # 2. Ambil dokumen SOP Master Perusahaan (Poin 3 & Poin 8)
-    sop_resp = supabase.table("company_sop_documents").select("*").eq("perusahaan", perusahaan).execute()
-    company_sop = sop_resp.data[0] if sop_resp.data else {}
-
-    # 3. Ambil riwayat batch produk jadi (Poin 5)
-    batches_resp = supabase.table("product_batches").select("*").eq("product_id", product_id).order("created_at", desc=True).execute()
-    batches = batches_resp.data if batches_resp.data else []
-
-    # 4. Ambil pesan notifikasi dari cookie
-    success_msg = request.cookies.get("success_msg")
-    error_msg = request.cookies.get("error_msg")
-
-    response = templates.TemplateResponse(
-        "product_detail.html",
-        {
-            "request": request,
-            "product": product,
-            "company_sop": company_sop,
-            "batches": batches,
-            "current_user": current_user,
-            "success_msg": success_msg,
-            "error_msg": error_msg
-        }
-    )
-    
-    if success_msg:
-        response.delete_cookie("success_msg")
-    if error_msg:
-        response.delete_cookie("error_msg")
-        
-    return response
-
 @app.get("/raw-materials", response_class=HTMLResponse)
 async def raw_materials_page(request: Request, current_user: dict = Depends(get_current_user)):
     rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*), raw_material_company_docs(*)").order("nama_dagang").execute()
@@ -976,6 +918,57 @@ async def add_material_batch(
 
     # Redirect balik ke halaman utama bahan baku
     return RedirectResponse(url="/raw-materials", status_code=303)
+
+@app.post("/raw-materials/cpkb/update")
+async def update_cpkb_document(
+    request: Request,
+    perusahaan: str = Form(...),
+    cpkb_file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    # Validasi perusahaan (hanya 2 PT yang didukung di app ini)
+    if perusahaan not in ("PT Erfi", "PT Heka"):
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", "Perusahaan tidak valid.")
+        return response
+
+    if not cpkb_file or not cpkb_file.filename:
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", "File dokumen SOP CPKB wajib dipilih.")
+        return response
+
+    try:
+        file_bytes = await cpkb_file.read()
+        company_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
+        path = f"sop-cpkb/sop_cpkb_{company_slug}.pdf"
+
+        # Upload (overwrite in-place) ke bucket raw-material-docs
+        supabase.storage.from_("raw-material-docs").upload(
+            path=path,
+            file=file_bytes,
+            file_options={"content-type": "application/pdf", "upsert": "true"}
+        )
+        file_url = supabase.storage.from_("raw-material-docs").get_public_url(path)
+
+        # Upsert 1 baris per perusahaan di tabel cpkb_raw_material (dibaca generator Bab II)
+        existing = supabase.table("cpkb_raw_material") \
+            .select("id").eq("perusahaan", perusahaan).limit(1).execute()
+        if existing.data:
+            supabase.table("cpkb_raw_material").update({"file_url": file_url}).eq("perusahaan", perusahaan).execute()
+        else:
+            supabase.table("cpkb_raw_material").insert({"perusahaan": perusahaan, "file_url": file_url}).execute()
+
+        log_activity(current_user, "update", "cpkb_raw_material", perusahaan, f"SOP CPKB {perusahaan}")
+
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("success_msg", f"SOP CPKB {perusahaan} berhasil diperbarui.")
+        return response
+
+    except Exception as e:
+        print(f"Gagal update SOP CPKB ({perusahaan}): {e}")
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", "Gagal upload SOP CPKB. Coba lagi.")
+        return response
 
 @app.post("/products/add")
 async def add_product(

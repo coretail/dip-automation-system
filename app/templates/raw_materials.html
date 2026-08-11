@@ -734,7 +734,8 @@ function resetCompanyDocFields() {
 }
 
 function toggleModal(show) {
-    document.getElementById('crud-modal').classList.toggle('hidden', !show);
+    const modal = document.getElementById('crud-modal');
+    modal.classList.toggle('hidden', !show);
     if (show) {
         modal.querySelector('h3').innerText = "Tambah Master Bahan Baku";
         modal.querySelector('form').action = "/raw-materials/add";
