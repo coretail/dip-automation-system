@@ -158,8 +158,8 @@
                     data-customer="{{ (product.nama_customer or '') | lower }}" 
                     data-perusahaan="{{ product.perusahaan or '' }}" 
                     data-status="{{ product.status_na or '' }}">
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-bold text-gray-900 uppercase max-w-[240px] line-clamp-2" title="{{ product.nama_produk or 'TANPA NAMA' }}">{{ product.nama_produk or 'TANPA NAMA' }}</div>
+                    <td class="px-6 py-4 whitespace-normal">
+                        <div class="text-sm font-bold text-gray-900 uppercase max-w-[240px] whitespace-normal break-words line-clamp-2" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" title="{{ product.nama_produk or 'TANPA NAMA' }}">{{ product.nama_produk or 'TANPA NAMA' }}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ product.nama_customer or '-' }}</div>
@@ -257,7 +257,7 @@
                         data-brand="{{ (p.brands.name if p.brands else '') | lower }}">
                         <!-- Nama Produk & Brand -->
                         <td class="px-4 py-3">
-                            <div class="font-bold text-gray-900 truncate max-w-[220px]" title="{{ p.nama_produk }}">{{ p.nama_produk }}</div>
+                            <div class="font-bold text-gray-900 max-w-[220px] whitespace-normal break-words line-clamp-2" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" title="{{ p.nama_produk }}">{{ p.nama_produk }}</div>
                             <div class="text-xs text-gray-500 truncate max-w-[220px]" title="{{ p.brands.name if p.brands else '-' }} ({{ p.perusahaan or '-' }})">
                                 {{ p.brands.name if p.brands else '-' }} ({{ p.perusahaan or '-' }})
                             </div>
