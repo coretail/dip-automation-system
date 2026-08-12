@@ -159,8 +159,7 @@
                     data-perusahaan="{{ product.perusahaan or '' }}" 
                     data-status="{{ product.status_na or '' }}">
                     <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-bold text-gray-900 uppercase truncate max-w-[240px]" title="{{ product.nama_produk or 'TANPA NAMA' }}">{{ product.nama_produk or 'TANPA NAMA' }}</div>
-                        <div class="text-xs text-gray-400 font-mono truncate max-w-[240px]" title="ID: {{ product.id or '-' }}">{{ product.id[:8] if product.id else '-' }}...</div>
+                        <div class="text-sm font-bold text-gray-900 uppercase max-w-[240px] line-clamp-2" title="{{ product.nama_produk or 'TANPA NAMA' }}">{{ product.nama_produk or 'TANPA NAMA' }}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ product.nama_customer or '-' }}</div>
