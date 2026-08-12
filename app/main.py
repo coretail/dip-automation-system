@@ -120,6 +120,29 @@ def get_company_info(perusahaan_key: str) -> dict:
         return COMPANY_INFO["PT Erfi"]
     return COMPANY_INFO.get(perusahaan_key, COMPANY_INFO["PT Erfi"])
 
+def _logo_render_width(uri: str, target_height_px: int = 60) -> int:
+    """Lebar (px) logo saat dirender dengan tinggi target_height_px.
+
+    Dipakai buat nyetel lebar kolom logo di kop surat Bab III sesuai proporsi
+    asli tiap perusahaan (logo Erfi lebar/lanskap, logo Heka potret/tinggi),
+    supaya jarak antara logo dan teks perusahaan tetap rapat & konsisten
+    tanpa perlu hardcode lebar cell.
+    """
+    try:
+        if not uri or not uri.startswith("/static/"):
+            return target_height_px
+        local_path = os.path.join("app", uri.lstrip("/").replace("/", os.sep))
+        if not os.path.exists(local_path):
+            return target_height_px
+        from PIL import Image
+        w, h = Image.open(local_path).size
+        if h <= 0:
+            return target_height_px
+        return round(w * target_height_px / h)
+    except Exception as e:
+        print(f"[KOP SURAT] Gagal hitung lebar logo {uri}: {e}")
+        return target_height_px
+
 def _pdf_link_callback(uri: str, rel: str) -> str:
     """link_callback untuk pisa.CreatePDF: resolve path /static/... ke file lokal.
 
@@ -1787,7 +1810,7 @@ async def download_dip_bab3(
     rendered_html = template.render({
         "product": product,
         "perusahaan": perusahaan,
-        "company": company,
+        "company": {**company, "logo_width": _logo_render_width(company.get("logo"))},
         "company_sop": company_sop,
         "latest_batch": latest_batch,
         "processed_formula": processed_formula
