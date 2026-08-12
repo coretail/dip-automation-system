@@ -14,6 +14,7 @@ import re
 import json
 import base64
 import sys
+import tempfile
 import zipfile
 import httpx
 from xhtml2pdf import pisa
@@ -118,6 +119,33 @@ def get_company_info(perusahaan_key: str) -> dict:
     if not perusahaan_key:
         return COMPANY_INFO["PT Erfi"]
     return COMPANY_INFO.get(perusahaan_key, COMPANY_INFO["PT Erfi"])
+
+def _pdf_link_callback(uri: str, rel: str) -> str:
+    """link_callback untuk pisa.CreatePDF: resolve path /static/... ke file lokal.
+
+    PNG transparan (RGBA/LA/P) di-flatten ke background putih dulu karena
+    xhtml2pdf sering merender PNG RGBA dengan background hitam.
+    """
+    if not uri.startswith("/static/"):
+        return uri
+    local_path = os.path.join("app", uri.lstrip("/").replace("/", os.sep))
+    if not os.path.exists(local_path):
+        return local_path
+    try:
+        from PIL import Image
+        img = Image.open(local_path)
+        if img.mode in ("RGBA", "LA", "P"):
+            if img.mode != "RGBA":
+                img = img.convert("RGBA")
+            alpha = img.split()[-1]
+            canvas = Image.new("RGB", img.size, (255, 255, 255))
+            canvas.paste(img.convert("RGB"), mask=alpha)
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            canvas.save(tmp.name, format="PNG")
+            return tmp.name
+    except Exception as e:
+        print(f"[PDF LINK CALLBACK] Gagal flatten logo {uri}: {e}")
+    return local_path
 
 templates.env.filters["clean_pct"] = clean_pct
 
@@ -1766,7 +1794,13 @@ async def download_dip_bab3(
     })
 
     cover_pdf_io = io.BytesIO()
-    pisa.CreatePDF(io.StringIO(rendered_html), dest=cover_pdf_io)
+    pisa_status = pisa.CreatePDF(
+        io.StringIO(rendered_html),
+        dest=cover_pdf_io,
+        link_callback=_pdf_link_callback
+    )
+    if pisa_status.err:
+        print(f"[BAB 3 WARNING] Ada error saat render cover PDF: {pisa_status.err}")
     cover_pdf_io.seek(0)
 
     # 6. MERGE WITH ATTACHMENTS
