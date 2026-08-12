@@ -35,6 +35,17 @@
     <input type="file" name="{{ field_name }}" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
 </div>
 {% endmacro %}
+
+{% macro bab2_doc_item(label, url, icon, color) %}
+<div class="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-md px-2 py-1">
+    <span class="flex items-center gap-1.5 text-gray-700 font-medium"><i class="fa-solid {{ icon }} {{ color }}"></i> {{ label }}</span>
+    {% if url %}
+    <a href="{{ url }}" target="_blank" class="text-indigo-600 hover:underline font-semibold">Lihat</a>
+    {% else %}
+    <span class="text-gray-400">Belum ada</span>
+    {% endif %}
+</div>
+{% endmacro %}
 <div class="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-xs border border-gray-200">
     <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
         <div>
@@ -42,6 +53,9 @@
             <p class="text-xs text-gray-500">Kelola meta data dan kelengkapan dokumen DIP (Bab 1 s/d Bab 4)</p>
         </div>
         <div class="flex gap-2">
+            <a href="/products/{{ product.id }}/bab2/preview" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded-md hover:bg-amber-700">
+                <i class="fa-solid fa-file-pdf"></i> Preview Bab 2
+            </a>
             <a href="/products/{{ product.id }}/bab3/preview" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
                 <i class="fa-solid fa-file-pdf"></i> Preview Bab 3
             </a>
@@ -60,6 +74,9 @@
             <button type="button" onclick="switchEditTab('tab-bab1', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-folder mr-1.5"></i> Bab 1
             </button>
+            <button type="button" onclick="switchEditTab('tab-bab2', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+                <i class="fa-solid fa-vial mr-1.5"></i> Bab 2
+            </button>
             <button type="button" onclick="switchEditTab('tab-bab3', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-flask mr-1.5"></i> Bab 3
             </button>
@@ -69,7 +86,7 @@
         </nav>
     </div>
 
-    <form method="POST" action="/products/{{ product.id }}/edit" enctype="multipart/form-data">
+    <form method="POST" action="/products/{{ product.id }}/edit" enctype="multipart/form-data" onsubmit="return validateFormulaForm()">
         
         <!-- ================= TAB 1: INFORMASI DASAR ================= -->
         <div id="tab-info" class="edit-tab-content block space-y-4">
@@ -184,6 +201,180 @@
             {{ pdf_upload_card('Surat No. Notifikasi BPOM (DIP Bab 1)', 'no_notifikasi_file', product.no_notifikasi_file_url) }}
         </div>
 
+        <!-- ================= TAB BAB 2: MUTU BAHAN & FORMULA ================= -->
+        <div id="tab-bab2" class="edit-tab-content hidden space-y-4">
+            <input type="hidden" name="formula_submitted" value="1">
+
+            <!-- 1. Susunan Formula Komposisi (Bab 2) -->
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div class="flex justify-between items-center mb-3">
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-900">Susunan Formula Komposisi</h4>
+                        <p class="text-xs text-gray-500 mt-0.5">Susunan bahan baku penyusun produk ini (Mutu Bahan & Formula — Bab 2).</p>
+                    </div>
+                    <button type="button" onclick="addFormulaRow()" class="inline-flex items-center text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer">
+                        <i class="fa-solid fa-plus mr-1"></i> Tambah Bahan Baku
+                    </button>
+                </div>
+
+                <div id="formula-rows-container" class="space-y-3">
+
+                    {% for line in formula %}
+                    {% set ns = namespace(label="") %}
+                    {% for rm in raw_materials %}
+                        {% if rm.id == line.raw_material_id %}
+                            {% set ns.label = rm.nama_dagang ~ " [" ~ rm.kode_bahan_baku ~ "]" %}
+                        {% endif %}
+                    {% endfor %}
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end bg-white p-3 rounded-md border border-gray-200 class-formula-row relative">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Cari / Pilih Bahan Baku</label>
+                            <div class="relative custom-select-container" data-selected-label="{{ ns.label }}">
+                                <input type="hidden" name="raw_material_id" value="{{ line.raw_material_id }}" required>
+                                <div class="relative">
+                                    <input type="text"
+                                           placeholder="Ketik nama dagang atau kode bahan baku..."
+                                           value="{{ ns.label }}"
+                                           class="rm-search-input block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500 pr-8"
+                                           autocomplete="off"
+                                           onfocus="openRmDropdown(this)"
+                                           oninput="filterRmDropdown(this)">
+                                    <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
+                                </div>
+                                <div class="rm-dropdown-menu hidden absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto text-sm">
+                                    <div class="py-1 rm-options-list">
+                                        {% for rm in raw_materials %}
+                                        <div class="rm-option cursor-pointer px-3 py-2 hover:bg-indigo-50 flex justify-between items-center border-b border-gray-50 last:border-b-0"
+                                             data-value="{{ rm.id }}"
+                                             data-label="{{ rm.nama_dagang }} [{{ rm.kode_bahan_baku }}]"
+                                             data-search="{{ rm.nama_dagang | lower }} {{ rm.kode_bahan_baku | lower }}"
+                                             onclick="selectRmOption(this)">
+                                            <span class="font-medium text-gray-900">{{ rm.nama_dagang }}</span>
+                                            <span class="text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded">{{ rm.kode_bahan_baku }}</span>
+                                        </div>
+                                        {% endfor %}
+                                        <div class="no-match-msg hidden px-3 py-3 text-xs text-gray-400 italic text-center">Bahan baku tidak ditemukan.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-full">
+                                <label class="block text-xs font-medium text-gray-500 mb-1">Persentase (%)</label>
+                                <input type="number" step="0.001" name="percentage" required value="{{ line.percent_in_formula }}" oninput="calculateFormulaTotal()" placeholder="0.000" class="block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-indigo-500">
+                            </div>
+                            <button type="button" onclick="this.parentElement.parentElement.remove(); calculateFormulaTotal();" class="text-red-500 hover:text-red-700 pt-5 cursor-pointer"><i class="fa-solid fa-trash text-base"></i></button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="mt-4 p-3 bg-white rounded-lg border border-gray-200 flex justify-between items-center text-sm">
+                    <div>
+                        <span class="font-semibold text-gray-700">Total Persentase Formula:</span>
+                        <p class="text-xs text-gray-400 mt-0.5">Wajib pas 100.000% untuk dapat disimpan ke sistem.</p>
+                    </div>
+                    <span id="formula-total-indicator" class="font-mono text-lg font-bold text-red-600 bg-red-50 px-3 py-1 rounded-md">0.000%</span>
+                </div>
+            </div>
+
+            <!-- 2. Dokumen Pendukung Bahan Baku (Bab 2) -->
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h4 class="text-sm font-semibold text-gray-900">Dokumen Pendukung Bahan Baku (Bab 2)</h4>
+                        <p class="text-xs text-gray-500 mt-0.5">Kelengkapan dokumen per bahan baku untuk perusahaan <span class="font-semibold">{{ product.perusahaan or '-' }}</span>.</p>
+                    </div>
+                    <a href="/raw-materials" class="inline-flex items-center text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded-md font-semibold transition">
+                        <i class="fa-solid fa-folder-open mr-1"></i> Kelola di Raw Materials
+                    </a>
+                </div>
+
+                {% if bab2_materials %}
+                <div class="space-y-3">
+                    {% for m in bab2_materials %}
+                    <div class="bg-white border border-gray-200 rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="font-semibold text-sm text-gray-900 truncate">{{ m.material.nama_dagang }}</span>
+                                <span class="text-[11px] font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">{{ m.material.kode_bahan_baku }}</span>
+                            </div>
+                            <span class="text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full shrink-0">{{ product.perusahaan or '-' }}</span>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                            {{ bab2_doc_item('PDF Spesifikasi', m.material.spec_sheet_file_url, 'fa-file-pdf', 'text-red-500') }}
+                            {{ bab2_doc_item('CoA', m.batch.coa_file_url, 'fa-file-circle-check', 'text-blue-500') }}
+                            {{ bab2_doc_item('Laporan Pemeriksaan', m.batch.qc_report_file_url, 'fa-file-lines', 'text-sky-500') }}
+                            {{ bab2_doc_item('Sertifikat Halal', m.batch.halal_batch_file_url, 'fa-certificate', 'text-green-500') }}
+                            {{ bab2_doc_item('MSDS', m.material.msds_file_url, 'fa-shield-halved', 'text-yellow-600') }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="bg-white border-2 border-dashed border-gray-300 rounded-lg p-4 text-center text-sm text-gray-500">
+                    <i class="fa-solid fa-vial text-2xl text-gray-300 mb-2"></i>
+                    <p>Belum ada bahan baku di formula produk ini.</p>
+                    <p class="text-xs text-gray-400 mt-1">Isi susunan formula di atas — status dokumen pendukung (COA, spesifikasi, dll) akan muncul otomatis per bahan baku.</p>
+                </div>
+                {% endif %}
+
+                <div class="mt-3 flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2.5">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-clipboard-check text-amber-500"></i>
+                        <span class="text-sm font-medium text-gray-800">Checklist SOP CPKB — {{ product.perusahaan or '-' }}</span>
+                    </div>
+                    {% if sop_cpkb_url %}
+                    <a href="{{ sop_cpkb_url }}" target="_blank" class="text-indigo-600 hover:underline text-xs font-semibold">Lihat PDF</a>
+                    {% else %}
+                    <a href="/raw-materials" class="text-amber-600 hover:underline text-xs font-semibold">Belum ada — kelola</a>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Template Row Dinamis JavaScript (Bab 2) -->
+            <template id="row-template">
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end bg-white p-3 rounded-md border border-gray-200 class-formula-row relative">
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-medium text-gray-500 mb-1 sm:hidden">Cari / Pilih Bahan Baku</label>
+                        <div class="relative custom-select-container">
+                            <input type="hidden" class="input-rm-id" required>
+                            <div class="relative">
+                                <input type="text"
+                                       placeholder="Ketik nama dagang atau kode bahan baku..."
+                                       class="rm-search-input block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500 pr-8"
+                                       autocomplete="off"
+                                       onfocus="openRmDropdown(this)"
+                                       oninput="filterRmDropdown(this)">
+                                <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
+                            </div>
+                            <div class="rm-dropdown-menu hidden absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto text-sm">
+                                <div class="py-1 rm-options-list">
+                                    {% for rm in raw_materials %}
+                                    <div class="rm-option cursor-pointer px-3 py-2 hover:bg-indigo-50 flex justify-between items-center border-b border-gray-50 last:border-b-0"
+                                         data-value="{{ rm.id }}"
+                                         data-label="{{ rm.nama_dagang }} [{{ rm.kode_bahan_baku }}]"
+                                         data-search="{{ rm.nama_dagang | lower }} {{ rm.kode_bahan_baku | lower }}"
+                                         onclick="selectRmOption(this)">
+                                        <span class="font-medium text-gray-900">{{ rm.nama_dagang }}</span>
+                                        <span class="text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded">{{ rm.kode_bahan_baku }}</span>
+                                    </div>
+                                    {% endfor %}
+                                    <div class="no-match-msg hidden px-3 py-3 text-xs text-gray-400 italic text-center">Bahan baku tidak ditemukan.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-full">
+                            <input type="number" step="0.001" class="input-percentage block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-indigo-500" required oninput="calculateFormulaTotal()" placeholder="0.000">
+                        </div>
+                        <button type="button" onclick="this.parentElement.parentElement.remove(); calculateFormulaTotal();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash text-base"></i></button>
+                    </div>
+                </div>
+            </template>
+        </div>
+
         <!-- ================= TAB 3: DOKUMEN BAB 3 ================= -->
         <div id="tab-bab3" class="edit-tab-content hidden space-y-4">
             {{ pdf_upload_card('2. Ringkasan Cara Pembuatan Kosmetik', 'cara_pembuatan_file', product.cara_pembuatan_file_url) }}
@@ -224,6 +415,155 @@ function switchEditTab(tabId, element) {
     
     element.classList.remove('border-transparent', 'text-gray-500');
     element.classList.add('border-indigo-500', 'text-indigo-600');
+}
+
+/* ================= Bab 2: Formula Komposisi (dipindah dari Formula Builder) ================= */
+document.addEventListener("DOMContentLoaded", function() {
+    // Hitung total persentase kalau memang sudah ada baris formula.
+    calculateFormulaTotal();
+
+    // Auto-buka tab yang diminta lewat URL query, contoh: /products/{id}/edit?tab=bab2
+    const params = new URLSearchParams(window.location.search);
+    const openTab = params.get('tab');
+    if (openTab) {
+        const btn = document.querySelector('.edit-tab-btn[onclick*="' + openTab + '"]');
+        if (btn) switchEditTab(openTab, btn);
+    }
+
+    // Tutup dropdown kalau ngeklik area luar
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.custom-select-container')) {
+            hideAllRmDropdowns();
+        }
+    });
+});
+
+function hideAllRmDropdowns() {
+    document.querySelectorAll('.rm-dropdown-menu').forEach(menu => {
+        menu.classList.add('hidden');
+    });
+}
+
+function openRmDropdown(inputElem) {
+    hideAllRmDropdowns();
+    const container = inputElem.closest('.custom-select-container');
+    const dropdown = container.querySelector('.rm-dropdown-menu');
+    dropdown.classList.remove('hidden');
+    filterRmDropdown(inputElem);
+}
+
+function filterRmDropdown(inputElem) {
+    const container = inputElem.closest('.custom-select-container');
+    const dropdown = container.querySelector('.rm-dropdown-menu');
+    const hiddenInput = container.querySelector('input[name="raw_material_id"]');
+    const query = inputElem.value.toLowerCase().trim();
+
+    // Reset ID jika teks pencarian diedit/diubah
+    const selectedLabel = container.getAttribute('data-selected-label');
+    if (inputElem.value !== selectedLabel) {
+        hiddenInput.value = "";
+    }
+
+    dropdown.classList.remove('hidden');
+
+    const options = container.querySelectorAll('.rm-option');
+    const noMatchMsg = container.querySelector('.no-match-msg');
+    let visibleCount = 0;
+
+    options.forEach(opt => {
+        const searchVal = opt.getAttribute('data-search');
+        if (searchVal.includes(query)) {
+            opt.classList.remove('hidden');
+            visibleCount++;
+        } else {
+            opt.classList.add('hidden');
+        }
+    });
+
+    if (visibleCount === 0) {
+        noMatchMsg.classList.remove('hidden');
+    } else {
+        noMatchMsg.classList.add('hidden');
+    }
+}
+
+function selectRmOption(optionElem) {
+    const container = optionElem.closest('.custom-select-container');
+    const hiddenInput = container.querySelector('input[name="raw_material_id"]');
+    const searchInput = container.querySelector('.rm-search-input');
+    const dropdown = container.querySelector('.rm-dropdown-menu');
+
+    const val = optionElem.getAttribute('data-value');
+    const label = optionElem.getAttribute('data-label');
+
+    hiddenInput.value = val;
+    searchInput.value = label;
+    container.setAttribute('data-selected-label', label);
+
+    dropdown.classList.add('hidden');
+}
+
+function addFormulaRow() {
+    const container = document.getElementById('formula-rows-container');
+    const template = document.getElementById('row-template');
+    const clone = template.content.cloneNode(true);
+
+    // Tempel atribut name cuma pas baris masuk ke form
+    clone.querySelector('.input-rm-id').setAttribute('name', 'raw_material_id');
+    clone.querySelector('.input-percentage').setAttribute('name', 'percentage');
+
+    container.appendChild(clone);
+    calculateFormulaTotal();
+}
+
+function calculateFormulaTotal() {
+    const container = document.getElementById('formula-rows-container');
+    const pctInputs = container.querySelectorAll('input[name="percentage"]');
+    const indicator = document.getElementById('formula-total-indicator');
+    let total = 0;
+
+    pctInputs.forEach(input => {
+        total += parseFloat(input.value || 0);
+    });
+
+    indicator.innerText = total.toFixed(3) + '%';
+
+    if (Math.abs(total - 100) < 0.001) {
+        indicator.className = "font-mono text-lg font-bold text-green-600 bg-green-50 px-3 py-1 rounded-md";
+    } else {
+        indicator.className = "font-mono text-lg font-bold text-red-600 bg-red-50 px-3 py-1 rounded-md animate-pulse";
+    }
+}
+
+function validateFormulaForm() {
+    const container = document.getElementById('formula-rows-container');
+    const idInputs = container.querySelectorAll('input[name="raw_material_id"]');
+    const pctInputs = container.querySelectorAll('input[name="percentage"]');
+
+    // Produk tanpa formula sama sekali: lewati validasi biar data lain tetap bisa disimpan.
+    let anyFilled = false;
+    idInputs.forEach(input => {
+        if (input.value && input.value.trim()) anyFilled = true;
+    });
+    if (!anyFilled) return true;
+
+    for (let input of idInputs) {
+        if (!input.value) {
+            alert('Ada bahan baku yang belum dipilih dari list pencarian! Klik opsi dari dropdown yang muncul pas ngetik.');
+            return false;
+        }
+    }
+
+    let total = 0;
+    pctInputs.forEach(input => {
+        total += parseFloat(input.value || 0);
+    });
+
+    if (Math.abs(total - 100) > 0.001) {
+        alert('Total racikan seluruh bahan baku harus pas 100.000%. Total racikan saat ini: ' + total.toFixed(3) + '%');
+        return false;
+    }
+    return true;
 }
 </script>
 {% endblock %}

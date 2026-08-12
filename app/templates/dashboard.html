@@ -200,27 +200,22 @@
                     <!-- Kolom Aksi -->
                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div class="flex items-center justify-end gap-1.5">
-                            <!-- 1. Tombol Formula Builder (Ungu) -->
-                            <a href="/products/{{ product.id }}" class="p-1.5 bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100" title="Formula Builder">
-                                <i class="fa-solid fa-flask text-xs"></i>
-                            </a>
-
-                            <!-- 2. Tombol INCI Breakdown Report (Hijau) -->
+                            <!-- 1. Tombol INCI Breakdown Report (Hijau) -->
                             <a href="/products/{{ product.id }}/inci-breakdown/report" class="p-1.5 bg-green-50 text-green-600 rounded hover:bg-green-100" title="INCI Report">
                                 <i class="fa-solid fa-dna text-xs"></i>
                             </a>
 
-                            <!-- 3. Tombol Download Dokumen Qual-Quan / Excel (Biru) -->
+                            <!-- 2. Tombol Download Dokumen Qual-Quan / Excel (Biru) -->
                             <a href="/products/{{ product.id }}/qualitative-quantitative" class="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100" title="Qual-Quan Document">
                                 <i class="fa-solid fa-file-excel text-xs"></i>
                             </a>
 
-                            <!-- 4. Tombol Edit Info Produk (Oranye) -->
+                            <!-- 3. Tombol Edit Info Produk (Oranye) -->
                             <a href="/products/{{ product.id }}/edit" class="p-1.5 bg-amber-500 text-white rounded hover:bg-amber-600" title="Edit Produk">
                                 <i class="fa-solid fa-pen-to-square text-xs"></i>
                             </a>
 
-                            <!-- 5. Tombol Hapus Produk (Merah) -->
+                            <!-- 4. Tombol Hapus Produk (Merah) -->
                             <form action="/products/delete/{{ product.id }}" method="POST" style="display: inline;" onsubmit="return confirm('Yakin mau hapus produk ini? Semua formula di dalamnya bakal ikut kehapus men.')">
                                 <button type="submit" class="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 cursor-pointer" title="Hapus Produk">
                                     <i class="fa-solid fa-trash-can text-xs"></i>

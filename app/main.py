@@ -1393,6 +1393,15 @@ async def download_bab2_document(product_id: str, current_user: dict = Depends(g
     )
 
 
+@app.get("/products/{product_id}/bab2/preview")
+async def preview_dip_bab2(product_id: str, current_user: dict = Depends(get_current_user)):
+    # Preview Bab 2: generate PDF yang sama persis dengan /bab2/download, tapi disajikan
+    # inline (browser menampilkan preview di tab baru) -- bukan force-download.
+    resp = await download_bab2_document(product_id, current_user)
+    resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
+    return resp
+
+
 def _safe_zip_name(name: str) -> str:
     """Bersihin nama biar aman dipakai sebagai nama file/folder di dalam ZIP
     (buang karakter yang gak diizinkan di Windows/macOS: < > : " / \\ | ? *)."""
@@ -2291,6 +2300,7 @@ async def dip_public_bab2_zip(product_id: str):
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def edit_product_page(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
     prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    product = prod_resp.data or {}
 
     try:
         brands_resp = supabase.table("brands").select("id, name, producers(name)").order("name").execute()
@@ -2299,10 +2309,71 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
         print(f"Gagal ambil data brands buat dropdown: {e}")
         brands = []
 
+    # --- Data Tab Bab 2 (Mutu Bahan & Formula) ---
+    formula = []
+    raw_materials = []
+    bab2_materials = []
+    sop_cpkb_url = None
+    try:
+        formula_resp = supabase.table("product_formula_lines") \
+            .select("*, raw_materials(nama_dagang, kode_bahan_baku)") \
+            .eq("product_id", product_id) \
+            .order("created_at").execute()
+        formula = formula_resp.data or []
+
+        rm_resp = supabase.table("raw_materials") \
+            .select("id, nama_dagang, kode_bahan_baku") \
+            .order("nama_dagang").execute()
+        raw_materials = rm_resp.data or []
+
+        perusahaan = product.get("perusahaan") or "PT Erfi"
+
+        # Bahan baku unik yang dipakai di formula produk ini (urutan sesuai susunan formula)
+        seen_ids = set()
+        uniq_rm = []
+        for line in formula:
+            rm = line.get("raw_materials")
+            if isinstance(rm, list) and rm:
+                rm = rm[0]
+            if isinstance(rm, dict) and rm.get("id") and rm["id"] not in seen_ids:
+                seen_ids.add(rm["id"])
+                uniq_rm.append(rm)
+
+        # Dokumen pendukung Bab 2 per bahan baku: PDF Spesifikasi asli + MSDS (company-specific)
+        # + batch terbaru perusahaan produk ini (CoA, Halal, Laporan Pemeriksaan)
+        for rm in uniq_rm:
+            rm = _apply_company_specific_docs(rm, perusahaan)
+            batch_resp = supabase.table("raw_material_batches") \
+                .select("*") \
+                .eq("raw_material_id", rm["id"]) \
+                .eq("perusahaan", perusahaan) \
+                .order("created_at", desc=True) \
+                .limit(1) \
+                .execute()
+            batch = batch_resp.data[0] if batch_resp.data else None
+            bab2_materials.append({"material": rm, "batch": batch})
+
+        # SOP CPKB perusahaan (lampiran checklist Bab 2)
+        sop_resp = supabase.table("cpkb_raw_material") \
+            .select("file_url") \
+            .eq("perusahaan", perusahaan) \
+            .limit(1) \
+            .execute()
+        sop_cpkb_url = sop_resp.data[0]["file_url"] if sop_resp.data else None
+    except Exception as e:
+        print(f"Gagal ambil data Bab 2 buat halaman edit produk {product_id}: {e}")
+
     return templates.TemplateResponse(
         request=request,
         name="edit_product.html",
-        context={"product": prod_resp.data, "brands": brands}
+        context={
+            "product": product,
+            "brands": brands,
+            "formula": formula,
+            "raw_materials": raw_materials,
+            "bab2_materials": bab2_materials,
+            "sop_cpkb_url": sop_cpkb_url,
+        }
     )
 
 # 2. Proses Simpan Perubahan Info Produk (PERBAIKAN: Kolom disinkronkan dengan add_product)
@@ -2341,6 +2412,10 @@ async def update_product(
     data_klaim_file: UploadFile = File(None),
     desain_primer_file: UploadFile = File(None),
     desain_sekunder_file: UploadFile = File(None),
+    # Bab 2 (Mutu Bahan & Formula): susunan formula komposisi
+    formula_submitted: str = Form(None),
+    raw_material_id: List[str] = Form(None),
+    percentage: List[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     acc_sampel_val = acc_sampel.strip() if acc_sampel else None
@@ -2415,6 +2490,32 @@ async def update_product(
             update_payload[db_col] = uploaded_url
 
     supabase.table("products").update(update_payload).eq("id", product_id).execute()
+
+    # --- Simpan Susunan Formula Bab 2 (kalau tab Bab 2 ikut di-submit) ---
+    # Delete + re-insert semua baris formula biar urutan & komposisi selalu tersinkron.
+    # Baris lama tetap dirender dari DB di halaman edit, jadi kalau gak diubah pun
+    # datanya tetap tersimpan sama persis (tidak ada data Bab 2 yang hilang).
+    if formula_submitted:
+        try:
+            supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
+            if raw_material_id:
+                lines = []
+                for i in range(len(raw_material_id)):
+                    rm_id = (raw_material_id[i] or "").strip()
+                    if rm_id:
+                        try:
+                            pct = float(percentage[i]) if percentage and i < len(percentage) else 0.0
+                        except (TypeError, ValueError):
+                            pct = 0.0
+                        lines.append({
+                            "product_id": product_id,
+                            "raw_material_id": rm_id,
+                            "percent_in_formula": pct,
+                        })
+                if lines:
+                    supabase.table("product_formula_lines").insert(lines).execute()
+        except Exception as e:
+            print(f"Gagal simpan formula Bab 2 produk {product_id}: {e}")
 
     # --- Catat activity log: field teks dibandingin beneran, field file cuma dicatet "diganti" ---
     product_field_labels = {
