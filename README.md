@@ -11,7 +11,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 
 ---
 
-## 📌 Status Pengembangan Sistem (Update: 10 Agustus 2026)
+## 📌 Status Pengembangan Sistem (Update: 12 Agustus 2026)
 
 | Modul / Fase | Fitur & Cakupan | Status |
 | :--- | :--- | :---: |
@@ -29,6 +29,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 | **FSP (Form Pengajuan Sample Produk)** | CRUD pengajuan sample, auto-generate kode sample (`FSP/DD-MM-YYYY/X.Y`), nomor revisi otomatis, preview & cetak (print-to-PDF) | ✅ **Selesai** |
 | **Manajemen Brand** | Tambah brand, upload dokumen Hak & Lisensi Merk per brand | ✅ **Selesai** |
 | **Activity Log & Uptime Monitor** | Riwayat aktivitas tersimpan di tabel `activity_logs` + log terminal rapi; endpoint `/health` (GET & HEAD) untuk monitoring uptime | ✅ **Selesai** |
+| **Edit Produk Multi-Tab (Bab 1–4)** | Halaman Edit Produk kini punya 5 tab: Informasi Dasar, Bab 1, **Bab 2 (Formula & Mutu Bahan)**, Bab 3, Bab 4 — form susunan formula & status dokumen bahan baku dipindah dari Formula Builder ke Tab Bab 2, plus preview PDF Bab 2 di tab baru | ✅ **Selesai** |
 
 ---
 
@@ -40,15 +41,16 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 * **Manajemen Batch & Dokumen:** Mengunggah dan mengaitkan file CoA, Sertifikat Halal, dan MSDS ke setiap batch atau bahan baku secara langsung ke Supabase Storage.
 * **Spesifikasi & Pemeriksaan QC per Batch:** Input parameter spesifikasi bahan, catatan pemeriksaan fisik/scan QC (PDF), dan parameter uji laboratorium aktual pada setiap batch — dipakai langsung di Bab II versi ZIP.
 * **Tab Cek Kelengkapan Dokumen:** Halaman Bahan Baku memiliki tab khusus berisi matriks status kelengkapan dokumen per perusahaan (spesifikasi, spec sheet, MSDS, CoA, Halal) dengan badge ✓/✗.
-* **Formula Builder:** Perancangan formulasi produk dengan kalkulasi otomatis persentase bahan (pembulatan presisi via `Decimal`) dan pemeriksaan batasan regulasi.
+* **Formula Builder:** Perancangan formulasi produk dengan kalkulasi otomatis persentase bahan (pembulatan presisi via `Decimal`) dan pemeriksaan batasan regulasi — pembuatan formulasi tetap lewat Formula Builder, sedangkan penyuntingan formula & mutu bahannya dikelola di **Tab Bab 2** halaman Edit Produk.
+* **Edit Produk Multi-Tab:** Halaman Edit Produk disusun menjadi 5 tab (**Informasi Dasar, Bab 1, Bab 2, Bab 3, Bab 4**). Tab **Bab 2 — Formula & Mutu Bahan** memuat form susunan formula komposisi (tambah/hapus baris dengan total persentase otomatis) sekaligus status dokumen pendukung tiap bahan baku (PDF Spesifikasi, CoA, Laporan Pemeriksaan, Sertifikat Halal, MSDS) dan lampiran SOP CPKB perusahaan.
 
 ### 2. Generator Dokumen DIP Bab I–IV
 Keempat bab DIP di-generate lewat pendekatan yang sama: halaman cover/checklist di-render dari template Jinja2 lalu dikonversi ke PDF (`xhtml2pdf`), kemudian di-*merge* dengan lampiran-lampiran terkait (diunduh dari Supabase Storage) memakai `pypdf` jadi satu berkas PDF utuh siap unduh. Kop surat, SOP CPKB, dan lampiran yang di-merge mengikuti **perusahaan** dari produk (PT Erfi / PT Heka).
 * **Bab I — Kelengkapan Administrasi:** NIB, Sertifikat CPKB, Surat Tidak Pidana (statis per PT), Hak & Lisensi Merk (per brand), No. Notifikasi BPOM (per produk).
-* **Bab II — Data Mutu & Keamanan Bahan:** Menarik seluruh bahan baku unik pada formula produk beserta batch terbarunya, digabung dengan checklist SOP CPKB perusahaan dan lampiran CoA/Halal/MSDS per bahan. Tersedia **2 versi unduhan**: PDF gabungan & **versi Folder/ZIP** (1 folder per bahan baku berisi Spesifikasi, CoA, Halal, MSDS terpisah).
+* **Bab II — Data Mutu & Keamanan Bahan:** Menarik seluruh bahan baku unik pada formula produk beserta batch terbarunya, digabung dengan checklist SOP CPKB perusahaan dan lampiran CoA/Halal/MSDS per bahan. Tersedia tombol **Preview Bab 2** (PDF inline di tab baru) di halaman Edit Produk serta **2 versi unduhan**: PDF gabungan & **versi Folder/ZIP** (1 folder per bahan baku berisi Spesifikasi, CoA, Halal, MSDS terpisah).
 * **Bab III — Data Mutu Produk Jadi:** Breakdown kualitatif-kuantitatif formula produk otomatis dari data Formula Builder & komposisi bahan baku.
 * **Bab IV — Data Keamanan Produk:** Merangkum laporan keamanan produk, CV safety assessor, monitoring efek samping, data klaim, dan desain kemasan.
-* **Checklist Kelengkapan DIP di Dashboard:** Matriks kelengkapan Bab I–IV per produk (legalitas, formula, mutu produk jadi, keamanan) lengkap dengan progress DIP (%) dan status legalitas NA, supaya produk yang belum lengkap langsung terlihat.
+* **Checklist Kelengkapan DIP di Dashboard:** Matriks kelengkapan Bab I–IV per produk (legalitas, formula, mutu produk jadi, keamanan) lengkap dengan progress DIP (%) dan status legalitas NA, supaya produk yang belum lengkap langsung terlihat. Tombol aksi per produk dipusatkan lewat **Edit Produk** (membuka kelima tab halaman edit), tanpa tombol duplikat khusus Bab 2 di dashboard.
 
 ### 3. FSP (Form Pengajuan Sample Produk)
 * Form digital pengajuan sample baru dengan kode otomatis berformat `FSP/DD-MM-YYYY/X.Y` (pakai zona waktu WIB, `zoneinfo`) serta **nomor revisi otomatis** per produk (`v1`, `v2`, dst.).
