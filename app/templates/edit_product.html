@@ -32,7 +32,8 @@
     </div>
     {% endif %}
 
-    <input type="file" name="{{ field_name }}" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700">
+    <input type="file" name="{{ field_name }}" id="{{ field_name }}" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700" onchange="validateFileSize(this)">
+    <p class="text-[11px] text-gray-400 mt-1">(Maksimal ukuran file: 10 MB, Format: PDF)</p>
 </div>
 {% endmacro %}
 
@@ -65,6 +66,22 @@
         </div>
     </div>
 
+    <!-- ================= ALERT ERROR ================= -->
+    {% if error_msg or request.cookies.get('error_msg') %}
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center justify-between" role="alert">
+        <div class="flex items-center gap-2">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            <span>{{ error_msg or request.cookies.get('error_msg') or 'Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu.' }}</span>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Clear the error cookie after displaying
+            document.cookie = 'error_msg=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        });
+    </script>
+    {% endif %}
+
     <!-- ================= NAVIGASI TABS ================= -->
     <div class="border-b border-gray-200 mb-6">
         <nav class="-mb-px flex space-x-6" aria-label="Tabs">
@@ -86,7 +103,7 @@
         </nav>
     </div>
 
-    <form method="POST" action="/products/{{ product.id }}/edit" enctype="multipart/form-data" onsubmit="return validateFormulaForm()">
+    <form method="POST" action="/products/{{ product.id }}/edit" enctype="multipart/form-data" onsubmit="return validateFormulaForm() && validateAllFiles()">
         
         <!-- ================= TAB 1: INFORMASI DASAR ================= -->
         <div id="tab-info" class="edit-tab-content block space-y-4">
@@ -403,7 +420,55 @@
     </form>
 </div>
 
+
+<div id="fileToast" class="fixed bottom-6 right-6 z-[60] hidden items-center gap-2 bg-red-600 text-white text-sm px-4 py-3 rounded-lg shadow-xl">
+    <i class="fa-solid fa-circle-exclamation text-white"></i>
+    <span></span>
+</div>
 <script>
+function validateFileSize(input) {
+    const file = input.files[0];
+    const maxSize = 10 * 1024 * 1024; // 10 MB
+
+    if (file && file.size > maxSize) {
+        showFileToast('Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu.');
+        input.value = ''; // Clear the invalid file
+    }
+}
+
+function showFileToast(msg) {
+    const toast = document.getElementById('fileToast');
+    const label = toast.querySelector('span');
+    if (msg) label.textContent = msg;
+    toast.classList.remove('hidden');
+    toast.classList.add('flex');
+    
+    setTimeout(function () {
+        toast.classList.add('hidden');
+        toast.classList.remove('flex');
+    }, 5000);
+}
+</script>
+
+<script>
+function validateAllFiles() {
+    const fileInputs = document.querySelectorAll('input[type="file"][accept=".pdf"]');
+    let allValid = true;
+    
+    fileInputs.forEach(input => {
+        const file = input.files[0];
+        const maxSize = 10 * 1024 * 1024; // 10 MB
+        
+        if (file && file.size > maxSize) {
+            showFileToast('Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu.');
+            input.value = '';
+            allValid = false;
+        }
+    });
+    
+    return allValid;
+}
+
 function switchEditTab(tabId, element) {
     document.querySelectorAll('.edit-tab-content').forEach(el => el.classList.replace('block', 'hidden'));
     document.getElementById(tabId).classList.replace('hidden', 'block');

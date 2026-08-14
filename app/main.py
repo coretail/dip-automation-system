@@ -442,6 +442,21 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
             status_code=status.HTTP_303_SEE_OTHER
         )
     
+    # Untuk error 413 (Payload Too Large) terkait upload file
+    if exc.status_code == status.HTTP_413_CONTENT_TOO_LARGE:
+        print(f"\n⚠️ [FILE TOO LARGE] Path: {request.url.path}")
+        print(f"   • Detail: {exc.detail}")
+        print("=" * 50 + "\n")
+        # Redirect balik ke halaman edit dengan pesan error
+        referer = request.headers.get("referer")
+        if referer and "/edit" in referer:
+            redirect_url = referer
+        else:
+            redirect_url = "/"
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie("error_msg", str(exc.detail))
+        return response
+
     # Untuk error HTTP lainnya tetap kembalikan bawaan
     return JSONResponse(
         status_code=exc.status_code,
@@ -2420,6 +2435,9 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
     except Exception as e:
         print(f"Gagal ambil data Bab 2 buat halaman edit produk {product_id}: {e}")
 
+    # Get error message from cookie (if any)
+    error_msg = request.cookies.get("error_msg")
+
     return templates.TemplateResponse(
         request=request,
         name="edit_product.html",
@@ -2430,6 +2448,7 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
             "raw_materials": raw_materials,
             "bab2_materials": bab2_materials,
             "sop_cpkb_url": sop_cpkb_url,
+            "error_msg": error_msg,
         }
     )
 
@@ -2508,6 +2527,15 @@ async def update_product(
         if file_obj and file_obj.filename:
             try:
                 file_bytes = await file_obj.read()
+                
+                # Check file size (10 MB limit)
+                max_size = 10 * 1024 * 1024  # 10 MB
+                if len(file_bytes) > max_size:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu."
+                    )
+                
                 path = f"products/{product_id}/{path_suffix}.pdf"
                 supabase.storage.from_(bucket_name).upload(
                     path=path,
@@ -2515,13 +2543,27 @@ async def update_product(
                     file_options={"content-type": "application/pdf", "upsert": "true"}
                 )
                 return supabase.storage.from_(bucket_name).get_public_url(path)
+            except HTTPException:
+                raise
             except Exception as e:
+                # Tangkap error 413 dari Supabase/backend (payload terlalu besar)
+                error_str = str(e).lower()
+                if "413" in error_str or "payload too large" in error_str or "too large" in error_str:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu."
+                    )
                 print(f"Gagal upload {path_suffix} produk {product_id}: {e}")
         return None
 
     # Upload Bab 1
-    no_notif_url = await process_pdf_upload(no_notifikasi_file, "no_notifikasi", bucket_name="legal-documents")
-    if no_notif_url: update_payload["no_notifikasi_file_url"] = no_notif_url
+    try:
+        no_notif_url = await process_pdf_upload(no_notifikasi_file, "no_notifikasi", bucket_name="legal-documents")
+        if no_notif_url: update_payload["no_notifikasi_file_url"] = no_notif_url
+    except HTTPException as he:
+        if he.status_code == 413:
+            raise he
+        print(f"Gagal upload no_notifikasi produk {product_id}: {he}")
 
     # Upload Map File Bab 3 & Bab 4
     file_mappings = {
@@ -2542,9 +2584,14 @@ async def update_product(
     }
 
     for db_col, (file_obj, key_suffix) in file_mappings.items():
-        uploaded_url = await process_pdf_upload(file_obj, key_suffix)
-        if uploaded_url:
-            update_payload[db_col] = uploaded_url
+        try:
+            uploaded_url = await process_pdf_upload(file_obj, key_suffix)
+            if uploaded_url:
+                update_payload[db_col] = uploaded_url
+        except HTTPException as he:
+            if he.status_code == 413:
+                raise he
+            print(f"Gagal upload {key_suffix} produk {product_id}: {he}")
 
     supabase.table("products").update(update_payload).eq("id", product_id).execute()
 
