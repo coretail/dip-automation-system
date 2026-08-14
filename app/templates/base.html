@@ -35,6 +35,38 @@
 
     <!-- Main Content Block -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- ================= ALERT GLOBAL (success/error) =================
+             Dibaca dari context KALAU route-nya nge-pass eksplisit, atau fallback
+             langsung dari cookie -- biar tetep keliatan biarpun ke-redirect ke
+             halaman yang gak nge-pass error_msg/success_msg di context-nya (misal
+             dashboard). Satu sumber kebenaran, gak perlu diulang-ulang per halaman. -->
+        {% set _error_msg = error_msg if error_msg is defined and error_msg else request.cookies.get('error_msg') %}
+        {% set _success_msg = success_msg if success_msg is defined and success_msg else request.cookies.get('success_msg') %}
+
+        {% if _error_msg %}
+        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center" role="alert">
+            <i class="fa-solid fa-circle-exclamation mr-2"></i>
+            <span>{{ _error_msg }}</span>
+        </div>
+        {% endif %}
+
+        {% if _success_msg %}
+        <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center" role="alert">
+            <i class="fa-solid fa-circle-check mr-2"></i>
+            <span>{{ _success_msg }}</span>
+        </div>
+        {% endif %}
+
+        {% if _error_msg or _success_msg %}
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                document.cookie = 'error_msg=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                document.cookie = 'success_msg=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            });
+        </script>
+        {% endif %}
+
         {% block content %}{% endblock %}
     </main>
 
