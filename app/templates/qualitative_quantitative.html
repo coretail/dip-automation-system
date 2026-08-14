@@ -456,7 +456,10 @@ function applyBordersToDataTable(ws, headerRowIndex, range) {
 <!-- ==================== SCRIPT PUBLIC LINK BPOM ==================== -->
 <script>
     function bpomPublicUrl() {
-        return window.location.origin + '/dip/v/' + '{{ product.id }}';
+        // Format baru: /dip/[slug-nama-produk]-[id]
+        var slug = '{{ product.nama_produk | slugify }}';
+        var id = '{{ product.id }}';
+        return window.location.origin + '/dip/' + slug + '-' + id;
     }
 
     function showBpomToast(msg) {

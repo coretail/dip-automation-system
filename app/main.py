@@ -17,6 +17,7 @@ import sys
 import tempfile
 import zipfile
 import httpx
+import unicodedata
 from xhtml2pdf import pisa
 from pypdf import PdfReader, PdfWriter
 
@@ -84,6 +85,57 @@ app = FastAPI(title="DIP Kosmetik Automation")
 # Setup static files (Tailwind CSS) dan Jinja2 Templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+
+def slugify(text: str) -> str:
+    """
+    Mengubah teks menjadi slug URL-friendly.
+    - Lowercase
+    - Ganti spasi & karakter khusus dengan strip (-)
+    - Hapus karakter non-alphanumeric (kecuali strip)
+    - Hilangkan strip berulang & di awal/akhir
+    Contoh: "Sunscreen Serum SPF 50+" -> "sunscreen-serum-spf-50"
+    """
+    if not text:
+        return ""
+    # Normalize unicode (NFKD) untuk memisahkan karakter composed
+    text = unicodedata.normalize('NFKD', text)
+    # Hapus karakter non-ASCII (seperti tanda baca khusus, emoji, dll)
+    text = text.encode('ascii', 'ignore').decode('ascii')
+    # Lowercase
+    text = text.lower()
+    # Ganti karakter non-alphanumeric dengan strip
+    text = re.sub(r'[^a-z0-9]+', '-', text)
+    # Hapus strip di awal/akhir dan berulang
+    text = re.sub(r'-+', '-', text).strip('-')
+    return text
+
+
+def extract_id_from_slug(slug_id: str) -> str:
+    """
+    Ekstrak UUID dari string slug-ID.
+    Format: [slug]-[uuid]
+    UUID panjangnya 36 karakter (dengan hyphen: 8-4-4-4-12).
+    Jadi ambil 36 karakter terakhir sebagai kandidat UUID.
+    Jika bukan UUID valid (misal hanya UUID tanpa slug), return asli.
+    """
+    if not slug_id:
+        return slug_id
+    
+    # Cek apakah 36 karakter terakhir adalah UUID valid
+    if len(slug_id) >= 36:
+        candidate = slug_id[-36:]
+        # UUID regex pattern
+        uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        if re.match(uuid_pattern, candidate, re.IGNORECASE):
+            return candidate
+    
+    # Fallback: return asli (mungkin UUID saja tanpa slug)
+    return slug_id
+
+
+# Register slugify as Jinja2 filter
+templates.env.filters["slugify"] = slugify
 
 def clean_pct(value, decimals=4):
     """Bulatkan dulu buat buang floating point noise, baru hilangkan trailing zero."""
@@ -2048,9 +2100,10 @@ async def preview_dip_bab4(product_id: str, current_user: dict = Depends(get_cur
 
 # =====================================================================
 #  PUBLIC LINK BPOM - PERMALINK UNTUK VERIFIKATOR BPOM
-#  Route /dip/v/{product_id} bersifat PUBLIK (tanpa login) & permanen
+#  Route /dip/[slug-nama-produk]-[id] bersifat PUBLIK (tanpa login) & permanen
 #  (tidak ada masa expired) supaya bisa dilampirkan ke portal
 #  e-registration BPOM dan tetap hidup bertahun-tahun.
+#  Contoh: /dip/sunscreen-serum-spf-50-e623d2e4-1234-5678-9abc-def012345678
 #
 #  Keamanan akses file:
 #   - PDF gabungan tiap Bab (I, II, III, IV) -> di-stream lewat backend
@@ -2132,7 +2185,7 @@ def _get_audit_username(request: Request) -> str:
 
 
 def _audit_public_link(product_id: str, product_name: str, ip_address: str, user_agent: str, username: str = "-"):
-    """Catat setiap akses ke public link DIP (/dip/v/:uuid).
+    """Catat setiap akses ke public link DIP (/dip/[slug]-[id]).
     Field DB: product_id, visited_at (timestamp), ip_address, user_agent.
     1) Simpan ke tabel khusus public_link_audits (sudah dibuat di Supabase).
     2) Fallback ke activity_logs kalau tabel khusus belum dibuat, biar tidak ada akses yang hilang.
@@ -2178,9 +2231,15 @@ def _audit_public_link(product_id: str, product_name: str, ip_address: str, user
         print(f"[AUDIT PUBLIC LINK] Gagal simpan ke activity_logs: {e}")
 
 
-@app.get("/dip/v/{product_id}", response_class=HTMLResponse)
-async def dip_public_hub(request: Request, product_id: str):
-    """Landing page/hub publik khusus verifikator BPOM untuk 1 produk."""
+@app.get("/dip/{slug_id}", response_class=HTMLResponse)
+async def dip_public_hub(request: Request, slug_id: str):
+    """Landing page/hub publik khusus verifikator BPOM untuk 1 produk.
+    
+    Format URL: /dip/[slug-nama-produk]-[id]
+    Contoh: /dip/sunscreen-serum-spf-50-e623d2e4-...
+    """
+    product_id = extract_id_from_slug(slug_id)
+    
     try:
         prod_resp = supabase.table("products") \
             .select("*, brands(name, producers(name))") \
@@ -2290,7 +2349,7 @@ async def dip_public_hub(request: Request, product_id: str):
 
 
 def _dip_public_check_product(product_id: str) -> bool:
-    """Validasi UUID produk eksis (buat route publik /dip/v)."""
+    """Validasi UUID produk eksis (buat route publik /dip/[slug]-[id])."""
     try:
         check = supabase.table("products").select("id").eq("id", product_id).single().execute()
         return bool(check.data)
@@ -2320,49 +2379,58 @@ async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool):
     return resp
 
 
-@app.get("/dip/v/{product_id}/bab1")
-async def dip_public_bab1(product_id: str):
+@app.get("/dip/{slug_id}/bab1")
+async def dip_public_bab1(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "1", False)
 
 
-@app.get("/dip/v/{product_id}/bab1/download")
-async def dip_public_bab1_download(product_id: str):
+@app.get("/dip/{slug_id}/bab1/download")
+async def dip_public_bab1_download(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "1", True)
 
 
-@app.get("/dip/v/{product_id}/bab2")
-async def dip_public_bab2(product_id: str):
+@app.get("/dip/{slug_id}/bab2")
+async def dip_public_bab2(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "2", False)
 
 
-@app.get("/dip/v/{product_id}/bab2/download")
-async def dip_public_bab2_download(product_id: str):
+@app.get("/dip/{slug_id}/bab2/download")
+async def dip_public_bab2_download(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "2", True)
 
 
-@app.get("/dip/v/{product_id}/bab3")
-async def dip_public_bab3(product_id: str):
+@app.get("/dip/{slug_id}/bab3")
+async def dip_public_bab3(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "3", False)
 
 
-@app.get("/dip/v/{product_id}/bab3/download")
-async def dip_public_bab3_download(product_id: str):
+@app.get("/dip/{slug_id}/bab3/download")
+async def dip_public_bab3_download(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "3", True)
 
 
-@app.get("/dip/v/{product_id}/bab4")
-async def dip_public_bab4(product_id: str):
+@app.get("/dip/{slug_id}/bab4")
+async def dip_public_bab4(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "4", False)
 
 
-@app.get("/dip/v/{product_id}/bab4/download")
-async def dip_public_bab4_download(product_id: str):
+@app.get("/dip/{slug_id}/bab4/download")
+async def dip_public_bab4_download(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "4", True)
 
 
-@app.get("/dip/v/{product_id}/bab2/zip")
-async def dip_public_bab2_zip(product_id: str):
+@app.get("/dip/{slug_id}/bab2/zip")
+async def dip_public_bab2_zip(slug_id: str):
     """Stream ZIP Bab II (folder per bahan baku) lewat backend, tanpa login."""
+    product_id = extract_id_from_slug(slug_id)
     if not _dip_public_check_product(product_id):
         raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
     return await download_bab2_document_zip(product_id, None)
