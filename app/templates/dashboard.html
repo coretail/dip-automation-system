@@ -169,9 +169,11 @@
                         <span class="inline-block mt-1 px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">PT Erfi</span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">{{ product.sediaan or '-' }}</span>
-                        <div class="text-xs text-gray-400 mt-1">{{ product.netto or '-' }}</div>
+                    <td class="px-6 py-4">
+                        <div class="max-w-[160px] truncate">
+                            <span class="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 truncate max-w-full">{{ product.sediaan or '-' }}</span>
+                            <div class="text-xs text-gray-400 mt-1 truncate max-w-full">{{ product.netto or '-' }}</div>
+                        </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap space-y-1">
                         <div>
