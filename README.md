@@ -11,7 +11,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 
 ---
 
-## 📌 Status Pengembangan Sistem (Update: 12 Agustus 2026)
+## 📌 Status Pengembangan Sistem (Update: 15 Agustus 2026)
 
 | Modul / Fase | Fitur & Cakupan | Status |
 | :--- | :--- | :---: |
@@ -30,6 +30,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 | **Manajemen Brand** | Tambah brand, upload dokumen Hak & Lisensi Merk per brand | ✅ **Selesai** |
 | **Activity Log & Uptime Monitor** | Riwayat aktivitas tersimpan di tabel `activity_logs` + log terminal rapi; endpoint `/health` (GET & HEAD) untuk monitoring uptime | ✅ **Selesai** |
 | **Edit Produk Multi-Tab (Bab 1–4)** | Halaman Edit Produk kini punya 5 tab: Informasi Dasar, Bab 1, **Bab 2 (Formula & Mutu Bahan)**, Bab 3, Bab 4 — form susunan formula & status dokumen bahan baku dipindah dari Formula Builder ke Tab Bab 2, plus preview PDF Bab 2 di tab baru | ✅ **Selesai** |
+| **Polishing UI/UX & Data Formatting (Latest)** | Truncation kolom Sediaan/Netto di Dashboard, nama perusahaan lengkap di DIP Public Hub, format tanggal DD-MM-YYYY & email ganda di Qual-Quan, update label SAPJ di Edit Produk | ✅ **Selesai** |
 
 ---
 
