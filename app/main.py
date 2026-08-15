@@ -154,14 +154,15 @@ COMPANY_INFO = {
     "PT Erfi": {
         "nama": "PT. ERFI KARYA ABADI",
         "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
-        "email": "contact@erfikaryaabadi.com",
+        "email": "erfikaryaabadi@gmail.com",
         "website": "www.erfikaryaabadi.com",
         "logo": "/static/images/logo_erfi.png"
     },
     "PT Heka": {
         "nama": "PT. HARAKA ERFI KOSMETINDO ABADI",          
         "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
-        "Telp": "081281938715", 
+        "email": "harakaerfi.pt@gmail.com",
+        "website": "www.harakaerfi.com",
         "logo": "/static/images/logo_heka.png"
     }
 }
@@ -223,6 +224,20 @@ def _pdf_link_callback(uri: str, rel: str) -> str:
     return local_path
 
 templates.env.filters["clean_pct"] = clean_pct
+
+def format_date_dd_mm_yyyy(value):
+    """Konversi format tanggal dari YYYY-MM-DD ke dd-mm-yyyy."""
+    if not value:
+        return "-"
+    try:
+        # Coba parse format ISO (YYYY-MM-DD)
+        dt = datetime.strptime(str(value)[:10], "%Y-%m-%d")
+        return dt.strftime("%d-%m-%Y")
+    except Exception:
+        # Kalau format sudah dd-mm-yyyy atau tidak dikenal, kembalikan aslinya
+        return str(value)
+
+templates.env.filters["format_date_dd_mm_yyyy"] = format_date_dd_mm_yyyy
 
 @app.head("/health")
 @app.get("/health")

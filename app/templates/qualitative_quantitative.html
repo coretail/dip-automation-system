@@ -42,7 +42,7 @@
         <div>
             <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
             <p class="letterhead-line text-xs text-gray-600">{{ company.alamat }}</p>
-            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email or '-' }} &nbsp; Website: {{ company.website or '-' }}</p>
+            <p class="letterhead-line text-xs text-gray-600">Email: harakaerfi.pt@gmail.com | erfikaryaabadi@gmail.com &nbsp;</p>
         </div>
     </div>
 
@@ -58,7 +58,7 @@
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Kemasan</td><td class="py-1" style="border: none !important;">: {{ product.kemasan or '-' }}</td></tr>
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Netto</td><td class="py-1" style="border: none !important;">: {{ product.netto or '-' }}</td></tr>
         <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Nama Customer</td><td class="py-1" style="border: none !important;">: {{ product.nama_customer or '-' }}</td></tr>
-        <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Tanggal Acc Sampel</td><td class="py-1" style="border: none !important;">: {{ product.acc_sampel or '-' }}</td></tr>
+        <tr style="border: none !important;"><td class="py-1 font-semibold" style="border: none !important;">Tanggal Acc Sampel</td><td class="py-1" style="border: none !important;">: {{ product.acc_sampel|format_date_dd_mm_yyyy }}</td></tr>
     </table>
 
     <!-- Tabel Data 1 -->
@@ -119,7 +119,7 @@
         <div>
             <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
             <p class="letterhead-line text-xs text-gray-600">{{ company.alamat }}</p>
-            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email }} &nbsp; Website: {{ company.website }}</p>
+            <p class="letterhead-line text-xs text-gray-600">Email: harakaerfi.pt@gmail.com | erfikaryaabadi@gmail.com &nbsp;</p>
         </div>
     </div>
 
@@ -179,7 +179,7 @@
         <div>
             <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
             <p class="letterhead-line text-xs text-gray-600">{{ company.alamat }}</p>
-            <p class="letterhead-line text-xs text-gray-600">Email: {{ company.email or '-' }} &nbsp; Website: {{ company.website or '-' }}</p>
+            <p class="letterhead-line text-xs text-gray-600">Email: harakaerfi.pt@gmail.com | erfikaryaabadi@gmail.com &nbsp;</p>
         </div>
     </div>
 
