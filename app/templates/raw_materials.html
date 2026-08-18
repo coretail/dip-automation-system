@@ -737,8 +737,24 @@ function toggleModal(show) {
     const modal = document.getElementById('crud-modal');
     modal.classList.toggle('hidden', !show);
     if (show) {
+        const form = modal.querySelector('form');
         modal.querySelector('h3').innerText = "Tambah Master Bahan Baku";
-        modal.querySelector('form').action = "/raw-materials/add";
+        form.action = "/raw-materials/add";
+
+        // 1. Kosongkan value input identitas
+        form.querySelector('input[name="nama_dagang"]').value = '';
+        form.querySelector('input[name="kode_bahan_baku"]').value = '';
+        form.querySelector('input[name="produsen"]').value = '';
+
+        // 2. Set radio tipe kembali ke "single"
+        const radios = form.querySelectorAll('input[name="tipe"]');
+        radios.forEach(r => {
+            r.checked = (r.value === 'single');
+        });
+
+        // 3. Panggil handleTypeChange('single') untuk reset wrapper-rows
+        handleTypeChange('single');
+
         resetCompanyDocFields();
         updateTotalCalculated(); 
     }
