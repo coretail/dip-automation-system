@@ -4,7 +4,7 @@ TL;DR: DIP Automation System adalah aplikasi web untuk sentralisasi data bahan b
 
 ---
 
-Dokumen ini merupakan panduan operasional dan dokumentasi teknis komprehensif untuk penggunaan **DIP Automation System** (Sistem Otomasi Dokumen Informasi Produk Kosmetik sesuai standar BPOM dan *ASEA[...]
+Dokumen ini merupakan panduan operasional dan dokumentasi teknis komprehensif untuk penggunaan **DIP Automation System** (Sistem Otomasi Dokumen Informasi Produk Kosmetik sesuai standar BPOM dan *ASEAN Cosmetic Directive / ACD*). Panduan ini ditujukan bagi tim **BPOM/Regulatory**, **Research & Development (RnD)**, **Quality Control (QC)**, serta **Administrator** di **PT Erfi** dan **PT Heka**.
 
 ---
 
