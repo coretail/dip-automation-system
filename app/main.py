@@ -1785,11 +1785,16 @@ async def download_bab1_document(product_id: str, current_user: dict = Depends(g
     pidana_url = pidana_resp.data[0]["file_url"] if pidana_resp.data else None
 
     # 3. Hak & Lisensi Merk -> dari brand yang di-link ke produk (kalau ada)
+    # Sekarang ambil dari brand_legal_documents, filter by brand_id DAN perusahaan produk
     hak_merk_url = None
     if brand_id:
-        brand_resp = supabase.table("brands").select("hak_merk_file_url").eq("id", brand_id).limit(1).execute()
-        if brand_resp.data:
-            hak_merk_url = brand_resp.data[0].get("hak_merk_file_url")
+        doc_resp = supabase.table("brand_legal_documents") \
+            .select("hak_lisensi_merk_file_url") \
+            .eq("brand_id", brand_id) \
+            .eq("perusahaan", perusahaan) \
+            .limit(1).execute()
+        if doc_resp.data:
+            hak_merk_url = doc_resp.data[0].get("hak_lisensi_merk_file_url")
 
     # 4. Surat No. Notifikasi BPOM -> langsung dari kolom produk
     notifikasi_url = product.get("no_notifikasi_file_url")
@@ -3110,6 +3115,38 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
         print(f"Gagal ambil data brands: {e}")
         brands = []
 
+    # Fetch legal documents for all brands from brand_legal_documents table
+    if brands:
+        brand_ids = [b["id"] for b in brands]
+        try:
+            docs_resp = supabase.table("brand_legal_documents").select("brand_id, perusahaan, hak_lisensi_merk_file_url").in_("brand_id", brand_ids).execute()
+            docs_by_brand = {}
+            for doc in docs_resp.data or []:
+                bid = doc["brand_id"]
+                if bid not in docs_by_brand:
+                    docs_by_brand[bid] = {
+                        "PT Erfi": {"hak_lisensi_merk_file_url": None},
+                        "PT Heka": {"hak_lisensi_merk_file_url": None},
+                    }
+                docs_by_brand[bid][doc["perusahaan"]] = {"hak_lisensi_merk_file_url": doc.get("hak_lisensi_merk_file_url")}
+            
+            # Attach to each brand
+            for b in brands:
+                b["legal_docs"] = docs_by_brand.get(b["id"], {
+                    "PT Erfi": {"hak_lisensi_merk_file_url": None},
+                    "PT Heka": {"hak_lisensi_merk_file_url": None},
+                })
+        except Exception as e:
+            print(f"Gagal ambil dokumen legal brand: {e}")
+            for b in brands:
+                b["legal_docs"] = {
+                    "PT Erfi": {"hak_lisensi_merk_file_url": None},
+                    "PT Heka": {"hak_lisensi_merk_file_url": None},
+                }
+    else:
+        # No brands, but still ensure structure exists
+        pass
+
     success_msg = request.cookies.get("success_msg")
     error_msg = request.cookies.get("error_msg")
 
@@ -3126,31 +3163,57 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
 @app.post("/brands/{brand_id}/update-documents")
 async def update_brand_documents(
     brand_id: str,
-    hak_merk_file: UploadFile = File(None),
+    perusahaan: str = Form(...),
+    hak_lisensi_merk_file: UploadFile = File(None),
     current_user: dict = Depends(get_current_user)
 ):
-    update_data = {}
+    # Validasi perusahaan
+    if perusahaan not in ["PT Erfi", "PT Heka"]:
+        response = RedirectResponse(url="/brands", status_code=303)
+        response.set_cookie("error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
+        return response
+
+    # Map perusahaan to slug for file path
+    perusahaan_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
 
     try:
-        if hak_merk_file and hak_merk_file.filename:
-            file_bytes = await hak_merk_file.read()
-            path = f"brands/hak_merk_{brand_id}.pdf"
+        update_data = {}
+        
+        if hak_lisensi_merk_file and hak_lisensi_merk_file.filename:
+            file_bytes = await hak_lisensi_merk_file.read()
+            # Path includes perusahaan_slug to avoid conflicts
+            path = f"brands/hak_lisensi_merk_{brand_id}_{perusahaan_slug}.pdf"
             supabase.storage.from_("legal-documents").upload(
                 path=path,
                 file=file_bytes,
-                file_options={"content-type": hak_merk_file.content_type, "upsert": "true"}
+                file_options={"content-type": hak_lisensi_merk_file.content_type, "upsert": "true"}
             )
-            update_data["hak_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
+            update_data["hak_lisensi_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
 
         if update_data:
-            supabase.table("brands").update(update_data).eq("id", brand_id).execute()
+            # Check if row exists for this brand_id + perusahaan
+            existing_resp = supabase.table("brand_legal_documents").select("id").eq("brand_id", brand_id).eq("perusahaan", perusahaan).limit(1).execute()
+            
+            if existing_resp.data:
+                # Update existing row
+                supabase.table("brand_legal_documents").update({
+                    "hak_lisensi_merk_file_url": update_data["hak_lisensi_merk_file_url"],
+                    "updated_at": "now()"
+                }).eq("brand_id", brand_id).eq("perusahaan", perusahaan).execute()
+            else:
+                # Insert new row
+                supabase.table("brand_legal_documents").insert({
+                    "brand_id": brand_id,
+                    "perusahaan": perusahaan,
+                    "hak_lisensi_merk_file_url": update_data["hak_lisensi_merk_file_url"]
+                }).execute()
 
         response = RedirectResponse(url="/brands", status_code=303)
-        response.set_cookie("success_msg", "Dokumen merk berhasil diperbarui.")
+        response.set_cookie("success_msg", f"Dokumen Hak/Lisensi Merk untuk {perusahaan} berhasil diperbarui.")
         return response
 
     except Exception as e:
-        print(f"Gagal update dokumen brand {brand_id}: {e}")
+        print(f"Gagal update dokumen brand {brand_id} untuk {perusahaan}: {e}")
         response = RedirectResponse(url="/brands", status_code=303)
         response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
         return response
