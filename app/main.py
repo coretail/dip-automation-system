@@ -805,6 +805,52 @@ async def add_raw_material(
     response.set_cookie("success_msg", f"Mantap! Bahan baku '{nama_dagang}' berhasil ditambahkan.")
     return response
 
+@app.post("/raw-materials/quick-add")
+async def quick_add_raw_material(
+    nama_dagang: str = Form(...),
+    kode_bahan_baku: str = Form(...),
+    tipe: str = Form(...),
+    produsen: str = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    kode_check = kode_bahan_baku.strip()
+    # Cek duplikat kode (pola yang sama dengan add_raw_material)
+    existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).execute()
+    
+    if existing_rm.data:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": f"Kode '{kode_check}' udah terdaftar."}
+        )
+
+    insert_payload = {
+        "nama_dagang": nama_dagang,
+        "kode_bahan_baku": kode_check,
+        "tipe": tipe,
+        "produsen": produsen,
+    }
+
+    try:
+        rm_resp = supabase.table("raw_materials").insert(insert_payload).execute()
+        if not rm_resp.data:
+            return JSONResponse(status_code=500, content={"success": False, "error": "Gagal menyimpan ke database."})
+        
+        new_rm = rm_resp.data[0]
+        # Panggil log_activity (pola yang sama dengan add_raw_material)
+        log_activity(current_user, "create", "raw_material", new_rm["id"], nama_dagang)
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "id": new_rm["id"],
+                "nama_dagang": new_rm["nama_dagang"],
+                "kode_bahan_baku": new_rm["kode_bahan_baku"]
+            }
+        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
 @app.post("/raw-materials/edit/{rm_id}")
 async def edit_raw_material(
     rm_id: str,
