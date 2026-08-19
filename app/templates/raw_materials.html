@@ -27,10 +27,13 @@
 <div class="border-b border-gray-200 mb-6">
     <nav class="-mb-px flex space-x-8" aria-label="Tabs">
         <button onclick="switchTab('master-tab')" id="btn-master" class="border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
-            Master Bahan Baku
+            Semua Bahan Baku
         </button>
         <button onclick="switchTab('batch-tab')" id="btn-batch" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
             Log Kedatangan Batch (Spreadsheet View)
+        </button>
+        <button onclick="switchTab('ed-tab')" id="btn-ed" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
+            <i class="fa-solid fa-triangle-exclamation mr-1"></i> Manajemen ED & Kadaluwarsa
         </button>
         <button onclick="switchTab('docs-tab')" id="btn-docs" class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm cursor-pointer">
             Cek Kelengkapan Dokumen
@@ -200,7 +203,8 @@
                     data-batch="{{ (b.no_batch or '') | lower }}"
                     data-produsen="{{ (b.raw_materials.produsen if b.raw_materials and b.raw_materials.produsen else '') | lower }}"
                     data-asal-negara="{{ (b.asal_negara or '') | lower }}"
-                    data-nama-produsen="{{ (b.nama_produsen or '') | lower }}">
+                    data-nama-produsen="{{ (b.nama_produsen or '') | lower }}"
+                    data-status-ed="{{ b.status_ed or 'Active' }}">
                     <!-- Perusahaan -->
                     <td class="px-4 py-3 whitespace-nowrap">
                         {% if b.perusahaan %}
@@ -312,6 +316,81 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<!-- ============ TAB: MANAJEMEN ED & KADALUWARSA ============ -->
+<div id="ed-tab" class="hidden">
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+        <div class="px-4 py-3 bg-amber-50 border-b border-amber-200">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-amber-600"></i>
+                <h3 class="font-semibold text-amber-800">Bahan Baku mendekati ED (≤ 180 hari) atau Sudah Expired</h3>
+            </div>
+            <p class="text-xs text-amber-700 mt-1">Daftar batch yang perlu tindakan QC: perpanjang ED (ACC Dipakai) atau musnahkan (ACC Dimusnahkan).</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50 text-xs font-semibold text-gray-700 uppercase tracking-wider text-left">
+                    <tr>
+                        <th class="px-4 py-3">Perusahaan</th>
+                        <th class="px-4 py-3">Bahan Baku</th>
+                        <th class="px-4 py-3">Lot / Batch No.</th>
+                        <th class="px-4 py-3">Tgl ED</th>
+                        <th class="px-4 py-3">Sisa Hari</th>
+                        <th class="px-4 py-3">Status ED</th>
+                        <th class="px-4 py-3">Aksi QC</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200" id="ed-batch-tbody">
+                    {% for b in ed_critical_batches %}
+                    {% set ed_str = b.tanggal_ed[:10] if b.tanggal_ed is string else (b.tanggal_ed | string)[:10] %}
+                    {% set status_ed = b.computed_status_ed %}
+                    {% set days_remaining = b.computed_days_remaining %}
+                    <tr class="ed-row hover:bg-gray-50"
+                        data-ed="{{ ed_str }}"
+                        data-status="{{ status_ed }}"
+                        data-days-remaining="{{ days_remaining }}"
+                        data-batch-id="{{ b.id }}"
+                        data-nama="{{ (b.raw_materials.nama_dagang if b.raw_materials else '') | lower }}"
+                        data-perusahaan="{{ b.perusahaan or '' | lower }}">
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            {% if b.perusahaan %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ 'bg-sky-100 text-sky-700' if b.perusahaan == 'PT Erfi' else 'bg-fuchsia-100 text-fuchsia-700' }}">{{ b.perusahaan }}</span>
+                            {% else %}
+                                <span class="text-xs text-gray-300">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 font-medium text-indigo-700">
+                            {{ b.raw_materials.nama_dagang if b.raw_materials else 'Tanpa Master' }}
+                        </td>
+                        <td class="px-4 py-3 font-mono text-xs">{{ b.no_batch or '-' }}</td>
+                        <td class="px-4 py-3 font-mono text-xs">{{ b.tanggal_ed or '-' }}</td>
+                        <td class="px-4 py-3 whitespace-nowrap" id="days-{{ b.id }}">
+                            <span class="ed-days-badge inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"></span>
+                        </td>
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            <span class="status-ed-badge inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" data-status="{{ status_ed }}"></span>
+                        </td>
+                        <td class="px-4 py-3 whitespace-nowrap text-right space-x-1">
+                            <button onclick="openAccDipakaiModal('{{ b.id }}', '{{ (b.raw_materials.nama_dagang if b.raw_materials else 'Unknown') }}', '{{ b.no_batch or '' }}')" 
+                                    class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer" title="ACC Dipakai (Perpanjang ED)">
+                                <i class="fa-solid fa-check mr-1"></i> ACC Dipakai
+                            </button>
+                            <button onclick="openAccDimusnahkanModal('{{ b.id }}', '{{ (b.raw_materials.nama_dagang if b.raw_materials else 'Unknown') }}', '{{ b.no_batch or '' }}')"
+                                    class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 cursor-pointer" title="ACC Dimusnahkan (Dispose)">
+                                <i class="fa-solid fa-ban mr-1"></i> Dimusnahkan
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr id="ed-empty-row">
+                        <td colspan="7" class="px-4 py-12 text-center text-gray-500">Tidak ada batch mendekati ED atau expired.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -683,8 +762,8 @@
                     <input type="text" name="qc_signer" placeholder="Nama Personel QC" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Disetujui Oleh (QA)</label>
-                    <input type="text" name="qa_signer" placeholder="Nama Personel QA" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Disetujui Oleh</label>
+                    <input type="text" name="qa_signer" placeholder="Nama Kepala QC" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-700 mb-1">Kesimpulan Akhir *</label>
@@ -733,6 +812,111 @@
             <div class="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
                 <button type="button" onclick="closeCpkbModal()" class="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer">Batal</button>
                 <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm cursor-pointer">Simpan SOP</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal ACC Dipakai (Perpanjang ED) -->
+<div id="acc-dipakai-modal" class="hidden fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h3 class="text-lg font-bold text-gray-900">ACC Dipakai - Perpanjang ED</h3>
+            <button onclick="closeAccDipakaiModal()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <form action="/raw-materials/batches/acc-dipakai" method="POST" onsubmit="return validateAccDipakaiForm()">
+            <input type="hidden" name="batch_id" id="acc-dipakai-batch-id">
+            <input type="hidden" name="current_ed" id="acc-dipakai-current-ed">
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Bahan Baku</label>
+                <p id="acc-dipakai-material-name" class="text-sm text-gray-900 font-medium"></p>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Batch / Lot No.</label>
+                <p id="acc-dipakai-batch-no" class="text-sm text-gray-900 font-mono"></p>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">ED Saat Ini</label>
+                <p id="acc-dipakai-current-ed-display" class="text-sm text-gray-900 font-mono"></p>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">ED Baru (Tanggal Perpanjangan) <span class="text-red-500">*</span></label>
+                    <input type="date" name="new_expiry_date" id="acc-dipakai-new-ed" required 
+                           class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Status ED Baru</label>
+                    <select name="new_status_ed" id="acc-dipakai-new-status" 
+                            class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm bg-white">
+                        <option value="ACC Dipakai">ACC Dipakai</option>
+                        <option value="Active">Active</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Catatan QC (Alasan/Hasil Retest) <span class="text-red-500">*</span></label>
+                <textarea name="catatan_qc" id="acc-dipakai-catatan" rows="3" required
+                          class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm"
+                          placeholder="Masukkan alasan perpanjangan ED, hasil retest, nomor referensi laporan lab, dll."></textarea>
+            </div>
+            
+            <div class="flex justify-end space-x-2 border-t pt-4">
+                <button type="button" onclick="closeAccDipakaiModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Batal</button>
+                <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md shadow-sm hover:bg-green-700">Simpan ACC Dipakai</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal ACC Dimusnahkan (Dispose) -->
+<div id="acc-dimusnahkan-modal" class="hidden fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6">
+        <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h3 class="text-lg font-bold text-gray-900">ACC Dimusnahkan - Dispose</h3>
+            <button onclick="closeAccDimusnahkanModal()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+            <div class="flex items-start gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-red-500 mt-0.5"></i>
+                <div class="text-sm text-red-800">
+                    <p class="font-medium">PERINGATAN: Tindakan ini tidak dapat dibatalkan!</p>
+                    <p>Stok batch ini akan di-set ke 0 (nol) dan status ED akan berubah menjadi "Dimusnahkan".</p>
+                </div>
+            </div>
+        </div>
+        
+        <form action="/raw-materials/batches/acc-dimusnahkan" method="POST" onsubmit="return validateAccDimusnahkanForm()">
+            <input type="hidden" name="batch_id" id="acc-dimusnahkan-batch-id">
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Bahan Baku</label>
+                <p id="acc-dimusnahkan-material-name" class="text-sm text-gray-900 font-medium"></p>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Batch / Lot No.</label>
+                <p id="acc-dimusnahkan-batch-no" class="text-sm text-gray-900 font-mono"></p>
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Catatan QC (Alasan Musnahkan) <span class="text-red-500">*</span></label>
+                <textarea name="catatan_qc" id="acc-dimusnahkan-catatan" rows="3" required
+                          class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm"
+                          placeholder="Masukkan alasan pemusnahan, nomor surat perintah musnah, dll."></textarea>
+            </div>
+            
+            <div class="flex justify-end space-x-2 border-t pt-4">
+                <button type="button" onclick="closeAccDimusnahkanModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Batal</button>
+                <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700">
+                    <i class="fa-solid fa-ban mr-1"></i> Konfirmasi Musnahkan
+                </button>
             </div>
         </form>
     </div>
@@ -982,6 +1166,8 @@ function filterTable() {
     const companyVal = document.getElementById('filter-company').value;
     
     const isMasterActive = !document.getElementById('master-tab').classList.contains('hidden');
+    const isBatchActive = !document.getElementById('batch-tab').classList.contains('hidden');
+    const isEdActive = !document.getElementById('ed-tab').classList.contains('hidden');
     const isDocsActive = !document.getElementById('docs-tab').classList.contains('hidden');
 
     if (isMasterActive) {
@@ -1010,6 +1196,70 @@ function filterTable() {
         } else {
             countEl.textContent = '';
         }
+    } else if (isBatchActive) {
+        // TAB 2: Log Kedatangan Batch - SEMBUNYIKAN batch dengan status_ed = 'Dimusnahkan'
+        const rows = document.querySelectorAll('.batch-row');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const nama = row.dataset.nama || '';
+            const supplier = row.dataset.supplier || '';
+            const batch = row.dataset.batch || '';
+            const produsen = row.dataset.produsen || '';
+            const asalNegara = row.dataset.asalNegara || '';
+            const namaProdusen = row.dataset.namaProdusen || '';
+            const company = row.dataset.company || '';
+            const statusEd = row.dataset.statusEd || '';
+
+            // Skip 'Dimusnahkan' batches
+            if (statusEd === 'Dimusnahkan') {
+                row.style.display = 'none';
+                return;
+            }
+
+            const matchSearch = !searchVal || nama.includes(searchVal) || supplier.includes(searchVal) || batch.includes(searchVal) || produsen.includes(searchVal) || asalNegara.includes(searchVal) || namaProdusen.includes(searchVal);
+            const matchCompany = !companyVal || company === companyVal;
+
+            const show = matchSearch && matchCompany;
+            row.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+
+        const countEl = document.getElementById('filter-count');
+        if (searchVal || companyVal) {
+            countEl.textContent = `Menampilkan ${visibleCount} dari ${rows.length} record batch`;
+        } else {
+            countEl.textContent = '';
+        }
+    } else if (isEdActive) {
+        // TAB: Manajemen ED & Kadaluwarsa
+        const rows = document.querySelectorAll('.ed-row');
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+            const nama = row.dataset.nama || '';
+            const perusahaan = row.dataset.perusahaan || '';
+
+            const matchSearch = !searchVal || nama.includes(searchVal) || perusahaan.includes(searchVal);
+            const matchCompany = !companyVal || perusahaan === companyVal;
+
+            const show = matchSearch && matchCompany;
+            row.style.display = show ? '' : 'none';
+            if (show) visibleCount++;
+        });
+
+        // Update empty state
+        const emptyRow = document.getElementById('ed-empty-row');
+        if (emptyRow) {
+            emptyRow.classList.toggle('hidden', visibleCount > 0);
+        }
+
+        const countEl = document.getElementById('filter-count');
+        if (searchVal || companyVal) {
+            countEl.textContent = `Menampilkan ${visibleCount} dari ${rows.length} batch kritis`;
+        } else {
+            countEl.textContent = '';
+        }
     } else if (isDocsActive) {
         const rows = document.querySelectorAll('.docs-row');
         let visibleCount = 0;
@@ -1027,33 +1277,6 @@ function filterTable() {
         const countEl = document.getElementById('filter-count');
         if (searchVal) {
             countEl.textContent = `Menampilkan ${visibleCount} dari ${rows.length} bahan baku`;
-        } else {
-            countEl.textContent = '';
-        }
-    } else {
-        const rows = document.querySelectorAll('.batch-row');
-        let visibleCount = 0;
-
-        rows.forEach(row => {
-            const nama = row.dataset.nama || '';
-            const supplier = row.dataset.supplier || '';
-            const batch = row.dataset.batch || '';
-            const produsen = row.dataset.produsen || '';
-            const asalNegara = row.dataset.asalNegara || '';
-            const namaProdusen = row.dataset.namaProdusen || '';
-            const company = row.dataset.company || '';
-
-            const matchSearch = !searchVal || nama.includes(searchVal) || supplier.includes(searchVal) || batch.includes(searchVal) || produsen.includes(searchVal) || asalNegara.includes(searchVal) || namaProdusen.includes(searchVal);
-            const matchCompany = !companyVal || company === companyVal;
-
-            const show = matchSearch && matchCompany;
-            row.style.display = show ? '' : 'none';
-            if (show) visibleCount++;
-        });
-
-        const countEl = document.getElementById('filter-count');
-        if (searchVal || companyVal) {
-            countEl.textContent = `Menampilkan ${visibleCount} dari ${rows.length} record batch`;
         } else {
             countEl.textContent = '';
         }
@@ -1133,7 +1356,12 @@ function closeBatchModal() {
 }
 
 function switchTab(tabId) {
-    const tabs = { 'master-tab': 'btn-master', 'batch-tab': 'btn-batch', 'docs-tab': 'btn-docs' };
+    const tabs = { 
+        'master-tab': 'btn-master', 
+        'batch-tab': 'btn-batch', 
+        'ed-tab': 'btn-ed',
+        'docs-tab': 'btn-docs' 
+    };
 
     Object.keys(tabs).forEach(id => {
         document.getElementById(id).classList.toggle('hidden', id !== tabId);
@@ -1147,10 +1375,15 @@ function switchTab(tabId) {
 
     // filterTable dipanggil di semua tab biar search bar konsisten kerja di mana aja
     filterTable();
+    
+    // Render ED badges when switching to ED tab
+    if (tabId === 'ed-tab') {
+        renderEDBadges();
+        updateEDTabEmptyState();
+    }
 }
 
 function openDocPreview(url, title) {
-    if (!url) return;
     document.getElementById('doc-preview-title').innerText = title;
     document.getElementById('doc-preview-iframe').src = url;
     document.getElementById('doc-preview-modal').classList.remove('hidden');
@@ -1159,6 +1392,257 @@ function openDocPreview(url, title) {
 function closeDocPreview() {
     document.getElementById('doc-preview-modal').classList.add('hidden');
     document.getElementById('doc-preview-iframe').src = '';
+}
+
+// ==================== ED MANAGEMENT FUNCTIONS ====================
+function renderEDBadges() {
+    // Render days remaining badges using pre-computed server values
+    document.querySelectorAll('.ed-row').forEach(row => {
+        const daysRemainingStr = row.dataset.daysRemaining;
+        const badgeEl = document.getElementById(`days-${row.dataset.batchId}`);
+        if (daysRemainingStr === undefined || daysRemainingStr === '' || !badgeEl) return;
+        
+        const daysRemaining = parseInt(daysRemainingStr, 10);
+        if (isNaN(daysRemaining)) return;
+        
+        let badgeClass, badgeText;
+        if (daysRemaining < 0) {
+            badgeClass = 'bg-red-100 text-red-800';
+            badgeText = `Expired (${Math.abs(daysRemaining)} hari)`;
+        } else if (daysRemaining === 0) {
+            badgeClass = 'bg-red-100 text-red-800';
+            badgeText = 'Expired hari ini';
+        } else if (daysRemaining <= 30) {
+            badgeClass = 'bg-red-100 text-red-800';
+            badgeText = `Sisa ${daysRemaining} hari`;
+        } else if (daysRemaining <= 90) {
+            badgeClass = 'bg-amber-100 text-amber-800';
+            badgeText = `Sisa ${daysRemaining} hari`;
+        } else if (daysRemaining <= 180) {
+            badgeClass = 'bg-yellow-100 text-yellow-800';
+            badgeText = `Sisa ${daysRemaining} hari`;
+        } else {
+            badgeClass = 'bg-green-100 text-green-800';
+            badgeText = `Sisa ${daysRemaining} hari`;
+        }
+        
+        badgeEl.innerHTML = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${badgeClass}">${badgeText}</span>`;
+    });
+    
+    // Render status ED badges
+    document.querySelectorAll('.status-ed-badge').forEach(badgeEl => {
+        const status = badgeEl.dataset.status || 'Active';
+        let badgeClass, statusIcon, statusText;
+        
+        switch (status) {
+            case 'ACC Dipakai':
+                badgeClass = 'bg-green-100 text-green-800';
+                statusIcon = 'fa-circle-check';
+                statusText = 'ACC Dipakai';
+                break;
+            case 'Dimusnahkan':
+                badgeClass = 'bg-red-100 text-red-800';
+                statusIcon = 'fa-ban';
+                statusText = 'Dimusnahkan';
+                break;
+            case 'Expired':
+                badgeClass = 'bg-red-100 text-red-800';
+                statusIcon = 'fa-skull-crossbones';
+                statusText = 'Expired';
+                break;
+            case 'Kritis (<= 180 hari)':
+                badgeClass = 'bg-amber-100 text-amber-800';
+                statusIcon = 'fa-triangle-exclamation';
+                statusText = 'Akan Ed';
+                break;
+            default:
+                badgeClass = 'bg-gray-100 text-gray-800';
+                statusIcon = 'fa-circle';
+                statusText = status;
+        }
+        
+        badgeEl.innerHTML = `<i class="fa-solid ${statusIcon} mr-1"></i> ${statusText}`;
+    });
+}
+
+function updateEDTabEmptyState() {
+    const allRows = document.querySelectorAll('.ed-row');
+    const emptyRow = document.getElementById('ed-empty-row');
+    if (emptyRow) {
+        emptyRow.classList.toggle('hidden', allRows.length > 0);
+    }
+}
+
+// ACC Dipakai Modal Functions
+function openAccDipakaiModal(batchId, materialName, batchNo) {
+    const modal = document.getElementById('acc-dipakai-modal');
+    const row = document.querySelector(`.ed-row[data-batch-id="${batchId}"]`);
+    const currentED = row ? row.dataset.ed : '';
+    
+    document.getElementById('acc-dipakai-batch-id').value = batchId;
+    document.getElementById('acc-dipakai-current-ed').value = currentED;
+    document.getElementById('acc-dipakai-material-name').innerText = materialName;
+    document.getElementById('acc-dipakai-batch-no').innerText = batchNo;
+    document.getElementById('acc-dipakai-current-ed-display').innerText = currentED || '-';
+    
+    // Set default new ED to current ED (user will change it)
+    const newEdInput = document.getElementById('acc-dipakai-new-ed');
+    if (currentED) {
+        newEdInput.value = currentED;
+        newEdInput.min = currentED; // New ED should be >= current ED
+    } else {
+        // Default to 1 year from today
+        const defaultDate = new Date();
+        defaultDate.setFullYear(defaultDate.getFullYear() + 1);
+        newEdInput.value = defaultDate.toISOString().split('T')[0];
+        newEdInput.min = new Date().toISOString().split('T')[0];
+    }
+    
+    // Clear catatan
+    document.getElementById('acc-dipakai-catatan').value = '';
+    
+    modal.classList.remove('hidden');
+}
+
+function closeAccDipakaiModal() {
+    const modal = document.getElementById('acc-dipakai-modal');
+    modal.classList.add('hidden');
+    modal.querySelector('form').reset();
+}
+
+function validateAccDipakaiForm() {
+    const newED = document.getElementById('acc-dipakai-new-ed').value;
+    const catatan = document.getElementById('acc-dipakai-catatan').value;
+    
+    if (!newED) {
+        alert('Tanggal ED baru wajib diisi');
+        return false;
+    }
+    
+    if (!catatan || catatan.trim() === '') {
+        alert('Catatan QC wajib diisi');
+        return false;
+    }
+    
+    return true;
+}
+
+// ACC Dimusnahkan Modal Functions
+function openAccDimusnahkanModal(batchId, materialName, batchNo) {
+    const modal = document.getElementById('acc-dimusnahkan-modal');
+    
+    document.getElementById('acc-dimusnahkan-batch-id').value = batchId;
+    document.getElementById('acc-dimusnahkan-material-name').innerText = materialName;
+    document.getElementById('acc-dimusnahkan-batch-no').innerText = batchNo;
+    
+    // Clear catatan
+    document.getElementById('acc-dimusnahkan-catatan').value = '';
+    
+    modal.classList.remove('hidden');
+}
+
+function closeAccDimusnahkanModal() {
+    const modal = document.getElementById('acc-dimusnahkan-modal');
+    modal.classList.add('hidden');
+    modal.querySelector('form').reset();
+}
+
+function validateAccDimusnahkanForm() {
+    const catatan = document.getElementById('acc-dimusnahkan-catatan').value;
+    
+    if (!catatan || catatan.trim() === '') {
+        alert('Catatan QC (alasan pemusnahan) wajib diisi');
+        return false;
+    }
+    
+    // Confirm action
+    if (!confirm('PERINGATAN: Batch ini akan dimusnahkan dan stok akan di-set ke 0. Tindakan ini tidak dapat dibatalkan. Lanjutkan?')) {
+        return false;
+    }
+    
+    return true;
+}
+
+// ==================== INIT ====================
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize notification badge from server-rendered count (ed_notification_count from template context)
+    const initialCount = {{ ed_notification_count | default(0) | tojson }};
+    const badge = document.getElementById('ed-notification-badge');
+    if (badge) {
+        if (initialCount > 0) {
+            badge.textContent = initialCount > 99 ? '99+' : initialCount;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+    }
+    
+    // Check URL param for tab
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    
+    if (tabParam === 'ed-tab') {
+        switchTab('ed-tab');
+    } else {
+        // Default: render ED badges anyway in case user switches
+        renderEDBadges();
+    }
+    
+    // Hide Dimusnahkan rows in batch-tab on load
+    document.querySelectorAll('.batch-row[data-status-ed="Dimusnahkan"]').forEach(row => {
+        row.style.display = 'none';
+    });
+    
+    // Trigger notification badge fetch (will refresh from API)
+    fetchEDNotifications();
+});
+
+function fetchEDNotifications() {
+    fetch('/api/ed-notifications')
+        .then(response => response.json())
+        .then(data => {
+            const badge = document.getElementById('ed-notification-badge');
+            if (!badge) return;
+            
+            if (data.count > 0) {
+                badge.textContent = data.count > 99 ? '99+' : data.count;
+                badge.classList.remove('hidden');
+                
+                // Render list items
+                const list = document.getElementById('ed-notification-list');
+                if (list) {
+                    list.innerHTML = data.items.map(item => {
+                        const statusEd = item.status_ed || 'Active';
+                        let badgeClass = 'bg-gray-100 text-gray-800';
+                        if (statusEd === 'Dimusnahkan' || statusEd === 'Expired') {
+                            badgeClass = 'bg-red-100 text-red-800';
+                        } else if (statusEd.includes('Kritis')) {
+                            badgeClass = 'bg-amber-100 text-amber-800';
+                        } else if (statusEd === 'ACC Dipakai') {
+                            badgeClass = 'bg-green-100 text-green-800';
+                        }
+                        
+                        return `
+                            <a href="/raw-materials?tab=ed-tab" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-100">
+                                <div class="flex items-start justify-between">
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-medium text-gray-900 truncate">${item.nama_dagang || 'Unknown'}</p>
+                                        <p class="text-xs text-gray-500">Batch: ${item.no_batch || '-'} | ${item.perusahaan || '-'}</p>
+                                        <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}">
+                                            ${item.days_remaining <= 0 ? 'EXPIRED' : `Sisa ${item.days_remaining} hari`} (ED: ${item.tanggal_ed})
+                                        </p>
+                                    </div>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badgeClass} whitespace-nowrap">${statusEd}</span>
+                                </div>
+                            </a>
+                        `;
+                    }).join('');
+                }
+            } else {
+                badge.classList.add('hidden');
+            }
+        })
+        .catch(err => console.error('Failed to fetch ED notifications:', err));
 }
 </script>
 {% endblock %}

@@ -19,7 +19,7 @@
                     <img src="/static/images/favicon.png" alt="Logo" class="h-7 w-7 object-contain brightness-0 invert">
                     <span class="text-xl font-bold tracking-tight">H&EKA WORKSPACE</span>
                 </div>
-                <div class="flex space-x-4">
+                <div class="flex items-center space-x-4">
                     <a href="/" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition"><i class="fa-solid fa-chart-pie mr-1"></i> Dashboard</a>
                     <a href="/raw-materials" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition"><i class="fa-solid fa-boxes-stacked mr-1"></i> Bahan Baku</a>
                     <a href="/sample-submissions" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
@@ -28,6 +28,28 @@
                     <a href="/brands" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
                         <i class="fa-solid fa-copyright mr-1"></i> Kelola Merk
                     </a>
+                    
+                    <!-- Notification Bell for ED Alerts -->
+                    <div class="relative" id="ed-notification-wrapper">
+                        <button id="ed-notification-btn" class="relative p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Peringatan ED Bahan Baku" title="Peringatan Expired Date">
+                            <i class="fa-solid fa-bell text-lg"></i>
+                            <span id="ed-notification-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
+                        </button>
+                        <!-- Dropdown -->
+                        <div id="ed-notification-dropdown" class="hidden absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                            <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                                <h4 class="font-semibold text-gray-900">Peringatan ED Bahan Baku</h4>
+                                <a href="/raw-materials?tab=ed-tab" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Lihat Semua <i class="fa-solid fa-arrow-right ml-1"></i></a>
+                            </div>
+                            <div id="ed-notification-list" class="max-h-64 overflow-y-auto">
+                                <!-- Items will be populated via JS -->
+                                <div class="px-4 py-6 text-center text-gray-500 text-sm" id="ed-loading">Memuat...</div>
+                            </div>
+                            <div class="px-4 py-2 border-t border-gray-200 text-right">
+                                <a href="/raw-materials?tab=ed-tab" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Kelola ED & Kadaluwarsa <i class="fa-solid fa-arrow-right ml-1"></i></a>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -69,6 +91,108 @@
 
         {% block content %}{% endblock %}
     </main>
+
+    <!-- ED Notification Bell JavaScript -->
+    <script>
+        // ED Notification Bell Functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const bellBtn = document.getElementById('ed-notification-btn');
+            const dropdown = document.getElementById('ed-notification-dropdown');
+            const badge = document.getElementById('ed-notification-badge');
+            const listContainer = document.getElementById('ed-notification-list');
+            const loadingEl = document.getElementById('ed-loading');
+            
+            if (!bellBtn || !dropdown) return;
+
+            // Initialize badge from server-rendered count (ed_notification_count from template context)
+            // Use default(0) to avoid errors on pages where context is not provided
+            const initialCount = {{ ed_notification_count | default(0) | tojson }};
+            if (initialCount > 0) {
+                badge.textContent = initialCount > 99 ? '99+' : initialCount;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+
+            // AUTO-FETCH on page load so badge is visible immediately
+            fetchEDNotifications();
+
+            // Toggle dropdown
+            bellBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                dropdown.classList.toggle('hidden');
+                if (!dropdown.classList.contains('hidden')) {
+                    fetchEDNotifications();
+                }
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!dropdown.contains(e.target) && !bellBtn.contains(e.target)) {
+                    dropdown.classList.add('hidden');
+                }
+            });
+
+            // Fetch ED notifications
+            async function fetchEDNotifications() {
+                try {
+                    const response = await fetch('/api/ed-notifications');
+                    if (!response.ok) throw new Error('Failed to fetch');
+                    const data = await response.json();
+                    
+                    // Update badge
+                    if (data.count > 0) {
+                        badge.textContent = data.count > 99 ? '99+' : data.count;
+                        badge.classList.remove('hidden');
+                    } else {
+                        badge.classList.add('hidden');
+                    }
+                    
+                    // Update list
+                    if (data.items && data.items.length > 0) {
+                        listContainer.innerHTML = data.items.map(item => `
+                            <a href="/raw-materials?tab=ed-tab" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="flex-1 min-w-0">
+                                        <p class="font-medium text-gray-900 truncate">${escapeHtml(item.nama_dagang)}</p>
+                                        <p class="text-xs text-gray-500">Batch: ${escapeHtml(item.no_batch)} | ${escapeHtml(item.perusahaan)}</p>
+                                        <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}">
+                                            ${item.days_remaining <= 0 ? 'EXPIRED' : `Sisa ${item.days_remaining} hari`} (ED: ${item.tanggal_ed})
+                                        </p>
+                                    </div>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusBadgeClass(item.status_ed)} whitespace-nowrap">
+                                        ${escapeHtml(item.status_ed || 'Active')}
+                                    </span>
+                                </div>
+                            </a>
+                        `).join('');
+                    } else {
+                        listContainer.innerHTML = '<div class="px-4 py-6 text-center text-gray-500 text-sm">Tidak ada peringatan ED</div>';
+                    }
+                } catch (error) {
+                    console.error('Error fetching ED notifications:', error);
+                    listContainer.innerHTML = '<div class="px-4 py-6 text-center text-red-500 text-sm">Gagal memuat notifikasi</div>';
+                    badge.classList.add('hidden');
+                }
+            }
+
+            function getStatusBadgeClass(status) {
+                switch (status) {
+                    case 'ACC Dipakai': return 'bg-green-100 text-green-800';
+                    case 'Dimusnahkan': return 'bg-red-100 text-red-800';
+                    case 'Expired': return 'bg-red-100 text-red-800';
+                    case 'Kritis (<= 180 hari)': return 'bg-amber-100 text-amber-800';
+                    default: return 'bg-gray-100 text-gray-800';
+                }
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        });
+    </script>
 
 </body>
 </html>

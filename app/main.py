@@ -52,6 +52,37 @@ def _add_years(d: date, years: int) -> date:
     except ValueError:
         return d.replace(year=d.year + years, day=28)
 
+async def get_ed_notification_count():
+    """Helper to fetch ED notification count for template context."""
+    from datetime import datetime as _dt
+    today = _dt.now(WIB).date()
+    try:
+        ed_query = (
+            supabase.table("raw_material_batches")
+            .select("id, tanggal_ed, status_ed")
+            .neq("status_ed", "Dimusnahkan")
+            .execute()
+        )
+        count = 0
+        for batch in (ed_query.data or []):
+            tanggal_ed = batch.get("tanggal_ed")
+            if not tanggal_ed:
+                continue
+            try:
+                if isinstance(tanggal_ed, str):
+                    ed_date = _dt.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
+                else:
+                    ed_date = tanggal_ed
+                days_remaining = (ed_date - today).days
+                if days_remaining <= 180:
+                    count += 1
+            except Exception:
+                continue
+        return count
+    except Exception as e:
+        print(f"Gagal hitung ED notifications: {e}")
+        return 0
+
 def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
     """
     Hitung status NA otomatis dari tanggal_aktif_na (NA BPOM berlaku 3 tahun sejak
@@ -590,6 +621,54 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
         print(f"Gagal ambil data batches: {e}")
         batches_data = []
 
+    # ===== PRE-COMPUTE ED CRITICAL BATCHES FOR NOTIFICATION BADGE =====
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    WIB = ZoneInfo("Asia/Jakarta")
+    today = datetime.now(WIB).date()
+    warning_date = today + timedelta(days=180)
+    
+    ed_critical_count = 0
+    ed_critical_batches_for_tab = []  # Filtered for ED tab (days_remaining <= 180)
+    
+    for b in batches_data:
+        tanggal_ed = b.get("tanggal_ed")
+        status_ed = b.get("status_ed") or "Active"
+        
+        if not tanggal_ed or status_ed == "Dimusnahkan":
+            continue
+            
+        try:
+            if isinstance(tanggal_ed, str):
+                ed_date = datetime.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
+            else:
+                ed_date = tanggal_ed
+        except Exception:
+            continue
+            
+        days_remaining = (ed_date - today).days
+        
+        # Count for notification badge (critical: <= 180 days or expired)
+        if days_remaining <= 180:
+            ed_critical_count += 1
+            
+            # Add to ED tab filtered list
+            # Auto-update status for display
+            display_status = status_ed
+            if days_remaining <= 0 and status_ed == "Active":
+                display_status = "Expired"
+            elif days_remaining <= 180 and status_ed == "Active":
+                display_status = "Kritis (<= 180 hari)"
+                
+            ed_critical_batches_for_tab.append({
+                **b,
+                "computed_days_remaining": days_remaining,
+                "computed_status_ed": display_status
+            })
+    
+    # Sort ED tab batches by days_remaining (expired first, then closest to expiry)
+    ed_critical_batches_for_tab.sort(key=lambda x: x["computed_days_remaining"])
+
     sorted_batches = sorted(batches_data, key=lambda b: b.get("created_at") or "", reverse=True)
     latest_batch_map = {}
     for b in sorted_batches:
@@ -633,6 +712,8 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
         context={
             "raw_materials": rm_resp.data,
             "batches": batches_data,
+            "ed_critical_batches": ed_critical_batches_for_tab,  # Filtered for ED tab
+            "ed_notification_count": ed_critical_count,  # For immediate badge rendering
             "doc_status": doc_status,
             "success_msg": success_msg,
             "error_msg": error_msg
@@ -645,6 +726,81 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
         response.delete_cookie("error_msg")
         
     return response
+
+
+# ==================== API: ED NOTIFICATIONS ====================
+@app.get("/api/ed-notifications")
+async def get_ed_notifications(current_user: dict = Depends(get_current_user)):
+    """API endpoint untuk mengambil notifikasi ED bahan baku (sisa ED <= 180 hari atau expired)"""
+    WIB = ZoneInfo("Asia/Jakarta")
+    today = datetime.now(WIB).date()
+    warning_date = today + timedelta(days=180)  # 180 hari ke depan
+    
+    try:
+        # Ambil semua batch dengan tanggal_ed <= warning_date atau status_ed bukan 'Dimusnahkan'
+        query = supabase.table("raw_material_batches") \
+            .select("""
+                *,
+                raw_materials (
+                    nama_dagang,
+                    kode_bahan_baku
+                )
+            """) \
+            .neq("status_ed", "Dimusnahkan") \
+            .execute()
+        
+        batches = query.data or []
+        critical_batches = []
+        
+        for batch in batches:
+            tanggal_ed = batch.get("tanggal_ed")
+            if not tanggal_ed:
+                continue
+            
+            try:
+                if isinstance(tanggal_ed, str):
+                    ed_date = datetime.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
+                else:
+                    ed_date = tanggal_ed
+            except Exception:
+                continue
+            
+            days_remaining = (ed_date - today).days
+            
+            # Filter: hanya yang sisa ED <= 180 hari atau sudah expired
+            if days_remaining <= 180:
+                status_ed = batch.get("status_ed") or "Active"
+                
+                # Auto-update status jika expired tapi masih 'Active'
+                if days_remaining <= 0 and status_ed == "Active":
+                    status_ed = "Expired"
+                elif days_remaining <= 180 and status_ed == "Active":
+                    status_ed = "Kritis (<= 180 hari)"
+                
+                critical_batches.append({
+                    "id": batch.get("id"),
+                    "raw_material_id": batch.get("raw_material_id"),
+                    "no_batch": batch.get("no_batch"),
+                    "perusahaan": batch.get("perusahaan"),
+                    "tanggal_ed": tanggal_ed,
+                    "days_remaining": days_remaining,
+                    "status_ed": status_ed,
+                    "nama_dagang": batch.get("raw_materials", {}).get("nama_dagang", "Unknown"),
+                    "kode_bahan_baku": batch.get("raw_materials", {}).get("kode_bahan_baku", "")
+                })
+        
+        # Sort by days_remaining (expired first, then closest to expiry)
+        critical_batches.sort(key=lambda x: x["days_remaining"])
+        
+        return {
+            "count": len(critical_batches),
+            "items": critical_batches[:20]  # Limit to 20 items in dropdown
+        }
+        
+    except Exception as e:
+        print(f"Error fetching ED notifications: {e}")
+        return {"count": 0, "items": []}
+
 
 async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, perusahaan: str, spec_parameters_raw: str, msds_file: UploadFile, spec_sheet_file: UploadFile = None):
     """Helper: parse spec_parameters (JSON), upload MSDS & PDF Spesifikasi Asli Supplier
@@ -1102,6 +1258,87 @@ async def add_material_batch(
 
     # Redirect balik ke halaman utama bahan baku
     return RedirectResponse(url="/raw-materials", status_code=303)
+
+
+# ==================== ED MANAGEMENT ENDPOINTS ====================
+@app.post("/raw-materials/batches/acc-dipakai")
+async def acc_dipakai_batch(
+    request: Request,
+    batch_id: str = Form(...),
+    new_expiry_date: str = Form(...),
+    new_status_ed: str = Form("ACC Dipakai"),
+    catatan_qc: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """ACC Dipakai - Perpanjang ED (Retest Passed)"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    
+    WIB = ZoneInfo("Asia/Jakarta")
+    now = datetime.now(WIB)
+    
+    try:
+        # Update batch with new ED, status, and QC notes
+        update_data = {
+            "tanggal_ed": new_expiry_date,
+            "status_ed": new_status_ed,
+            "catatan_qc": catatan_qc,
+            "tanggal_acc_qc": now.isoformat()
+        }
+        
+        supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+        
+        log_activity(current_user, "acc_dipakai", "raw_material_batch", batch_id, f"ED diperpanjang ke {new_expiry_date}")
+        
+        response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
+        response.set_cookie("success_msg", f"ACC Dipakai berhasil disimpan. ED baru: {new_expiry_date}")
+        return response
+        
+    except Exception as e:
+        print(f"Gagal ACC Dipakai: {e}")
+        response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
+        response.set_cookie("error_msg", f"Gagal menyimpan ACC Dipakai: {str(e)}")
+        return response
+
+
+@app.post("/raw-materials/batches/acc-dimusnahkan")
+async def acc_dimusnahkan_batch(
+    request: Request,
+    batch_id: str = Form(...),
+    catatan_qc: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """ACC Dimusnahkan - Dispose batch"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    
+    WIB = ZoneInfo("Asia/Jakarta")
+    now = datetime.now(WIB)
+    
+    try:
+        # Update batch: status = Dimusnahkan, stok = 0, save QC notes and timestamp
+        update_data = {
+            "status_ed": "Dimusnahkan",
+            "catatan_qc": catatan_qc,
+            "tanggal_acc_qc": now.isoformat(),
+            # Note: If there's a quantity/stock column, set it to 0
+            # "qty": 0  # Uncomment if you have a qty column
+        }
+        
+        supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+        
+        log_activity(current_user, "acc_dimusnahkan", "raw_material_batch", batch_id, "Batch dimusnahkan (dispose)")
+        
+        response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
+        response.set_cookie("success_msg", "Batch berhasil dimusnahkan (ACC Dimusnahkan).")
+        return response
+        
+    except Exception as e:
+        print(f"Gagal ACC Dimusnahkan: {e}")
+        response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
+        response.set_cookie("error_msg", f"Gagal memusnahkan batch: {str(e)}")
+        return response
+
 
 @app.post("/raw-materials/cpkb/update")
 async def update_cpkb_document(
@@ -3157,7 +3394,12 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
     response = templates.TemplateResponse(
         request=request,
         name="brands.html",
-        context={"brands": brands, "success_msg": success_msg, "error_msg": error_msg}
+        context={
+            "brands": brands,
+            "success_msg": success_msg,
+            "error_msg": error_msg,
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
     response.delete_cookie("success_msg")
     response.delete_cookie("error_msg")
@@ -3244,7 +3486,11 @@ async def sample_submissions_list(request: Request, search: str = None, current_
     return templates.TemplateResponse(
         request=request,
         name="sample_list.html",
-        context={"submissions": submissions, "search_value": search or ""}
+        context={
+            "submissions": submissions,
+            "search_value": search or "",
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
 
 @app.get("/sample-submissions/form", response_class=HTMLResponse)
@@ -3264,7 +3510,11 @@ async def sample_submission_form(request: Request, current_user: dict = Depends(
         request=request,
         name="sample_form.html",
         # Key "existing_products" harus sama persis kayak yang dipakai template (bug #1)
-        context={"brands": brands, "existing_products": products}
+        context={
+            "brands": brands,
+            "existing_products": products,
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
 
 
@@ -3288,7 +3538,10 @@ async def sample_submission_preview(request: Request, submission_id: str, curren
     return templates.TemplateResponse(
         request=request,
         name="sample_preview.html",
-        context={"s": submission}
+        context={
+            "s": submission,
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
 
     # =====================================================================
@@ -3513,6 +3766,8 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
     except Exception as e:
         print(f"Gagal ambil data dashboard: {e}")
     
+    ed_notification_count = await get_ed_notification_count()
+    
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html", 
@@ -3520,7 +3775,8 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             "request": request, 
             "products": products, 
             "user": current_user,
-            "brands": brands
+            "brands": brands,
+            "ed_notification_count": ed_notification_count
         }
     )
 
