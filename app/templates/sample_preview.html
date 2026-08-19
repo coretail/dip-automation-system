@@ -7,15 +7,28 @@
             display: none !important;
         }
         body {
-            background-color: #ffffff;
-            color: #000000;
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         .print-container {
             width: 100% !important;
             max-width: 100% !important;
             box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
             padding: 0 !important;
             margin: 0 !important;
+            background: white !important;
+        }
+        /* Hilangkan border abu pada tabel saat print */
+        table, th, td {
+            border-color: #000 !important;
+        }
+        /* Pastikan background putih bersih */
+        .bg-gray-50, .bg-gray-100, .bg-gray-200 {
+            background-color: #fff !important;
         }
     }
 </style>
