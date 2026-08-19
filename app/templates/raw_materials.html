@@ -173,10 +173,13 @@
                     <th class="px-4 py-3">Tgl Terima</th>
                     <th class="px-4 py-3">Tgl ED</th>
                     <th class="px-4 py-3">Supplier</th>
+                    <th class="px-4 py-3">Asal Negara</th>
+                    <th class="px-4 py-3">Nama Produsen</th>
+                    <th class="px-4 py-3">Produsen (Master)</th>
                     <th class="px-4 py-3">Nama Bahan Baku</th>
                     <th class="px-4 py-3">Lot / Batch No.</th>
                     <th class="px-4 py-3">Harga / KG</th>
-                    <th class="px-4 py-3">Produsen</th>
+                    <th class="px-4 py-3">Kesimpulan</th>
                     <th class="px-4 py-3">Dokumen</th>
                 </tr>
             </thead>
@@ -195,7 +198,9 @@
                     data-nama="{{ (b.raw_materials.nama_dagang if b.raw_materials else '') | lower }}"
                     data-supplier="{{ (b.supplier or '') | lower }}"
                     data-batch="{{ (b.no_batch or '') | lower }}"
-                    data-produsen="{{ (b.raw_materials.produsen if b.raw_materials and b.raw_materials.produsen else '') | lower }}">
+                    data-produsen="{{ (b.raw_materials.produsen if b.raw_materials and b.raw_materials.produsen else '') | lower }}"
+                    data-asal-negara="{{ (b.asal_negara or '') | lower }}"
+                    data-nama-produsen="{{ (b.nama_produsen or '') | lower }}">
                     <!-- Perusahaan -->
                     <td class="px-4 py-3 whitespace-nowrap">
                         {% if b.perusahaan %}
@@ -213,6 +218,17 @@
                     <!-- Supplier -->
                     <td class="px-4 py-3 whitespace-nowrap">{{ b.supplier or '-' }}</td>
                     
+                    <!-- Asal Negara -->
+                    <td class="px-4 py-3 whitespace-nowrap text-gray-600">{{ b.asal_negara or '-' }}</td>
+                    
+                    <!-- Nama Produsen -->
+                    <td class="px-4 py-3 whitespace-nowrap text-gray-600">{{ b.nama_produsen or '-' }}</td>
+                    
+                    <!-- Produsen (Master) -->
+                    <td class="px-4 py-3 whitespace-nowrap text-gray-500">
+                        {{ b.raw_materials.produsen if b.raw_materials and b.raw_materials.produsen else '-' }}
+                    </td>
+                    
                     <!-- Nama Bahan Baku (Master Relasi) -->
                     <td class="px-4 py-3 font-medium text-indigo-700">
                         {{ b.raw_materials.nama_dagang if b.raw_materials else 'Tanpa Master' }}
@@ -226,9 +242,25 @@
                         Rp{{ "{:,.2f}".format(b.harga_per_kg or 0) }}
                     </td>
                     
-                    <!-- Produsen -->
-                    <td class="px-4 py-3 whitespace-nowrap text-gray-500">
-                        {{ b.raw_materials.produsen if b.raw_materials and b.raw_materials.produsen else '-' }}
+                    <!-- Kesimpulan Badge -->
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        {% if b.kesimpulan == 'diluluskan' %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                <i class="fa-solid fa-circle-check mr-1"></i> DILULUSKAN
+                            </span>
+                        {% elif b.kesimpulan == 'ditolak' %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                <i class="fa-solid fa-circle-xmark mr-1"></i> DITOLAK
+                            </span>
+                        {% elif b.kesimpulan == 'karantina' %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                <i class="fa-solid fa-triangle-exclamation mr-1"></i> KARANTINA
+                            </span>
+                        {% else %}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {{ b.kesimpulan or '-' }}
+                            </span>
+                        {% endif %}
                     </td>
                     
                     <!-- Akses Link Dokumen File Dok -->
@@ -594,6 +626,17 @@
                 </div>
             </div>
 
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Asal Negara</label>
+                    <input type="text" name="asal_negara" placeholder="Contoh: Indonesia, China, India, dll" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Nama Produsen</label>
+                    <input type="text" name="nama_produsen" placeholder="Nama produsen/pabrik pembuat" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+            </div>
+
             <div class="grid grid-cols-3 gap-4 mb-4">
                 <div>
                     <label class="block text-xs font-medium text-gray-700 mb-1">Tgl Terima Sampel *</label>
@@ -649,6 +692,7 @@
                         <option value="">-- Pilih --</option>
                         <option value="diluluskan">DILULUSKAN</option>
                         <option value="ditolak">DITOLAK</option>
+                        <option value="karantina">KARANTINA</option>
                     </select>
                 </div>
             </div>
@@ -995,9 +1039,11 @@ function filterTable() {
             const supplier = row.dataset.supplier || '';
             const batch = row.dataset.batch || '';
             const produsen = row.dataset.produsen || '';
+            const asalNegara = row.dataset.asalNegara || '';
+            const namaProdusen = row.dataset.namaProdusen || '';
             const company = row.dataset.company || '';
 
-            const matchSearch = !searchVal || nama.includes(searchVal) || supplier.includes(searchVal) || batch.includes(searchVal) || produsen.includes(searchVal);
+            const matchSearch = !searchVal || nama.includes(searchVal) || supplier.includes(searchVal) || batch.includes(searchVal) || produsen.includes(searchVal) || asalNegara.includes(searchVal) || namaProdusen.includes(searchVal);
             const matchCompany = !companyVal || company === companyVal;
 
             const show = matchSearch && matchCompany;

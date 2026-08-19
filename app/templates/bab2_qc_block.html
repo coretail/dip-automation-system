@@ -21,6 +21,8 @@
     <table>
         <tr><td class="label-col">No. Batch</td><td>{{ item.get('batch', {}).get('no_batch') or '-' }}</td></tr>
         <tr><td class="label-col">Supplier</td><td>{{ item.get('batch', {}).get('supplier') or '-' }}</td></tr>
+        <tr><td class="label-col">Asal Negara</td><td>{{ item.get('batch', {}).get('asal_negara') or '-' }}</td></tr>
+        <tr><td class="label-col">Nama Produsen</td><td>{{ item.get('batch', {}).get('nama_produsen') or '-' }}</td></tr>
         <tr><td class="label-col">Tanggal Sampling</td><td>{{ item.get('batch', {}).get('tanggal_sampling') or '-' }}</td></tr>
         <tr><td class="label-col">Tanggal Terima Sampel</td><td>{{ item.get('batch', {}).get('tanggal_terima_sampel') or '-' }}</td></tr>
         <tr><td class="label-col">Tanggal ED</td><td>{{ item.get('batch', {}).get('tanggal_ed') or '-' }}</td></tr>
@@ -34,7 +36,18 @@
             {% endfor %}
         {% endif %}
 
-        <tr><td class="label-col">Kesimpulan</td><td>{{ item.get('batch', {}).get('kesimpulan') or '-' }}</td></tr>
+        <tr><td class="label-col">Kesimpulan</td>
+            <td>
+                {% if item.get('batch', {}).get('kesimpulan') == 'diluluskan' %}
+                    <span style="color: #166534; font-weight: bold;">✓ DILULUSKAN</span>
+                {% elif item.get('batch', {}).get('kesimpulan') == 'ditolak' %}
+                    <span style="color: #991b1b; font-weight: bold;">✗ DITOLAK</span>
+                {% elif item.get('batch', {}).get('kesimpulan') == 'karantina' %}
+                    <span style="color: #854d0e; font-weight: bold;">⚠ KARANTINA</span>
+                {% else %}
+                    {{ item.get('batch', {}).get('kesimpulan') or '-' }}
+                {% endif %}
+            </td></tr>
         <tr><td class="label-col">Diperiksa Oleh (QC)</td><td>{{ item.get('batch', {}).get('qc_signer') or '-' }}</td></tr>
         <tr><td class="label-col">Disetujui Oleh (QA)</td><td>{{ item.get('batch', {}).get('qa_signer') or '-' }}</td></tr>
     </table>
