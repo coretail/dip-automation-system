@@ -184,6 +184,7 @@
                     <th class="px-4 py-3">Harga / KG</th>
                     <th class="px-4 py-3">Kesimpulan</th>
                     <th class="px-4 py-3">Dokumen</th>
+                    <th class="px-4 py-3 text-right">Aksi</th>
                 </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200 text-sm text-gray-900">
@@ -197,13 +198,17 @@
                     {% endfor %}
                 {% endif %}
                 <tr class="hover:bg-gray-50 batch-row"
+                    data-id="{{ b.id }}"
                     data-company="{{ b.perusahaan or '' }}"
-                    data-nama="{{ (b.raw_materials.nama_dagang if b.raw_materials else '') | lower }}"
-                    data-supplier="{{ (b.supplier or '') | lower }}"
-                    data-batch="{{ (b.no_batch or '') | lower }}"
+                    data-nama="{{ (b.raw_materials.nama_dagang if b.raw_materials else 'Tanpa Master') }}"
+                    data-supplier="{{ b.supplier or '' }}"
+                    data-batch="{{ b.no_batch or '' }}"
                     data-produsen="{{ (b.raw_materials.produsen if b.raw_materials and b.raw_materials.produsen else '') | lower }}"
-                    data-asal-negara="{{ (b.asal_negara or '') | lower }}"
-                    data-nama-produsen="{{ (b.nama_produsen or '') | lower }}"
+                    data-asal-negara="{{ b.asal_negara or '' }}"
+                    data-nama-produsen="{{ b.nama_produsen or '' }}"
+                    data-tgl-terima="{{ b.tanggal_terima_sampel or '' }}"
+                    data-tgl-ed="{{ b.tanggal_ed or '' }}"
+                    data-kesimpulan="{{ b.kesimpulan or '' }}"
                     data-status-ed="{{ b.status_ed or 'Active' }}">
                     <!-- Perusahaan -->
                     <td class="px-4 py-3 whitespace-nowrap">
@@ -306,10 +311,16 @@
                             <span class="text-gray-300 w-8 text-center inline-flex items-center justify-center">-</span>
                         {% endif %}
                     </td>
+                    <!-- Aksi -->
+                    <td class="px-4 py-3 whitespace-nowrap text-right">
+                        <button onclick="openEditBatchModal(this)" class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition cursor-pointer">
+                            <i class="fa-solid fa-pen-to-square"></i> Edit
+                        </button>
+                    </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="9" class="px-6 py-12 text-center text-sm text-gray-500">
+                    <td colspan="10" class="px-6 py-12 text-center text-sm text-gray-500">
                         Belum ada data kedatangan batch yang tercatat.
                     </td>
                 </tr>
@@ -922,6 +933,89 @@
     </div>
 </div>
 
+
+<!-- Modal Edit Batch -->
+<div id="edit-batch-modal" class="hidden fixed inset-0 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center px-4 py-3 border-b sticky top-0 bg-white z-10">
+            <h3 class="text-lg font-semibold text-gray-800">Edit Log Kedatangan Batch</h3>
+            <button onclick="closeEditBatchModal()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <form action="" method="POST" enctype="multipart/form-data" id="edit-batch-form" class="p-4 space-y-4">
+            <input type="hidden" name="batch_id" id="edit-batch-id">
+            <div class="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div><span class="text-gray-500">Bahan Baku:</span> <span id="edit-batch-material" class="font-medium text-gray-900"></span></div>
+                    <div><span class="text-gray-500">Perusahaan:</span> <span id="edit-batch-company" class="font-medium text-gray-900"></span></div>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Tanggal Terima Sampel <span class="text-red-500">*</span></label>
+                    <input type="date" name="tanggal_terima_sampel" id="edit-tgl-terima" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Tanggal ED (Kadaluwarsa) <span class="text-red-500">*</span></label>
+                    <input type="date" name="tanggal_ed" id="edit-tgl-ed" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Supplier <span class="text-red-500">*</span></label>
+                    <input type="text" name="supplier" id="edit-supplier" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">No Lot / Batch <span class="text-red-500">*</span></label>
+                    <input type="text" name="no_batch" id="edit-no-batch" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Asal Negara</label>
+                    <input type="text" name="asal_negara" id="edit-asal-negara" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Nama Produsen</label>
+                    <input type="text" name="nama_produsen" id="edit-nama-produsen" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1">Kesimpulan <span class="text-red-500">*</span></label>
+                <select name="kesimpulan" id="edit-kesimpulan" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                    <option value="diluluskan">DILULUSKAN</option>
+                    <option value="ditolak">DITOLAK</option>
+                    <option value="karantina">KARANTINA</option>
+                </select>
+            </div>
+            <hr class="my-2">
+            <div>
+                <h4 class="text-sm font-semibold text-gray-800 mb-2">Ganti Dokumen (Opsional - Kosongkan jika tidak ingin ganti)</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">CoA (PDF)</label>
+                        <input type="file" name="coa_file" accept=".pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Sertifikat Halal (PDF)</label>
+                        <input type="file" name="halal_file" accept=".pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Laporan Pemeriksaan / CPBB (PDF)</label>
+                        <input type="file" name="qc_report_file" accept=".pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100">
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Upload file baru akan menggantikan file lama.</p>
+            </div>
+            <div class="flex justify-end space-x-2 border-t pt-4">
+                <button type="button" onclick="closeEditBatchModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Batal</button>
+                <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700">
+                    <i class="fa-solid fa-save mr-1"></i> Simpan Perubahan
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     function openUpdateCpkbModal() {
     document.getElementById('cpkb-modal').classList.remove('hidden');
@@ -929,6 +1023,41 @@
 function closeCpkbModal() {
     document.getElementById('cpkb-modal').classList.add('hidden');
 }
+
+
+function openEditBatchModal(btn) {
+    const row = btn.closest('tr');
+    const id = row.getAttribute('data-id');
+    const company = row.getAttribute('data-company') || '';
+    const material = row.getAttribute('data-nama') || '';
+    const supplier = row.getAttribute('data-supplier') || '';
+    const batchNo = row.getAttribute('data-batch') || '';
+    const asalNegara = row.getAttribute('data-asal-negara') || '';
+    const namaProdusen = row.getAttribute('data-nama-produsen') || '';
+    const tglTerima = row.getAttribute('data-tgl-terima') || '';
+    const tglEd = row.getAttribute('data-tgl-ed') || '';
+    const kesimpulan = row.getAttribute('data-kesimpulan') || '';
+
+    document.getElementById('edit-batch-id').value = id;
+    document.getElementById('edit-batch-material').textContent = material;
+    document.getElementById('edit-batch-company').textContent = company;
+    document.getElementById('edit-supplier').value = supplier;
+    document.getElementById('edit-no-batch').value = batchNo;
+    document.getElementById('edit-asal-negara').value = asalNegara;
+    document.getElementById('edit-nama-produsen').value = namaProdusen;
+    document.getElementById('edit-tgl-terima').value = tglTerima;
+    document.getElementById('edit-tgl-ed').value = tglEd;
+    document.getElementById('edit-kesimpulan').value = kesimpulan;
+
+    document.getElementById('edit-batch-form').action = '/raw-materials/batches/edit/' + id;
+
+    document.getElementById('edit-batch-modal').classList.remove('hidden');
+}
+
+function closeEditBatchModal() {
+    document.getElementById('edit-batch-modal').classList.add('hidden');
+}
+
 const masterRawMaterials = {{ raw_materials | tojson | safe }};
 
 function switchCompanyDocTab(slug) {

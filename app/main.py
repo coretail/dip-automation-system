@@ -614,6 +614,7 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
                     )
                 )
             """)
+            .order("created_at", desc=True)
             .execute()
         )
         batches_data = query_batches.data
@@ -1257,6 +1258,80 @@ async def add_material_batch(
         print(f"Gagal insert ke DB: {e}")
 
     # Redirect balik ke halaman utama bahan baku
+    return RedirectResponse(url="/raw-materials", status_code=303)
+
+
+
+@app.post("/raw-materials/batches/edit/{batch_id}")
+async def edit_material_batch(
+    batch_id: str,
+    no_batch: str = Form(...),
+    supplier: str = Form(...),
+    tanggal_terima_sampel: str = Form(...),
+    tanggal_ed: str = Form(...),
+    kesimpulan: str = Form(...),
+    asal_negara: str = Form(None),
+    nama_produsen: str = Form(None),
+    coa_file: UploadFile = File(None),
+    halal_file: UploadFile = File(None),
+    qc_report_file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    # 1. Ambil data lama untuk handle file upload
+    old_batch = supabase.table("raw_material_batches").select("*").eq("id", batch_id).single().execute().data
+    
+    clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
+    
+    update_data = {
+        "no_batch": no_batch.strip(),
+        "supplier": supplier.strip(),
+        "tanggal_terima_sampel": tanggal_terima_sampel,
+        "tanggal_ed": tanggal_ed,
+        "kesimpulan": kesimpulan,
+        "asal_negara": asal_negara.strip() if asal_negara else None,
+        "nama_produsen": nama_produsen.strip() if nama_produsen else None,
+    }
+
+    # 2. Update Files if provided
+    if coa_file and coa_file.filename:
+        try:
+            coa_bytes = await coa_file.read()
+            coa_path = f"coa/coa_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=coa_path, file=coa_bytes, file_options={"content-type": coa_file.content_type, "upsert": "true"}
+            )
+            update_data["coa_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
+        except Exception as e:
+            print(f"Gagal update CoA: {e}")
+
+    if halal_file and halal_file.filename:
+        try:
+            halal_bytes = await halal_file.read()
+            halal_path = f"halal/halal_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=halal_path, file=halal_bytes, file_options={"content-type": halal_file.content_type, "upsert": "true"}
+            )
+            update_data["halal_batch_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
+        except Exception as e:
+            print(f"Gagal update Halal: {e}")
+
+    if qc_report_file and qc_report_file.filename:
+        try:
+            qc_report_bytes = await qc_report_file.read()
+            qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=qc_report_path, file=qc_report_bytes, file_options={"content-type": qc_report_file.content_type, "upsert": "true"}
+            )
+            update_data["qc_report_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
+        except Exception as e:
+            print(f"Gagal update QC Report: {e}")
+
+    try:
+        supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+        log_activity(current_user, "edit", "raw_material_batch", batch_id, f"Update batch {no_batch}")
+    except Exception as e:
+        print(f"Gagal update batch: {e}")
+
     return RedirectResponse(url="/raw-materials", status_code=303)
 
 
