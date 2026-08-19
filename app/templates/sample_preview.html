@@ -34,13 +34,45 @@
     </div>
 </div>
 
-<!-- CONTAINER UTAMA DOKUMEN (BERSIH TANPA KOP SURAT) -->
+<!-- CONTAINER UTAMA DOKUMEN -->
 <div class="print-container max-w-4xl mx-auto bg-white p-8 shadow rounded border border-gray-200">
     
-    <!-- Judul Dokumen -->
-    <div class="text-center border-b-2 border-black pb-4 mb-6">
-        <h1 class="text-xl font-bold uppercase tracking-wider text-black">Form Pengajuan Sample Produk {{ s.company }}</h1>
-        <p class="text-sm font-mono text-gray-600 mt-1">Kode Dokumen: <span class="font-bold text-black">{{ s.sample_code }}</span></p>
+    {% set current_company = s.company or (s.brands.producers.name if s.brand_id else s.draft_producer) %}
+    {% set is_heka = current_company and 'heka' in current_company.lower() %}
+    {% set is_erfi = current_company and 'erfi' in current_company.lower() %}
+
+    <!-- HEADER DINAMIS SESUAI PERUSAHAAN -->
+    <div class="text-center border-b-2 border-black pb-6 mb-6">
+        {% if is_heka %}
+        <!-- HEADER PT HEKA -->
+        <div class="flex items-center justify-center gap-4 mb-2">
+            <img src="/static/images/logo_heka.png" alt="PT Heka Logo" class="h-16 w-auto object-contain" onerror="this.style.display='none'">
+            <div class="text-left">
+                <h1 class="text-xl font-bold uppercase tracking-wider text-black">PT. HARAKA ERFI KOSMETINDO ABADI</h1>
+                <p class="text-sm font-medium text-gray-700">Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia</p>
+                <p class="text-sm font-medium text-gray-700">Email: harakaerfi.pt@gmail.com | Website: www.harakaerfi.com</p>
+            </div>
+        </div>
+        <hr class="border-black my-2">
+        <h2 class="text-lg font-bold uppercase tracking-wider text-black">FORM PENGAJUAN SAMPLE PRODUK</h2>
+        {% elif is_erfi %}
+        <!-- HEADER PT ERFI -->
+        <div class="flex items-center justify-center gap-4 mb-2">
+            <img src="/static/images/logo_erfi.png" alt="PT Erfi Logo" class="h-16 w-auto object-contain" onerror="this.style.display='none'">
+            <div class="text-left">
+                <h1 class="text-xl font-bold uppercase tracking-wider text-black">PT. ERFI KARYA ABADI</h1>
+                <p class="text-sm font-medium text-gray-700">Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia</p>
+                <p class="text-sm font-medium text-gray-700">Email: erfikaryaabadi@gmail.com | Website: www.erfikaryaabadi.com</p>
+            </div>
+        </div>
+        <hr class="border-black my-2">
+        <h2 class="text-lg font-bold uppercase tracking-wider text-black">FORM PENGAJUAN SAMPLE PRODUK</h2>
+        {% else %}
+        <!-- HEADER DEFAULT -->
+        <h1 class="text-xl font-bold uppercase tracking-wider text-black">FORM PENGAJUAN SAMPLE PRODUK</h1>
+        {% endif %}
+        
+        <p class="text-sm font-mono text-gray-600 mt-2">Kode Dokumen: <span class="font-bold text-black">{{ s.sample_code }}</span></p>
     </div>
 
     <!-- Informasi Utama (Grid Tabel) -->
@@ -103,19 +135,39 @@
         </div>
     </div>
 
-    <!-- AREA TANDA TANGAN (FIX 2 KOLOM QC & R&D) -->
-    <div class="mt-16 grid grid-cols-2 gap-12 text-center text-sm text-black">
-        <div class="flex flex-col justify-between h-32">
-            <span class="font-bold uppercase">Dibuat / Diperiksa Oleh (R&D)</span>
-            <div class="mx-auto w-56 border-b border-black font-medium pb-1">
-                {{ s.rd_signer }}
+    <!-- AREA TANDA TANGAN (3 KOLOM GRID) -->
+    <div class="mt-16 grid grid-cols-3 gap-8 text-center text-sm text-black">
+        <!-- KOLOM 1: Dibuat oleh - R&D -->
+        <div class="flex flex-col justify-between h-40">
+            <span class="font-bold uppercase">Dibuat oleh,</span>
+            <div class="mx-auto w-full border-b border-black font-medium pb-2 min-h-[60px]">
+                {{ s.rd_signer or 'R&D Team' }}
             </div>
+            <span class="text-xs text-gray-500">R&D</span>
         </div>
-        <div class="flex flex-col justify-between h-32">
-            <span class="font-bold uppercase">Disetujui Oleh (QC)</span>
-            <div class="mx-auto w-56 border-b border-black font-medium pb-1">
-                {{ s.qc_signer }}
+        
+        <!-- KOLOM 2: Disetujui oleh - PT yang memesan -->
+        <div class="flex flex-col justify-between h-40">
+            <span class="font-bold uppercase">Disetujui oleh,</span>
+            <div class="mx-auto w-full border-b border-black font-medium pb-2 min-h-[60px]">
+                {% if is_heka %}
+                    PT. HARAKA ERFI KOSMETINDO ABADI
+                {% elif is_erfi %}
+                    PT. ERFI KARYA ABADI
+                {% else %}
+                    {{ current_company or '-' }}
+                {% endif %}
             </div>
+            <span class="text-xs text-gray-500">Manajemen</span>
+        </div>
+        
+        <!-- KOLOM 3: Mengetahui - Erna Widayanti -->
+        <div class="flex flex-col justify-between h-40">
+            <span class="font-bold uppercase">Mengetahui,</span>
+            <div class="mx-auto w-full border-b border-black font-medium pb-2 min-h-[60px]">
+                Erna Widayanti
+            </div>
+            <span class="text-xs text-gray-500">Direktur</span>
         </div>
     </div>
 

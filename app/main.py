@@ -3191,7 +3191,12 @@ async def edit_sample_submission_page(request: Request, submission_id: str, curr
     return templates.TemplateResponse(
         request=request,
         name="sample_form.html",
-        context={"brands": brands, "existing_products": products, "submission": submission}
+        context={
+            "brands": brands,
+            "existing_products": products,
+            "submission": submission,
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
 
 
