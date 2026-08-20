@@ -85,19 +85,19 @@
     <!-- ================= NAVIGASI TABS ================= -->
     <div class="border-b border-gray-200 mb-6">
         <nav class="-mb-px flex space-x-6" aria-label="Tabs">
-            <button type="button" onclick="switchEditTab('tab-info', this)" class="edit-tab-btn border-indigo-500 text-indigo-600 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+            <button type="button" onclick="switchEditTab('tab-info', this)" data-tab="tab-info" class="edit-tab-btn border-indigo-500 text-indigo-600 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-circle-info mr-1.5"></i> Informasi Dasar
             </button>
-            <button type="button" onclick="switchEditTab('tab-bab1', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+            <button type="button" onclick="switchEditTab('tab-bab1', this)" data-tab="tab-bab1" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-folder mr-1.5"></i> Bab 1
             </button>
-            <button type="button" onclick="switchEditTab('tab-bab2', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+            <button type="button" onclick="switchEditTab('tab-bab2', this)" data-tab="tab-bab2" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-vial mr-1.5"></i> Bab 2
             </button>
-            <button type="button" onclick="switchEditTab('tab-bab3', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+            <button type="button" onclick="switchEditTab('tab-bab3', this)" data-tab="tab-bab3" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-flask mr-1.5"></i> Bab 3
             </button>
-            <button type="button" onclick="switchEditTab('tab-bab4', this)" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+            <button type="button" onclick="switchEditTab('tab-bab4', this)" data-tab="tab-bab4" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-shield-halved mr-1.5"></i> Bab 4
             </button>
         </nav>
@@ -493,12 +493,16 @@ document.addEventListener("DOMContentLoaded", function() {
     // Hitung total persentase kalau memang sudah ada baris formula.
     calculateFormulaTotal();
 
-    // Auto-buka tab yang diminta lewat URL query, contoh: /products/{id}/edit?tab=bab2
-    const params = new URLSearchParams(window.location.search);
-    const openTab = params.get('tab');
-    if (openTab) {
-        const btn = document.querySelector('.edit-tab-btn[onclick*="' + openTab + '"]');
-        if (btn) switchEditTab(openTab, btn);
+    // Baca query param ?tab= dan buka tab yang sesuai (dari klik badge di dashboard)
+    const urlParams = new URLSearchParams(window.location.search);
+    const requestedTab = urlParams.get('tab');
+    const validTabs = ['info', 'bab1', 'bab2', 'bab3', 'bab4'];
+    if (requestedTab && validTabs.includes(requestedTab)) {
+        const tabId = 'tab-' + requestedTab;
+        const btnEl = document.querySelector('[data-tab="' + tabId + '"]');
+        if (btnEl) {
+            switchEditTab(tabId, btnEl);
+        }
     }
 
     // Tutup dropdown kalau ngeklik area luar

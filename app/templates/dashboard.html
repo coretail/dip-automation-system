@@ -246,7 +246,6 @@
                         <th class="px-4 py-3 text-center">Bab III<br><span class="text-[10px] text-gray-400 font-normal">Mutu PJ</span></th>
                         <th class="px-4 py-3 text-center">Bab IV<br><span class="text-[10px] text-gray-400 font-normal">Keamanan</span></th>
                         <th class="px-4 py-3 text-center">Progress DIP</th>
-                        <th class="px-4 py-3 text-center">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y">
@@ -259,7 +258,9 @@
                         data-brand="{{ (p.brands.name if p.brands else '') | lower }}">
                         <!-- Nama Produk & Brand -->
                         <td class="px-4 py-3">
-                            <div class="font-bold text-gray-900 max-w-[220px] whitespace-normal break-words line-clamp-2" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" title="{{ p.nama_produk }}">{{ p.nama_produk }}</div>
+                            <a href="/products/{{ p.id }}/edit?tab=info" class="block hover:underline hover:text-indigo-600 cursor-pointer transition">
+                                <div class="font-bold text-gray-900 max-w-[220px] whitespace-normal break-words line-clamp-2" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" title="{{ p.nama_produk }}">{{ p.nama_produk }}</div>
+                            </a>
                             <div class="text-xs text-gray-500 truncate max-w-[220px]" title="{{ p.brands.name if p.brands else '-' }} ({{ p.perusahaan or '-' }})">
                                 {{ p.brands.name if p.brands else '-' }} ({{ p.perusahaan or '-' }})
                             </div>
@@ -267,54 +268,62 @@
 
                         <!-- Bab I Status -->
                         <td class="px-4 py-3 text-center">
-                            {% if p.dip_summary and p.dip_summary.b1_ok %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800" title="Surat Notifikasi Uploaded">
-                                    <i class="fa-solid fa-circle-check mr-1"></i> Lengkap
-                                </span>
-                            {% else %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700" title="Surat Notifikasi Belum Diupload">
-                                    <i class="fa-solid fa-circle-xmark mr-1"></i> Belum
-                                </span>
-                            {% endif %}
+                            <a href="/products/{{ p.id }}/edit?tab=bab1" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="{% if p.dip_summary and p.dip_summary.b1_ok %}Surat Notifikasi Uploaded — klik untuk edit{% else %}Surat Notifikasi Belum Diupload — klik untuk edit{% endif %}">
+                                {% if p.dip_summary and p.dip_summary.b1_ok %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 cursor-pointer">
+                                        <i class="fa-solid fa-circle-check mr-1"></i> Lengkap
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700 cursor-pointer">
+                                        <i class="fa-solid fa-circle-xmark mr-1"></i> Belum
+                                    </span>
+                                {% endif %}
+                            </a>
                         </td>
 
                         <!-- Bab II Status -->
                         <td class="px-4 py-3 text-center">
-                            {% if p.dip_summary and p.dip_summary.b2_ok %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800" title="Formula Sudah Diisi">
-                                    <i class="fa-solid fa-circle-check mr-1"></i> Ada
-                                </span>
-                            {% else %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800" title="Formula Masih Kosong">
-                                    <i class="fa-solid fa-triangle-exclamation mr-1"></i> Kosong
-                                </span>
-                            {% endif %}
+                            <a href="/products/{{ p.id }}/edit?tab=bab2" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="{% if p.dip_summary and p.dip_summary.b2_ok %}Formula Sudah Diisi — klik untuk edit{% else %}Formula Masih Kosong — klik untuk edit{% endif %}">
+                                {% if p.dip_summary and p.dip_summary.b2_ok %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 cursor-pointer">
+                                        <i class="fa-solid fa-circle-check mr-1"></i> Ada
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 cursor-pointer">
+                                        <i class="fa-solid fa-triangle-exclamation mr-1"></i> Kosong
+                                    </span>
+                                {% endif %}
+                            </a>
                         </td>
 
                         <!-- Bab III Status -->
                         <td class="px-4 py-3 text-center">
-                            {% if p.dip_summary and p.dip_summary.b3_ok %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-                                    <i class="fa-solid fa-circle-check mr-1"></i> 7/7
-                                </span>
-                            {% else %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                    {{ p.dip_summary.b3_ratio if p.dip_summary else '0/7' }} File
-                                </span>
-                            {% endif %}
+                            <a href="/products/{{ p.id }}/edit?tab=bab3" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="Mutu PJ — klik untuk edit">
+                                {% if p.dip_summary and p.dip_summary.b3_ok %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 cursor-pointer">
+                                        <i class="fa-solid fa-circle-check mr-1"></i> 7/7
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 cursor-pointer">
+                                        {{ p.dip_summary.b3_ratio if p.dip_summary else '0/7' }} File
+                                    </span>
+                                {% endif %}
+                            </a>
                         </td>
 
                         <!-- Bab IV Status -->
                         <td class="px-4 py-3 text-center">
-                            {% if p.dip_summary and p.dip_summary.b4_ok %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-                                    <i class="fa-solid fa-circle-check mr-1"></i> 5/5
-                                </span>
-                            {% else %}
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                    {{ p.dip_summary.b4_ratio if p.dip_summary else '0/5' }} File
-                                </span>
-                            {% endif %}
+                            <a href="/products/{{ p.id }}/edit?tab=bab4" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="Keamanan — klik untuk edit">
+                                {% if p.dip_summary and p.dip_summary.b4_ok %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 cursor-pointer">
+                                        <i class="fa-solid fa-circle-check mr-1"></i> 5/5
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 cursor-pointer">
+                                        {{ p.dip_summary.b4_ratio if p.dip_summary else '0/5' }} File
+                                    </span>
+                                {% endif %}
+                            </a>
                         </td>
 
                         <!-- Progress Bar Overall -->
@@ -326,17 +335,10 @@
                                 {{ p.dip_summary.progress_pct if p.dip_summary else 0 }}%
                             </span>
                         </td>
-
-                        <!-- Tombol Aksi -->
-                        <td class="px-4 py-3 text-center">
-                            <a href="/products/{{ p.id }}/edit" class="inline-flex items-center px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded text-xs font-semibold transition" title="Lengkapi Dokumen">
-                                <i class="fa-solid fa-pen-to-square mr-1"></i> Lengkapi
-                            </a>
-                        </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="7" class="px-4 py-8 text-center text-gray-400">Belum ada data produk.</td>
+                        <td colspan="6" class="px-4 py-8 text-center text-gray-400">Belum ada data produk.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
