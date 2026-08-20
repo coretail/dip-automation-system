@@ -20,6 +20,9 @@ import httpx
 import unicodedata
 from xhtml2pdf import pisa
 from pypdf import PdfReader, PdfWriter
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -112,6 +115,17 @@ def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
         return "aktif"
 
 app = FastAPI(title="DIP Kosmetik Automation")
+
+# Rate limiter (proteksi brute-force di /login, dibatasi per-IP)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    # Redirect balik ke login dengan pesan, biar konsisten sama flow warning/error yang lain
+    # (bukan JSON mentah), dan gak bocorin detail rate limit ke user.
+    print(f"\n🚫 [RATE LIMIT] Terlalu banyak percobaan login dari IP: {get_remote_address(request)}\n")
+    return RedirectResponse(url="/login?error=too_many_attempts", status_code=303)
 
 # Setup static files (Tailwind CSS) dan Jinja2 Templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -422,8 +436,11 @@ async def login_page(request: Request, warning: str = None, error: str = None):
     )
 
 # ================= 2. ROUTE PROSES LOGIN (POST) =================
+# Rate limit: maks 5 percobaan login per menit per IP, biar gak gampang di-brute-force.
 @app.post("/login")
+@limiter.limit("5/minute")
 async def login_submit(
+    request: Request,
     response: Response,
     email: str = Form(...), # Menangkap input dari form (bisa email ataupun username)
     password: str = Form(...)
@@ -821,7 +838,7 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
             supabase.storage.from_("raw-material-docs").upload(
                 path=file_path,
                 file=file_bytes,
-                file_options={"content-type": msds_file.content_type, "upsert": "true"}
+                file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             msds_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
         except Exception as e:
@@ -835,7 +852,7 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
             supabase.storage.from_("raw-material-docs").upload(
                 path=file_path,
                 file=file_bytes,
-                file_options={"content-type": spec_sheet_file.content_type, "upsert": "true"}
+                file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             spec_sheet_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
         except Exception as e:
@@ -1180,7 +1197,7 @@ async def add_material_batch(
             supabase.storage.from_("raw-material-docs").upload(
                 path=coa_path,
                 file=coa_bytes,
-                file_options={"content-type": coa_file.content_type, "upsert": "true"}
+                file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             coa_url = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
             print(f"--> Sukses upload CoA ke: {coa_url}")
@@ -1196,7 +1213,7 @@ async def add_material_batch(
             supabase.storage.from_("raw-material-docs").upload(
                 path=halal_path,
                 file=halal_bytes,
-                file_options={"content-type": halal_file.content_type, "upsert": "true"}
+                file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             halal_url = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
             print(f"--> Sukses upload Halal ke: {halal_url}")
@@ -1214,7 +1231,7 @@ async def add_material_batch(
             supabase.storage.from_("raw-material-docs").upload(
                 path=qc_report_path,
                 file=qc_report_bytes,
-                file_options={"content-type": qc_report_file.content_type, "upsert": "true"}
+                file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             qc_report_url = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
             print(f"--> Sukses upload Laporan Pemeriksaan Aktual ke: {qc_report_url}")
@@ -1290,7 +1307,7 @@ async def edit_material_batch(
             coa_bytes = await coa_file.read()
             coa_path = f"coa/coa_{clean_batch}.pdf"
             supabase.storage.from_("raw-material-docs").upload(
-                path=coa_path, file=coa_bytes, file_options={"content-type": coa_file.content_type, "upsert": "true"}
+                path=coa_path, file=coa_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             update_data["coa_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
         except Exception as e:
@@ -1301,7 +1318,7 @@ async def edit_material_batch(
             halal_bytes = await halal_file.read()
             halal_path = f"halal/halal_{clean_batch}.pdf"
             supabase.storage.from_("raw-material-docs").upload(
-                path=halal_path, file=halal_bytes, file_options={"content-type": halal_file.content_type, "upsert": "true"}
+                path=halal_path, file=halal_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             update_data["halal_batch_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
         except Exception as e:
@@ -1312,7 +1329,7 @@ async def edit_material_batch(
             qc_report_bytes = await qc_report_file.read()
             qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
             supabase.storage.from_("raw-material-docs").upload(
-                path=qc_report_path, file=qc_report_bytes, file_options={"content-type": qc_report_file.content_type, "upsert": "true"}
+                path=qc_report_path, file=qc_report_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             update_data["qc_report_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
         except Exception as e:
@@ -3504,7 +3521,7 @@ async def update_brand_documents(
             supabase.storage.from_("legal-documents").upload(
                 path=path,
                 file=file_bytes,
-                file_options={"content-type": hak_lisensi_merk_file.content_type, "upsert": "true"}
+                file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             update_data["hak_lisensi_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
 

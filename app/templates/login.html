@@ -28,6 +28,13 @@
         </div>
         {% endif %}
 
+        {% if error == 'too_many_attempts' %}
+        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
+            <i class="fa-solid fa-triangle-exclamation mr-2 text-red-600"></i>
+            <div>Terlalu banyak percobaan login. Coba lagi dalam 1 menit.</div>
+        </div>
+        {% endif %}
+
         {% if warning == 'session_expired' %}
         <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
             <i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i>

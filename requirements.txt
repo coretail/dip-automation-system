@@ -8,3 +8,4 @@ tzdata
 xhtml2pdf
 pypdf
 httpx
+slowapi
