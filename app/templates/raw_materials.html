@@ -43,10 +43,31 @@
 
 <!-- Alert Jika Gagal (Merah) -->
 {% if error_msg %}
-<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center" role="alert">
-    <i class="fa-solid fa-circle-exclamation mr-2"></i>
-    <div>
-        <span class="font-medium">Gagal!</span> {{ error_msg }}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-start gap-3" role="alert">
+    <i class="fa-solid fa-circle-exclamation mt-0.5"></i>
+    <div class="flex-1">
+        <p class="font-medium">Gagal menghapus bahan baku!</p>
+        {% if 'masih dipakai di' in error_msg and 'formula produk:' in error_msg %}
+            {% set error_parts = error_msg.split('formula produk:') %}
+            <p class="mt-1 text-sm">{{ error_parts[0] }}</p>
+            <p class="mt-1 text-sm font-semibold">Produk yang terkait:</p>
+            <ul class="mt-1 list-disc list-inside text-sm space-y-0.5">
+            {% set produk_list = error_parts[1].split(', ') %}
+            {% for produk in produk_list %}
+                {% set pid = produk.split('(ID: ')[1].replace(')', '') if '(ID: ' in produk else '' %}
+                <li>
+                    {% if pid %}
+                        <a href="/products/{{ pid }}/edit" target="_blank" class="underline hover:text-indigo-600 text-indigo-700">{{ produk }}</a>
+                    {% else %}
+                        {{ produk }}
+                    {% endif %}
+                </li>
+            {% endfor %}
+            </ul>
+            <p class="mt-2 text-xs text-red-600">Klik nama produk untuk buka halaman edit formula, lalu hapus bahan baku dari formula tersebut sebelum mencoba hapus lagi.</p>
+        {% else %}
+            <p class="mt-1 text-sm">{{ error_msg }}</p>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -177,13 +198,10 @@
                     <th class="px-4 py-3">Tgl ED</th>
                     <th class="px-4 py-3">Supplier</th>
                     <th class="px-4 py-3">Asal Negara</th>
-                    <th class="px-4 py-3">Nama Produsen</th>
                     <th class="px-4 py-3">Produsen (Master)</th>
                     <th class="px-4 py-3">Nama Bahan Baku</th>
                     <th class="px-4 py-3">Lot / Batch No.</th>
-                    <th class="px-4 py-3">Harga / KG</th>
                     <th class="px-4 py-3">Kesimpulan</th>
-                    <th class="px-4 py-3">Dokumen</th>
                     <th class="px-4 py-3 text-right">Aksi</th>
                 </tr>
             </thead>
@@ -230,11 +248,8 @@
                     <!-- Asal Negara -->
                     <td class="px-4 py-3 whitespace-nowrap text-gray-600">{{ b.asal_negara or '-' }}</td>
                     
-                    <!-- Nama Produsen -->
-                    <td class="px-4 py-3 whitespace-nowrap text-gray-600">{{ b.nama_produsen or '-' }}</td>
-                    
                     <!-- Produsen (Master) -->
-                    <td class="px-4 py-3 whitespace-nowrap text-gray-500">
+                    <td class="px-4 py-3 max-w-[160px] break-words text-gray-500">
                         {{ b.raw_materials.produsen if b.raw_materials and b.raw_materials.produsen else '-' }}
                     </td>
                     
@@ -246,76 +261,47 @@
                     <!-- Lot / Batch No -->
                     <td class="px-4 py-3 font-mono text-xs">{{ b.no_batch or '-' }}</td>
                     
-                    <!-- Harga per KG -->
-                    <td class="px-4 py-3 font-mono text-green-700">
-                        Rp{{ "{:,.2f}".format(b.harga_per_kg or 0) }}
-                    </td>
-                    
                     <!-- Kesimpulan Badge -->
                     <td class="px-4 py-3 whitespace-nowrap">
                         {% if b.kesimpulan == 'diluluskan' %}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                <i class="fa-solid fa-circle-check mr-1"></i> DILULUSKAN
+                            <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-100 text-green-700">
+                                <i class="fa-solid fa-circle-check"></i>
                             </span>
                         {% elif b.kesimpulan == 'ditolak' %}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                <i class="fa-solid fa-circle-xmark mr-1"></i> DITOLAK
+                            <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-100 text-red-700">
+                                <i class="fa-solid fa-circle-xmark"></i>
                             </span>
                         {% elif b.kesimpulan == 'karantina' %}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                <i class="fa-solid fa-triangle-exclamation mr-1"></i> KARANTINA
+                            <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-yellow-100 text-yellow-700">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
                             </span>
                         {% else %}
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                {{ b.kesimpulan or '-' }}
-                            </span>
+                            -
                         {% endif %}
                     </td>
-                    
-                    <!-- Akses Link Dokumen File Dok -->
-                    <td class="px-4 py-3 whitespace-nowrap inline-flex items-center space-x-2 text-xs">
-                        <!-- Tombol CoA -->
-                        {% if b.coa_file_url %}
-                            <a href="{{ b.coa_file_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium cursor-pointer">
-                                <i class="fa-solid fa-file-pdf mr-1"></i> CoA
-                            </a>
-                        {% else %}
-                            <span class="text-gray-300 w-8 text-center">-</span>
-                        {% endif %}
-
-                        <!-- Tombol Halal -->
-                        {% if b.halal_batch_file_url %}
-                            <a href="{{ b.halal_batch_file_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100 font-medium cursor-pointer">
-                                <i class="fa-solid fa-certificate mr-1"></i> Halal
-                            </a>
-                        {% else %}
-                            <!-- Kita kasih display flex juga biar tingginya sama rata dan ga ngerusak alignment -->
-                            <span class="text-gray-300 w-8 text-center inline-flex items-center justify-center">-</span>
-                        {% endif %}
-
-                        <!-- Tombol Laporan Pemeriksaan Aktual (PDF asli, kalau ada) -->
-                        {% if b.qc_report_file_url %}
-                            <a href="{{ b.qc_report_file_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded bg-sky-50 text-sky-700 hover:bg-sky-100 font-medium cursor-pointer">
-                                <i class="fa-solid fa-file-lines mr-1"></i> CPBB
-                            </a>
-                        {% else %}
-                            <span class="text-gray-300 w-8 text-center inline-flex items-center justify-center">-</span>
-                        {% endif %}
-
-                        <!-- Tombol MSDS (di-resolve sesuai perusahaan batch ini) -->
-                        {% if batch_msds_url %}
-                            <a href="{{ batch_msds_url }}" target="_blank" class="inline-flex items-center px-2 py-1 rounded bg-yellow-50 text-yellow-700 hover:bg-yellow-100 font-medium cursor-pointer">
-                                <i class="fa-solid fa-shield-halving mr-1"></i> MSDS
-                            </a>
-                        {% else %}
-                            <span class="text-gray-300 w-8 text-center inline-flex items-center justify-center">-</span>
-                        {% endif %}
-                    </td>
-                    <!-- Aksi -->
                     <td class="px-4 py-3 whitespace-nowrap text-right">
-                        <button onclick="openEditBatchModal(this)" class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition cursor-pointer">
-                            <i class="fa-solid fa-pen-to-square"></i> Edit
-                        </button>
+                        <div class="relative inline-block text-left">
+                            <button type="button" onclick="toggleDropdown('batch-actions-menu-{{ b.id }}')" class="text-gray-400 hover:text-gray-600 cursor-pointer">
+                                <i class="fa-solid fa-ellipsis-vertical"></i>
+                            </button>
+                            <div id="batch-actions-menu-{{ b.id }}" class="hidden absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                                <div class="py-1" role="menu">
+                                    <button type="button" onclick="openEditBatchModal(this)" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                        <i class="fa-solid fa-pen-to-square mr-2"></i> Edit
+                                    </button>
+                                    {% if b.coa_file_url %}<a href="{{ b.coa_file_url }}" target="_blank" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fa-solid fa-file-pdf mr-2"></i> CoA</a>{% endif %}
+                                    {% if b.halal_batch_file_url %}<a href="{{ b.halal_batch_file_url }}" target="_blank" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fa-solid fa-certificate mr-2"></i> Halal</a>{% endif %}
+                                    {% if b.qc_report_file_url %}<a href="{{ b.qc_report_file_url }}" target="_blank" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fa-solid fa-file-lines mr-2"></i> CPBB</a>{% endif %}
+                                    {% set batch_msds_url = None %}
+                                    {% if b.raw_materials and b.raw_materials.raw_material_company_docs %}
+                                        {% for doc in b.raw_materials.raw_material_company_docs %}
+                                            {% if doc.perusahaan == b.perusahaan and doc.msds_file_url %}{% set batch_msds_url = doc.msds_file_url %}{% endif %}
+                                        {% endfor %}
+                                    {% endif %}
+                                    {% if batch_msds_url %}<a href="{{ batch_msds_url }}" target="_blank" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"><i class="fa-solid fa-shield-halving mr-2"></i> MSDS</a>{% endif %}
+                                </div>
+                            </div>
+                        </div>
                     </td>
                 </tr>
                 {% else %}
@@ -349,8 +335,7 @@
                         <th class="px-4 py-3">Lot / Batch No.</th>
                         <th class="px-4 py-3">Tgl ED</th>
                         <th class="px-4 py-3">Sisa Hari</th>
-                        <th class="px-4 py-3">Status ED</th>
-                        <th class="px-4 py-3">Aksi QC</th>
+                        <th class="px-4 py-3 text-right">Aksi QC</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200" id="ed-batch-tbody">
@@ -376,27 +361,26 @@
                             {{ b.raw_materials.nama_dagang if b.raw_materials else 'Tanpa Master' }}
                         </td>
                         <td class="px-4 py-3 font-mono text-xs">{{ b.no_batch or '-' }}</td>
-                        <td class="px-4 py-3 font-mono text-xs">{{ b.tanggal_ed or '-' }}</td>
+                        <td class="px-4 py-3 font-mono text-xs text-gray-500">{{ ed_str or '-' }}</td>
                         <td class="px-4 py-3 whitespace-nowrap" id="days-{{ b.id }}">
                             <span class="ed-days-badge inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"></span>
                         </td>
-                        <td class="px-4 py-3 whitespace-nowrap">
-                            <span class="status-ed-badge inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" data-status="{{ status_ed }}"></span>
-                        </td>
-                        <td class="px-4 py-3 whitespace-nowrap text-right space-x-1">
-                            <button onclick="openAccDipakaiModal('{{ b.id }}', '{{ (b.raw_materials.nama_dagang if b.raw_materials else 'Unknown') }}', '{{ b.no_batch or '' }}')" 
-                                    class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer" title="ACC Dipakai (Perpanjang ED)">
-                                <i class="fa-solid fa-check mr-1"></i> ACC Dipakai
-                            </button>
-                            <button onclick="openAccDimusnahkanModal('{{ b.id }}', '{{ (b.raw_materials.nama_dagang if b.raw_materials else 'Unknown') }}', '{{ b.no_batch or '' }}')"
-                                    class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 cursor-pointer" title="ACC Dimusnahkan (Dispose)">
-                                <i class="fa-solid fa-ban mr-1"></i> Dimusnahkan
-                            </button>
+                        <td class="px-4 py-3 whitespace-nowrap text-right">
+                            <div class="inline-flex items-center justify-end gap-1">
+                                <button onclick="openAccDipakaiModal('{{ b.id }}', '{{ (b.raw_materials.nama_dagang if b.raw_materials else 'Unknown') }}', '{{ b.no_batch or '' }}')" 
+                                        class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer" title="ACC Dipakai">
+                                    <i class="fa-solid fa-check mr-1"></i> ACC
+                                </button>
+                                <button onclick="openAccDimusnahkanModal('{{ b.id }}', '{{ (b.raw_materials.nama_dagang if b.raw_materials else 'Unknown') }}', '{{ b.no_batch or '' }}')"
+                                        class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 cursor-pointer" title="Dimusnahkan">
+                                    <i class="fa-solid fa-ban mr-1"></i> Musnah
+                                </button>
+                            </div>
                         </td>
                     </tr>
                     {% else %}
                     <tr id="ed-empty-row">
-                        <td colspan="7" class="px-4 py-12 text-center text-gray-500">Tidak ada batch mendekati ED atau expired.</td>
+                        <td colspan="6" class="px-4 py-12 text-center text-gray-500">Tidak ada batch mendekati ED atau expired.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -1017,6 +1001,27 @@
 </div>
 
 <script>
+    // Toggle dropdown
+    function toggleDropdown(id) {
+        const menu = document.getElementById(id);
+        if (!menu) return;
+        
+        // Tutup semua menu lain
+        document.querySelectorAll('[id^="batch-actions-menu-"]').forEach(m => {
+            if (m.id !== id) m.classList.add('hidden');
+        });
+        
+        menu.classList.toggle('hidden');
+    }
+
+    // Klik di luar untuk menutup
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('[id^="batch-actions-menu-"]') && !e.target.closest('[onclick^="toggleDropdown"]')) {
+            document.querySelectorAll('[id^="batch-actions-menu-"]').forEach(m => m.classList.add('hidden'));
+        }
+    });
+
+
     function openUpdateCpkbModal() {
     document.getElementById('cpkb-modal').classList.remove('hidden');
 }
@@ -1026,7 +1031,18 @@ function closeCpkbModal() {
 
 
 function openEditBatchModal(btn) {
-    const row = btn.closest('tr');
+    // Find the batch row - button is inside dropdown, so traverse up to find the parent row
+    let row = btn.closest('tr');
+    if (!row) {
+        // If button is not directly in a row (e.g., inside dropdown), find the row that owns this dropdown
+        const dropdown = btn.closest('[id^="batch-actions-menu-"]');
+        if (dropdown) {
+            const batchId = dropdown.id.replace('batch-actions-menu-', '');
+            row = document.querySelector(`.batch-row[data-id="${batchId}"]`);
+        }
+    }
+    if (!row) return;
+
     const id = row.getAttribute('data-id');
     const company = row.getAttribute('data-company') || '';
     const material = row.getAttribute('data-nama') || '';
@@ -1052,6 +1068,9 @@ function openEditBatchModal(btn) {
     document.getElementById('edit-batch-form').action = '/raw-materials/batches/edit/' + id;
 
     document.getElementById('edit-batch-modal').classList.remove('hidden');
+    
+    // Close any open dropdowns
+    document.querySelectorAll('[id^="batch-actions-menu-"]').forEach(m => m.classList.add('hidden'));
 }
 
 function closeEditBatchModal() {
@@ -1559,39 +1578,7 @@ function renderEDBadges() {
     });
     
     // Render status ED badges
-    document.querySelectorAll('.status-ed-badge').forEach(badgeEl => {
-        const status = badgeEl.dataset.status || 'Active';
-        let badgeClass, statusIcon, statusText;
-        
-        switch (status) {
-            case 'ACC Dipakai':
-                badgeClass = 'bg-green-100 text-green-800';
-                statusIcon = 'fa-circle-check';
-                statusText = 'ACC Dipakai';
-                break;
-            case 'Dimusnahkan':
-                badgeClass = 'bg-red-100 text-red-800';
-                statusIcon = 'fa-ban';
-                statusText = 'Dimusnahkan';
-                break;
-            case 'Expired':
-                badgeClass = 'bg-red-100 text-red-800';
-                statusIcon = 'fa-skull-crossbones';
-                statusText = 'Expired';
-                break;
-            case 'Kritis (<= 180 hari)':
-                badgeClass = 'bg-amber-100 text-amber-800';
-                statusIcon = 'fa-triangle-exclamation';
-                statusText = 'Akan Ed';
-                break;
-            default:
-                badgeClass = 'bg-gray-100 text-gray-800';
-                statusIcon = 'fa-circle';
-                statusText = status;
-        }
-        
-        badgeEl.innerHTML = `<i class="fa-solid ${statusIcon} mr-1"></i> ${statusText}`;
-    });
+    // REMOVED: status-ed-badge is no longer used in HTML
 }
 
 function updateEDTabEmptyState() {
@@ -1712,6 +1699,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (tabParam === 'ed-tab') {
         switchTab('ed-tab');
+    } else if (tabParam === 'batch-tab') {
+        switchTab('batch-tab');
     } else {
         // Default: render ED badges anyway in case user switches
         renderEDBadges();

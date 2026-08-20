@@ -602,8 +602,8 @@ async def product_detail(request: Request, product_id: str, current_user: dict =
 async def raw_materials_page(request: Request, current_user: dict = Depends(get_current_user)):
     rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*), raw_material_company_docs(*)").order("nama_dagang").execute()
     
-    success_msg = request.cookies.get("success_msg")
-    error_msg = request.cookies.get("error_msg")
+    success_msg = request.cookies.get("success_msg") or request.query_params.get("success")
+    error_msg = request.cookies.get("error_msg") or request.query_params.get("error")
     
     try:
         query_batches = (
@@ -1128,12 +1128,22 @@ async def edit_raw_material(
 @app.post("/raw-materials/delete/{rm_id}")
 async def delete_raw_material(rm_id: str, current_user: dict = Depends(get_current_user)):
     # Cek dulu apakah bahan baku ini masih dipakai di formula produk manapun
-    usage_check = supabase.table("product_formula_lines").select("id").eq("raw_material_id", rm_id).execute()
+    usage_check = supabase.table("product_formula_lines").select("product_id, products(nama_produk)").eq("raw_material_id", rm_id).execute()
 
     if usage_check.data:
         jumlah_pemakaian = len(usage_check.data)
+        # Ambil daftar nama produk
+        produk_terkait = []
+        for line in usage_check.data:
+            if line.get("products") and line.get("products").get("nama_produk"):
+                produk_terkait.append(f"{line.get('products').get('nama_produk')} (ID: {line.get('product_id')})")
+        
+        produk_str = ", ".join(produk_terkait[:3]) # Limit ke 3 produk pertama
+        if len(produk_terkait) > 3:
+            produk_str += "..."
+            
         return RedirectResponse(
-            url=f"/raw-materials?error=Bahan+baku+ini+masih+dipakai+di+{jumlah_pemakaian}+formula+produk.+Hapus+dari+formula+dulu+sebelum+menghapus+bahan+baku.",
+            url=f"/raw-materials?error=Bahan+baku+ini+masih+dipakai+di+{jumlah_pemakaian}+formula+produk:+{produk_str.replace(' ', '+')}",
             status_code=303
         )
 
@@ -1341,7 +1351,7 @@ async def edit_material_batch(
     except Exception as e:
         print(f"Gagal update batch: {e}")
 
-    return RedirectResponse(url="/raw-materials", status_code=303)
+    return RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
 
 
 # ==================== ED MANAGEMENT ENDPOINTS ====================
