@@ -1017,6 +1017,61 @@ async def quick_add_raw_material(
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
+@app.post("/brands/quick-add")
+async def quick_add_brand(
+    brand_name: str = Form(...),
+    producer_name: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    brand_name = brand_name.strip()
+    producer_name = producer_name.strip()
+    
+    if not brand_name or not producer_name:
+        return JSONResponse(status_code=400, content={"success": False, "error": "Nama Merk dan Nama Produsen wajib diisi."})
+    
+    try:
+        # 1. Cek/get-or-create Produsen
+        prod_check = supabase.table("producers").select("id").ilike("name", producer_name).execute()
+        if prod_check.data:
+            producer_id = prod_check.data[0]["id"]
+        else:
+            new_prod = supabase.table("producers").insert({"name": producer_name}).execute()
+            producer_id = new_prod.data[0]["id"]
+        
+        # 2. Cek duplikat brand
+        brand_check = supabase.table("brands") \
+            .select("id") \
+            .eq("producer_id", producer_id) \
+            .ilike("name", brand_name) \
+            .execute()
+        
+        if brand_check.data:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "error": f"Merk '{brand_name}' sudah terdaftar di bawah produsen '{producer_name}'."}
+            )
+        
+        # 3. Insert brand
+        new_brand_resp = supabase.table("brands").insert({
+            "producer_id": producer_id,
+            "name": brand_name
+        }).execute()
+        
+        new_brand = new_brand_resp.data[0]
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True, 
+                "id": new_brand["id"], 
+                "name": new_brand["name"], 
+                "producer_name": producer_name
+            }
+        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+
 @app.post("/raw-materials/edit/{rm_id}")
 async def edit_raw_material(
     rm_id: str,
@@ -3798,7 +3853,7 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
 
         # 3. Hitung status NA dan matriks kelengkapan dokumen Bab I - IV per produk
         for p in products:
-            # INI KUNCI UTAMA: Inisialisasi default value dulu biar Jinja2 gak bingung/crash
+            # Inisialisasi default value dulu biar Jinja2 gak crash
             p["dip_summary"] = {
                 "b1_ok": False,
                 "b2_ok": False,
