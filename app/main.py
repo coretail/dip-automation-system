@@ -14,8 +14,10 @@ import re
 import json
 import base64
 import sys
+import tempfile
 import zipfile
 import httpx
+import unicodedata
 from xhtml2pdf import pisa
 from pypdf import PdfReader, PdfWriter
 
@@ -49,6 +51,37 @@ def _add_years(d: date, years: int) -> date:
         return d.replace(year=d.year + years)
     except ValueError:
         return d.replace(year=d.year + years, day=28)
+
+async def get_ed_notification_count():
+    """Helper to fetch ED notification count for template context."""
+    from datetime import datetime as _dt
+    today = _dt.now(WIB).date()
+    try:
+        ed_query = (
+            supabase.table("raw_material_batches")
+            .select("id, tanggal_ed, status_ed")
+            .neq("status_ed", "Dimusnahkan")
+            .execute()
+        )
+        count = 0
+        for batch in (ed_query.data or []):
+            tanggal_ed = batch.get("tanggal_ed")
+            if not tanggal_ed:
+                continue
+            try:
+                if isinstance(tanggal_ed, str):
+                    ed_date = _dt.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
+                else:
+                    ed_date = tanggal_ed
+                days_remaining = (ed_date - today).days
+                if days_remaining <= 180:
+                    count += 1
+            except Exception:
+                continue
+        return count
+    except Exception as e:
+        print(f"Gagal hitung ED notifications: {e}")
+        return 0
 
 def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
     """
@@ -84,6 +117,57 @@ app = FastAPI(title="DIP Kosmetik Automation")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
+
+def slugify(text: str) -> str:
+    """
+    Mengubah teks menjadi slug URL-friendly.
+    - Lowercase
+    - Ganti spasi & karakter khusus dengan strip (-)
+    - Hapus karakter non-alphanumeric (kecuali strip)
+    - Hilangkan strip berulang & di awal/akhir
+    Contoh: "Sunscreen Serum SPF 50+" -> "sunscreen-serum-spf-50"
+    """
+    if not text:
+        return ""
+    # Normalize unicode (NFKD) untuk memisahkan karakter composed
+    text = unicodedata.normalize('NFKD', text)
+    # Hapus karakter non-ASCII (seperti tanda baca khusus, emoji, dll)
+    text = text.encode('ascii', 'ignore').decode('ascii')
+    # Lowercase
+    text = text.lower()
+    # Ganti karakter non-alphanumeric dengan strip
+    text = re.sub(r'[^a-z0-9]+', '-', text)
+    # Hapus strip di awal/akhir dan berulang
+    text = re.sub(r'-+', '-', text).strip('-')
+    return text
+
+
+def extract_id_from_slug(slug_id: str) -> str:
+    """
+    Ekstrak UUID dari string slug-ID.
+    Format: [slug]-[uuid]
+    UUID panjangnya 36 karakter (dengan hyphen: 8-4-4-4-12).
+    Jadi ambil 36 karakter terakhir sebagai kandidat UUID.
+    Jika bukan UUID valid (misal hanya UUID tanpa slug), return asli.
+    """
+    if not slug_id:
+        return slug_id
+    
+    # Cek apakah 36 karakter terakhir adalah UUID valid
+    if len(slug_id) >= 36:
+        candidate = slug_id[-36:]
+        # UUID regex pattern
+        uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        if re.match(uuid_pattern, candidate, re.IGNORECASE):
+            return candidate
+    
+    # Fallback: return asli (mungkin UUID saja tanpa slug)
+    return slug_id
+
+
+# Register slugify as Jinja2 filter
+templates.env.filters["slugify"] = slugify
+
 def clean_pct(value, decimals=4):
     """Bulatkan dulu buat buang floating point noise, baru hilangkan trailing zero."""
     if value is None:
@@ -101,14 +185,15 @@ COMPANY_INFO = {
     "PT Erfi": {
         "nama": "PT. ERFI KARYA ABADI",
         "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
-        "email": "contact@erfikaryaabadi.com",
+        "email": "erfikaryaabadi@gmail.com",
         "website": "www.erfikaryaabadi.com",
         "logo": "/static/images/logo_erfi.png"
     },
     "PT Heka": {
         "nama": "PT. HARAKA ERFI KOSMETINDO ABADI",          
         "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
-        "Telp": "081281938715", 
+        "email": "harakaerfi.pt@gmail.com",
+        "website": "www.harakaerfi.com",
         "logo": "/static/images/logo_heka.png"
     }
 }
@@ -119,7 +204,71 @@ def get_company_info(perusahaan_key: str) -> dict:
         return COMPANY_INFO["PT Erfi"]
     return COMPANY_INFO.get(perusahaan_key, COMPANY_INFO["PT Erfi"])
 
+def _logo_render_width(uri: str, target_height_px: int = 60) -> int:
+    """Lebar (px) logo saat dirender dengan tinggi target_height_px.
+
+    Dipakai buat nyetel lebar kolom logo di kop surat Bab III sesuai proporsi
+    asli tiap perusahaan (logo Erfi lebar/lanskap, logo Heka potret/tinggi),
+    supaya jarak antara logo dan teks perusahaan tetap rapat & konsisten
+    tanpa perlu hardcode lebar cell.
+    """
+    try:
+        if not uri or not uri.startswith("/static/"):
+            return target_height_px
+        local_path = os.path.join("app", uri.lstrip("/").replace("/", os.sep))
+        if not os.path.exists(local_path):
+            return target_height_px
+        from PIL import Image
+        w, h = Image.open(local_path).size
+        if h <= 0:
+            return target_height_px
+        return round(w * target_height_px / h)
+    except Exception as e:
+        print(f"[KOP SURAT] Gagal hitung lebar logo {uri}: {e}")
+        return target_height_px
+
+def _pdf_link_callback(uri: str, rel: str) -> str:
+    """link_callback untuk pisa.CreatePDF: resolve path /static/... ke file lokal.
+
+    PNG transparan (RGBA/LA/P) di-flatten ke background putih dulu karena
+    xhtml2pdf sering merender PNG RGBA dengan background hitam.
+    """
+    if not uri.startswith("/static/"):
+        return uri
+    local_path = os.path.join("app", uri.lstrip("/").replace("/", os.sep))
+    if not os.path.exists(local_path):
+        return local_path
+    try:
+        from PIL import Image
+        img = Image.open(local_path)
+        if img.mode in ("RGBA", "LA", "P"):
+            if img.mode != "RGBA":
+                img = img.convert("RGBA")
+            alpha = img.split()[-1]
+            canvas = Image.new("RGB", img.size, (255, 255, 255))
+            canvas.paste(img.convert("RGB"), mask=alpha)
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            canvas.save(tmp.name, format="PNG")
+            return tmp.name
+    except Exception as e:
+        print(f"[PDF LINK CALLBACK] Gagal flatten logo {uri}: {e}")
+    return local_path
+
 templates.env.filters["clean_pct"] = clean_pct
+
+def format_date_dd_mm_yyyy(value):
+    """Konversi format tanggal dari YYYY-MM-DD ke dd-mm-yyyy."""
+    if not value:
+        return "-"
+    try:
+        # Coba parse format ISO (YYYY-MM-DD)
+        dt = datetime.strptime(str(value)[:10], "%Y-%m-%d")
+        return dt.strftime("%d-%m-%Y")
+    except Exception:
+        # Kalau format sudah dd-mm-yyyy atau tidak dikenal, kembalikan aslinya
+        return str(value)
+
+templates.env.filters["format_date_dd_mm_yyyy"] = format_date_dd_mm_yyyy
 
 @app.head("/health")
 @app.get("/health")
@@ -383,6 +532,21 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
             status_code=status.HTTP_303_SEE_OTHER
         )
     
+    # Untuk error 413 (Payload Too Large) terkait upload file
+    if exc.status_code == status.HTTP_413_CONTENT_TOO_LARGE:
+        print(f"\n⚠️ [FILE TOO LARGE] Path: {request.url.path}")
+        print(f"   • Detail: {exc.detail}")
+        print("=" * 50 + "\n")
+        # Redirect balik ke halaman edit dengan pesan error
+        referer = request.headers.get("referer")
+        if referer and "/edit" in referer:
+            redirect_url = referer
+        else:
+            redirect_url = "/"
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie("error_msg", str(exc.detail))
+        return response
+
     # Untuk error HTTP lainnya tetap kembalikan bawaan
     return JSONResponse(
         status_code=exc.status_code,
@@ -442,12 +606,61 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
                     )
                 )
             """)
+            .order("created_at", desc=True)
             .execute()
         )
         batches_data = query_batches.data
     except Exception as e:
         print(f"Gagal ambil data batches: {e}")
         batches_data = []
+
+    # ===== PRE-COMPUTE ED CRITICAL BATCHES FOR NOTIFICATION BADGE =====
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    WIB = ZoneInfo("Asia/Jakarta")
+    today = datetime.now(WIB).date()
+    warning_date = today + timedelta(days=180)
+    
+    ed_critical_count = 0
+    ed_critical_batches_for_tab = []  # Filtered for ED tab (days_remaining <= 180)
+    
+    for b in batches_data:
+        tanggal_ed = b.get("tanggal_ed")
+        status_ed = b.get("status_ed") or "Active"
+        
+        if not tanggal_ed or status_ed == "Dimusnahkan":
+            continue
+            
+        try:
+            if isinstance(tanggal_ed, str):
+                ed_date = datetime.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
+            else:
+                ed_date = tanggal_ed
+        except Exception:
+            continue
+            
+        days_remaining = (ed_date - today).days
+        
+        # Count for notification badge (critical: <= 180 days or expired)
+        if days_remaining <= 180:
+            ed_critical_count += 1
+            
+            # Add to ED tab filtered list
+            # Auto-update status for display
+            display_status = status_ed
+            if days_remaining <= 0 and status_ed == "Active":
+                display_status = "Expired"
+            elif days_remaining <= 180 and status_ed == "Active":
+                display_status = "Kritis (<= 180 hari)"
+                
+            ed_critical_batches_for_tab.append({
+                **b,
+                "computed_days_remaining": days_remaining,
+                "computed_status_ed": display_status
+            })
+    
+    # Sort ED tab batches by days_remaining (expired first, then closest to expiry)
+    ed_critical_batches_for_tab.sort(key=lambda x: x["computed_days_remaining"])
 
     sorted_batches = sorted(batches_data, key=lambda b: b.get("created_at") or "", reverse=True)
     latest_batch_map = {}
@@ -492,6 +705,8 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
         context={
             "raw_materials": rm_resp.data,
             "batches": batches_data,
+            "ed_critical_batches": ed_critical_batches_for_tab,  # Filtered for ED tab
+            "ed_notification_count": ed_critical_count,  # For immediate badge rendering
             "doc_status": doc_status,
             "success_msg": success_msg,
             "error_msg": error_msg
@@ -504,6 +719,81 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
         response.delete_cookie("error_msg")
         
     return response
+
+
+# ==================== API: ED NOTIFICATIONS ====================
+@app.get("/api/ed-notifications")
+async def get_ed_notifications(current_user: dict = Depends(get_current_user)):
+    """API endpoint untuk mengambil notifikasi ED bahan baku (sisa ED <= 180 hari atau expired)"""
+    WIB = ZoneInfo("Asia/Jakarta")
+    today = datetime.now(WIB).date()
+    warning_date = today + timedelta(days=180)  # 180 hari ke depan
+    
+    try:
+        # Ambil semua batch dengan tanggal_ed <= warning_date atau status_ed bukan 'Dimusnahkan'
+        query = supabase.table("raw_material_batches") \
+            .select("""
+                *,
+                raw_materials (
+                    nama_dagang,
+                    kode_bahan_baku
+                )
+            """) \
+            .neq("status_ed", "Dimusnahkan") \
+            .execute()
+        
+        batches = query.data or []
+        critical_batches = []
+        
+        for batch in batches:
+            tanggal_ed = batch.get("tanggal_ed")
+            if not tanggal_ed:
+                continue
+            
+            try:
+                if isinstance(tanggal_ed, str):
+                    ed_date = datetime.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
+                else:
+                    ed_date = tanggal_ed
+            except Exception:
+                continue
+            
+            days_remaining = (ed_date - today).days
+            
+            # Filter: hanya yang sisa ED <= 180 hari atau sudah expired
+            if days_remaining <= 180:
+                status_ed = batch.get("status_ed") or "Active"
+                
+                # Auto-update status jika expired tapi masih 'Active'
+                if days_remaining <= 0 and status_ed == "Active":
+                    status_ed = "Expired"
+                elif days_remaining <= 180 and status_ed == "Active":
+                    status_ed = "Kritis (<= 180 hari)"
+                
+                critical_batches.append({
+                    "id": batch.get("id"),
+                    "raw_material_id": batch.get("raw_material_id"),
+                    "no_batch": batch.get("no_batch"),
+                    "perusahaan": batch.get("perusahaan"),
+                    "tanggal_ed": tanggal_ed,
+                    "days_remaining": days_remaining,
+                    "status_ed": status_ed,
+                    "nama_dagang": batch.get("raw_materials", {}).get("nama_dagang", "Unknown"),
+                    "kode_bahan_baku": batch.get("raw_materials", {}).get("kode_bahan_baku", "")
+                })
+        
+        # Sort by days_remaining (expired first, then closest to expiry)
+        critical_batches.sort(key=lambda x: x["days_remaining"])
+        
+        return {
+            "count": len(critical_batches),
+            "items": critical_batches[:20]  # Limit to 20 items in dropdown
+        }
+        
+    except Exception as e:
+        print(f"Error fetching ED notifications: {e}")
+        return {"count": 0, "items": []}
+
 
 async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, perusahaan: str, spec_parameters_raw: str, msds_file: UploadFile, spec_sheet_file: UploadFile = None):
     """Helper: parse spec_parameters (JSON), upload MSDS & PDF Spesifikasi Asli Supplier
@@ -664,6 +954,52 @@ async def add_raw_material(
     response.set_cookie("success_msg", f"Mantap! Bahan baku '{nama_dagang}' berhasil ditambahkan.")
     return response
 
+@app.post("/raw-materials/quick-add")
+async def quick_add_raw_material(
+    nama_dagang: str = Form(...),
+    kode_bahan_baku: str = Form(...),
+    tipe: str = Form(...),
+    produsen: str = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    kode_check = kode_bahan_baku.strip()
+    # Cek duplikat kode (pola yang sama dengan add_raw_material)
+    existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).execute()
+    
+    if existing_rm.data:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": f"Kode '{kode_check}' udah terdaftar."}
+        )
+
+    insert_payload = {
+        "nama_dagang": nama_dagang,
+        "kode_bahan_baku": kode_check,
+        "tipe": tipe,
+        "produsen": produsen,
+    }
+
+    try:
+        rm_resp = supabase.table("raw_materials").insert(insert_payload).execute()
+        if not rm_resp.data:
+            return JSONResponse(status_code=500, content={"success": False, "error": "Gagal menyimpan ke database."})
+        
+        new_rm = rm_resp.data[0]
+        # Panggil log_activity (pola yang sama dengan add_raw_material)
+        log_activity(current_user, "create", "raw_material", new_rm["id"], nama_dagang)
+
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "id": new_rm["id"],
+                "nama_dagang": new_rm["nama_dagang"],
+                "kode_bahan_baku": new_rm["kode_bahan_baku"]
+            }
+        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
 @app.post("/raw-materials/edit/{rm_id}")
 async def edit_raw_material(
     rm_id: str,
@@ -809,6 +1145,8 @@ async def add_material_batch(
     tanggal_ed: str = Form(...),
     kesimpulan: str = Form(...),
     perusahaan: str = Form(...),
+    asal_negara: str = Form(None),
+    nama_produsen: str = Form(None),
     tanggal_sampling: str = Form(None),
     qc_signer: str = Form(None),
     qa_signer: str = Form(None),
@@ -889,6 +1227,8 @@ async def add_material_batch(
         "perusahaan": perusahaan,
         "no_batch": no_batch.strip(),
         "supplier": supplier.strip(),
+        "asal_negara": asal_negara.strip() if asal_negara else None,
+        "nama_produsen": nama_produsen.strip() if nama_produsen else None,
         "harga_per_kg": harga_per_kg,
         "tanggal_terima_sampel": tanggal_terima_sampel,
         "tanggal_sampling": tanggal_sampling if tanggal_sampling else None,
@@ -911,6 +1251,161 @@ async def add_material_batch(
 
     # Redirect balik ke halaman utama bahan baku
     return RedirectResponse(url="/raw-materials", status_code=303)
+
+
+
+@app.post("/raw-materials/batches/edit/{batch_id}")
+async def edit_material_batch(
+    batch_id: str,
+    no_batch: str = Form(...),
+    supplier: str = Form(...),
+    tanggal_terima_sampel: str = Form(...),
+    tanggal_ed: str = Form(...),
+    kesimpulan: str = Form(...),
+    asal_negara: str = Form(None),
+    nama_produsen: str = Form(None),
+    coa_file: UploadFile = File(None),
+    halal_file: UploadFile = File(None),
+    qc_report_file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    # 1. Ambil data lama untuk handle file upload
+    old_batch = supabase.table("raw_material_batches").select("*").eq("id", batch_id).single().execute().data
+    
+    clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
+    
+    update_data = {
+        "no_batch": no_batch.strip(),
+        "supplier": supplier.strip(),
+        "tanggal_terima_sampel": tanggal_terima_sampel,
+        "tanggal_ed": tanggal_ed,
+        "kesimpulan": kesimpulan,
+        "asal_negara": asal_negara.strip() if asal_negara else None,
+        "nama_produsen": nama_produsen.strip() if nama_produsen else None,
+    }
+
+    # 2. Update Files if provided
+    if coa_file and coa_file.filename:
+        try:
+            coa_bytes = await coa_file.read()
+            coa_path = f"coa/coa_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=coa_path, file=coa_bytes, file_options={"content-type": coa_file.content_type, "upsert": "true"}
+            )
+            update_data["coa_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
+        except Exception as e:
+            print(f"Gagal update CoA: {e}")
+
+    if halal_file and halal_file.filename:
+        try:
+            halal_bytes = await halal_file.read()
+            halal_path = f"halal/halal_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=halal_path, file=halal_bytes, file_options={"content-type": halal_file.content_type, "upsert": "true"}
+            )
+            update_data["halal_batch_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
+        except Exception as e:
+            print(f"Gagal update Halal: {e}")
+
+    if qc_report_file and qc_report_file.filename:
+        try:
+            qc_report_bytes = await qc_report_file.read()
+            qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=qc_report_path, file=qc_report_bytes, file_options={"content-type": qc_report_file.content_type, "upsert": "true"}
+            )
+            update_data["qc_report_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
+        except Exception as e:
+            print(f"Gagal update QC Report: {e}")
+
+    try:
+        supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+        log_activity(current_user, "edit", "raw_material_batch", batch_id, f"Update batch {no_batch}")
+    except Exception as e:
+        print(f"Gagal update batch: {e}")
+
+    return RedirectResponse(url="/raw-materials", status_code=303)
+
+
+# ==================== ED MANAGEMENT ENDPOINTS ====================
+@app.post("/raw-materials/batches/acc-dipakai")
+async def acc_dipakai_batch(
+    request: Request,
+    batch_id: str = Form(...),
+    new_expiry_date: str = Form(...),
+    new_status_ed: str = Form("ACC Dipakai"),
+    catatan_qc: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """ACC Dipakai - Perpanjang ED (Retest Passed)"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    
+    WIB = ZoneInfo("Asia/Jakarta")
+    now = datetime.now(WIB)
+    
+    try:
+        # Update batch with new ED, status, and QC notes
+        update_data = {
+            "tanggal_ed": new_expiry_date,
+            "status_ed": new_status_ed,
+            "catatan_qc": catatan_qc,
+            "tanggal_acc_qc": now.isoformat()
+        }
+        
+        supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+        
+        log_activity(current_user, "acc_dipakai", "raw_material_batch", batch_id, f"ED diperpanjang ke {new_expiry_date}")
+        
+        response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
+        response.set_cookie("success_msg", f"ACC Dipakai berhasil disimpan. ED baru: {new_expiry_date}")
+        return response
+        
+    except Exception as e:
+        print(f"Gagal ACC Dipakai: {e}")
+        response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
+        response.set_cookie("error_msg", f"Gagal menyimpan ACC Dipakai: {str(e)}")
+        return response
+
+
+@app.post("/raw-materials/batches/acc-dimusnahkan")
+async def acc_dimusnahkan_batch(
+    request: Request,
+    batch_id: str = Form(...),
+    catatan_qc: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """ACC Dimusnahkan - Dispose batch"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    
+    WIB = ZoneInfo("Asia/Jakarta")
+    now = datetime.now(WIB)
+    
+    try:
+        # Update batch: status = Dimusnahkan, stok = 0, save QC notes and timestamp
+        update_data = {
+            "status_ed": "Dimusnahkan",
+            "catatan_qc": catatan_qc,
+            "tanggal_acc_qc": now.isoformat(),
+            # Note: If there's a quantity/stock column, set it to 0
+            # "qty": 0  # Uncomment if you have a qty column
+        }
+        
+        supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+        
+        log_activity(current_user, "acc_dimusnahkan", "raw_material_batch", batch_id, "Batch dimusnahkan (dispose)")
+        
+        response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
+        response.set_cookie("success_msg", "Batch berhasil dimusnahkan (ACC Dimusnahkan).")
+        return response
+        
+    except Exception as e:
+        print(f"Gagal ACC Dimusnahkan: {e}")
+        response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
+        response.set_cookie("error_msg", f"Gagal memusnahkan batch: {str(e)}")
+        return response
+
 
 @app.post("/raw-materials/cpkb/update")
 async def update_cpkb_document(
@@ -1385,6 +1880,15 @@ async def download_bab2_document(product_id: str, current_user: dict = Depends(g
     )
 
 
+@app.get("/products/{product_id}/bab2/preview")
+async def preview_dip_bab2(product_id: str, current_user: dict = Depends(get_current_user)):
+    # Preview Bab 2: generate PDF yang sama persis dengan /bab2/download, tapi disajikan
+    # inline (browser menampilkan preview di tab baru) -- bukan force-download.
+    resp = await download_bab2_document(product_id, current_user)
+    resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
+    return resp
+
+
 def _safe_zip_name(name: str) -> str:
     """Bersihin nama biar aman dipakai sebagai nama file/folder di dalam ZIP
     (buang karakter yang gak diizinkan di Windows/macOS: < > : " / \\ | ? *)."""
@@ -1589,11 +2093,16 @@ async def download_bab1_document(product_id: str, current_user: dict = Depends(g
     pidana_url = pidana_resp.data[0]["file_url"] if pidana_resp.data else None
 
     # 3. Hak & Lisensi Merk -> dari brand yang di-link ke produk (kalau ada)
+    # Sekarang ambil dari brand_legal_documents, filter by brand_id DAN perusahaan produk
     hak_merk_url = None
     if brand_id:
-        brand_resp = supabase.table("brands").select("hak_merk_file_url").eq("id", brand_id).limit(1).execute()
-        if brand_resp.data:
-            hak_merk_url = brand_resp.data[0].get("hak_merk_file_url")
+        doc_resp = supabase.table("brand_legal_documents") \
+            .select("hak_lisensi_merk_file_url") \
+            .eq("brand_id", brand_id) \
+            .eq("perusahaan", perusahaan) \
+            .limit(1).execute()
+        if doc_resp.data:
+            hak_merk_url = doc_resp.data[0].get("hak_lisensi_merk_file_url")
 
     # 4. Surat No. Notifikasi BPOM -> langsung dari kolom produk
     notifikasi_url = product.get("no_notifikasi_file_url")
@@ -1742,14 +2251,20 @@ async def download_dip_bab3(
     rendered_html = template.render({
         "product": product,
         "perusahaan": perusahaan,
-        "company": company,
+        "company": {**company, "logo_width": _logo_render_width(company.get("logo"))},
         "company_sop": company_sop,
         "latest_batch": latest_batch,
         "processed_formula": processed_formula
     })
 
     cover_pdf_io = io.BytesIO()
-    pisa.CreatePDF(io.StringIO(rendered_html), dest=cover_pdf_io)
+    pisa_status = pisa.CreatePDF(
+        io.StringIO(rendered_html),
+        dest=cover_pdf_io,
+        link_callback=_pdf_link_callback
+    )
+    if pisa_status.err:
+        print(f"[BAB 3 WARNING] Ada error saat render cover PDF: {pisa_status.err}")
     cover_pdf_io.seek(0)
 
     # 6. MERGE WITH ATTACHMENTS
@@ -1959,9 +2474,10 @@ async def preview_dip_bab4(product_id: str, current_user: dict = Depends(get_cur
 
 # =====================================================================
 #  PUBLIC LINK BPOM - PERMALINK UNTUK VERIFIKATOR BPOM
-#  Route /dip/v/{product_id} bersifat PUBLIK (tanpa login) & permanen
+#  Route /dip/[slug-nama-produk]-[id] bersifat PUBLIK (tanpa login) & permanen
 #  (tidak ada masa expired) supaya bisa dilampirkan ke portal
 #  e-registration BPOM dan tetap hidup bertahun-tahun.
+#  Contoh: /dip/sunscreen-serum-spf-50-e623d2e4-1234-5678-9abc-def012345678
 #
 #  Keamanan akses file:
 #   - PDF gabungan tiap Bab (I, II, III, IV) -> di-stream lewat backend
@@ -2021,19 +2537,41 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "-"
 
 
-def _audit_public_link(product_id: str, ip_address: str, user_agent: str):
-    """Catat setiap akses ke public link DIP (/dip/v/:uuid).
-    Field: product_id, visited_at (timestamp), ip_address, user_agent.
+def _get_audit_username(request: Request) -> str:
+    """Best-effort ambil username (full_name) user yang sedang login, buat log audit
+    public link. Kalau tidak login / token invalid / query gagal, return '-' supaya
+    log tetap jalan. Dipanggil di route publik yang TIDAK boleh gagal gara-gara ini."""
+    token_cookie = request.cookies.get("access_token")
+    if not token_cookie:
+        return "-"
+    try:
+        token = token_cookie.replace("Bearer ", "")
+        user_auth = supabase.auth.get_user(token)
+        user_data = user_auth.user
+        if not user_data:
+            return "-"
+        profile_res = supabase.table("profiles").select("full_name").eq("id", user_data.id).execute()
+        if profile_res.data and profile_res.data[0].get("full_name"):
+            return profile_res.data[0]["full_name"]
+        return user_data.email or "-"
+    except Exception:
+        return "-"
+
+
+def _audit_public_link(product_id: str, product_name: str, ip_address: str, user_agent: str, username: str = "-"):
+    """Catat setiap akses ke public link DIP (/dip/[slug]-[id]).
+    Field DB: product_id, visited_at (timestamp), ip_address, user_agent.
     1) Simpan ke tabel khusus public_link_audits (sudah dibuat di Supabase).
     2) Fallback ke activity_logs kalau tabel khusus belum dibuat, biar tidak ada akses yang hilang.
     Kegagalan logging TIDAK pernah mengganggu halaman (diamankan try/except)."""
-    # 1. Cetak ke terminal supaya terpantau realtime
+    # 1. Cetak ke terminal supaya terpantau realtime (produk ditampilkan sebagai NAMA, bukan id)
     now_str = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
     print("\n" + "=" * 60)
     print(f"🔗 [PUBLIC LINK OPENED] | {now_str}")
-    print(f"   • Product   : {product_id}")
+    print(f"   • Product   : {product_name or product_id}")
     print(f"   • IP        : {ip_address}")
     print(f"   • User-Agent: {(user_agent or '-')[:120]}")
+    print(f"   • Username  : {username or '-'}")
     print("=" * 60)
 
     # 2. Simpan ke tabel audit khusus (public_link_audits)
@@ -2056,19 +2594,26 @@ def _audit_public_link(product_id: str, ip_address: str, user_agent: str):
             "action": "public_link_visit",
             "entity_type": "product",
             "entity_id": product_id,
-            "entity_label": "Public link DIP dibuka",
+            "entity_label": product_name or "Public link DIP dibuka",
             "changes": [
                 {"field": "ip_address", "note": ip_address},
                 {"field": "user_agent", "note": (user_agent or "-")[:500]},
+                {"field": "username", "note": username or "-"},
             ],
         }).execute()
     except Exception as e:
         print(f"[AUDIT PUBLIC LINK] Gagal simpan ke activity_logs: {e}")
 
 
-@app.get("/dip/v/{product_id}", response_class=HTMLResponse)
-async def dip_public_hub(request: Request, product_id: str):
-    """Landing page/hub publik khusus verifikator BPOM untuk 1 produk."""
+@app.get("/dip/{slug_id}", response_class=HTMLResponse)
+async def dip_public_hub(request: Request, slug_id: str):
+    """Landing page/hub publik khusus verifikator BPOM untuk 1 produk.
+    
+    Format URL: /dip/[slug-nama-produk]-[id]
+    Contoh: /dip/sunscreen-serum-spf-50-e623d2e4-...
+    """
+    product_id = extract_id_from_slug(slug_id)
+    
     try:
         prod_resp = supabase.table("products") \
             .select("*, brands(name, producers(name))") \
@@ -2082,11 +2627,13 @@ async def dip_public_hub(request: Request, product_id: str):
     if not product:
         raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
 
-    # Audit log: catat setiap kali public link dibuka (product_id, timestamp, IP, user-agent)
+    # Audit log: catat setiap kali public link dibuka (product_id, timestamp, IP, user-agent, username)
     _audit_public_link(
         product_id=product_id,
+        product_name=product.get("nama_produk") or "Produk",
         ip_address=_client_ip(request),
         user_agent=request.headers.get("user-agent") or "-",
+        username=_get_audit_username(request),
     )
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
@@ -2176,7 +2723,7 @@ async def dip_public_hub(request: Request, product_id: str):
 
 
 def _dip_public_check_product(product_id: str) -> bool:
-    """Validasi UUID produk eksis (buat route publik /dip/v)."""
+    """Validasi UUID produk eksis (buat route publik /dip/[slug]-[id])."""
     try:
         check = supabase.table("products").select("id").eq("id", product_id).single().execute()
         return bool(check.data)
@@ -2206,49 +2753,58 @@ async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool):
     return resp
 
 
-@app.get("/dip/v/{product_id}/bab1")
-async def dip_public_bab1(product_id: str):
+@app.get("/dip/{slug_id}/bab1")
+async def dip_public_bab1(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "1", False)
 
 
-@app.get("/dip/v/{product_id}/bab1/download")
-async def dip_public_bab1_download(product_id: str):
+@app.get("/dip/{slug_id}/bab1/download")
+async def dip_public_bab1_download(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "1", True)
 
 
-@app.get("/dip/v/{product_id}/bab2")
-async def dip_public_bab2(product_id: str):
+@app.get("/dip/{slug_id}/bab2")
+async def dip_public_bab2(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "2", False)
 
 
-@app.get("/dip/v/{product_id}/bab2/download")
-async def dip_public_bab2_download(product_id: str):
+@app.get("/dip/{slug_id}/bab2/download")
+async def dip_public_bab2_download(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "2", True)
 
 
-@app.get("/dip/v/{product_id}/bab3")
-async def dip_public_bab3(product_id: str):
+@app.get("/dip/{slug_id}/bab3")
+async def dip_public_bab3(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "3", False)
 
 
-@app.get("/dip/v/{product_id}/bab3/download")
-async def dip_public_bab3_download(product_id: str):
+@app.get("/dip/{slug_id}/bab3/download")
+async def dip_public_bab3_download(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "3", True)
 
 
-@app.get("/dip/v/{product_id}/bab4")
-async def dip_public_bab4(product_id: str):
+@app.get("/dip/{slug_id}/bab4")
+async def dip_public_bab4(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "4", False)
 
 
-@app.get("/dip/v/{product_id}/bab4/download")
-async def dip_public_bab4_download(product_id: str):
+@app.get("/dip/{slug_id}/bab4/download")
+async def dip_public_bab4_download(slug_id: str):
+    product_id = extract_id_from_slug(slug_id)
     return await _dip_stream_bab(product_id, "4", True)
 
 
-@app.get("/dip/v/{product_id}/bab2/zip")
-async def dip_public_bab2_zip(product_id: str):
+@app.get("/dip/{slug_id}/bab2/zip")
+async def dip_public_bab2_zip(slug_id: str):
     """Stream ZIP Bab II (folder per bahan baku) lewat backend, tanpa login."""
+    product_id = extract_id_from_slug(slug_id)
     if not _dip_public_check_product(product_id):
         raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
     return await download_bab2_document_zip(product_id, None)
@@ -2258,6 +2814,7 @@ async def dip_public_bab2_zip(product_id: str):
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def edit_product_page(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
     prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    product = prod_resp.data or {}
 
     try:
         brands_resp = supabase.table("brands").select("id, name, producers(name)").order("name").execute()
@@ -2266,10 +2823,75 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
         print(f"Gagal ambil data brands buat dropdown: {e}")
         brands = []
 
+    # --- Data Tab Bab 2 (Mutu Bahan & Formula) ---
+    formula = []
+    raw_materials = []
+    bab2_materials = []
+    sop_cpkb_url = None
+    try:
+        formula_resp = supabase.table("product_formula_lines") \
+            .select("*, raw_materials(nama_dagang, kode_bahan_baku)") \
+            .eq("product_id", product_id) \
+            .order("created_at").execute()
+        formula = formula_resp.data or []
+
+        rm_resp = supabase.table("raw_materials") \
+            .select("id, nama_dagang, kode_bahan_baku") \
+            .order("nama_dagang").execute()
+        raw_materials = rm_resp.data or []
+
+        perusahaan = product.get("perusahaan") or "PT Erfi"
+
+        # Bahan baku unik yang dipakai di formula produk ini (urutan sesuai susunan formula)
+        seen_ids = set()
+        uniq_rm = []
+        for line in formula:
+            rm = line.get("raw_materials")
+            if isinstance(rm, list) and rm:
+                rm = rm[0]
+            if isinstance(rm, dict) and rm.get("id") and rm["id"] not in seen_ids:
+                seen_ids.add(rm["id"])
+                uniq_rm.append(rm)
+
+        # Dokumen pendukung Bab 2 per bahan baku: PDF Spesifikasi asli + MSDS (company-specific)
+        # + batch terbaru perusahaan produk ini (CoA, Halal, Laporan Pemeriksaan)
+        for rm in uniq_rm:
+            rm = _apply_company_specific_docs(rm, perusahaan)
+            batch_resp = supabase.table("raw_material_batches") \
+                .select("*") \
+                .eq("raw_material_id", rm["id"]) \
+                .eq("perusahaan", perusahaan) \
+                .order("created_at", desc=True) \
+                .limit(1) \
+                .execute()
+            batch = batch_resp.data[0] if batch_resp.data else None
+            bab2_materials.append({"material": rm, "batch": batch})
+
+        # SOP CPKB perusahaan (lampiran checklist Bab 2)
+        sop_resp = supabase.table("cpkb_raw_material") \
+            .select("file_url") \
+            .eq("perusahaan", perusahaan) \
+            .limit(1) \
+            .execute()
+        sop_cpkb_url = sop_resp.data[0]["file_url"] if sop_resp.data else None
+    except Exception as e:
+        print(f"Gagal ambil data Bab 2 buat halaman edit produk {product_id}: {e}")
+
+    # Get error message from cookie (if any)
+    error_msg = request.cookies.get("error_msg")
+
     return templates.TemplateResponse(
         request=request,
         name="edit_product.html",
-        context={"product": prod_resp.data, "brands": brands}
+        context={
+            "product": product,
+            "brands": brands,
+            "formula": formula,
+            "raw_materials": raw_materials,
+            "bab2_materials": bab2_materials,
+            "sop_cpkb_url": sop_cpkb_url,
+            "error_msg": error_msg,
+        }
     )
 
 # 2. Proses Simpan Perubahan Info Produk (PERBAIKAN: Kolom disinkronkan dengan add_product)
@@ -2308,6 +2930,10 @@ async def update_product(
     data_klaim_file: UploadFile = File(None),
     desain_primer_file: UploadFile = File(None),
     desain_sekunder_file: UploadFile = File(None),
+    # Bab 2 (Mutu Bahan & Formula): susunan formula komposisi
+    formula_submitted: str = Form(None),
+    raw_material_id: List[str] = Form(None),
+    percentage: List[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     acc_sampel_val = acc_sampel.strip() if acc_sampel else None
@@ -2343,6 +2969,15 @@ async def update_product(
         if file_obj and file_obj.filename:
             try:
                 file_bytes = await file_obj.read()
+                
+                # Check file size (10 MB limit)
+                max_size = 10 * 1024 * 1024  # 10 MB
+                if len(file_bytes) > max_size:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu."
+                    )
+                
                 path = f"products/{product_id}/{path_suffix}.pdf"
                 supabase.storage.from_(bucket_name).upload(
                     path=path,
@@ -2350,13 +2985,27 @@ async def update_product(
                     file_options={"content-type": "application/pdf", "upsert": "true"}
                 )
                 return supabase.storage.from_(bucket_name).get_public_url(path)
+            except HTTPException:
+                raise
             except Exception as e:
+                # Tangkap error 413 dari Supabase/backend (payload terlalu besar)
+                error_str = str(e).lower()
+                if "413" in error_str or "payload too large" in error_str or "too large" in error_str:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu."
+                    )
                 print(f"Gagal upload {path_suffix} produk {product_id}: {e}")
         return None
 
     # Upload Bab 1
-    no_notif_url = await process_pdf_upload(no_notifikasi_file, "no_notifikasi", bucket_name="legal-documents")
-    if no_notif_url: update_payload["no_notifikasi_file_url"] = no_notif_url
+    try:
+        no_notif_url = await process_pdf_upload(no_notifikasi_file, "no_notifikasi", bucket_name="legal-documents")
+        if no_notif_url: update_payload["no_notifikasi_file_url"] = no_notif_url
+    except HTTPException as he:
+        if he.status_code == 413:
+            raise he
+        print(f"Gagal upload no_notifikasi produk {product_id}: {he}")
 
     # Upload Map File Bab 3 & Bab 4
     file_mappings = {
@@ -2377,11 +3026,42 @@ async def update_product(
     }
 
     for db_col, (file_obj, key_suffix) in file_mappings.items():
-        uploaded_url = await process_pdf_upload(file_obj, key_suffix)
-        if uploaded_url:
-            update_payload[db_col] = uploaded_url
+        try:
+            uploaded_url = await process_pdf_upload(file_obj, key_suffix)
+            if uploaded_url:
+                update_payload[db_col] = uploaded_url
+        except HTTPException as he:
+            if he.status_code == 413:
+                raise he
+            print(f"Gagal upload {key_suffix} produk {product_id}: {he}")
 
     supabase.table("products").update(update_payload).eq("id", product_id).execute()
+
+    # --- Simpan Susunan Formula Bab 2 (kalau tab Bab 2 ikut di-submit) ---
+    # Delete + re-insert semua baris formula biar urutan & komposisi selalu tersinkron.
+    # Baris lama tetap dirender dari DB di halaman edit, jadi kalau gak diubah pun
+    # datanya tetap tersimpan sama persis (tidak ada data Bab 2 yang hilang).
+    if formula_submitted:
+        try:
+            supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
+            if raw_material_id:
+                lines = []
+                for i in range(len(raw_material_id)):
+                    rm_id = (raw_material_id[i] or "").strip()
+                    if rm_id:
+                        try:
+                            pct = float(percentage[i]) if percentage and i < len(percentage) else 0.0
+                        except (TypeError, ValueError):
+                            pct = 0.0
+                        lines.append({
+                            "product_id": product_id,
+                            "raw_material_id": rm_id,
+                            "percent_in_formula": pct,
+                        })
+                if lines:
+                    supabase.table("product_formula_lines").insert(lines).execute()
+        except Exception as e:
+            print(f"Gagal simpan formula Bab 2 produk {product_id}: {e}")
 
     # --- Catat activity log: field teks dibandingin beneran, field file cuma dicatet "diganti" ---
     product_field_labels = {
@@ -2578,7 +3258,12 @@ async def edit_sample_submission_page(request: Request, submission_id: str, curr
     return templates.TemplateResponse(
         request=request,
         name="sample_form.html",
-        context={"brands": brands, "existing_products": products, "submission": submission}
+        context={
+            "brands": brands,
+            "existing_products": products,
+            "submission": submission,
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
 
 
@@ -2743,13 +3428,50 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
         print(f"Gagal ambil data brands: {e}")
         brands = []
 
+    # Fetch legal documents for all brands from brand_legal_documents table
+    if brands:
+        brand_ids = [b["id"] for b in brands]
+        try:
+            docs_resp = supabase.table("brand_legal_documents").select("brand_id, perusahaan, hak_lisensi_merk_file_url").in_("brand_id", brand_ids).execute()
+            docs_by_brand = {}
+            for doc in docs_resp.data or []:
+                bid = doc["brand_id"]
+                if bid not in docs_by_brand:
+                    docs_by_brand[bid] = {
+                        "PT Erfi": {"hak_lisensi_merk_file_url": None},
+                        "PT Heka": {"hak_lisensi_merk_file_url": None},
+                    }
+                docs_by_brand[bid][doc["perusahaan"]] = {"hak_lisensi_merk_file_url": doc.get("hak_lisensi_merk_file_url")}
+            
+            # Attach to each brand
+            for b in brands:
+                b["legal_docs"] = docs_by_brand.get(b["id"], {
+                    "PT Erfi": {"hak_lisensi_merk_file_url": None},
+                    "PT Heka": {"hak_lisensi_merk_file_url": None},
+                })
+        except Exception as e:
+            print(f"Gagal ambil dokumen legal brand: {e}")
+            for b in brands:
+                b["legal_docs"] = {
+                    "PT Erfi": {"hak_lisensi_merk_file_url": None},
+                    "PT Heka": {"hak_lisensi_merk_file_url": None},
+                }
+    else:
+        # No brands, but still ensure structure exists
+        pass
+
     success_msg = request.cookies.get("success_msg")
     error_msg = request.cookies.get("error_msg")
 
     response = templates.TemplateResponse(
         request=request,
         name="brands.html",
-        context={"brands": brands, "success_msg": success_msg, "error_msg": error_msg}
+        context={
+            "brands": brands,
+            "success_msg": success_msg,
+            "error_msg": error_msg,
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
     response.delete_cookie("success_msg")
     response.delete_cookie("error_msg")
@@ -2759,31 +3481,57 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
 @app.post("/brands/{brand_id}/update-documents")
 async def update_brand_documents(
     brand_id: str,
-    hak_merk_file: UploadFile = File(None),
+    perusahaan: str = Form(...),
+    hak_lisensi_merk_file: UploadFile = File(None),
     current_user: dict = Depends(get_current_user)
 ):
-    update_data = {}
+    # Validasi perusahaan
+    if perusahaan not in ["PT Erfi", "PT Heka"]:
+        response = RedirectResponse(url="/brands", status_code=303)
+        response.set_cookie("error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
+        return response
+
+    # Map perusahaan to slug for file path
+    perusahaan_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
 
     try:
-        if hak_merk_file and hak_merk_file.filename:
-            file_bytes = await hak_merk_file.read()
-            path = f"brands/hak_merk_{brand_id}.pdf"
+        update_data = {}
+        
+        if hak_lisensi_merk_file and hak_lisensi_merk_file.filename:
+            file_bytes = await hak_lisensi_merk_file.read()
+            # Path includes perusahaan_slug to avoid conflicts
+            path = f"brands/hak_lisensi_merk_{brand_id}_{perusahaan_slug}.pdf"
             supabase.storage.from_("legal-documents").upload(
                 path=path,
                 file=file_bytes,
-                file_options={"content-type": hak_merk_file.content_type, "upsert": "true"}
+                file_options={"content-type": hak_lisensi_merk_file.content_type, "upsert": "true"}
             )
-            update_data["hak_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
+            update_data["hak_lisensi_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
 
         if update_data:
-            supabase.table("brands").update(update_data).eq("id", brand_id).execute()
+            # Check if row exists for this brand_id + perusahaan
+            existing_resp = supabase.table("brand_legal_documents").select("id").eq("brand_id", brand_id).eq("perusahaan", perusahaan).limit(1).execute()
+            
+            if existing_resp.data:
+                # Update existing row
+                supabase.table("brand_legal_documents").update({
+                    "hak_lisensi_merk_file_url": update_data["hak_lisensi_merk_file_url"],
+                    "updated_at": "now()"
+                }).eq("brand_id", brand_id).eq("perusahaan", perusahaan).execute()
+            else:
+                # Insert new row
+                supabase.table("brand_legal_documents").insert({
+                    "brand_id": brand_id,
+                    "perusahaan": perusahaan,
+                    "hak_lisensi_merk_file_url": update_data["hak_lisensi_merk_file_url"]
+                }).execute()
 
         response = RedirectResponse(url="/brands", status_code=303)
-        response.set_cookie("success_msg", "Dokumen merk berhasil diperbarui.")
+        response.set_cookie("success_msg", f"Dokumen Hak/Lisensi Merk untuk {perusahaan} berhasil diperbarui.")
         return response
 
     except Exception as e:
-        print(f"Gagal update dokumen brand {brand_id}: {e}")
+        print(f"Gagal update dokumen brand {brand_id} untuk {perusahaan}: {e}")
         response = RedirectResponse(url="/brands", status_code=303)
         response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
         return response
@@ -2810,7 +3558,11 @@ async def sample_submissions_list(request: Request, search: str = None, current_
     return templates.TemplateResponse(
         request=request,
         name="sample_list.html",
-        context={"submissions": submissions, "search_value": search or ""}
+        context={
+            "submissions": submissions,
+            "search_value": search or "",
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
 
 @app.get("/sample-submissions/form", response_class=HTMLResponse)
@@ -2830,7 +3582,11 @@ async def sample_submission_form(request: Request, current_user: dict = Depends(
         request=request,
         name="sample_form.html",
         # Key "existing_products" harus sama persis kayak yang dipakai template (bug #1)
-        context={"brands": brands, "existing_products": products}
+        context={
+            "brands": brands,
+            "existing_products": products,
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
 
 
@@ -2854,7 +3610,10 @@ async def sample_submission_preview(request: Request, submission_id: str, curren
     return templates.TemplateResponse(
         request=request,
         name="sample_preview.html",
-        context={"s": submission}
+        context={
+            "s": submission,
+            "ed_notification_count": await get_ed_notification_count()
+        }
     )
 
     # =====================================================================
@@ -3012,7 +3771,7 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
 
         # 3. Hitung status NA dan matriks kelengkapan dokumen Bab I - IV per produk
         for p in products:
-            # Inisialisasi default value dulu biar Jinja2 gak bingung/crash
+            # INI KUNCI UTAMA: Inisialisasi default value dulu biar Jinja2 gak bingung/crash
             p["dip_summary"] = {
                 "b1_ok": False,
                 "b2_ok": False,
@@ -3079,6 +3838,8 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
     except Exception as e:
         print(f"Gagal ambil data dashboard: {e}")
     
+    ed_notification_count = await get_ed_notification_count()
+    
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html", 
@@ -3086,7 +3847,8 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             "request": request, 
             "products": products, 
             "user": current_user,
-            "brands": brands
+            "brands": brands,
+            "ed_notification_count": ed_notification_count
         }
     )
 
