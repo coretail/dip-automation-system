@@ -2523,6 +2523,15 @@ async def download_dip_bab3(
     except Exception as e:
         print(f"[WARNING] Gagal/belum ada data product_batches: {e}")
 
+    # NEW: Fetch Finished Product Specification (for dynamic PDF generation and checklist status)
+    finished_spec = None
+    try:
+        spec_res = supabase.table("product_finished_specs").select("*").eq("product_id", product_id).execute()
+        if spec_res.data:
+            finished_spec = spec_res.data[0]
+    except Exception as e:
+        print(f"[WARNING] Gagal/belum ada data product_finished_specs: {e}")
+
     # 5. RENDER COVER & FORMULA VIA TEMPLATE HTML
     template = templates.get_template("bab3_checklist.html")
     rendered_html = template.render({
@@ -2531,7 +2540,8 @@ async def download_dip_bab3(
         "company": {**company, "logo_width": _logo_render_width(company.get("logo"))},
         "company_sop": company_sop,
         "latest_batch": latest_batch,
-        "processed_formula": processed_formula
+        "processed_formula": processed_formula,
+        "finished_spec": finished_spec, # Pass finished_spec to template
     })
 
     cover_pdf_io = io.BytesIO()
@@ -2550,12 +2560,56 @@ async def download_dip_bab3(
     for page in cover_reader.pages:
         pdf_writer.add_page(page)
 
-    attachment_urls = [
+    # Generate finished spec PDF bytes if finished_spec data exists
+    finished_spec_pdf_bytes = None
+    if finished_spec:
+        try:
+            tanggal_disetujui_formatted = format_date_id(finished_spec["tanggal_disetujui"]) if finished_spec.get("tanggal_disetujui") else "-"
+            for section in finished_spec.get("sections", []):
+                rows = section.get("rows", [])
+                if not rows: continue
+                grouped_rows = []
+                i = 0
+                while i < len(rows):
+                    current_row = rows[i]
+                    metode = current_row.get("metode", "")
+                    rowspan = 1
+                    j = i + 1
+                    while j < len(rows) and rows[j].get("metode") == metode and metode != "" and metode != "-":
+                        rowspan += 1
+                        j += 1
+                    current_row["rowspan"] = rowspan
+                    grouped_rows.append(current_row)
+                    for k in range(i + 1, j):
+                        rows[k]["skip_metode"] = True
+                        grouped_rows.append(rows[k])
+                    i = j
+                section["rows"] = grouped_rows
+
+            spec_context = {
+                "product": product,
+                "spec": finished_spec,
+                "company": company,
+                "tanggal_disetujui_formatted": tanggal_disetujui_formatted,
+            }
+            spec_template = templates.env.get_template("finished_spec_pdf.html")
+            spec_html_out = spec_template.render(spec_context)
+            spec_pdf = pisa.CreatePDF(
+                io.BytesIO(spec_html_out.encode("UTF-8")),
+                link_callback=_pdf_link_callback,
+                encoding="UTF-8"
+            )
+            if not spec_pdf.err:
+                finished_spec_pdf_bytes = spec_pdf.dest.getvalue()
+        except Exception as e:
+            print(f"[BAB 3 FINISHED SPEC PDF ERROR] Gagal generate spek produk jadi: {e}")
+
+    attachments = [
         product.get("cara_pembuatan_file_url"),              # Poin 2
         company_sop.get("protap_no_batch_url"),              # Poin 3
         product.get("sistem_penomoran_batch_file_url"),      # Poin 4
-        latest_batch.get("coa_file_url"),                    # Poin 5
-        product.get("spek_produk_jadi_file_url"),            # Poin 6a
+        latest_batch.get("coa_file_url"),                    # Poin 5 (SAPJ)
+        finished_spec_pdf_bytes if finished_spec_pdf_bytes else product.get("spek_produk_jadi_file_url"), # Poin 6a
         product.get("spek_pengemas_file_url"),               # Poin 6b
         product.get("laporan_uji_sig_file_url"),             # Poin 7
         company_sop.get("protap_pemeriksaan_fg_url"),        # Poin 8
@@ -2564,16 +2618,22 @@ async def download_dip_bab3(
     ]
 
     async with httpx.AsyncClient() as client:
-        for url in attachment_urls:
-            if url:
-                try:
-                    res = await client.get(url, timeout=15.0)
+        for item in attachments:
+            if not item:
+                continue
+            try:
+                if isinstance(item, bytes):
+                    doc_reader = PdfReader(io.BytesIO(item))
+                    for page in doc_reader.pages:
+                        pdf_writer.add_page(page)
+                elif isinstance(item, str) and item.startswith("http"):
+                    res = await client.get(item, timeout=15.0)
                     if res.status_code == 200:
                         doc_reader = PdfReader(io.BytesIO(res.content))
                         for page in doc_reader.pages:
                             pdf_writer.add_page(page)
-                except Exception as e:
-                    print(f"[BAB 3 MERGE ERROR] Gagal mengunduh {url}: {e}")
+            except Exception as e:
+                print(f"[BAB 3 MERGE ERROR] Gagal memproses attachment: {e}")
 
     output_pdf_io = io.BytesIO()
     pdf_writer.write(output_pdf_io)
