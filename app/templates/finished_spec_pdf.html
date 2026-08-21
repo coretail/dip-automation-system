@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    @page {
+        size: A4;
+        margin: 0.5cm 1.5cm 0.4cm 1.5cm;
+    }
+    body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 9pt;
+        color: #111;
+        line-height: 1.4;
+    }
+    .header-table { width: 100%; border-collapse: collapse; border: none; margin-bottom: 10px; }
+    .header-logo { width: {{ company.logo_width }}px; vertical-align: middle; }
+    .header-info { padding-left: 10px; vertical-align: middle; }
+    .company-name { font-size: 12pt; font-bold: true; margin: 0; text-transform: uppercase; }
+    .company-addr { font-size: 7.5pt; color: #444; margin: 2px 0 0 0; }
+    
+    .qc-box { border: 1px solid #000; padding: 5px 10px; text-align: center; width: 120px; font-weight: bold; font-size: 10pt; }
+    
+    .doc-title-container { border-top: 2px solid #000; margin-top: -4px; }
+    .doc-title-table { width: 100%; border-collapse: collapse; }
+    .doc-title { text-align: center; font-size: 13pt; font-weight: bold; text-decoration: underline; margin-bottom: 2px; margin-top: 2px;}
+    .doc-number { text-align: right; font-size: 8pt; font-weight: bold; vertical-align: top; }
+    
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+    .info-table td { padding: 1.5px 0; vertical-align: top; }
+    .info-label { width: 120px; font-weight: bold; }
+    .info-separator { width: 15px; }
+
+    .main-table { width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 0px; }
+    .main-table th, .main-table td { border: 1px solid #000; padding: 3px 6px; text-align: left; }
+    .main-table th { background-color: #f0f0f0; font-weight: bold; text-align: center; text-transform: uppercase; font-size: 8pt; }
+    .section-header { background-color: #e5e5e5; font-weight: bold; text-transform: uppercase; font-size: 8.5pt; }
+    
+    .footer-container { margin-top: 40px; width: 100%; }
+    .signature-box { float: right; width: 250px; text-align: center; }
+    .signature-space { height: 70px; }
+</style>
+</head>
+<body>
+    <table class="header-table">
+        <tr>
+            <td class="header-logo">
+                <img src="{{ company.logo }}" style="height: 55px; width: auto;">
+            </td>
+            <td class="header-info">
+                <p class="company-addr">
+                    {{ company.alamat }}<br>
+                    Email: {{ company.email }} | Website: {{ company.website }}
+                </p>
+            </td>
+            <td style="vertical-align: top; text-align: right;">
+                <div class="qc-box">QUALITY CONTROL</div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="doc-title-container">
+        <table class="doc-title-table">
+            <tr>
+                <td style="width: 20%;"></td>
+                <td style="width: 60%; text-align: center; vertical-align: middle;">
+                    <div class="doc-title" style="margin-bottom: 0; padding-top: 2px;">SPESIFIKASI PRODUK JADI</div>
+                </td>
+                <td class="doc-number" style="width: 20%; padding-top: 5px; text-align: right;">
+                    Nomor: PM/EKA/FL/017/02
+                </td>
+            </tr>
+        </table>
+        <div style="height: 5px;"></div>
+    </div>
+
+    <table class="info-table">
+        <tr>
+            <td class="info-label">Nama Produk</td>
+            <td class="info-separator">:</td>
+            <td style="font-weight: bold; font-size: 10pt;">{{ product.nama_produk }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Kode Produk</td>
+            <td class="info-separator">:</td>
+            <td>{{ spec.kode_produk or '-' }}</td>
+        </tr>
+    </table>
+
+
+    <table class="main-table">
+        <thead>
+            <tr>
+                <th style="width: 35%;">PARAMETER</th>
+                <th style="width: 45%;">SPESIFIKASI</th>
+                <th style="width: 20%;">METODE</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for section in spec.sections %}
+                {% if section.rows and section.rows|length > 0 %}
+                <tr>
+                    <td colspan="3" class="section-header">{{ section.title }}</td>
+                </tr>
+                {% for row in section.rows %}
+                <tr>
+                    <td>{{ row.parameter or '-' }}</td>
+                    <td>{{ row.spesifikasi or '-' }}</td>
+                    {% if not row.skip_metode %}
+                    <td {% if row.rowspan > 1 %}rowspan="{{ row.rowspan }}"{% endif %} style="vertical-align: middle; text-align: center;">{{ row.metode or '-' }}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+                {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <table style="width: 100%; margin-top: 8px; border-collapse: collapse; border: none;">
+        <tr>
+            <td style="width: 55%; border: none;"></td>
+            <td style="width: 45%; text-align: center; vertical-align: top; border: none; font-size: 9.5pt;">
+                <p style="margin: 0;">{{ spec.kota_persetujuan }}, {{ tanggal_disetujui_formatted }}</p>
+                <p style="margin: 5px 0 35px 0;">Disetujui Oleh,</p>
+                <p style="font-weight: bold; text-decoration: underline; margin: 0;">{{ spec.disetujui_oleh or '(....................................)' }}</p>
+                <p style="font-size: 8.5pt; color: #444; margin: 2px 0 0 0;">Quality Control</p>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

@@ -23,6 +23,8 @@ from pypdf import PdfReader, PdfWriter
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from typing import Optional
+from slugify import slugify
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -269,6 +271,27 @@ def _pdf_link_callback(uri: str, rel: str) -> str:
     return local_path
 
 templates.env.filters["clean_pct"] = clean_pct
+
+
+MONTH_NAMES_ID = {
+    1: "Januari", 2: "Februari", 3: "Maret", 4: "April", 5: "Mei", 6: "Juni",
+    7: "Juli", 8: "Agustus", 9: "September", 10: "Oktober", 11: "November", 12: "Desember"
+}
+
+def format_date_id(value: Optional[date]) -> str:
+    """Format tanggal ke format Indonesia (e.g., 29 Mei 2026)."""
+    if not value:
+        return "-"
+    try:
+        # Ensure it's a date object
+        if isinstance(value, str):
+            dt = datetime.strptime(value, "%Y-%m-%d").date()
+        else:
+            dt = value
+        return f"{dt.day} {MONTH_NAMES_ID[dt.month]} {dt.year}"
+    except Exception as e:
+        print(f"[FORMAT DATE ID] Gagal format tanggal {value}: {e}")
+        return str(value)
 
 def format_date_dd_mm_yyyy(value):
     """Konversi format tanggal dari YYYY-MM-DD ke dd-mm-yyyy."""
@@ -2149,6 +2172,177 @@ async def download_bab2_document_zip(product_id: str, current_user: dict = Depen
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+
+
+@app.get("/products/{product_id}/finished-spec", response_class=HTMLResponse)
+async def finished_spec_page(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
+    product_res = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    if not product_res.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product = product_res.data
+
+    if product["perusahaan"] != "PT Erfi":
+        response = RedirectResponse(url=f"/products/{product_id}", status_code=303)
+        response.set_cookie("error_msg", "Fitur spesifikasi produk jadi hanya tersedia untuk PT Erfi.")
+        return response
+
+    spec_res = supabase.table("product_finished_specs").select("*").eq("product_id", product_id).execute()
+    spec = spec_res.data[0] if spec_res.data else None
+
+    # Get success/error messages from cookies
+    success_msg = request.cookies.get("success_msg")
+    error_msg = request.cookies.get("error_msg")
+
+    response = templates.TemplateResponse(
+        request=request,
+        name="finished_spec_form.html",
+        context={
+            "product": product,
+            "spec": spec,
+            "current_user": current_user,
+            "success_msg": success_msg,
+            "error_msg": error_msg
+        }
+    )
+    if success_msg:
+        response.delete_cookie("success_msg")
+    if error_msg:
+        response.delete_cookie("error_msg")
+    return response
+
+
+@app.post("/products/{product_id}/finished-spec")
+async def save_finished_spec(
+    request: Request,
+    product_id: str,
+    kode_produk: Optional[str] = Form(None),
+    disetujui_oleh: Optional[str] = Form(None),
+    tanggal_disetujui: Optional[str] = Form(None),
+    kota_persetujuan: str = Form("Bogor"),
+    sections_json: str = Form(...),
+    current_user: dict = Depends(get_current_user)
+):
+    product_res = supabase.table("products").select("nama_produk").eq("id", product_id).single().execute()
+    if not product_res.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product = product_res.data
+
+    try:
+        sections_data = json.loads(sections_json)
+    except json.JSONDecodeError:
+        response = RedirectResponse(url=f"/products/{product_id}/finished-spec", status_code=303)
+        response.set_cookie("error_msg", "Format data sections tidak valid. Pastikan format JSON benar.")
+        return response
+
+    tgl_disetujui_val = tanggal_disetujui.strip() if tanggal_disetujui else None
+    if tgl_disetujui_val == "":
+        tgl_disetujui_val = None
+
+    spec_data = {
+        "product_id": product_id,
+        "kode_produk": kode_produk,
+        "sections": sections_data,
+        "disetujui_oleh": disetujui_oleh,
+        "tanggal_disetujui": tgl_disetujui_val,
+        "kota_persetujuan": kota_persetujuan,
+    }
+
+    existing_spec = supabase.table("product_finished_specs").select("id").eq("product_id", product_id).execute()
+
+    if existing_spec.data:
+        supabase.table("product_finished_specs").update(spec_data).eq("product_id", product_id).execute()
+        success_msg = "Spesifikasi Produk Jadi berhasil diperbarui."
+    else:
+        supabase.table("product_finished_specs").insert(spec_data).execute()
+        success_msg = "Spesifikasi Produk Jadi berhasil disimpan."
+
+    log_activity(current_user, "update", "product_finished_specs", product_id, f"Spesifikasi Produk Jadi - {product['nama_produk']}")
+
+    response = RedirectResponse(url=f"/products/{product_id}/finished-spec", status_code=303)
+    response.set_cookie("success_msg", success_msg)
+    return response
+
+
+@app.get("/products/{product_id}/finished-spec/download")
+async def download_finished_spec(product_id: str, current_user: dict = Depends(get_current_user)):
+    product_res = supabase.table("products").select("nama_produk, perusahaan").eq("id", product_id).single().execute()
+    if not product_res.data:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product = product_res.data
+
+    if product["perusahaan"] != "PT Erfi":
+        raise HTTPException(status_code=403, detail="Fitur ini hanya untuk produk PT Erfi.")
+
+    spec_res = supabase.table("product_finished_specs").select("*").eq("product_id", product_id).execute()
+    if not spec_res.data:
+        raise HTTPException(status_code=400, detail="Spesifikasi produk jadi belum diisi, silakan isi form terlebih dahulu.")
+    spec = spec_res.data[0]
+
+    # Grouping logic for "Metode" column merging
+    for section in spec.get("sections", []):
+        rows = section.get("rows", [])
+        if not rows: continue
+        
+        grouped_rows = []
+        i = 0
+        while i < len(rows):
+            current_row = rows[i]
+            metode = current_row.get("metode", "")
+            
+            # Find how many subsequent rows have the same metode
+            rowspan = 1
+            j = i + 1
+            while j < len(rows) and rows[j].get("metode") == metode and metode != "" and metode != "-":
+                rowspan += 1
+                j += 1
+            
+            # Add info to the first row of the group
+            current_row["rowspan"] = rowspan
+            grouped_rows.append(current_row)
+            
+            # Add subsequent rows but mark them to be skipped in template for the "Metode" cell
+            for k in range(i + 1, j):
+                rows[k]["skip_metode"] = True
+                grouped_rows.append(rows[k])
+            
+            i = j
+        section["rows"] = grouped_rows
+
+    company = get_company_info(product["perusahaan"])
+    company["logo_width"] = _logo_render_width(company["logo"])
+
+    tanggal_disetujui_formatted = format_date_id(spec["tanggal_disetujui"]) if spec["tanggal_disetujui"] else "-"
+
+    context = {
+        "product": product,
+        "spec": spec,
+        "company": company,
+        "tanggal_disetujui_formatted": tanggal_disetujui_formatted,
+    }
+
+    template = templates.env.get_template("finished_spec_pdf.html")
+    html_out = template.render(context)
+
+    pdf = pisa.CreatePDF(
+        io.BytesIO(html_out.encode("UTF-8")),
+        link_callback=_pdf_link_callback,
+        encoding="UTF-8"
+    )
+    if pdf.err:
+        raise HTTPException(status_code=500, detail="Gagal membuat PDF.")
+
+    filename = f"Spesifikasi_Produk_Jadi_{slugify(product['nama_produk'])}.pdf"
+
+    return StreamingResponse(io.BytesIO(pdf.dest.getvalue()), media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=\"{filename}\""
+    })
+
+
+@app.get("/products/{product_id}/finished-spec/preview")
+async def preview_finished_spec(product_id: str, current_user: dict = Depends(get_current_user)):
+    resp = await download_finished_spec(product_id, current_user)
+    resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
+    return resp
 
 # =====================================================================
 #           GENERATOR DOKUMEN BAB I (DATA ADMINISTRATIF, PDF GABUNGAN)

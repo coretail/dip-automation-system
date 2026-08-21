@@ -63,6 +63,15 @@
             <a href="/products/{{ product.id }}/bab4/preview" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-md hover:bg-emerald-700">
                 <i class="fa-solid fa-file-pdf"></i> Preview Bab 4
             </a>
+
+            {% if product.perusahaan == 'PT Erfi' %}
+            <a href="/products/{{ product.id }}/finished-spec/preview" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-rose-600 rounded-md hover:bg-rose-700">
+                <i class="fa-solid fa-file-pdf"></i> Preview Spek Produk Jadi
+            </a>
+            <a href="/products/{{ product.id }}/finished-spec" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gray-700 rounded-md hover:bg-gray-800">
+                <i class="fa-solid fa-file-pen"></i> Isi Spek Produk Jadi
+            </a>
+            {% endif %}
         </div>
     </div>
 

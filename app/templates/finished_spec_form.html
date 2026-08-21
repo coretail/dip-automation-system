@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+
+{% block title %}Spesifikasi Produk Jadi - {{ product.nama_produk }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto bg-white p-8 rounded-lg shadow-xs border border-gray-200">
+    <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+        <div>
+            <h2 class="text-xl font-bold text-gray-900">Spesifikasi Produk Jadi PT Erfi</h2>
+            <p class="text-xs text-gray-500">{{ product.nama_produk }}</p>
+        </div>
+    </div>
+
+    <form id="specForm" action="/products/{{ product.id }}/finished-spec" method="POST" class="space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Kode Produk</label>
+                <input type="text" name="kode_produk" value="{{ spec.kode_produk if spec else '' }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Disetujui Oleh</label>
+                <input type="text" name="disetujui_oleh" value="{{ spec.disetujui_oleh if spec else '' }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Tanggal Disetujui</label>
+                <input type="date" name="tanggal_disetujui" value="{{ spec.tanggal_disetujui if spec else '' }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Kota Persetujuan</label>
+                <input type="text" name="kota_persetujuan" value="{{ spec.kota_persetujuan if spec else 'Bogor' }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+            </div>
+        </div>
+
+        <div class="pt-4 border-t border-gray-100">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-bold text-gray-900 uppercase tracking-wider">Daftar Spesifikasi (Sections)</h3>
+                <button type="button" onclick="addSection()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 rounded-md hover:bg-indigo-100 transition-colors">
+                    <i class="fa-solid fa-plus"></i> Tambah Section
+                </button>
+            </div>
+            
+            <div id="sectionsContainer" class="space-y-6">
+                <!-- Sections will be injected here via JS -->
+            </div>
+        </div>
+
+        <input type="hidden" name="sections_json" id="sections_json">
+
+        <div class="pt-6 border-t border-gray-100 flex justify-center gap-3">
+            <a href="/products/{{ product.id }}/edit" class="px-6 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-all">
+                <i class="fa-solid fa-arrow-left mr-1.5"></i> Edit Produk
+            </a>
+            <a href="/products/{{ product.id }}" class="px-6 py-2 text-sm font-semibold text-gray-400 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-all">
+                Batal
+            </a>
+            <button type="submit" class="px-6 py-2 text-sm font-bold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm transition-all">
+                <i class="fa-solid fa-save mr-1.5"></i> Simpan Spesifikasi
+            </button>
+            <button type="button" onclick="window.open('/products/{{ product.id }}/finished-spec/download', '_blank')" 
+                    class="px-6 py-2 text-sm font-semibold text-rose-700 bg-white border border-rose-300 rounded-md hover:bg-rose-50 transition-colors {% if not spec %}opacity-50 cursor-not-allowed pointer-events-none{% endif %}"
+                    {% if not spec %}title="Simpan dulu sebelum download"{% endif %}>
+                <i class="fa-solid fa-download mr-1.5"></i> Download PDF
+            </button>
+        </div>
+    </form>
+</div>
+
+
+<script>
+    const sectionsContainer = document.getElementById('sectionsContainer');
+    const specForm = document.getElementById('specForm');
+    const sectionsJsonInput = document.getElementById('sections_json');
+
+    // Initial data from server
+    let initialData = {{ spec.sections|tojson if spec and spec.sections else '[]'|safe }};
+
+    const defaultData = [
+        {
+            title: "Pemerian",
+            rows: [
+                { parameter: "Bentuk", spesifikasi: "", metode: "Visual" },
+                { parameter: "Warna", spesifikasi: "", metode: "Visual" },
+                { parameter: "Bau/Aroma", spesifikasi: "", metode: "Visual" }
+            ]
+        },
+        {
+            title: "Pengemasan Primer",
+            rows: [
+                { parameter: "Netto", spesifikasi: "", metode: "Penimbangan" },
+                { parameter: "Kebersihan", spesifikasi: "", metode: "Visual" },
+                { parameter: "Kerapihan", spesifikasi: "", metode: "Visual" },
+                { parameter: "Kebocoran", spesifikasi: "", metode: "Visual" },
+                { parameter: "Penandaan pada Kemasan", spesifikasi: "", metode: "Visual" }
+            ]
+        },
+        {
+            title: "Pengemasan Sekunder",
+            rows: [
+                { parameter: "No NA", spesifikasi: "", metode: "Visual" },
+                { parameter: "Masa Kadaluarsa", spesifikasi: "2 tahun", metode: "Visual" },
+                { parameter: "Kesesuaian Jenis Kemasan: Innerbox, Stiker, Kemasan", spesifikasi: "", metode: "Visual" },
+                { parameter: "Penandaan pada Kemasan: Innerbox, Stiker", spesifikasi: "Sesuai dengan DIP berdasarkan Peraturan BPOM No. 18 tahun 2024", metode: "Visual" }
+            ]
+        },
+        {
+            title: "Uji Mikrobiologi",
+            rows: [
+                { parameter: "ALT (Angka Lempeng Total)", spesifikasi: "<10 coloni/gr", metode: "Analisa Laboratorium Eksternal" },
+                { parameter: "Kapang/Khamir", spesifikasi: "<10 coloni/gr", metode: "Analisa Laboratorium Eksternal" },
+                { parameter: "Staphylococcus Aureus", spesifikasi: "Negatif", metode: "Analisa Laboratorium Eksternal" },
+                { parameter: "Pseudomonas Aeruginosa", spesifikasi: "Negatif", metode: "Analisa Laboratorium Eksternal" },
+                { parameter: "Candida Albicans", spesifikasi: "Negatif", metode: "Analisa Laboratorium Eksternal" }
+            ]
+        },
+        {
+            title: "Uji Cemaran Logam",
+            rows: [
+                { parameter: "Arsen (As)", spesifikasi: "Not Detected", metode: "Analisa Laboratorium Eksternal" },
+                { parameter: "Merkuri (Hg)", spesifikasi: "Not Detected", metode: "Analisa Laboratorium Eksternal" },
+                { parameter: "Kadmium (Cd)", spesifikasi: "Not Detected", metode: "Analisa Laboratorium Eksternal" },
+                { parameter: "Timbal (Pb)", spesifikasi: "Not Detected", metode: "Analisa Laboratorium Eksternal" }
+            ]
+        }
+    ];
+
+    function createRowElement(rowData = {parameter: '', spesifikasi: '', metode: ''}) {
+        const tr = document.createElement('tr');
+        tr.className = 'group';
+        tr.innerHTML = `
+            <td class="p-2">
+                <input type="text" value="${rowData.parameter || ''}" placeholder="Parameter" class="row-parameter w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:border-indigo-500 outline-none">
+            </td>
+            <td class="p-2">
+                <input type="text" value="${rowData.spesifikasi || ''}" placeholder="Spesifikasi" class="row-spesifikasi w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:border-indigo-500 outline-none">
+            </td>
+            <td class="p-2">
+                <input type="text" value="${rowData.metode || ''}" placeholder="Metode" class="row-metode w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:border-indigo-500 outline-none">
+            </td>
+            <td class="p-2 text-center">
+                <button type="button" onclick="this.closest('tr').remove()" class="text-gray-400 hover:text-red-600 transition-colors">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </td>
+        `;
+        return tr;
+    }
+
+    function addSection(sectionData = {title: '', rows: [{parameter: '', spesifikasi: '', metode: ''}]}) {
+        const sectionId = 'section-' + Date.now() + Math.random().toString(36).substr(2, 9);
+        const sectionDiv = document.createElement('div');
+        sectionDiv.className = 'section-card p-5 bg-gray-50 border border-gray-200 rounded-lg relative transition-all hover:border-gray-300';
+        sectionDiv.id = sectionId;
+        
+        sectionDiv.innerHTML = `
+            <button type="button" onclick="this.closest('.section-card').remove()" class="absolute top-4 right-4 text-gray-400 hover:text-red-600 p-1">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <div class="mb-4 pr-8">
+                <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Judul Section</label>
+                <input type="text" value="${sectionData.title || ''}" placeholder="Contoh: Pemerian, Uji Mikrobiologi, dll" class="section-title w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none font-semibold">
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/3">Parameter</th>
+                            <th class="p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/3">Spesifikasi</th>
+                            <th class="p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/4">Metode</th>
+                            <th class="p-2 w-10"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="rows-container">
+                    </tbody>
+                </table>
+            </div>
+            <button type="button" onclick="addRowToSection('${sectionId}')" class="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
+                <i class="fa-solid fa-plus-circle"></i> Tambah Baris
+            </button>
+        `;
+        
+        const rowsContainer = sectionDiv.querySelector('.rows-container');
+        if (sectionData.rows && sectionData.rows.length > 0) {
+            sectionData.rows.forEach(row => {
+                rowsContainer.appendChild(createRowElement(row));
+            });
+        } else {
+            rowsContainer.appendChild(createRowElement());
+        }
+        
+        sectionsContainer.appendChild(sectionDiv);
+    }
+
+    function addRowToSection(sectionId) {
+        const section = document.getElementById(sectionId);
+        const container = section.querySelector('.rows-container');
+        container.appendChild(createRowElement());
+    }
+
+    // Form submission handler
+    specForm.addEventListener('submit', function(e) {
+        const sections = [];
+        const sectionCards = document.querySelectorAll('.section-card');
+        
+        sectionCards.forEach(card => {
+            const title = card.querySelector('.section-title').value.trim();
+            const rows = [];
+            const rowElements = card.querySelectorAll('tbody tr');
+            
+            rowElements.forEach(row => {
+                const parameter = row.querySelector('.row-parameter').value.trim();
+                const spesifikasi = row.querySelector('.row-spesifikasi').value.trim();
+                const metode = row.querySelector('.row-metode').value.trim();
+                
+                if (parameter || spesifikasi || metode) {
+                    rows.push({ parameter, spesifikasi, metode });
+                }
+            });
+            
+            if (title || rows.length > 0) {
+                sections.push({ title, rows });
+            }
+        });
+        
+        sectionsJsonInput.value = JSON.stringify(sections);
+    });
+
+    // Initialize
+    if (initialData && initialData.length > 0) {
+        initialData.forEach(s => addSection(s));
+    } else {
+        defaultData.forEach(s => addSection(s));
+    }
+</script>
+{% endblock %}

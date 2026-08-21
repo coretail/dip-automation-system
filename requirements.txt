@@ -9,3 +9,4 @@ xhtml2pdf
 pypdf
 httpx
 slowapi
+python-slugify
