@@ -709,8 +709,22 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
         if key not in latest_batch_map:
             latest_batch_map[key] = b
 
+    # Pre-map all batch numbers to raw_material_id for searching in frontend Master Tab
+    rm_batch_nums = {}
+    for b in batches_data:
+        rm_id = b.get("raw_material_id")
+        bn = b.get("no_batch")
+        if rm_id and bn:
+            if rm_id not in rm_batch_nums:
+                rm_batch_nums[rm_id] = set()
+            rm_batch_nums[rm_id].add(str(bn).strip())
+
     doc_status = {}
     for rm in rm_resp.data:
+        rm_id = rm["id"]
+        # Add all batch numbers as a space-separated string for frontend search
+        rm["all_batch_numbers"] = " ".join(rm_batch_nums.get(rm_id, []))
+
         company_docs = {d["perusahaan"]: d for d in (rm.get("raw_material_company_docs") or [])}
         status_per_company = {}
         for company in ["PT Erfi", "PT Heka"]:

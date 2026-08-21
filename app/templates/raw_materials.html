@@ -133,7 +133,8 @@
                     data-kode="{{ (rm.kode_bahan_baku or '') | lower }}"
                     data-tipe="{{ rm.tipe or '' }}"
                     data-company="{{ rm.raw_material_company_docs | map(attribute='perusahaan') | join(' ') }}"
-                    data-inci="{{ rm.raw_material_components | map(attribute='inci_name') | join(' ') | lower }}">
+                    data-inci="{{ rm.raw_material_components | map(attribute='inci_name') | join(' ') | lower }}"
+                    data-batch-numbers="{{ (rm.all_batch_numbers or '') | lower }}">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ rm.nama_dagang }}</div>
                         <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
@@ -349,7 +350,8 @@
                         data-days-remaining="{{ days_remaining }}"
                         data-batch-id="{{ b.id }}"
                         data-nama="{{ (b.raw_materials.nama_dagang if b.raw_materials else '') | lower }}"
-                        data-perusahaan="{{ b.perusahaan or '' | lower }}">
+                        data-perusahaan="{{ b.perusahaan or '' | lower }}"
+                        data-batch="{{ (b.no_batch or '') | lower }}">
                         <td class="px-4 py-3 whitespace-nowrap">
                             {% if b.perusahaan %}
                                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ 'bg-sky-100 text-sky-700' if b.perusahaan == 'PT Erfi' else 'bg-fuchsia-100 text-fuchsia-700' }}">{{ b.perusahaan }}</span>
@@ -413,7 +415,7 @@
                 <tbody class="divide-y divide-gray-100">
                     {% for rm in raw_materials %}
                     {% set status = doc_status.get(rm.id, {}) %}
-                    <tr class="hover:bg-gray-50 docs-row" data-nama="{{ rm.nama_dagang|lower }}" data-kode="{{ rm.kode_bahan_baku|lower }}">
+                    <tr class="hover:bg-gray-50 docs-row" data-nama="{{ rm.nama_dagang|lower }}" data-kode="{{ rm.kode_bahan_baku|lower }}" data-batch-numbers="{{ (rm.all_batch_numbers or '') | lower }}">
                         <td class="px-4 py-3 whitespace-nowrap">
                             <div class="font-medium text-gray-900">{{ rm.nama_dagang }}</div>
                             <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
@@ -1328,8 +1330,9 @@ function filterTable() {
             const inci = row.dataset.inci || '';
             const tipe = row.dataset.tipe || '';
             const company = row.dataset.company || '';
+            const batchNumbers = row.dataset.batchNumbers || '';
 
-            const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal) || inci.includes(searchVal);
+            const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal) || inci.includes(searchVal) || batchNumbers.includes(searchVal);
             const matchTipe = !tipeVal || tipe === tipeVal;
             const matchCompany = !companyVal || company.includes(companyVal);
 
@@ -1387,8 +1390,9 @@ function filterTable() {
         rows.forEach(row => {
             const nama = row.dataset.nama || '';
             const perusahaan = row.dataset.perusahaan || '';
+            const batch = row.dataset.batch || '';
 
-            const matchSearch = !searchVal || nama.includes(searchVal) || perusahaan.includes(searchVal);
+            const matchSearch = !searchVal || nama.includes(searchVal) || perusahaan.includes(searchVal) || batch.includes(searchVal);
             const matchCompany = !companyVal || perusahaan === companyVal;
 
             const show = matchSearch && matchCompany;
@@ -1415,8 +1419,9 @@ function filterTable() {
         rows.forEach(row => {
             const nama = row.dataset.nama || '';
             const kode = row.dataset.kode || '';
+            const batchNumbers = row.dataset.batchNumbers || '';
 
-            const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal);
+            const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal) || batchNumbers.includes(searchVal);
             const show = matchSearch;
             row.style.display = show ? '' : 'none';
             if (show) visibleCount++;
