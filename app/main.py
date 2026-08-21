@@ -2589,7 +2589,7 @@ async def download_dip_bab3(
             spec_context = {
                 "product": product,
                 "spec": finished_spec,
-                "company": company,
+                "company": {**company, "logo_width": _logo_render_width(company.get("logo"))},
                 "tanggal_disetujui_formatted": tanggal_disetujui_formatted,
             }
             spec_template = templates.env.get_template("finished_spec_pdf.html")

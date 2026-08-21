@@ -13,10 +13,6 @@
         color: #111;
         line-height: 1.4;
     }
-    .header-table { width: 100%; border-collapse: collapse; border: none; margin-bottom: 10px; }
-    .header-logo { width: {{ company.logo_width }}px; vertical-align: middle; }
-    .header-info { padding-left: 10px; vertical-align: middle; }
-    .company-name { font-size: 12pt; font-bold: true; margin: 0; text-transform: uppercase; }
     .company-addr { font-size: 7.5pt; color: #444; margin: 2px 0 0 0; }
     
     .qc-box { border: 1px solid #000; padding: 5px 10px; text-align: center; width: 120px; font-weight: bold; font-size: 10pt; }
@@ -42,18 +38,18 @@
 </style>
 </head>
 <body>
-    <table class="header-table">
-        <tr>
-            <td class="header-logo">
+    <table style="width: 100%; border-collapse: collapse; border: none; margin-bottom: 10px;">
+        <tr style="border: none;">
+            <td style="border: none; width: {{ company.logo_width + 2 }}px; vertical-align: middle; padding: 0;">
                 <img src="{{ company.logo }}" style="height: 55px; width: auto;">
             </td>
-            <td class="header-info">
+            <td style="border: none; vertical-align: middle; padding-left: 10px;">
                 <p class="company-addr">
                     {{ company.alamat }}<br>
                     Email: {{ company.email }} | Website: {{ company.website }}
                 </p>
             </td>
-            <td style="vertical-align: top; text-align: right;">
+            <td style="border: none; vertical-align: top; text-align: right;">
                 <div class="qc-box">QUALITY CONTROL</div>
             </td>
         </tr>
