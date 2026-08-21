@@ -1274,7 +1274,9 @@ async def add_material_batch(
     coa_file: UploadFile = File(None),
     halal_file: UploadFile = File(None),
     qc_report_file: UploadFile = File(None),
-    current_user: dict = Depends(get_current_user) # Memastikan auth login tetap sinkron
+    quantity: float = Form(None),
+    quantity_unit: str = Form(None),
+    current_user: dict = Depends(get_current_user)
 ):
     import json
     
@@ -1355,11 +1357,12 @@ async def add_material_batch(
         "kesimpulan": kesimpulan,
         "qc_signer": qc_signer.strip() if qc_signer else None,
         "qa_signer": qa_signer.strip() if qa_signer else None,
-        "hasil_pemerian": "-", # Nilai default untuk kolom legasi fisik
+        "hasil_pemerian": "-",
+        "quantity": quantity,
+        "quantity_unit": quantity_unit,
         "coa_file_url": coa_url,
         "halal_batch_file_url": halal_url,
-        "qc_report_file_url": qc_report_url,
-        "qc_results": parsed_qc
+        "qc_report_file_url": qc_report_url
     }
 
     try:
@@ -1386,6 +1389,8 @@ async def edit_material_batch(
     coa_file: UploadFile = File(None),
     halal_file: UploadFile = File(None),
     qc_report_file: UploadFile = File(None),
+    quantity: float = Form(None),
+    quantity_unit: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     # 1. Ambil data lama untuk handle file upload
@@ -1400,7 +1405,8 @@ async def edit_material_batch(
         "tanggal_ed": tanggal_ed,
         "kesimpulan": kesimpulan,
         "asal_negara": asal_negara.strip() if asal_negara else None,
-        "nama_produsen": nama_produsen.strip() if nama_produsen else None,
+        "quantity": quantity,
+        "quantity_unit": quantity_unit
     }
 
     # 2. Update Files if provided
