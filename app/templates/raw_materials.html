@@ -383,7 +383,7 @@
                                 </button>
                                 <button onclick="openAccDimusnahkanModal('{{ b.id }}', '{{ (b.raw_materials.nama_dagang if b.raw_materials else 'Unknown') }}', '{{ b.no_batch or '' }}')"
                                         class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 cursor-pointer" title="Dimusnahkan">
-                                    <i class="fa-solid fa-ban mr-1"></i> Musnah
+                                    <i class="fa-solid fa-ban mr-1"></i> Dimusnahkan
                                 </button>
                             </div>
                         </td>
@@ -652,7 +652,7 @@
                     </div>
 
                     <div class="mt-3">
-                        <label class="block text-xs font-medium text-gray-700 mb-1">PDF Spesifikasi Asli dari Supplier {{ label }} (opsional)</label>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">PDF Spesifikasi Bahan Baku {{ label }} (opsional)</label>
                         <input type="file" name="spec_sheet_file_{{ slug }}" accept=".pdf" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 shadow-sm focus:border-indigo-500 focus:outline-none text-sm file:mr-4 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
                         <p id="spec_sheet_current_{{ slug }}" class="text-xs text-gray-400 mt-1"></p>
                         <p class="text-xs text-gray-400 mt-1">Kalau ada, PDF ini yang dipakai langsung di Bab II (versi ZIP) -- kalau kosong, dipakai versi generate dari field di atas.</p>
