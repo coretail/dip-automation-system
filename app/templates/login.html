@@ -29,11 +29,11 @@
         {% endif %}
 
         {% if error == 'too_many_attempts' %}
-        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
-            <i class="fa-solid fa-triangle-exclamation mr-2 text-red-600"></i>
-            <div>Terlalu banyak percobaan login. Coba lagi dalam 1 menit.</div>
-        </div>
-        {% endif %}
+<div id="rate-limit-alert" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
+    <i class="fa-solid fa-triangle-exclamation mr-2 text-red-600"></i>
+    <div>Terlalu banyak percobaan login. Coba lagi dalam <span id="countdown-timer" class="font-bold">60</span> detik.</div>
+</div>
+{% endif %}
 
         {% if warning == 'session_expired' %}
         <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
@@ -68,9 +68,9 @@
                 </div>
             </div>
 
-            <button type="submit" 
-                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
-                <i class="fa-solid fa-right-to-bracket"></i> Masuk ke Aplikasi
+            <button type="submit" id="login-submit-btn"
+                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                <i class="fa-solid fa-right-to-bracket"></i> <span id="login-submit-text">Masuk ke Aplikasi</span>
             </button>
         </form>
 
@@ -82,6 +82,34 @@
    
     </div>
     
+
+{% if error == 'too_many_attempts' %}
+<script>
+(function() {
+    let remaining = 60;
+    const timerEl = document.getElementById('countdown-timer');
+    const btnEl = document.getElementById('login-submit-btn');
+    const btnTextEl = document.getElementById('login-submit-text');
+    const alertEl = document.getElementById('rate-limit-alert');
+
+    btnEl.disabled = true;
+    btnTextEl.textContent = 'Tunggu ' + remaining + ' detik...';
+
+    const interval = setInterval(function() {
+        remaining -= 1;
+        if (timerEl) timerEl.textContent = remaining;
+        btnTextEl.textContent = 'Tunggu ' + remaining + ' detik...';
+
+        if (remaining <= 0) {
+            clearInterval(interval);
+            btnEl.disabled = false;
+            btnTextEl.textContent = 'Masuk ke Aplikasi';
+            if (alertEl) alertEl.classList.add('hidden');
+        }
+    }, 1000);
+})();
+</script>
+{% endif %}
 
 </body>
 </html>
