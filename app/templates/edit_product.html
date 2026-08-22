@@ -799,16 +799,6 @@ function validateFormulaForm() {
     </div>
 </div>
 
-<script>
-/* ================= Quick Add Bahan Baku Cepat ================= */
-let quickAddTargetContainer = null;
-
-function openQuickAddModal(btn) {
-    hideAllRmDropdowns();
-    quickAddTargetContainer = btn.closest('.custom-select-container');
-    const modal = document.getElementById('quick-add-modal');
-    const form = document.getElementById('quick-add-form');
-
 <!-- ================= MODAL TAMBAH MERK CEPAT ================= -->
 <div id="quick-add-brand-modal" class="hidden fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
     <div class="bg-white rounded-lg shadow-xl max-w-lg w-full overflow-hidden my-8">
@@ -844,21 +834,39 @@ function openQuickAddModal(btn) {
     </div>
 </div>
 
+
+<script>
+/* ================= Quick Add Bahan Baku Cepat ================= */
+let quickAddTargetContainer = null;
+
+function openQuickAddModal(btn) {
+    hideAllRmDropdowns();
+    quickAddTargetContainer = btn.closest('.custom-select-container');
+    if (!quickAddTargetContainer) return;
+
+    const modal = document.getElementById('quick-add-modal');
+    const form = document.getElementById('quick-add-form');
     const errorDiv = document.getElementById('quick-add-error');
     const searchInput = quickAddTargetContainer.querySelector('.rm-search-input');
 
     // Reset form & error
     form.reset();
-    errorDiv.classList.add('hidden');
-    errorDiv.innerText = '';
+    if (errorDiv) {
+        errorDiv.classList.add('hidden');
+        errorDiv.innerText = '';
+    }
 
     // Pre-fill nama dagang dari apa yang udah diketik user
     if (searchInput && searchInput.value.trim()) {
-        form.querySelector('input[name="nama_dagang"]').value = searchInput.value.trim();
+        const nameInput = form.querySelector('input[name="nama_dagang"]');
+        if (nameInput) nameInput.value = searchInput.value.trim();
     }
 
-    modal.classList.remove('hidden');
-    setTimeout(() => form.querySelector('input[name="nama_dagang"]').focus(), 100);
+    if (modal) {
+        modal.classList.remove('hidden');
+        const focusInput = form.querySelector('input[name="nama_dagang"]');
+        if (focusInput) setTimeout(() => focusInput.focus(), 100);
+    }
 }
 
 function closeQuickAddModal() {
