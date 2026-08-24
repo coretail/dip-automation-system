@@ -3318,6 +3318,7 @@ async def update_product(
     teks_marketing: str = Form(None),
     cara_pakai: str = Form(None),
     peringatan: str = Form(None),
+    penyimpanan: str = Form(None),
     status_progress: str = Form("R&D / Sample Phase"),
     brand_id: str = Form(None),
     # File Bab 1
@@ -3368,6 +3369,7 @@ async def update_product(
         "teks_marketing": teks_marketing,
         "cara_pakai": cara_pakai,
         "peringatan": peringatan,
+        "penyimpanan": penyimpanan,
         "status_progress": status_progress,
         "brand_id": brand_id if brand_id else None
     }

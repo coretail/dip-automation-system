@@ -66,10 +66,20 @@
             <td class="label-col">Cara Pakai</td>
             <td>{{ product.cara_pakai or '-' }}</td>
         </tr>
-<tr>
-    <td class="label-col">Peringatan</td>
-    <td>{{ product.peringatan or '-' }}</td>
-</tr>
+        {% set peringatan_txt = (product.peringatan or '') | trim %}
+        {% if peringatan_txt and peringatan_txt != '-' %}
+        <tr>
+            <td class="label-col">Peringatan</td>
+            <td>{{ peringatan_txt }}</td>
+        </tr>
+        {% endif %}
+        {% set penyimpanan_txt = (product.penyimpanan or '') | trim %}
+        {% if penyimpanan_txt and penyimpanan_txt != '-' %}
+        <tr>
+            <td class="label-col">Penyimpanan</td>
+            <td>{{ penyimpanan_txt }}</td>
+        </tr>
+        {% endif %}
     </table>
 
     <div class="note-box">

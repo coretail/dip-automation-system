@@ -262,11 +262,21 @@
         <tr style="border: 1px solid #c0c0c0;">
             <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Cara Pakai</td>
             <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.cara_pakai or '-' }}</td>
-<tr style="border: 1px solid #c0c0c0;">
-    <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Peringatan</td>
-    <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.peringatan or '-' }}</td>
-</tr>
         </tr>
+        {% set peringatan_txt = (product.peringatan or '') | trim %}
+        {% if peringatan_txt and peringatan_txt != '-' %}
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Peringatan</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ peringatan_txt }}</td>
+        </tr>
+        {% endif %}
+        {% set penyimpanan_txt = (product.penyimpanan or '') | trim %}
+        {% if penyimpanan_txt and penyimpanan_txt != '-' %}
+        <tr style="border: 1px solid #c0c0c0;">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Penyimpanan</td>
+            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ penyimpanan_txt }}</td>
+        </tr>
+        {% endif %}
     </table>
 
     <div class="bg-yellow-300 text-center font-bold text-xs py-2 mt-0" style="border: 1px solid #c0c0c0; border-top: none;">

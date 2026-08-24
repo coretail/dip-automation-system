@@ -249,9 +249,15 @@
                     <textarea name="cara_pakai" rows="2" class="w-full border rounded-md px-3 py-2 text-sm">{{ product.cara_pakai or '' }}</textarea>
                 </div>
             </div>
-            <div class="mt-4">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Peringatan</label>
-                <textarea name="peringatan" rows="2" placeholder="Peringatan yang perlu dicantumkan di kemasan" class="w-full border rounded-md px-3 py-2 text-sm">{{ product.peringatan or '' }}</textarea>
+            <div class="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Peringatan</label>
+                    <textarea name="peringatan" rows="2" placeholder="Peringatan yang perlu dicantumkan di kemasan" class="w-full border rounded-md px-3 py-2 text-sm">{{ product.peringatan or '' }}</textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Penyimpanan</label>
+                    <textarea name="penyimpanan" rows="2" placeholder="Misal: Simpan di tempat sejuk dan terhindar dari sinar matahari langsung" class="w-full border rounded-md px-3 py-2 text-sm">{{ product.penyimpanan or '' }}</textarea>
+                </div>
             </div>
         </div>
 

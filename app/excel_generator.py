@@ -56,6 +56,13 @@ ALIGN_CENTER_TOP_WRAP = Alignment(horizontal="center", vertical="top", wrap_text
 ALIGN_RIGHT = Alignment(horizontal="right", vertical="top")
 
 # ==================== HELPER UTILITAS ====================
+def _has_value(value) -> bool:
+    """True hanya bila value berisi teks nyata (bukan None / kosong / '-')."""
+    if value is None:
+        return False
+    return str(value).strip() not in ("", "-")
+
+
 def _dash(value) -> str:
     """Normalisasi value jadi string tampilan; None/kosong -> '-'."""
     text = "" if value is None else str(value).strip()
@@ -336,8 +343,14 @@ def _sheet_text_design(wb: Workbook, product: dict, pure_breakdown: list, compan
         ("Komposisi", komposisi, True),
         ("Teks", product.get("teks_marketing"), True),
         ("Cara Pakai", product.get("cara_pakai"), True),
-        ("Peringatan", product.get("peringatan"), True),
     ]
+    # Baris kondisional: Peringatan & Penyimpanan hanya ditulis bila datanya
+    # benar-benar diisi (bukan None / kosong / '-'), sehingga urutan baris,
+    # merge B:E, dan border tabel menyesuaikan secara dinamis.
+    if _has_value(product.get("peringatan")):
+        rows_spec.append(("Peringatan", product.get("peringatan"), True))
+    if _has_value(product.get("penyimpanan")):
+        rows_spec.append(("Penyimpanan", product.get("penyimpanan"), True))
 
     row = 7
     for label, value, is_long in rows_spec:
