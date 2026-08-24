@@ -10,3 +10,4 @@ pypdf
 httpx
 slowapi
 python-slugify
+openpyxl

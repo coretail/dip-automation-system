@@ -14,10 +14,10 @@
         <button onclick="window.print()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded shadow-xs transition duration-200 cursor-pointer flex items-center h-9">
             <i class="fa-solid fa-print mr-1.5"></i> Cetak / Save ke PDF
         </button>
-        <!-- Tombol Export Excel -->
-        <button onclick="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Export ke Excel">
+        <!-- Tombol Export Excel (generate via backend openpyxl) -->
+        <a href="/products/{{ product.id }}/qualitative-quantitative/export-xlsx" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Export ke Excel">
             <i class="fa-solid fa-file-excel mr-1.5"></i> Export Excel
-        </button>
+        </a>
 
         <!-- Tombol Copy Public Link BPOM (permalink dokumen DIP) untuk dilampirkan ke portal e-registration BPOM -->
         <button onclick="copyBpomLink()" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Salin Public Link BPOM (permalink dokumen DIP) untuk dilampirkan ke portal e-registration BPOM">
@@ -28,15 +28,71 @@
 
 <!-- Menggunakan tag style aman tanpa memicu parser dictionary Jinja2 -->
 <style>
+    /* ============================================================
+       PRINT LAYOUT: 1 blok .print-page = 1 halaman PDF utuh.
+       Page break HANYA dikontrol lewat class .print-page pada tiap
+       blok dokumen utama -- tidak ada lagi rule break acak yang
+       menempel di wrapper/div luar, jadi hasil PDF rapi persis
+       3 halaman tanpa loncat-loncat halaman kosong.
+       ============================================================ */
     @media print {
+        /* Sembunyikan elemen non-dokumen (toolbar, navbar base.html, modal & toast BPOM) */
         .no-print { display: none !important; }
-        body { background: white; color: black; padding: 0; }
-        .page-break { page-break-before: always; }
+        #bpomLinkModal, #bpomToast { display: none !important; }
+
+        body { background: white !important; color: black !important; padding: 0 !important; margin: 0 !important; }
+
+        /* Kertas A4 dengan margin cetak yang rapi & konsisten (atas/bawah pas) */
+        @page { size: A4 portrait; margin: 12mm 10mm 14mm 10mm; }
+
+        /* Pastikan warna latar (header tabel oranye/abu) ikut tercetak */
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        /* ---- Struktur lembar dokumen ----
+           Hal. 1 : Tabel Formula per Nama Dagang (Nama Dagang, Kode,
+                    Ingredients, % w/w) + kop surat + tanda tangan.
+           Hal. 2 : Tabel Breakdown Ingredients Utuh (Aqua, Petrolatum,
+                    dst) + kop surat + tanda tangan.
+           Hal. 3 : Informasi Label/Kemasan (Komposisi, Cara Pakai,
+                    Peringatan, dll).
+           Setiap bagian dibungkus div.print-page: ditutup page break
+           agar bagian berikutnya mulai di halaman baru. */
+        .print-page {
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            page-break-after: always;
+            break-after: page;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        /* Blok terakhir (Hal. 3): tanpa break di ekor supaya PDF
+           berhenti pas 3 halaman tanpa halaman kosong tambahan */
+        .print-page-last {
+            page-break-after: auto;
+            break-after: auto;
+        }
+
+        /* Cegah baris tabel terpotong di tengah baris saat tabel
+           meluas melewati satu halaman */
+        table tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+        }
+
+        /* Pastikan header tabel muncul lagi jika halaman berlanjut */
+        thead {
+            display: table-header-group;
+        }
     }
 </style>
 
 <!-- ==================== DOKUMEN 1: PER NAMA DAGANG ==================== -->
-<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 mb-12 printable-doc">
+<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 mb-12 print-page">
     <div id="letterhead-trade" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
         <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
         <div>
@@ -110,10 +166,8 @@
     </div>
 </div>
 
-<div class="page-break"></div>
-
 <!-- ==================== DOKUMEN 2: MURNI BAHAN BAKU INCI ==================== -->
-<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 printable-doc">
+<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 print-page">
     <div id="letterhead-pure" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
         <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
         <div>
@@ -165,15 +219,8 @@
     </div>
 </div>
 
-<!-- Script 1: load library SheetJS -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-
-<div class="page-break"></div>
-
-<br><br>
-
 <!-- ==================== DOKUMEN 3: TEXT DESIGN ==================== -->
-<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 printable-doc">
+<div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 print-page print-page-last">
     <div id="letterhead-textdesign" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
         <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
         <div>
@@ -226,198 +273,6 @@
         Keterangan tambahan: QR BPOM, No Batch dan Exp Date, Netto yg digunakan.
     </div>
 </div>
-
-<!-- Script 2: kode fungsi kita sendiri, tag baru tanpa atribut src -->
-<script>
-{% raw %}
-function parseLocaleNumber(text) {
-    var clean = text.trim().replace('%', '').replace(/[^\d,.\-]/g, '');
-    clean = clean.replace(',', '.');
-    var num = parseFloat(clean);
-    return isNaN(num) ? null : num;
-}
-
-function extractLabelValueLines(tableEl) {
-    var rows = [];
-    if (!tableEl) return rows;
-    tableEl.querySelectorAll('tr').forEach(function (tr) {
-        var cells = tr.querySelectorAll('td');
-        if (cells.length >= 2) {
-            var label = cells[0].innerText.trim();
-            var value = cells[1].innerText.trim();
-            rows.push([label, value]);
-        } else if (cells.length === 1) {
-            rows.push([cells[0].innerText.trim()]);
-        }
-    });
-    return rows;
-}
-
-function applySimpleBorder(ws, startRow, range) {
-    var thinBorder = { style: 'thin', color: { rgb: 'FF000000' } };
-    for (var r = startRow; r <= range.e.r; r++) {
-        for (var c = range.s.c; c <= range.e.c; c++) {
-            var addr = XLSX.utils.encode_cell({ r: r, c: c });
-            if (!ws[addr]) ws[addr] = { t: 's', v: '' };
-            ws[addr].s = ws[addr].s || {};
-            ws[addr].s.border = {
-                top: thinBorder,
-                bottom: thinBorder,
-                left: thinBorder,
-                right: thinBorder
-            };
-        }
-    }
-}
-
-function extractInfoLines(infoTableEl) {
-    var lines = [];
-    if (!infoTableEl) return lines;
-    infoTableEl.querySelectorAll('tr').forEach(function (tr) {
-        var text = tr.innerText.replace(/\s+/g, ' ').trim();
-        if (text) lines.push([text]);
-    });
-    return lines;
-}
-
-function extractLetterheadLines(letterheadEl) {
-    var lines = [];
-    if (!letterheadEl) return lines;
-    letterheadEl.querySelectorAll('.letterhead-line').forEach(function (el) {
-        var text = el.innerText.trim();
-        if (text) lines.push([text]);
-    });
-    lines.push([]); // baris kosong pemisah setelah kop surat
-    return lines;
-}
-
-function buildSheetWithHeader(letterheadEl, titleEl, infoTableEl, dataTableEl) {
-    var ws = {};
-
-    var aoa = extractLetterheadLines(letterheadEl);
-    if (titleEl) aoa.push([titleEl.innerText.trim()]);
-    aoa = aoa.concat(extractInfoLines(infoTableEl));
-    aoa.push([]);
-
-    XLSX.utils.sheet_add_aoa(ws, aoa, { origin: 'A1' });
-    XLSX.utils.sheet_add_dom(ws, dataTableEl, { origin: -1 });
-
-    var range = XLSX.utils.decode_range(ws['!ref']);
-
-    var pctColIndexes = [];
-    var headerRowIndex = null;
-    for (var c = range.s.c; c <= range.e.c; c++) {
-        for (var r = range.s.r; r <= range.e.r; r++) {
-            var cell = ws[XLSX.utils.encode_cell({ r: r, c: c })];
-            if (cell && cell.v && String(cell.v).toLowerCase().indexOf('w/w') !== -1) {
-                pctColIndexes.push(c);
-                if (headerRowIndex === null) headerRowIndex = r;
-                break;
-            }
-        }
-    }
-
-    for (var r2 = range.s.r; r2 <= range.e.r; r2++) {
-        pctColIndexes.forEach(function (c2) {
-            var addr = XLSX.utils.encode_cell({ r: r2, c: c2 });
-            var cell = ws[addr];
-            if (cell && cell.v !== undefined && cell.v !== null && cell.v !== '' &&
-                String(cell.v).toLowerCase().indexOf('w/w') === -1) {
-                var num = parseLocaleNumber(String(cell.v));
-                if (num !== null) {
-                    cell.t = 'n';
-                    cell.v = num;
-                    cell.z = '0.####';
-                    delete cell.w;
-                }
-            }
-        });
-    }
-
-    // Tambahkan border + styling header ke seluruh area tabel data
-    if (headerRowIndex !== null) {
-        applyBordersToDataTable(ws, headerRowIndex, range);
-    }
-
-    return ws;
-}
-
-function buildTextDesignSheet(letterheadEl, infoTableEl) {
-    var ws = {};
-    var aoa = extractLetterheadLines(letterheadEl);
-    aoa.push(['TEXT DESIGN']);
-    aoa.push([]);
-
-    var startRow = aoa.length; // baris tempat tabel info mulai (buat border)
-    var infoRows = extractLabelValueLines(infoTableEl);
-    aoa = aoa.concat(infoRows);
-
-    XLSX.utils.sheet_add_aoa(ws, aoa, { origin: 'A1' });
-
-    var range = XLSX.utils.decode_range(ws['!ref']);
-    applySimpleBorder(ws, startRow, range);
-
-    return ws;
-}
-
-function exportToExcel() {
-    var tableTrade = document.getElementById("table-trade");
-    var tablePure = document.getElementById("table-pure");
-    var titleTrade = document.getElementById("title-trade");
-    var titlePure = document.getElementById("title-pure");
-    var infoTrade = document.getElementById("info-trade");
-    var infoPure = document.getElementById("info-pure");
-    var letterheadTrade = document.getElementById("letterhead-trade");
-    var letterheadPure = document.getElementById("letterhead-pure");
-    var letterheadTextDesign = document.getElementById("letterhead-textdesign");   
-    var infoTextDesign = document.getElementById("info-textdesign");
-
-    if (!tableTrade || !tablePure) {
-        alert("Tabel data formula tidak ditemukan di halaman!");
-        return;
-    }
-
-    var wb = XLSX.utils.book_new();
-    var sheetTrade = buildSheetWithHeader(letterheadTrade, titleTrade, infoTrade, tableTrade);
-    var sheetPure = buildSheetWithHeader(letterheadPure, titlePure, infoPure, tablePure);
-    var sheetTextDesign = buildTextDesignSheet(letterheadTextDesign, infoTextDesign);
-
-    XLSX.utils.book_append_sheet(wb, sheetTrade, "Formula Nama Dagang");
-    XLSX.utils.book_append_sheet(wb, sheetPure, "Formula INCI Murni");
-    XLSX.utils.book_append_sheet(wb, sheetTextDesign, "Text Design");
-    
-{% endraw %}
-
-    var productName = "{{ product.nama_produk }}".replace(/[^a-z0-9]/gi, '_').toLowerCase();
-
-{% raw %}
-    XLSX.writeFile(wb, "Qual_Quan_Formula_" + productName + ".xlsx");
-}
-{% endraw %}
-
-{% raw %}
-function applyBordersToDataTable(ws, headerRowIndex, range) {
-    var thinBorder = { style: 'thin', color: { rgb: '000000' } };
-    for (var r = headerRowIndex; r <= range.e.r; r++) {
-        for (var c = range.s.c; c <= range.e.c; c++) {
-            var addr = XLSX.utils.encode_cell({ r: r, c: c });
-            if (!ws[addr]) ws[addr] = { t: 's', v: '' };
-            ws[addr].s = ws[addr].s || {};
-            ws[addr].s.border = {
-                top: thinBorder,
-                bottom: thinBorder,
-                left: thinBorder,
-                right: thinBorder
-            };
-            if (r === headerRowIndex) {
-                ws[addr].s.font = { bold: true };
-                ws[addr].s.fill = { fgColor: { rgb: 'FDE9D9' } }; // oranye muda, senada tampilan web
-            }
-        }
-    }
-}
-{% endraw %}
-</script>
 
 <!-- ==================== MODAL PUBLIC LINK BPOM ==================== -->
 <div id="bpomLinkModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">

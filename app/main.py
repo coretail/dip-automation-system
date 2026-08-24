@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import List
 from app.database import supabase
+from app.excel_generator import XLSX_MIME, build_formula_workbook
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -1715,8 +1716,13 @@ async def generate_inci_report(request: Request, product_id: str, current_user: 
         }
     )
 
-@app.get("/products/{product_id}/qualitative-quantitative", response_class=HTMLResponse)
-async def qualitative_quantitative_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
+async def _gather_qualquant_data(product_id: str) -> dict:
+    """Kumpulkan produk + breakdown formula Qual-Quan utk satu produk.
+
+    Single source of truth yang dipakai bareng oleh:
+      - route preview HTML  : /products/{id}/qualitative-quantitative
+      - route export Excel  : /products/{id}/qualitative-quantitative/export-xlsx
+    """
     product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
     product = product_resp.data
 
@@ -1724,20 +1730,20 @@ async def qualitative_quantitative_report(request: Request, product_id: str, cur
         .select("*, raw_materials(*)") \
         .eq("product_id", product_id) \
         .execute()
-    
+
     breakdown_resp = supabase.table("raw_material_components") \
         .select("*") \
         .execute()
     all_inci_items = breakdown_resp.data
 
     grouped_trade = {}
-    
+
     for line in lines_resp.data:
         raw_mat = line.get("raw_materials")
-        
+
         if isinstance(raw_mat, list) and len(raw_mat) > 0:
             raw_mat = raw_mat[0]
-        
+
         if isinstance(raw_mat, dict):
             nama_dagang = raw_mat.get("nama_dagang")
             kode_bahan_baku = raw_mat.get("kode_bahan_baku") or raw_mat.get("kode")
@@ -1752,24 +1758,24 @@ async def qualitative_quantitative_report(request: Request, product_id: str, cur
 
         nama_dagang_str = str(nama_dagang or "Unknown")
         kode_bahan_baku_str = str(kode_bahan_baku or "-")
-        
+
         line_pct = float(line.get("percent_in_formula") or 0.0)
         raw_mat_id = line.get("raw_material_id")
-        
+
         components = [item for item in all_inci_items if item.get("raw_material_id") == raw_mat_id]
-        
+
         group_key = (nama_dagang_str, kode_bahan_baku_str)
         if group_key not in grouped_trade:
             grouped_trade[group_key] = []
-            
+
         if components:
             for comp in components:
                 comp_share = float(comp.get("percent_internal") or comp.get("percentage") or 0.0)
                 real_pct = (comp_share * line_pct) / 100.0
-                
+
                 # KUNCI PERBAIKAN 1: Murni hilangkan trailing zeros
                 clean_pct = float(Decimal(str(real_pct)).normalize())
-                
+
                 grouped_trade[group_key].append({
                     "inci_name": comp.get("inci_name") or "Unknown",
                     "function": comp.get("function") or "-",
@@ -1802,7 +1808,7 @@ async def qualitative_quantitative_report(request: Request, product_id: str, cur
                     "inci_name": inci_name,
                     "function": comp["function"],
                     # Gunakan Decimal('0.0') sebagai inisialisasi awal agar presisi
-                    "pct_ww_decimal": Decimal('0.0') 
+                    "pct_ww_decimal": Decimal('0.0')
                 }
             # Jumlahkan dengan tipe data Decimal murni
             grouped_pure[inci_name]["pct_ww_decimal"] += Decimal(str(comp["pct_ww"]))
@@ -1823,22 +1829,62 @@ async def qualitative_quantitative_report(request: Request, product_id: str, cur
         clean_product = product[0]
     elif isinstance(product, dict):
         clean_product = product
-        
+
     final_product = {str(k): (str(v) if v is not None else "") for k, v in clean_product.items()}
 
     # Ambil data kop surat sesuai perusahaan produk ini, fallback ke PT Erfi kalau kosong/tidak dikenali
     company = COMPANY_INFO.get(final_product.get("perusahaan"), COMPANY_INFO["PT Erfi"])
 
+    return {
+        "product": final_product,
+        "trade_breakdown": trade_breakdown,
+        "pure_breakdown": pure_breakdown,
+        "company": company
+    }
+
+
+@app.get("/products/{product_id}/qualitative-quantitative", response_class=HTMLResponse)
+async def qualitative_quantitative_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
+    data = await _gather_qualquant_data(product_id)
     return templates.TemplateResponse(
         request=request,
         name="qualitative_quantitative.html",
         context={
-            "product": final_product,
-            "trade_breakdown": trade_breakdown,
-            "pure_breakdown": pure_breakdown,
-            "company": company
+            "product": data["product"],
+            "trade_breakdown": data["trade_breakdown"],
+            "pure_breakdown": data["pure_breakdown"],
+            "company": data["company"]
         }
     )
+
+
+@app.get("/products/{product_id}/qualitative-quantitative/export-xlsx")
+async def export_qualquant_xlsx(product_id: str, current_user: dict = Depends(get_current_user)):
+    """Export dokumen Formula Kualitatif & Kuantitatif (.xlsx) via openpyxl.
+
+    Menghasilkan workbook 3 sheet ("Formula Nama Dagang", "Formula INCI Murni",
+    "Text Design") dengan styling profesional -- lihat app/excel_generator.py.
+    """
+    data = await _gather_qualquant_data(product_id)
+
+    content = build_formula_workbook(
+        product=data["product"],
+        trade_breakdown=data["trade_breakdown"],
+        pure_breakdown=data["pure_breakdown"],
+        company=data["company"],
+    )
+
+    safe_name = slugify(data["product"].get("nama_produk") or "produk").replace("-", "_")
+    filename = f"Qual_Quan_Formula_{safe_name}.xlsx"
+
+    log_activity(current_user, "export", "product_qualquan_xlsx", product_id, filename)
+
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=XLSX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
 
 def _apply_company_specific_docs(rm: dict, perusahaan: str) -> dict:
     """Timpa spec_parameters & msds_file_url pada dict raw_material dengan data
