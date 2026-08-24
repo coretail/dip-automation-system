@@ -753,7 +753,25 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
                 "has_batch": batch is not None,
             }
         doc_status[rm["id"]] = status_per_company
-    
+
+    # ===== HITUNG JUMLAH PRODUK PEMAKAI TIAP BAHAN BAKU (Badge Counter) =====
+    try:
+        usage_lines = supabase.table("product_formula_lines") \
+            .select("raw_material_id, product_id").execute()
+        usage_sets = {}
+        for ln in (usage_lines.data or []):
+            rm_id_ln = ln.get("raw_material_id")
+            prod_id_ln = ln.get("product_id")
+            if rm_id_ln and prod_id_ln:
+                # Satu bahan baku dihitung maksimal sekali per produk
+                usage_sets.setdefault(rm_id_ln, set()).add(prod_id_ln)
+        for rm in rm_resp.data:
+            rm["usage_count"] = len(usage_sets.get(rm["id"], ()))
+    except Exception as e:
+        print(f"Gagal hitung pemakaian bahan baku: {e}")
+        for rm in rm_resp.data:
+            rm.setdefault("usage_count", 0)
+
     response = templates.TemplateResponse(
         request=request,
         name="raw_materials.html",
@@ -774,6 +792,55 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
         response.delete_cookie("error_msg")
         
     return response
+
+
+# ==================== API: PRODUK PEMAKAI BAHAN BAKU ====================
+@app.get("/raw-materials/{rm_id}/used-in-products")
+async def get_raw_material_used_in_products(rm_id: str, current_user: dict = Depends(get_current_user)):
+    """API JSON: daftar produk yang memakai bahan baku tertentu di formula-nya."""
+    try:
+        rm_resp = supabase.table("raw_materials") \
+            .select("id, nama_dagang, kode_bahan_baku") \
+            .eq("id", rm_id).limit(1).execute()
+        raw_material = (rm_resp.data or [None])[0]
+        if not raw_material:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "error": "Bahan baku tidak ditemukan."}
+            )
+
+        lines_resp = supabase.table("product_formula_lines") \
+            .select("percent_in_formula, products(id, nama_produk, perusahaan)") \
+            .eq("raw_material_id", rm_id).execute()
+
+        products_map = {}
+        for ln in (lines_resp.data or []):
+            product = ln.get("products")
+            if not product or not product.get("id"):
+                continue
+            pid = product["id"]
+            if pid in products_map:
+                continue  # satu produk cukup tampil sekali
+            try:
+                percent = float(ln.get("percent_in_formula") or 0)
+            except (TypeError, ValueError):
+                percent = 0.0
+            products_map[pid] = {
+                "product_id": pid,
+                "nama_produk": product.get("nama_produk") or "-",
+                "perusahaan": product.get("perusahaan") or "-",
+                "percent_in_formula": round(percent, 4),
+            }
+
+        products = sorted(products_map.values(), key=lambda p: p["nama_produk"].lower())
+        return JSONResponse(status_code=200, content={
+            "success": True,
+            "raw_material": raw_material,
+            "total_products": len(products),
+            "products": products,
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 
 # ==================== API: ED NOTIFICATIONS ====================
@@ -1601,6 +1668,7 @@ async def add_product(
     teks_marketing: str = Form(None),
     cara_pakai: str = Form(None),
     peringatan: str = Form(None),
+    penyimpanan: str = Form(None),
     brand_id: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
@@ -1629,6 +1697,7 @@ async def add_product(
         "teks_marketing": teks_marketing,
         "cara_pakai": cara_pakai,
         "peringatan": peringatan,
+        "penyimpanan": penyimpanan,
         "brand_id": brand_id if brand_id else None
     }
     
