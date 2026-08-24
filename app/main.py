@@ -1599,6 +1599,7 @@ async def add_product(
     tanggal_text_design: str = Form(None),
     teks_marketing: str = Form(None),
     cara_pakai: str = Form(None),
+    peringatan: str = Form(None),
     brand_id: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
@@ -1626,6 +1627,7 @@ async def add_product(
         "tanggal_text_design": tanggal_text_design or None,
         "teks_marketing": teks_marketing,
         "cara_pakai": cara_pakai,
+        "peringatan": peringatan,
         "brand_id": brand_id if brand_id else None
     }
     
@@ -3269,6 +3271,7 @@ async def update_product(
     tanggal_text_design: str = Form(None),
     teks_marketing: str = Form(None),
     cara_pakai: str = Form(None),
+    peringatan: str = Form(None),
     status_progress: str = Form("R&D / Sample Phase"),
     brand_id: str = Form(None),
     # File Bab 1
@@ -3318,6 +3321,7 @@ async def update_product(
         "tanggal_text_design": tanggal_text_design or None,
         "teks_marketing": teks_marketing,
         "cara_pakai": cara_pakai,
+        "peringatan": peringatan,
         "status_progress": status_progress,
         "brand_id": brand_id if brand_id else None
     }
@@ -3436,6 +3440,7 @@ async def update_product(
         "tanggal_text_design": "Tanggal Text Design",
         "teks_marketing": "Teks Marketing",
         "cara_pakai": "Cara Pakai",
+        "peringatan": "Peringatan",
         "status_progress": "Status Progress",
         "brand_id": "Brand",
         "no_notifikasi_file_url": "File No. Notifikasi",
