@@ -453,7 +453,11 @@
         <div id="tab-bab3" class="edit-tab-content hidden space-y-4">
             {{ pdf_upload_card('2. Ringkasan Cara Pembuatan Kosmetik', 'cara_pembuatan_file', product.cara_pembuatan_file_url) }}
             {{ pdf_upload_card('4. Sistem Penomoran Batch Spesifik', 'sistem_penomoran_batch_file', product.sistem_penomoran_batch_file_url) }}
+            {% if product.perusahaan == 'PT Erfi' %}
+            {{ pdf_upload_card('6a. Spesifikasi Produk Jadi', 'spek_produk_jadi_file', product.spek_produk_jadi_file_url) }}
+            {% else %}
             {{ pdf_upload_card('5. SAPJ dan Spesifikasi Produk Jadi', 'spek_produk_jadi_file', product.spek_produk_jadi_file_url) }}
+            {% endif %}
             {{ pdf_upload_card('6. Spesifikasi Bahan Pengemas', 'spek_pengemas_file', product.spek_pengemas_file_url) }}
             {{ pdf_upload_card('7. Laporan Hasil Uji Lab Eksternal / SIG', 'laporan_uji_sig_file', product.laporan_uji_sig_file_url) }}
             {{ pdf_upload_card('9. Pemantauan Stabilitas', 'protokol_stabilitas_file', product.protokol_stabilitas_file_url) }}
