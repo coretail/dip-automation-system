@@ -23,7 +23,7 @@
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Tanggal Disetujui</label>
-                <input type="date" name="tanggal_disetujui" value="{{ spec.tanggal_disetujui if spec else '' }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+                <input type="date" name="tanggal_disetujui" value="{{ spec.tanggal_disetujui if spec else (product.acc_sampel or '') }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Kota Persetujuan</label>
@@ -86,7 +86,7 @@
         {
             title: "Pengemasan Primer",
             rows: [
-                { parameter: "Netto", spesifikasi: "", metode: "Penimbangan" },
+                { parameter: "Netto", spesifikasi: {{ (product.netto or '') | tojson }}, metode: "Penimbangan" },
                 { parameter: "Kebersihan", spesifikasi: "", metode: "Visual" },
                 { parameter: "Kerapihan", spesifikasi: "", metode: "Visual" },
                 { parameter: "Kebocoran", spesifikasi: "", metode: "Visual" },
@@ -96,7 +96,7 @@
         {
             title: "Pengemasan Sekunder",
             rows: [
-                { parameter: "No NA", spesifikasi: "", metode: "Visual" },
+                { parameter: "No NA", spesifikasi: {{ (product.no_na_produk or '') | tojson }}, metode: "Visual" },
                 { parameter: "Masa Kadaluarsa", spesifikasi: "2 tahun", metode: "Visual" },
                 { parameter: "Kesesuaian Jenis Kemasan: Innerbox, Stiker, Kemasan", spesifikasi: "", metode: "Visual" },
                 { parameter: "Penandaan pada Kemasan: Innerbox, Stiker", spesifikasi: "Sesuai dengan DIP berdasarkan Peraturan BPOM No. 18 tahun 2024", metode: "Visual" }
