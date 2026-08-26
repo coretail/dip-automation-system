@@ -2750,12 +2750,23 @@ async def download_dip_bab3(
         except Exception as e:
             print(f"[BAB 3 FINISHED SPEC PDF ERROR] Gagal generate spek produk jadi: {e}")
 
+    # Poin 5 (SAPJ) dan 6a (SPJ): untuk PT Erfi, SAPJ pakai PDF hasil generate finished_spec,
+    # SPJ pakai file upload manual. Untuk perusahaan lain (PT Heka), keduanya pakai file
+    # upload manual yang sama (dokumen gabungan lama), sengaja dilampirkan dua kali supaya
+    # urutan halaman tetap sejajar dengan urutan item checklist 5 dan 6a.
+    if perusahaan == 'PT Erfi':
+        poin5_sapj = finished_spec_pdf_bytes
+        poin6a_spj = product.get("spek_produk_jadi_file_url")
+    else:
+        poin5_sapj = product.get("spek_produk_jadi_file_url")
+        poin6a_spj = product.get("spek_produk_jadi_file_url")
+
     attachments = [
         product.get("cara_pembuatan_file_url"),              # Poin 2
         company_sop.get("protap_no_batch_url"),              # Poin 3
         product.get("sistem_penomoran_batch_file_url"),      # Poin 4
-        latest_batch.get("coa_file_url"),                    # Poin 5 (SAPJ)
-        finished_spec_pdf_bytes if finished_spec_pdf_bytes else product.get("spek_produk_jadi_file_url"), # Poin 6a
+        poin5_sapj,                                           # Poin 5 (SAPJ)
+        poin6a_spj,                                           # Poin 6a (SPJ)
         product.get("spek_pengemas_file_url"),               # Poin 6b
         product.get("laporan_uji_sig_file_url"),             # Poin 7
         company_sop.get("protap_pemeriksaan_fg_url"),        # Poin 8
