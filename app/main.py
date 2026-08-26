@@ -2131,6 +2131,15 @@ async def preview_dip_bab2(product_id: str, current_user: dict = Depends(get_cur
     resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
     return resp
 
+@app.get("/products/{product_id}/bab1/preview")
+async def preview_dip_bab1(product_id: str, current_user: dict = Depends(get_current_user)):
+    # Preview Bab 1: generate PDF yang sama persis dengan /bab1/download, tapi disajikan
+    # inline (browser menampilkan preview di tab baru) -- bukan force-download.
+    resp = await download_bab1_document(product_id, current_user)
+    resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
+    return resp
+
+
 
 def _safe_zip_name(name: str) -> str:
     """Bersihin nama biar aman dipakai sebagai nama file/folder di dalam ZIP
