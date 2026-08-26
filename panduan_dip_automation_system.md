@@ -122,6 +122,11 @@ Satu produk berjalan melalui siklus: **dibuat -> formula diracik -> dokumen Bab 
 
 ## 4. Panduan Operasional Tahap demi Tahap
 
+### [Pembaruan] Fitur Produk & Text Design
+- **Field Informasi Tambahan:** Pada halaman Edit Produk, tersedia field "Peringatan" dan "Penyimpanan".
+- **Aturan Penayangan Kondisional:** Pada Text Design (HTML Preview, PDF, dan Excel), field "Peringatan" dan "Penyimpanan" **HANYA** akan muncul jika diisi oleh pengguna (bukan NULL atau karakter strip `-`).
+
+
 ### 4.1 Tahap 1 — Pengelolaan Master Data Bahan Baku & Legalitas Per Perusahaan
 Sebelum membuat formula produk, seluruh data bahan baku wajib terdaftar di dalam database.
 
@@ -140,6 +145,9 @@ Sebelum membuat formula produk, seluruh data bahan baku wajib terdaftar di dalam
    - Boleh diisi salah satu perusahaan dulu, tab satunya bisa disusulkan belakangan.
 6. **Cek Matriks Kelengkapan Dokumen** — gunakan tab **Cek Kelengkapan Dokumen** pada halaman Bahan Baku untuk melihat status per perusahaan (lengkap dengan PDF, terisi teks saja, atau belum ada), sekaligus preview PDF langsung tanpa pindah halaman.
 
+
+- **Fitur Pelacakan Produk:** Penambahan pelacakan "Digunakan di Produk Mana" via Badge Counter / Modal Popup pada daftar Bahan Baku (`raw_materials.html`) untuk melihat daftar produk yang menggunakan bahan baku tersebut.
+
 > 💡 **Tambah Bahan Baku Cepat:** kalau lagi meracik formula di halaman Edit Produk dan bahan baku yang dicari belum terdaftar, tidak perlu pindah halaman — gunakan tombol **"Bahan baku belum ada? Tambah baru"** di dropdown pencarian bahan baku pada tab Bab 2. Cukup isi identitas dasar (nama, kode, tipe, produsen), bahan baku langsung tersimpan dan otomatis terpilih di baris formula. Detail spesifikasi, MSDS, dan komponen INCI tetap dilengkapi belakangan di halaman Bahan Baku.
 
 ---
@@ -153,6 +161,10 @@ Setiap kedatangan bahan baku wajib dicatat sebagai batch, dan di-scope ke perusa
 4. **Unggah lampiran PDF batch:**
    - **CoA (Certificate of Analysis)** — wajib.
    - **Sertifikat Halal** — opsional.
+
+- **Edit Batch Kedatangan:** Fitur Edit Batch (`raw_material_batches`) memungkinkan pembaruan No Lot, Tanggal ED, Produsen, Asal Negara, dan lampiran COA.
+- **Pengurutan Log:** Log kedatangan batch diurutkan berdasarkan `created_at DESC` (terbaru di baris paling atas).
+
    - **Laporan Pemeriksaan Aktual** — opsional; kalau ada dokumen fisik/scan hasil pemeriksaan, upload di sini (PDF ini yang dipakai langsung di ZIP Bab II, mengganti versi hasil ketikan manual).
 5. **Input Parameter Uji Laboratorium Aktual** (kalau tidak upload laporan PDF di atas): hasil pemeriksaan fisik/kimia aktual, kesimpulan, serta nama yang memeriksa (QC) dan menyetujui (QA).
 
@@ -192,6 +204,13 @@ Halaman **Edit Informasi & Dokumen Produk** (`/products/{product_id}/edit`) meng
 
 **Tab Bab 3 (Mutu Produk Jadi)** — spesifikasi fisik/kimia produk jadi, metode pembuatan, sistem penomoran batch, hasil stabilitas. Tersedia *Preview* & *Download PDF*.
 
+
+- **Generator Ekspor Excel (OpenPyXL):** Dokumentasi standar formatting ekspor Excel (.xlsx) untuk dokumen Formula Kualitatif & Kuantitatif:
+    * Header & Judul di-merge selebar tabel (A-E).
+    * Border tipis (#D1D5DB) pada area tabel data tanpa mengenai blok tanda tangan.
+    * Penataan khusus sheet "Formula INCI Murni": border terbatas kolom A-C dan tanda tangan 2 kolom (Kiri A: Registrasi, Kanan C: R&D).
+    * Penataan sheet "Text Design": tanpa blok tanda tangan dan mengikuti aturan rendering kondisional (Peringatan & Penyimpanan).
+
 **Tab Bab 4 (Keamanan Produk)** — laporan *safety assessment*, CV *safety assessor*, data klaim, monitoring efek samping (NIES), desain kemasan primer/sekunder. Tersedia *Preview* & *Download PDF*.
 
 > ⚠️ Setiap dokumen yang belum diunggah ditandai badge **"PDF belum terisi"**. Upload PDF dibatasi maksimal **10 MB per file**; validasi dilakukan di sisi browser (agar terasa cepat) *dan* di sisi server (sebagai jaring pengaman terakhir yang tidak bisa dilewati).
@@ -221,6 +240,13 @@ Untuk mempermudah verifikasi BPOM tanpa perlu akun/login ke sistem internal, set
 
 **Format URL:** `/dip/[slug-nama-produk]-[uuid-produk]`
 *Contoh:* `.../dip/sunscreen-serum-spf-50-e623d2e4-1234-5678-9abc-def012345678`
+
+- **Logo Header Dinamis:** Penentuan logo (PT Heka vs PT Erfi) dilakukan otomatis berdasarkan data `company` / `draft_producer` yang dipilih.
+- **Layout Tanda Tangan 3 Kolom:** Struktur baru tanda tangan pada dokumen:
+  * Kiri: Dibuat oleh (R&D / `rd_signer`)
+  * Tengah: Disetujui oleh (Nama PT Pemesan dari `company`/`draft_producer`)
+  * Kanan: Mengetahui (Erna Widayanti)
+
 
 - **Bebas login** — bisa dibuka langsung oleh verifikator BPOM kapan saja.
 - **Bagian "slug nama produk" di depan URL cuma kosmetik** — yang beneran divalidasi server cuma UUID 36-karakter di bagian akhir URL. UUID inilah yang berfungsi sebagai "kunci akses" (*unguessable URL*) — mustahil ditebak, sehingga cuma orang yang benar-benar dikasih link yang bisa membuka dokumennya. **Jangan pernah minta URL diganti murni berbasis nama produk** — itu akan menghilangkan proteksi ini, karena nama produk gampang ditebak/diketahui.
