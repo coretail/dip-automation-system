@@ -589,6 +589,17 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         return response
 
     # Untuk error HTTP lainnya tetap kembalikan bawaan
+    # Untuk rute publik /dip/{slug}/..., tampilkan halaman error yang rapi, bukan JSON mentah
+    if request.url.path.startswith("/dip/"):
+        title = "Dokumen Tidak Ditemukan" if exc.status_code == 404 else "Terjadi Kesalahan"
+        message = exc.detail if isinstance(exc.detail, str) else "Silakan hubungi admin jika masalah berlanjut."
+        return templates.TemplateResponse(
+            "public_error.html",
+            {"request": request, "title": title, "message": message},
+            status_code=exc.status_code
+        )
+
+    # Untuk error HTTP lainnya tetap kembalikan bawaan
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail}
@@ -3240,7 +3251,16 @@ async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool):
     gen = _DIP_BAB_GENERATORS.get(bab_num)
     if not gen:
         raise HTTPException(status_code=404, detail="Bab tidak ditemukan.")
-    resp = await gen(product_id, None)
+    try:
+        resp = await gen(product_id, None)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"\n🔴 [PUBLIC DIP ERROR] Gagal generate Bab {bab_num} untuk product_id={product_id}")
+        print(f"   Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Dokumen sedang tidak dapat diproses. Silakan coba beberapa saat lagi.")
     disposition = "attachment" if as_attachment else "inline"
     current = resp.headers.get("Content-Disposition") or f"{disposition}; filename=document.pdf"
     resp.headers["Content-Disposition"] = re.sub(r"^(attachment|inline)", disposition, current, flags=re.IGNORECASE)
@@ -3301,7 +3321,16 @@ async def dip_public_bab2_zip(slug_id: str):
     product_id = extract_id_from_slug(slug_id)
     if not _dip_public_check_product(product_id):
         raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-    return await download_bab2_document_zip(product_id, None)
+    try:
+        return await download_bab2_document_zip(product_id, None)
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"\n🔴 [PUBLIC DIP ZIP ERROR] Gagal generate ZIP Bab 2 untuk product_id={product_id}")
+        print(f"   Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Dokumen sedang tidak dapat diproses. Silakan coba beberapa saat lagi.")
 
 
 # 1. Halaman Form Edit Produk
