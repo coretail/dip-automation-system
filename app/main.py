@@ -1054,38 +1054,45 @@ async def add_raw_material(
     log_activity(current_user, "create", "raw_material", new_rm_id, nama_dagang)
 
     # --- Simpan spec + MSDS per perusahaan (kalau diisi) ---
-    await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi)
-    await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
+    try:
+        await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi)
+        await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
 
-    if tipe == "single":
-        given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
-        comp_data = {
-            "raw_material_id": new_rm_id,
-            "inci_name": given_inci if given_inci else nama_dagang, 
-            "cas_number": cas_number[0] if cas_number else None,
-            "function": function[0] if function else None,
-            "percent_internal": 100.0
-        }
-        supabase.table("raw_material_components").insert(comp_data).execute()
-    
-    elif tipe == "komposit" and inci_name:
-        components = []
-        for i in range(len(inci_name)):
-            if inci_name[i].strip():
-                components.append({
-                    "raw_material_id": new_rm_id,
-                    "inci_name": inci_name[i],
-                    "cas_number": cas_number[i] if i < len(cas_number) else None,
-                    "function": function[i] if i < len(function) else None,
-                    "percent_internal": percent_internal[i]
-                })
-        if components:
-            supabase.table("raw_material_components").insert(components).execute()
+        if tipe == "single":
+            given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
+            comp_data = {
+                "raw_material_id": new_rm_id,
+                "inci_name": given_inci if given_inci else nama_dagang, 
+                "cas_number": cas_number[0] if cas_number else None,
+                "function": function[0] if function else None,
+                "percent_internal": 100.0
+            }
+            supabase.table("raw_material_components").insert(comp_data).execute()
+        
+        elif tipe == "komposit" and inci_name:
+            components = []
+            for i in range(len(inci_name)):
+                if inci_name[i].strip():
+                    components.append({
+                        "raw_material_id": new_rm_id,
+                        "inci_name": inci_name[i],
+                        "cas_number": cas_number[i] if i < len(cas_number) else None,
+                        "function": function[i] if i < len(function) else None,
+                        "percent_internal": percent_internal[i]
+                    })
+            if components:
+                supabase.table("raw_material_components").insert(components).execute()
 
-    # JIKA BERHASIL: Set cookie tanda sukses lalu redirect
-    response = RedirectResponse(url="/raw-materials", status_code=303)
-    response.set_cookie("success_msg", f"Mantap! Bahan baku '{nama_dagang}' berhasil ditambahkan.")
-    return response
+        # JIKA BERHASIL: Set cookie tanda sukses lalu redirect
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("success_msg", f"Mantap! Bahan baku '{nama_dagang}' berhasil ditambahkan.")
+        return response
+
+    except Exception as e:
+        print(f"\n🔴 [ERROR add_raw_material] Bahan baku '{nama_dagang}' (id={new_rm_id}) sudah tersimpan, tapi data pendukung (komponen INCI/dokumen) gagal: {e}")
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", f"Bahan baku '{nama_dagang}' tersimpan, tapi ada data pendukung yang gagal disimpan. Silakan cek dan lengkapi lewat menu Edit.")
+        return response
 
 @app.post("/raw-materials/quick-add")
 async def quick_add_raw_material(
@@ -1712,10 +1719,19 @@ async def add_product(
         "brand_id": brand_id if brand_id else None
     }
     
-    new_product_resp = supabase.table("products").insert(product_data).execute()
-    new_product_id = new_product_resp.data[0]["id"] if new_product_resp.data else None
-    log_activity(current_user, "create", "product", new_product_id, nama_produk)
-    return RedirectResponse(url="/", status_code=303)
+    try:
+        new_product_resp = supabase.table("products").insert(product_data).execute()
+        new_product_id = new_product_resp.data[0]["id"] if new_product_resp.data else None
+        if not new_product_id:
+            raise Exception("Insert produk tidak mengembalikan data")
+        log_activity(current_user, "create", "product", new_product_id, nama_produk)
+        return RedirectResponse(url="/", status_code=303)
+    except Exception as e:
+        print(f"\n🔴 [ERROR add_product] Gagal menyimpan produk '{nama_produk}': {e}")
+        # Redirect balik ke halaman dashboard dengan pesan error, supaya user tahu harus input ulang
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie("error_msg", f"Gagal menyimpan produk '{nama_produk}'. Silakan coba lagi.")
+        return response
 
 @app.post("/products/{product_id}/formula/save")
 async def save_product_formula(
@@ -1724,21 +1740,28 @@ async def save_product_formula(
     percentage: List[float] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
+    try:
+        supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
 
-    if raw_material_id and percentage:
-        lines = []
-        for i in range(len(raw_material_id)):
-            if raw_material_id[i].strip():
-                lines.append({
-                    "product_id": product_id,
-                    "raw_material_id": raw_material_id[i],
-                    "percent_in_formula": percentage[i] 
-                })
-        if lines:
-            supabase.table("product_formula_lines").insert(lines).execute()
+        if raw_material_id and percentage:
+            lines = []
+            for i in range(len(raw_material_id)):
+                if raw_material_id[i].strip():
+                    lines.append({
+                        "product_id": product_id,
+                        "raw_material_id": raw_material_id[i],
+                        "percent_in_formula": percentage[i]
+                    })
+            if lines:
+                supabase.table("product_formula_lines").insert(lines).execute()
 
-    return RedirectResponse(url=f"/products/{product_id}", status_code=303)
+        return RedirectResponse(url=f"/products/{product_id}", status_code=303)
+
+    except Exception as e:
+        print(f"\n🔴 [ERROR save_product_formula] product_id={product_id}: formula lama sudah terhapus, tapi data baru GAGAL disimpan: {e}")
+        response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+        response.set_cookie("error_msg", "PENTING: Gagal menyimpan formula baru, dan data formula lama kemungkinan sudah terhapus. Silakan cek ulang dan isi formula dari awal.")
+        return response
 
 @app.get("/products/{product_id}/inci-breakdown/report", response_class=HTMLResponse)
 async def generate_inci_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
