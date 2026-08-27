@@ -608,7 +608,7 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
 @app.get("/products/{product_id}", response_class=HTMLResponse)
 async def product_detail(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
     try:
-        prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+        prod_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
     except Exception as e:
         # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
         print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
@@ -1830,7 +1830,7 @@ async def _gather_qualquant_data(product_id: str) -> dict:
       - route preview HTML  : /products/{id}/qualitative-quantitative
       - route export Excel  : /products/{id}/qualitative-quantitative/export-xlsx
     """
-    product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    product_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
     product = product_resp.data
 
     lines_resp = supabase.table("product_formula_lines") \
@@ -3668,8 +3668,8 @@ async def delete_product(product_id: str, current_user: dict = Depends(get_curre
     try:
         # Hapus dulu baris formula terkait (kalau FK belum di-set CASCADE)
         supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
-        # Baru hapus produknya
-        supabase.table("products").delete().eq("id", product_id).execute()
+        # Baru hapus produknya (Soft Delete)
+        supabase.table("products").update({"is_deleted": True}).eq("id", product_id).execute()
     except Exception as e:
         print(f"Gagal hapus produk {product_id}: {e}")
         return RedirectResponse(url="/", status_code=303)
@@ -3804,7 +3804,7 @@ async def edit_sample_submission_page(request: Request, submission_id: str, curr
         brand_query = supabase.table("brands").select("*, producers(*)").execute()
         brands = brand_query.data or []
         
-        product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan, perusahaan").execute()
+        product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan, perusahaan").eq("is_deleted", False).execute()
         products = product_query.data or []
     except Exception as e:
         print(f"Gagal muat data edit sample: {e}")
@@ -4127,7 +4127,7 @@ async def sample_submission_form(request: Request, current_user: dict = Depends(
         brands = brand_query.data or []
         
         # Kolom di tabel products namanya "perusahaan", bukan "company" (bug #2)
-        product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan, perusahaan").execute()
+        product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan, perusahaan").eq("is_deleted", False).execute()
         products = product_query.data or []
     except Exception as e:
         print(f"Gagal ambil data pendukung form: {e}")
@@ -4317,7 +4317,7 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
     products, brands = [], []
     try:
         # 1. Ambil data produk master
-        response_prod = supabase.table("products").select("*, brands(name)").order("created_at", desc=True).execute()
+        response_prod = supabase.table("products").select("*, brands(name)").eq("is_deleted", False).order("created_at", desc=True).execute()
         products = response_prod.data or []
 
         # 2. Ambil ID produk yang udah punya formula (Bab 2)
