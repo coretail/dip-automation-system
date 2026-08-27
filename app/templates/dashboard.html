@@ -4,6 +4,21 @@
 
 {% block content %}
 
+{% if error_msg %}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center gap-2" role="alert">
+    <i class="fa-solid fa-circle-exclamation"></i>
+    <span>{{ error_msg }}</span>
+</div>
+{% endif %}
+
+{% if success_msg %}
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center gap-2" role="alert">
+    <i class="fa-solid fa-circle-check"></i>
+    <span>{{ success_msg }}</span>
+</div>
+{% endif %}
+
+
 <div class="flex justify-between items-center mb-6">
     <!-- Kiri: Info User yang lagi login -->
     <div class="text-sm text-gray-600 flex items-center gap-3">

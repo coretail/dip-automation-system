@@ -1049,6 +1049,10 @@ async def add_raw_material(
         return response
 
     rm_resp = supabase.table("raw_materials").insert(insert_payload).execute()
+    if not rm_resp.data:
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", f"Gagal menyimpan bahan baku '{nama_dagang}'. Silakan coba lagi.")
+        return response
     new_rm_id = rm_resp.data[0]["id"]
 
     log_activity(current_user, "create", "raw_material", new_rm_id, nama_dagang)
@@ -4306,6 +4310,10 @@ async def update_user_role(
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, current_user: dict = Depends(get_current_user)):
+    # Pastikan variabel ini didefinisikan dengan nilai default None agar tidak error
+    success_msg = request.cookies.get("success_msg") or request.query_params.get("success")
+    error_msg = request.cookies.get("error_msg") or request.query_params.get("error")
+
     products, brands = [], []
     try:
         # 1. Ambil data produk master
@@ -4399,7 +4407,9 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             "products": products, 
             "user": current_user,
             "brands": brands,
-            "ed_notification_count": ed_notification_count
+            "ed_notification_count": ed_notification_count,
+            "error_msg": error_msg,
+            "success_msg": success_msg
         }
     )
 
