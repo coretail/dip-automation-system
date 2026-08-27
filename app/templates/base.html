@@ -28,6 +28,11 @@
                     <a href="/brands" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
                         <i class="fa-solid fa-copyright mr-1"></i> Kelola Merk
                     </a>
+                    {% if current_user.role == 'Admin' %}
+                    <a href="/admin/trash" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
+                        <i class="fa-solid fa-trash mr-1"></i> Sampah
+                    </a>
+                    {% endif %}
                     
                     <!-- Notification Bell for ED Alerts -->
                     <div class="relative" id="ed-notification-wrapper">

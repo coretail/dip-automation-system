@@ -629,7 +629,8 @@ async def product_detail(request: Request, product_id: str, current_user: dict =
         context={
             "product": prod_resp.data, 
             "formula": formula_resp.data,
-            "raw_materials": rm_resp.data  
+            "raw_materials": rm_resp.data,  
+            "current_user": current_user
         }
     )
 
@@ -792,6 +793,7 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
             "ed_critical_batches": ed_critical_batches_for_tab,  # Filtered for ED tab
             "ed_notification_count": ed_critical_count,  # For immediate badge rendering
             "doc_status": doc_status,
+            "current_user": current_user,
             "success_msg": success_msg,
             "error_msg": error_msg
         }
@@ -1673,6 +1675,42 @@ async def update_cpkb_document(
         response.set_cookie("error_msg", "Gagal upload SOP CPKB. Coba lagi.")
         return response
 
+@app.get("/admin/trash", response_class=HTMLResponse)
+async def admin_trash_page(request: Request, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "Admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    
+    try:
+        response = supabase.table("products").select("*, brands(name)").eq("is_deleted", True).order("updated_at", desc=True).execute()
+        products = response.data or []
+    except Exception as e:
+        print(f"Gagal memuat trash: {e}")
+        products = []
+        
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_trash.html",
+        context={
+            "products": products,
+            "current_user": current_user,
+            "ed_notification_count": await get_ed_notification_count()
+        }
+    )
+
+@app.post("/admin/products/{product_id}/restore")
+async def restore_product(product_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "Admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+        
+    try:
+        supabase.table("products").update({"is_deleted": False}).eq("id", product_id).execute()
+        # Perlu fungsi log_activity yang sudah ada di main.py
+        log_activity(current_user, "restore", "product", product_id, "Restore produk dari sampah")
+        return RedirectResponse(url="/admin/trash?success=Produk berhasil dikembalikan", status_code=303)
+    except Exception as e:
+        print(f"Gagal restore produk: {e}")
+        return RedirectResponse(url="/admin/trash?error=Gagal mengembalikan produk", status_code=303)
+
 @app.post("/products/add")
 async def add_product(
     nama_produk: str = Form(...),
@@ -1818,6 +1856,7 @@ async def generate_inci_report(request: Request, product_id: str, current_user: 
         request=request,
         name="ingredient_report.html",
         context={
+            "current_user": current_user,
             "product": prod_resp.data,
             "inci_list": sorted_inci
         }
@@ -1958,6 +1997,7 @@ async def qualitative_quantitative_report(request: Request, product_id: str, cur
         name="qualitative_quantitative.html",
         context={
             "product": data["product"],
+            "current_user": current_user,
             "trade_breakdown": data["trade_breakdown"],
             "pure_breakdown": data["pure_breakdown"],
             "company": data["company"]
@@ -3441,6 +3481,7 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
             "bab2_materials": bab2_materials,
             "sop_cpkb_url": sop_cpkb_url,
             "error_msg": error_msg,
+            "current_user": current_user,
         }
     )
 
@@ -3817,6 +3858,7 @@ async def edit_sample_submission_page(request: Request, submission_id: str, curr
             "brands": brands,
             "existing_products": products,
             "submission": submission,
+            "current_user": current_user,
             "ed_notification_count": await get_ed_notification_count()
         }
     )
@@ -4025,7 +4067,8 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
             "brands": brands,
             "success_msg": success_msg,
             "error_msg": error_msg,
-            "ed_notification_count": await get_ed_notification_count()
+            "ed_notification_count": await get_ed_notification_count(),
+            "current_user": current_user
         }
     )
     response.delete_cookie("success_msg")
@@ -4116,7 +4159,8 @@ async def sample_submissions_list(request: Request, search: str = None, current_
         context={
             "submissions": submissions,
             "search_value": search or "",
-            "ed_notification_count": await get_ed_notification_count()
+            "ed_notification_count": await get_ed_notification_count(),
+            "current_user": current_user
         }
     )
 
@@ -4139,8 +4183,10 @@ async def sample_submission_form(request: Request, current_user: dict = Depends(
         # Key "existing_products" harus sama persis kayak yang dipakai template (bug #1)
         context={
             "brands": brands,
+            "current_user": current_user,
             "existing_products": products,
-            "ed_notification_count": await get_ed_notification_count()
+            "ed_notification_count": await get_ed_notification_count(),
+            "current_user": current_user
         }
     )
 
@@ -4164,14 +4210,15 @@ async def sample_submission_preview(request: Request, submission_id: str, curren
         
     return templates.TemplateResponse(
         request=request,
-        name="sample_preview.html",
+        name="sample_preview.html", 
         context={
+            "current_user": current_user,
             "s": submission,
             "ed_notification_count": await get_ed_notification_count()
         }
     )
 
-    # =====================================================================
+# =====================================================================
 #                     MODUL MANAJEMEN USER (ADMIN ONLY)
 # =====================================================================
 
@@ -4404,6 +4451,7 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
         name="dashboard.html", 
         context={
             "request": request, 
+            "current_user": current_user,
             "products": products, 
             "user": current_user,
             "brands": brands,
