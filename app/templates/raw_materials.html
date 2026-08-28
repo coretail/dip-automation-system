@@ -138,6 +138,9 @@
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ rm.nama_dagang }}</div>
                         <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
+                            {% if rm.has_lab_batch %}
+                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 text-sky-700" title="Ada batch lab tercatat untuk bahan ini">LAB</span>
+                            {% endif %}
                         {% set status = doc_status.get(rm.id, {}) %}
                         {% set s_erfi = status.get('PT Erfi', {}) %}
                         {% set s_heka = status.get('PT Heka', {}) %}
@@ -238,6 +241,7 @@
                     data-quantity="{{ b.quantity or '' }}"
                     data-quantity-unit="{{ b.quantity_unit or 'kg' }}"
                     data-kesimpulan="{{ b.kesimpulan or '' }}"
+                    data-keterangan="{{ b.keterangan or '' }}"
                     data-status-ed="{{ b.status_ed or 'Active' }}">
                     <!-- Perusahaan -->
                     <td class="px-4 py-3 whitespace-nowrap">
@@ -290,6 +294,10 @@
                         {% elif b.kesimpulan == 'karantina' %}
                             <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-yellow-100 text-yellow-700">
                                 <i class="fa-solid fa-triangle-exclamation"></i>
+                            </span>
+                        {% elif b.kesimpulan == 'lab' %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-700">
+                                <i class="fa-solid fa-flask mr-1"></i>LAB
                             </span>
                         {% else %}
                             -
@@ -800,7 +808,12 @@
                         <option value="diluluskan">DILULUSKAN</option>
                         <option value="ditolak">DITOLAK</option>
                         <option value="karantina">KARANTINA</option>
+                        <option value="lab">LAB</option>
                     </select>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Keterangan</label>
+                    <textarea name="keterangan" rows="2" placeholder="Catatan tambahan (opsional, misal: tujuan penggunaan batch lab)" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm"></textarea>
                 </div>
             </div>
 
@@ -1032,7 +1045,12 @@
                     <option value="diluluskan">DILULUSKAN</option>
                     <option value="ditolak">DITOLAK</option>
                     <option value="karantina">KARANTINA</option>
+                    <option value="lab">LAB</option>
                 </select>
+            </div>
+            <div class="mb-4">
+                <label class="block text-xs font-medium text-gray-700 mb-1">Keterangan</label>
+                <textarea name="keterangan" id="edit-keterangan" rows="2" placeholder="Catatan tambahan (opsional, misal: tujuan penggunaan batch lab)" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm"></textarea>
             </div>
             <hr class="my-2">
             <div>
@@ -1134,6 +1152,7 @@ function openEditBatchModal(btn) {
     const quantity = row.getAttribute('data-quantity') || '';
     const quantityUnit = row.getAttribute('data-quantity-unit') || 'kg';
     const kesimpulan = row.getAttribute('data-kesimpulan') || '';
+    const keterangan = row.getAttribute('data-keterangan') || '';
 
     document.getElementById('edit-batch-id').value = id;
     document.getElementById('edit-batch-material').textContent = material;
@@ -1147,6 +1166,7 @@ function openEditBatchModal(btn) {
     document.getElementById('edit-quantity').value = quantity;
     document.getElementById('edit-quantity-unit').value = quantityUnit;
     document.getElementById('edit-kesimpulan').value = kesimpulan;
+    document.getElementById('edit-keterangan').value = keterangan;
 
     document.getElementById('edit-batch-form').action = '/raw-materials/batches/edit/' + id;
 
