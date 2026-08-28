@@ -718,8 +718,6 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
     sorted_batches = sorted(batches_data, key=lambda b: b.get("created_at") or "", reverse=True)
     latest_batch_map = {}
     for b in sorted_batches:
-        if b.get("kesimpulan") == "lab":
-            continue
         key = (b.get("raw_material_id"), b.get("perusahaan"))
         if key not in latest_batch_map:
             latest_batch_map[key] = b
@@ -734,14 +732,11 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
                 rm_batch_nums[rm_id] = set()
             rm_batch_nums[rm_id].add(str(bn).strip())
 
-    lab_material_ids = {b.get("raw_material_id") for b in batches_data if b.get("kesimpulan") == "lab"}
-
     doc_status = {}
     for rm in rm_resp.data:
         rm_id = rm["id"]
         # Add all batch numbers as a space-separated string for frontend search
         rm["all_batch_numbers"] = " ".join(rm_batch_nums.get(rm_id, []))
-        rm["has_lab_batch"] = rm_id in lab_material_ids
 
         company_docs = {d["perusahaan"]: d for d in (rm.get("raw_material_company_docs") or [])}
         status_per_company = {}
@@ -1373,7 +1368,6 @@ async def add_material_batch(
     qc_report_file: UploadFile = File(None),
     quantity: float = Form(None),
     quantity_unit: str = Form(None),
-    keterangan: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     import json
@@ -1453,7 +1447,6 @@ async def add_material_batch(
         "tanggal_sampling": tanggal_sampling if tanggal_sampling else None,
         "tanggal_ed": tanggal_ed,
         "kesimpulan": kesimpulan,
-        "keterangan": keterangan.strip() if keterangan else None,
         "qc_signer": qc_signer.strip() if qc_signer else None,
         "qa_signer": qa_signer.strip() if qa_signer else None,
         "hasil_pemerian": "-",
@@ -1490,7 +1483,6 @@ async def edit_material_batch(
     qc_report_file: UploadFile = File(None),
     quantity: float = Form(None),
     quantity_unit: str = Form(None),
-    keterangan: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     # 1. Ambil data lama untuk handle file upload
@@ -1504,7 +1496,6 @@ async def edit_material_batch(
         "tanggal_terima_sampel": tanggal_terima_sampel,
         "tanggal_ed": tanggal_ed,
         "kesimpulan": kesimpulan,
-        "keterangan": keterangan.strip() if keterangan else None,
         "asal_negara": asal_negara.strip() if asal_negara else None,
         "quantity": quantity,
         "quantity_unit": quantity_unit
@@ -2117,8 +2108,6 @@ async def download_bab2_document(product_id: str, current_user: dict = Depends(g
             .eq("raw_material_id", rm["id"]) \
             .eq("perusahaan", perusahaan) \
             .neq("kesimpulan", "lab") \
-            .neq("kesimpulan", "lab") \
-            .neq("kesimpulan", "lab") \
             .order("created_at", desc=True) \
             .limit(1) \
             .execute()
@@ -2300,11 +2289,9 @@ async def download_bab2_document_zip(product_id: str, current_user: dict = Depen
     for rm in raw_materials:
         batch_resp = supabase.table("raw_material_batches") \
             .select("*") \
-            .neq("kesimpulan", "lab") \
-            .neq("kesimpulan", "lab") \
             .eq("raw_material_id", rm["id"]) \
-            .neq("kesimpulan", "lab") \
             .eq("perusahaan", perusahaan) \
+            .neq("kesimpulan", "lab") \
             .order("created_at", desc=True) \
             .limit(1) \
             .execute()
@@ -3319,14 +3306,12 @@ async def dip_public_hub(request: Request, slug_id: str):
             _apply_company_specific_docs(rm, perusahaan)
 
             batch = None
-                    .neq("kesimpulan", "lab") \
-                    .neq("kesimpulan", "lab") \
-                    .neq("kesimpulan", "lab") \
             try:
                 batch_resp = supabase.table("raw_material_batches") \
                     .select("*") \
                     .eq("raw_material_id", rm["id"]) \
                     .eq("perusahaan", perusahaan) \
+                    .neq("kesimpulan", "lab") \
                     .order("created_at", desc=True) \
                     .limit(1) \
                     .execute()
@@ -3532,13 +3517,13 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
 
         # Dokumen pendukung Bab 2 per bahan baku: PDF Spesifikasi asli + MSDS (company-specific)
         # + batch terbaru perusahaan produk ini (CoA, Halal, Laporan Pemeriksaan)
-                .neq("kesimpulan", "lab") \
         for rm in uniq_rm:
             rm = _apply_company_specific_docs(rm, perusahaan)
             batch_resp = supabase.table("raw_material_batches") \
                 .select("*") \
                 .eq("raw_material_id", rm["id"]) \
                 .eq("perusahaan", perusahaan) \
+                .neq("kesimpulan", "lab") \
                 .order("created_at", desc=True) \
                 .limit(1) \
                 .execute()
@@ -4273,8 +4258,7 @@ async def sample_submission_form(request: Request, current_user: dict = Depends(
             "brands": brands,
             "current_user": current_user,
             "existing_products": products,
-            "ed_notification_count": await get_ed_notification_count(),
-            "current_user": current_user
+            "ed_notification_count": await get_ed_notification_count()
         }
     )
 
@@ -4579,3 +4563,4 @@ async def delete_user(
     except Exception as e:
         print(f"Gagal hapus user: {e}")
         return RedirectResponse(url="/admin/users?error=delete_failed", status_code=303)
+
