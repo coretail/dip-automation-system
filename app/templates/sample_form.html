@@ -68,20 +68,52 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Pilih Produk Eksisting (Opsional)</label>
-                <select name="product_id" id="product_id_select" class="w-full border rounded-lg p-2 text-sm focus:ring-indigo-500">
-                    <option value="">-- Buat Produk Baru / Manual --</option>
+                {% set ns = namespace(label="") %}
+                {% if submission and submission.product_id %}
                     {% for p in existing_products %}
-                    <option value="{{ p.id }}"
-                            {% if submission and submission.product_id == p.id %}selected{% endif %}
-                            data-nama="{{ p.nama_produk }}"
-                            data-company="{{ p.perusahaan }}"
-                            data-netto="{{ p.netto or '' }}"
-                            data-sediaan="{{ p.sediaan or '' }}"
-                            data-kemasan="{{ p.kemasan or '' }}">
-                        {{ p.nama_produk }} ({{ p.perusahaan or '-' }})
-                    </option>
+                        {% if p.id == submission.product_id %}
+                            {% set ns.label = p.nama_produk ~ " (" ~ (p.perusahaan or '-') ~ ")" %}
+                        {% endif %}
                     {% endfor %}
-                </select>
+                {% endif %}
+                <div class="relative product-select-container" data-selected-label="{{ ns.label }}">
+                    <input type="hidden" name="product_id" id="product_id_hidden" value="{{ submission.product_id if submission and submission.product_id else '' }}">
+                    <div class="relative">
+                        <input type="text"
+                               id="product_id_search"
+                               placeholder="Ketik nama produk untuk cari, atau kosongkan buat produk baru/manual..."
+                               value="{{ ns.label }}"
+                               class="w-full border rounded-lg p-2 text-sm focus:ring-indigo-500 pr-8"
+                               autocomplete="off"
+                               onfocus="openProductDropdown(this)"
+                               oninput="filterProductDropdown(this)">
+                        <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs"></i>
+                    </div>
+                    <div class="product-dropdown-menu hidden absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto text-sm">
+                        <div class="cursor-pointer px-3 py-2 hover:bg-indigo-50 text-gray-500 italic border-b border-gray-200 sticky top-0 bg-white"
+                             data-value="" data-nama="" data-company="" data-netto="" data-sediaan="" data-kemasan=""
+                             onclick="selectProductOption(this)">
+                            -- Buat Produk Baru / Manual --
+                        </div>
+                        <div class="py-1 product-options-list">
+                            {% for p in existing_products %}
+                            <div class="product-option cursor-pointer px-3 py-2 hover:bg-indigo-50 flex justify-between items-center border-b border-gray-50 last:border-b-0"
+                                 data-value="{{ p.id }}"
+                                 data-nama="{{ p.nama_produk }}"
+                                 data-company="{{ p.perusahaan or '' }}"
+                                 data-netto="{{ p.netto or '' }}"
+                                 data-sediaan="{{ p.sediaan or '' }}"
+                                 data-kemasan="{{ p.kemasan or '' }}"
+                                 data-search="{{ p.nama_produk | lower }} {{ (p.perusahaan or '') | lower }}"
+                                 onclick="selectProductOption(this)">
+                                <span class="font-medium text-gray-900">{{ p.nama_produk }}</span>
+                                <span class="text-xs text-gray-500">{{ p.perusahaan or '-' }}</span>
+                            </div>
+                            {% endfor %}
+                            <div class="no-match-msg hidden px-3 py-3 text-xs text-gray-400 italic text-center">Produk tidak ditemukan.</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Produk *</label>
@@ -172,42 +204,106 @@ function toggleDraftInput() {
     }
 }
 
-document.getElementById('product_id_select').addEventListener('change', function() {
-    const selectedOption = this.options[this.selectedIndex];
-    const masterName = selectedOption.getAttribute('data-nama');
-    const masterCompanyRaw = selectedOption.getAttribute('data-company') || '';
-    const masterCompany = masterCompanyRaw.replace('PT ', '').trim();
+document.addEventListener('click', function(e) {
+        if (!e.target.closest('.product-select-container')) {
+            document.querySelectorAll('.product-dropdown-menu').forEach(menu => menu.classList.add('hidden'));
+        }
+    });
 
-    const inputNamaProduk = document.querySelector('input[name="product_name"]');
-    const radioCompany = document.querySelectorAll('input[name="company"]');
-    const inputNetto = document.getElementById('netto');
-    const inputSediaan = document.getElementById('sediaan');
-    const inputKemasan = document.getElementById('kemasan');
-
-    if (this.value) {
-        inputNamaProduk.value = masterName;
-        inputNamaProduk.readOnly = true;
-
-        if (inputNetto) inputNetto.value = selectedOption.getAttribute('data-netto') || '';
-        if (inputSediaan) inputSediaan.value = selectedOption.getAttribute('data-sediaan') || '';
-        if (inputKemasan) inputKemasan.value = selectedOption.getAttribute('data-kemasan') || '';
-
-        radioCompany.forEach(radio => {
-            if (radio.value === masterCompany) {
-                radio.checked = true;
-            }
-            radio.disabled = true;
-        });
-    } else {
-        inputNamaProduk.value = '';
-        inputNamaProduk.readOnly = false;
-        if (inputNetto) inputNetto.value = '';
-        if (inputSediaan) inputSediaan.value = '';
-        if (inputKemasan) inputKemasan.value = '';
-        radioCompany.forEach(radio => {
-            radio.disabled = false;
-        });
+    function openProductDropdown(inputElem) {
+        document.querySelectorAll('.product-dropdown-menu').forEach(menu => menu.classList.add('hidden'));
+        const container = inputElem.closest('.product-select-container');
+        const dropdown = container.querySelector('.product-dropdown-menu');
+        dropdown.classList.remove('hidden');
+        filterProductDropdown(inputElem);
     }
-});
+
+    function filterProductDropdown(inputElem) {
+        const container = inputElem.closest('.product-select-container');
+        const dropdown = container.querySelector('.product-dropdown-menu');
+        const hiddenInput = document.getElementById('product_id_hidden');
+        const query = inputElem.value.toLowerCase().trim();
+
+        const selectedLabel = container.getAttribute('data-selected-label');
+        if (inputElem.value !== selectedLabel) {
+            hiddenInput.value = "";
+        }
+
+        dropdown.classList.remove('hidden');
+
+        const options = container.querySelectorAll('.product-option');
+        const noMatchMsg = container.querySelector('.no-match-msg');
+        let visibleCount = 0;
+
+        options.forEach(opt => {
+            const searchVal = opt.getAttribute('data-search');
+            if (searchVal.includes(query)) {
+                opt.classList.remove('hidden');
+                visibleCount++;
+            } else {
+                opt.classList.add('hidden');
+            }
+        });
+
+        if (visibleCount === 0) {
+            noMatchMsg.classList.remove('hidden');
+        } else {
+            noMatchMsg.classList.add('hidden');
+        }
+    }
+
+    function selectProductOption(optionElem) {
+        const container = optionElem.closest('.product-select-container');
+        const hiddenInput = document.getElementById('product_id_hidden');
+        const searchInput = document.getElementById('product_id_search');
+        const dropdown = container.querySelector('.product-dropdown-menu');
+
+        const val = optionElem.getAttribute('data-value');
+        const masterName = optionElem.getAttribute('data-nama');
+        const masterCompanyRaw = optionElem.getAttribute('data-company') || '';
+        const masterCompany = masterCompanyRaw.replace('PT ', '').trim();
+
+        const inputNamaProduk = document.querySelector('input[name="product_name"]');
+        const radioCompany = document.querySelectorAll('input[name="company"]');
+        const inputNetto = document.getElementById('netto');
+        const inputSediaan = document.getElementById('sediaan');
+        const inputKemasan = document.getElementById('kemasan');
+
+        hiddenInput.value = val;
+
+        if (val) {
+            const label = masterName + (masterCompanyRaw ? " (" + masterCompanyRaw + ")" : "");
+            searchInput.value = label;
+            container.setAttribute('data-selected-label', label);
+
+            inputNamaProduk.value = masterName;
+            inputNamaProduk.readOnly = true;
+
+            if (inputNetto) inputNetto.value = optionElem.getAttribute('data-netto') || '';
+            if (inputSediaan) inputSediaan.value = optionElem.getAttribute('data-sediaan') || '';
+            if (inputKemasan) inputKemasan.value = optionElem.getAttribute('data-kemasan') || '';
+
+            radioCompany.forEach(radio => {
+                if (radio.value === masterCompany) {
+                    radio.checked = true;
+                }
+                radio.disabled = true;
+            });
+        } else {
+            searchInput.value = '';
+            container.setAttribute('data-selected-label', '');
+
+            inputNamaProduk.value = '';
+            inputNamaProduk.readOnly = false;
+            if (inputNetto) inputNetto.value = '';
+            if (inputSediaan) inputSediaan.value = '';
+            if (inputKemasan) inputKemasan.value = '';
+            radioCompany.forEach(radio => {
+                radio.disabled = false;
+            });
+        }
+
+        dropdown.classList.add('hidden');
+    }
 </script>
 {% endblock %}
