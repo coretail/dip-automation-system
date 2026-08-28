@@ -280,9 +280,16 @@
                         <h4 class="text-sm font-semibold text-gray-900">Susunan Formula Komposisi</h4>
                         <p class="text-xs text-gray-500 mt-0.5">Susunan bahan baku penyusun produk ini (Mutu Bahan & Formula — Bab 2).</p>
                     </div>
-                    <button type="button" onclick="addFormulaRow()" class="inline-flex items-center text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer">
-                        <i class="fa-solid fa-plus mr-1"></i> Tambah Bahan Baku
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="estimated-rm-count" min="1" max="30" placeholder="Jumlah bahan"
+                               class="w-28 rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-500">
+                        <button type="button" onclick="generateFormulaRows()" class="inline-flex items-center text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer">
+                            <i class="fa-solid fa-list-ol mr-1"></i> Buat Baris
+                        </button>
+                        <button type="button" onclick="addFormulaRow()" class="inline-flex items-center text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1.5 rounded-md font-semibold transition cursor-pointer">
+                            <i class="fa-solid fa-plus mr-1"></i> Tambah Bahan Baku
+                        </button>
+                    </div>
                 </div>
 
                 <div id="formula-rows-container" class="space-y-3">
@@ -611,6 +618,16 @@ function selectBrandOption(optionElem) {
 }
 
 document.addEventListener("DOMContentLoaded", function() {
+    // Auto-add a formula row if container is empty and template exists
+    const container = document.getElementById('formula-rows-container');
+    const template = document.getElementById('row-template');
+    
+    if (container && template) {
+        if (container.children.length === 0) {
+            addFormulaRow();
+        }
+    }
+    
     // Hitung total persentase kalau memang sudah ada baris formula.
     calculateFormulaTotal();
 
@@ -711,6 +728,30 @@ function addFormulaRow() {
 
     container.appendChild(clone);
     calculateFormulaTotal();
+}
+
+function generateFormulaRows() {
+    const input = document.getElementById('estimated-rm-count');
+    const target = parseInt(input.value, 10);
+
+    if (!target || target < 1) {
+        alert('Isi dulu perkiraan jumlah bahan baku (angka lebih dari 0).');
+        return;
+    }
+
+    const cappedTarget = Math.min(target, 30);
+    const container = document.getElementById('formula-rows-container');
+    const current = container.children.length;
+
+    if (current >= cappedTarget) {
+        input.value = '';
+        return; // sudah ada baris sebanyak/lebih dari target, jangan hapus apapun
+    }
+
+    for (let i = current; i < cappedTarget; i++) {
+        addFormulaRow();
+    }
+    input.value = '';
 }
 
 function calculateFormulaTotal() {
