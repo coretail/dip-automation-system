@@ -605,35 +605,6 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         content={"detail": exc.detail}
     )
 
-@app.get("/products/{product_id}", response_class=HTMLResponse)
-async def product_detail(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
-    try:
-        prod_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
-    except Exception as e:
-        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
-        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
-        return RedirectResponse(url="/", status_code=303)
-
-    if not prod_resp.data:
-        return RedirectResponse(url="/", status_code=303)
-    
-    formula_resp = supabase.table("product_formula_lines") \
-        .select("*, raw_materials(nama_dagang, kode_bahan_baku)") \
-        .eq("product_id", product_id).execute()
-        
-    rm_resp = supabase.table("raw_materials").select("id, nama_dagang, kode_bahan_baku").order("nama_dagang").execute()
-        
-    return templates.TemplateResponse(
-        request=request,
-        name="formula_builder.html", 
-        context={
-            "product": prod_resp.data, 
-            "formula": formula_resp.data,
-            "raw_materials": rm_resp.data,  
-            "current_user": current_user
-        }
-    )
-
 @app.get("/raw-materials", response_class=HTMLResponse)
 async def raw_materials_page(request: Request, current_user: dict = Depends(get_current_user)):
     rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*), raw_material_company_docs(*)").order("nama_dagang").execute()
@@ -1785,35 +1756,7 @@ async def add_product(
         response.set_cookie("error_msg", f"Gagal menyimpan produk '{nama_produk}'. Silakan coba lagi.")
         return response
 
-@app.post("/products/{product_id}/formula/save")
-async def save_product_formula(
-    product_id: str,
-    raw_material_id: List[str] = Form(None),
-    percentage: List[float] = Form(None),
-    current_user: dict = Depends(get_current_user)
-):
-    try:
-        supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
 
-        if raw_material_id and percentage:
-            lines = []
-            for i in range(len(raw_material_id)):
-                if raw_material_id[i].strip():
-                    lines.append({
-                        "product_id": product_id,
-                        "raw_material_id": raw_material_id[i],
-                        "percent_in_formula": percentage[i]
-                    })
-            if lines:
-                supabase.table("product_formula_lines").insert(lines).execute()
-
-        return RedirectResponse(url=f"/products/{product_id}", status_code=303)
-
-    except Exception as e:
-        print(f"\n🔴 [ERROR save_product_formula] product_id={product_id}: formula lama sudah terhapus, tapi data baru GAGAL disimpan: {e}")
-        response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-        response.set_cookie("error_msg", "PENTING: Gagal menyimpan formula baru, dan data formula lama kemungkinan sudah terhapus. Silakan cek ulang dan isi formula dari awal.")
-        return response
 
 @app.get("/products/{product_id}/inci-breakdown/report", response_class=HTMLResponse)
 async def generate_inci_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
@@ -2446,7 +2389,7 @@ async def finished_spec_page(request: Request, product_id: str, current_user: di
     product = product_res.data
 
     if product["perusahaan"] != "PT Erfi":
-        response = RedirectResponse(url=f"/products/{product_id}", status_code=303)
+        response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
         response.set_cookie("error_msg", "Fitur spesifikasi produk jadi hanya tersedia untuk PT Erfi.")
         return response
 
