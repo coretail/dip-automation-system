@@ -1677,11 +1677,11 @@ async def update_cpkb_document(
 
 @app.get("/admin/trash", response_class=HTMLResponse)
 async def admin_trash_page(request: Request, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "Admin":
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Akses ditolak")
     
     try:
-        response = supabase.table("products").select("*, brands(name)").eq("is_deleted", True).order("updated_at", desc=True).execute()
+        response = supabase.table("products").select("*, brands(name)").eq("is_deleted", True).order("deleted_at", desc=True).execute()
         products = response.data or []
     except Exception as e:
         print(f"Gagal memuat trash: {e}")
@@ -1699,11 +1699,11 @@ async def admin_trash_page(request: Request, current_user: dict = Depends(get_cu
 
 @app.post("/admin/products/{product_id}/restore")
 async def restore_product(product_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "Admin":
+    if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Akses ditolak")
         
     try:
-        supabase.table("products").update({"is_deleted": False}).eq("id", product_id).execute()
+        supabase.table("products").update({"is_deleted": False, "deleted_at": None}).eq("id", product_id).execute()
         # Perlu fungsi log_activity yang sudah ada di main.py
         log_activity(current_user, "restore", "product", product_id, "Restore produk dari sampah")
         return RedirectResponse(url="/admin/trash?success=Produk berhasil dikembalikan", status_code=303)
@@ -1807,7 +1807,16 @@ async def save_product_formula(
 
 @app.get("/products/{product_id}/inci-breakdown/report", response_class=HTMLResponse)
 async def generate_inci_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
-    prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    try:
+        prod_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not prod_resp.data:
+        return RedirectResponse(url="/", status_code=303)
+
     formula_resp = supabase.table("product_formula_lines").select("*").eq("product_id", product_id).execute()
     
     inci_totals = {}
@@ -2056,11 +2065,17 @@ def _apply_company_specific_docs(rm: dict, perusahaan: str) -> dict:
 # =====================================================================
 @app.get("/products/{product_id}/bab2/download")
 async def download_bab2_document(product_id: str, current_user: dict = Depends(get_current_user)):
-    # 1. Ambil data produk
-    product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    try:
+        product_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not product_resp.data:
+        return RedirectResponse(url="/", status_code=303)
+
     product = product_resp.data
-    if not product:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
     company = get_company_info(perusahaan)
@@ -2233,11 +2248,17 @@ def _safe_zip_name(name: str) -> str:
 # =====================================================================
 @app.get("/products/{product_id}/bab2/download-zip")
 async def download_bab2_document_zip(product_id: str, current_user: dict = Depends(get_current_user)):
-    # 1. Ambil data produk
-    product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    try:
+        product_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not product_resp.data:
+        return RedirectResponse(url="/", status_code=303)
+
     product = product_resp.data
-    if not product:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
     company = get_company_info(perusahaan)
@@ -2400,9 +2421,16 @@ async def download_bab2_document_zip(product_id: str, current_user: dict = Depen
 
 @app.get("/products/{product_id}/finished-spec", response_class=HTMLResponse)
 async def finished_spec_page(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
-    product_res = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    try:
+        product_res = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
     if not product_res.data:
-        raise HTTPException(status_code=404, detail="Product not found")
+        return RedirectResponse(url="/", status_code=303)
+
     product = product_res.data
 
     if product["perusahaan"] != "PT Erfi":
@@ -2489,9 +2517,16 @@ async def save_finished_spec(
 
 @app.get("/products/{product_id}/finished-spec/download")
 async def download_finished_spec(product_id: str, current_user: dict = Depends(get_current_user)):
-    product_res = supabase.table("products").select("nama_produk, perusahaan").eq("id", product_id).single().execute()
+    try:
+        product_res = supabase.table("products").select("nama_produk, perusahaan").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
     if not product_res.data:
-        raise HTTPException(status_code=404, detail="Product not found")
+        return RedirectResponse(url="/", status_code=303)
+
     product = product_res.data
 
     if product["perusahaan"] != "PT Erfi":
@@ -2573,11 +2608,17 @@ async def preview_finished_spec(product_id: str, current_user: dict = Depends(ge
 # =====================================================================
 @app.get("/products/{product_id}/bab1/download")
 async def download_bab1_document(product_id: str, current_user: dict = Depends(get_current_user)):
-    # 1. Ambil data produk
-    product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
+    try:
+        product_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not product_resp.data:
+        return RedirectResponse(url="/", status_code=303)
+
     product = product_resp.data
-    if not product:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
 
     perusahaan = product.get("perusahaan") or "PT Erfi"
     company = get_company_info(perusahaan)
@@ -2671,7 +2712,16 @@ async def download_dip_bab3(
     current_user: dict = Depends(get_current_user)
 ):
     # 1. AMBIL DATA PRODUK
-    prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).single().execute()
+    try:
+        prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not prod_resp.data:
+        return RedirectResponse(url="/", status_code=303)
+
     product = prod_resp.data
     if not product:
         raise HTTPException(status_code=404, detail="Produk kagak ketemu men!")
@@ -2899,7 +2949,16 @@ async def download_dip_bab4(
     current_user: dict = Depends(get_current_user)
 ):
     # 1. AMBIL DATA PRODUK & PERUSAHAAN
-    prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).single().execute()
+    try:
+        prod_resp = supabase.table("products").select("*, brands(name)").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not prod_resp.data:
+        return RedirectResponse(url="/", status_code=303)
+
     product = prod_resp.data
     if not product:
         raise HTTPException(status_code=404, detail="Produk kagak ketemu men!")
@@ -3403,8 +3462,17 @@ async def dip_public_bab2_zip(slug_id: str):
 # 1. Halaman Form Edit Produk
 @app.get("/products/{product_id}/edit", response_class=HTMLResponse)
 async def edit_product_page(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
-    prod_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
-    product = prod_resp.data or {}
+    try:
+        prod_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        # .single() melempar APIError kalau produk gak ketemu (URL rusak / produk terhapus) -> jangan 500
+        print(f"Produk {product_id} tidak ditemukan, redirect ke dashboard: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not prod_resp.data:
+        return RedirectResponse(url="/", status_code=303)
+
+    product = prod_resp.data
 
     try:
         brands_resp = supabase.table("brands").select("id, name, producers(name)").order("name").execute()
@@ -3707,10 +3775,10 @@ async def delete_product(product_id: str, current_user: dict = Depends(get_curre
     nama_sebelum_hapus = product_before.data.get("nama_produk") if product_before.data else product_id
 
     try:
-        # Hapus dulu baris formula terkait (kalau FK belum di-set CASCADE)
-        supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
-        # Baru hapus produknya (Soft Delete)
-        supabase.table("products").update({"is_deleted": True}).eq("id", product_id).execute()
+        # Soft Delete: cuma tandai is_deleted=True + deleted_at, JANGAN hapus formula
+        # Baru hapus produknya (Soft Delete) - set deleted_at ke waktu sekarang (WIB)
+        deleted_at = datetime.now(WIB).isoformat()
+        supabase.table("products").update({"is_deleted": True, "deleted_at": deleted_at}).eq("id", product_id).execute()
     except Exception as e:
         print(f"Gagal hapus produk {product_id}: {e}")
         return RedirectResponse(url="/", status_code=303)
