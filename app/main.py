@@ -718,6 +718,8 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
     sorted_batches = sorted(batches_data, key=lambda b: b.get("created_at") or "", reverse=True)
     latest_batch_map = {}
     for b in sorted_batches:
+        if b.get("kesimpulan") == "lab":
+            continue
         key = (b.get("raw_material_id"), b.get("perusahaan"))
         if key not in latest_batch_map:
             latest_batch_map[key] = b
@@ -732,11 +734,15 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
                 rm_batch_nums[rm_id] = set()
             rm_batch_nums[rm_id].add(str(bn).strip())
 
+    # Compute has_lab_batch for badge display in Master tab
+    lab_material_ids = {b.get("raw_material_id") for b in batches_data if b.get("kesimpulan") == "lab"}
+
     doc_status = {}
     for rm in rm_resp.data:
         rm_id = rm["id"]
         # Add all batch numbers as a space-separated string for frontend search
         rm["all_batch_numbers"] = " ".join(rm_batch_nums.get(rm_id, []))
+        rm["has_lab_batch"] = rm_id in lab_material_ids
 
         company_docs = {d["perusahaan"]: d for d in (rm.get("raw_material_company_docs") or [])}
         status_per_company = {}
@@ -1368,6 +1374,7 @@ async def add_material_batch(
     qc_report_file: UploadFile = File(None),
     quantity: float = Form(None),
     quantity_unit: str = Form(None),
+    keterangan: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     import json
@@ -1447,6 +1454,7 @@ async def add_material_batch(
         "tanggal_sampling": tanggal_sampling if tanggal_sampling else None,
         "tanggal_ed": tanggal_ed,
         "kesimpulan": kesimpulan,
+        "keterangan": keterangan.strip() if keterangan else None,
         "qc_signer": qc_signer.strip() if qc_signer else None,
         "qa_signer": qa_signer.strip() if qa_signer else None,
         "hasil_pemerian": "-",
@@ -1483,6 +1491,7 @@ async def edit_material_batch(
     qc_report_file: UploadFile = File(None),
     quantity: float = Form(None),
     quantity_unit: str = Form(None),
+    keterangan: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     # 1. Ambil data lama untuk handle file upload
@@ -1498,7 +1507,8 @@ async def edit_material_batch(
         "kesimpulan": kesimpulan,
         "asal_negara": asal_negara.strip() if asal_negara else None,
         "quantity": quantity,
-        "quantity_unit": quantity_unit
+        "quantity_unit": quantity_unit,
+        "keterangan": keterangan.strip() if keterangan else None
     }
 
     # 2. Update Files if provided
