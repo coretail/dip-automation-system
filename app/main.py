@@ -3249,6 +3249,7 @@ async def dip_public_hub(request: Request, slug_id: str):
         prod_resp = supabase.table("products") \
             .select("*, brands(name, producers(name))") \
             .eq("id", product_id) \
+            .eq("is_deleted", False) \
             .single() \
             .execute()
         product = prod_resp.data if prod_resp.data else None
@@ -3356,7 +3357,7 @@ async def dip_public_hub(request: Request, slug_id: str):
 def _dip_public_check_product(product_id: str) -> bool:
     """Validasi UUID produk eksis (buat route publik /dip/[slug]-[id])."""
     try:
-        check = supabase.table("products").select("id").eq("id", product_id).single().execute()
+        check = supabase.table("products").select("id").eq("id", product_id).eq("is_deleted", False).single().execute()
         return bool(check.data)
     except Exception:
         return False
