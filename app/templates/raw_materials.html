@@ -769,8 +769,8 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                 <div>
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Dokumen COA Supplier (Format: PDF) *</label>
-                    <input type="file" name="coa_file" required accept=".pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 border border-gray-300 rounded-md p-1">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Dokumen COA Supplier (Format: PDF)</label>
+                    <input type="file" name="coa_file" accept=".pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 border border-gray-300 rounded-md p-1">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-700 mb-1">Dokumen Sertifikat Halal Batch (Format: PDF)</label>
@@ -1599,6 +1599,12 @@ function validateBatchForm() {
 
     // Masukkan data array objek hasil uji ke input hidden
     document.getElementById('qc_results_hidden').value = JSON.stringify(qcResults);
+
+    const coaInput = document.querySelector('#batch-modal input[name="coa_file"]');
+    if (coaInput && coaInput.files.length === 0) {
+        return confirm('Dokumen CoA (Certificate of Analysis) belum diupload. Batch ini akan tersimpan tanpa CoA — lanjutkan simpan?');
+    }
+
     return true;
 }
 
