@@ -740,6 +740,7 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
                 "qc_report_url": qc_report_url,
                 "qc_ok": bool(qc_text_filled or qc_report_url),
                 "has_batch": batch is not None,
+                "batch_id": batch.get("id") if batch else None,
             }
         doc_status[rm["id"]] = status_per_company
 
@@ -989,6 +990,46 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
     supabase.table("raw_material_company_docs").upsert(
         doc_payload, on_conflict="raw_material_id,perusahaan"
     ).execute()
+
+@app.post("/raw-materials/{rm_id}/quick-upload-company-doc")
+async def quick_upload_company_doc(
+    rm_id: str,
+    perusahaan: str = Form(...),
+    msds_file: UploadFile = File(None),
+    spec_sheet_file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    # PENTING: ambil dulu spec_parameters yang sudah tersimpan sebelum manggil helper,
+    # supaya field spesifikasi teks (Pemerian Standar, Batas pH, dst.) yang sudah diisi
+    # sebelumnya TIDAK ke-timpa kosong oleh helper _upload_msds_and_upsert_company_doc
+    # (helper itu selalu menimpa kolom spec_parameters dengan apa yang dikirim).
+    import json
+
+    rm_resp = supabase.table("raw_materials").select("kode_bahan_baku").eq("id", rm_id).single().execute()
+    if not rm_resp.data:
+        response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+        response.set_cookie("error_msg", "Bahan baku tidak ditemukan.")
+        return response
+    kode_bahan_baku = rm_resp.data["kode_bahan_baku"]
+
+    existing_resp = supabase.table("raw_material_company_docs") \
+        .select("spec_parameters") \
+        .eq("raw_material_id", rm_id).eq("perusahaan", perusahaan).execute()
+    existing_specs = existing_resp.data[0]["spec_parameters"] if existing_resp.data else []
+    spec_parameters_raw = json.dumps(existing_specs or [])
+
+    try:
+        await _upload_msds_and_upsert_company_doc(
+            rm_id, kode_bahan_baku, perusahaan, spec_parameters_raw, msds_file, spec_sheet_file
+        )
+        log_activity(current_user, "edit", "raw_material_company_doc", rm_id, f"Upload cepat dokumen {perusahaan}")
+        response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+        response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+    except Exception as e:
+        print(f"Gagal quick-upload company doc: {e}")
+        response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+        response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
+    return response
 
 
 @app.post("/raw-materials/add")
@@ -1523,6 +1564,76 @@ async def edit_material_batch(
         print(f"Gagal update batch: {e}")
 
     return RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
+
+
+@app.post("/raw-materials/batches/{batch_id}/quick-upload-doc")
+async def quick_upload_batch_doc(
+    batch_id: str,
+    coa_file: UploadFile = File(None),
+    halal_file: UploadFile = File(None),
+    qc_report_file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    # Route ini CUMA nyentuh kolom file URL, tidak menyentuh field lain
+    # (no_batch, supplier, tanggal, kesimpulan, dll) di baris batch tersebut.
+    batch_resp = supabase.table("raw_material_batches").select("no_batch").eq("id", batch_id).single().execute()
+    if not batch_resp.data:
+        response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+        response.set_cookie("error_msg", "Batch tidak ditemukan.")
+        return response
+
+    no_batch = batch_resp.data["no_batch"]
+    clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ("-", "_")).strip()
+
+    update_data = {}
+
+    if coa_file and coa_file.filename:
+        try:
+            coa_bytes = await coa_file.read()
+            coa_path = f"coa/coa_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=coa_path, file=coa_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
+            )
+            update_data["coa_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
+        except Exception as e:
+            print(f"Gagal quick-upload CoA: {e}")
+
+    if halal_file and halal_file.filename:
+        try:
+            halal_bytes = await halal_file.read()
+            halal_path = f"halal/halal_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=halal_path, file=halal_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
+            )
+            update_data["halal_batch_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
+        except Exception as e:
+            print(f"Gagal quick-upload Halal: {e}")
+
+    if qc_report_file and qc_report_file.filename:
+        try:
+            qc_report_bytes = await qc_report_file.read()
+            qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
+            supabase.storage.from_("raw-material-docs").upload(
+                path=qc_report_path, file=qc_report_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
+            )
+            update_data["qc_report_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
+        except Exception as e:
+            print(f"Gagal quick-upload QC Report: {e}")
+
+    if update_data:
+        try:
+            supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+            log_activity(current_user, "edit", "raw_material_batch", batch_id, f"Upload cepat dokumen batch {no_batch}")
+            response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+            response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+        except Exception as e:
+            print(f"Gagal simpan quick-upload batch doc: {e}")
+            response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+            response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
+    else:
+        response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+        response.set_cookie("error_msg", "Tidak ada file yang dipilih.")
+    return response
 
 
 # ==================== ED MANAGEMENT ENDPOINTS ====================

@@ -452,9 +452,21 @@
                                     <i class="fa-solid fa-circle-check"></i>
                                 </button>
                             {% elif s.spec_ok %}
-                                <span class="text-amber-500" title="Terisi (text), belum ada PDF asli"><i class="fa-solid fa-circle-check"></i></span>
+                                <form action="/raw-materials/{{ rm.id }}/quick-upload-company-doc" method="POST" enctype="multipart/form-data" class="inline">
+                                    <input type="hidden" name="perusahaan" value="{{ company }}">
+                                    <label class="cursor-pointer text-amber-500 hover:text-indigo-600 transition" title="Terisi (text). Klik untuk upload/update PDF Spesifikasi">
+                                        <i class="fa-solid fa-circle-check"></i>
+                                        <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                    </label>
+                                </form>
                             {% else %}
-                                <span class="text-gray-300" title="Belum diisi"><i class="fa-solid fa-circle-xmark"></i></span>
+                                <form action="/raw-materials/{{ rm.id }}/quick-upload-company-doc" method="POST" enctype="multipart/form-data" class="inline">
+                                    <input type="hidden" name="perusahaan" value="{{ company }}">
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Spesifikasi">
+                                        <i class="fa-solid fa-upload"></i>
+                                        <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                    </label>
+                                </form>
                             {% endif %}
                         </td>
                         <!-- MSDS -->
@@ -464,7 +476,13 @@
                                     <i class="fa-solid fa-circle-check"></i>
                                 </button>
                             {% else %}
-                                <span class="text-gray-300" title="Belum ada"><i class="fa-solid fa-circle-xmark"></i></span>
+                                <form action="/raw-materials/{{ rm.id }}/quick-upload-company-doc" method="POST" enctype="multipart/form-data" class="inline">
+                                    <input type="hidden" name="perusahaan" value="{{ company }}">
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload MSDS">
+                                        <i class="fa-solid fa-upload"></i>
+                                        <input type="file" name="msds_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                    </label>
+                                </form>
                             {% endif %}
                         </td>
                         <!-- CoA -->
@@ -473,8 +491,17 @@
                                 <button type="button" onclick="openDocPreview('{{ s.coa_url }}', 'CoA - {{ rm.nama_dagang }} ({{ company }})')" class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview CoA">
                                     <i class="fa-solid fa-circle-check"></i>
                                 </button>
+                            {% elif s.batch_id %}
+                                <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload CoA ke batch terbaru">
+                                        <i class="fa-solid fa-upload"></i>
+                                        <input type="file" name="coa_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                    </label>
+                                </form>
                             {% else %}
-                                <span class="text-gray-300" title="Belum ada"><i class="fa-solid fa-circle-xmark"></i></span>
+                                <button type="button" onclick="openAddBatchModal('{{ rm.id }}', '{{ rm.nama_dagang }}', '{{ company }}')" class="text-gray-300 hover:text-indigo-600 transition cursor-pointer" title="Belum ada batch. Klik untuk buat batch baru dulu.">
+                                    <i class="fa-solid fa-circle-plus"></i>
+                                </button>
                             {% endif %}
                         </td>
                         <!-- Halal -->
@@ -483,8 +510,17 @@
                                 <button type="button" onclick="openDocPreview('{{ s.halal_url }}', 'Sertifikat Halal - {{ rm.nama_dagang }} ({{ company }})')" class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview Sertifikat Halal">
                                     <i class="fa-solid fa-circle-check"></i>
                                 </button>
+                            {% elif s.batch_id %}
+                                <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Halal ke batch terbaru">
+                                        <i class="fa-solid fa-upload"></i>
+                                        <input type="file" name="halal_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                    </label>
+                                </form>
                             {% else %}
-                                <span class="text-gray-300" title="Belum ada"><i class="fa-solid fa-circle-xmark"></i></span>
+                                <button type="button" onclick="openAddBatchModal('{{ rm.id }}', '{{ rm.nama_dagang }}', '{{ company }}')" class="text-gray-300 hover:text-indigo-600 transition cursor-pointer" title="Belum ada batch. Klik untuk buat batch baru dulu.">
+                                    <i class="fa-solid fa-circle-plus"></i>
+                                </button>
                             {% endif %}
                         </td>
                         <!-- Catatan Pemeriksaan -->
@@ -495,10 +531,17 @@
                                 </button>
                             {% elif s.qc_ok %}
                                 <span class="text-amber-500" title="Terisi (text), belum ada PDF laporan"><i class="fa-solid fa-circle-check"></i></span>
-                            {% elif s.has_batch %}
-                                <span class="text-gray-300" title="Ada batch, tapi catatan pemeriksaan belum diisi"><i class="fa-solid fa-circle-xmark"></i></span>
+                            {% elif s.batch_id %}
+                                <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload CPBB ke batch terbaru">
+                                        <i class="fa-solid fa-upload"></i>
+                                        <input type="file" name="qc_report_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                    </label>
+                                </form>
                             {% else %}
-                                <span class="text-gray-300" title="Belum pernah ada batch"><i class="fa-solid fa-minus"></i></span>
+                                <button type="button" onclick="openAddBatchModal('{{ rm.id }}', '{{ rm.nama_dagang }}', '{{ company }}')" class="text-gray-300 hover:text-indigo-600 transition cursor-pointer" title="Belum ada batch. Klik untuk buat batch baru dulu.">
+                                    <i class="fa-solid fa-circle-plus"></i>
+                                </button>
                             {% endif %}
                         </td>
                         {% endfor %}
@@ -707,7 +750,7 @@
             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">1. Data Administrasi & Logistik</h4>
             <div class="mb-4">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Perusahaan *</label>
-                <select name="perusahaan" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm bg-white">
+                <select name="perusahaan" id="batch-perusahaan-select" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm bg-white">
                     <option value="">-- Pilih Perusahaan --</option>
                     <option value="PT Erfi">PT Erfi</option>
                     <option value="PT Heka">PT Heka</option>
@@ -1544,10 +1587,11 @@ function resetFilter() {
     filterTable();
 }
 
-function openAddBatchModal(id, namaDagang) {
+function openAddBatchModal(id, namaDagang, perusahaan) {
     const modal = document.getElementById('batch-modal');
     document.getElementById('batch-raw-material-id').value = id;
     document.getElementById('batch-material-name').innerText = namaDagang;
+    document.getElementById('batch-perusahaan-select').value = perusahaan || '';
 
     const container = document.getElementById('batch-spec-inputs-container');
     container.innerHTML = ''; 
