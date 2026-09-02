@@ -305,7 +305,7 @@
                         <div class="sm:col-span-2">
                             <label class="block text-xs font-medium text-gray-500 mb-1">Cari / Pilih Bahan Baku</label>
                             <div class="relative custom-select-container" data-selected-label="{{ ns.label }}">
-                                <input type="hidden" name="raw_material_id" value="{{ line.raw_material_id }}" required>
+                                <input type="hidden" name="raw_material_id" value="{{ line.raw_material_id }}">
                                 <div class="relative">
                                     <input type="text"
                                            placeholder="Ketik nama dagang atau kode bahan baku..."
@@ -339,7 +339,7 @@
                         <div class="flex items-center space-x-2">
                             <div class="w-full">
                                 <label class="block text-xs font-medium text-gray-500 mb-1">Persentase (%)</label>
-                                <input type="number" step="0.001" name="percentage" required value="{{ line.percent_in_formula }}" oninput="calculateFormulaTotal()" placeholder="0.000" class="block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-indigo-500">
+                                <input type="number" step="0.001" name="percentage" value="{{ line.percent_in_formula }}" oninput="calculateFormulaTotal()" placeholder="0.000" class="block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-indigo-500">
                             </div>
                             <button type="button" onclick="this.parentElement.parentElement.remove(); calculateFormulaTotal();" class="text-red-500 hover:text-red-700 pt-5 cursor-pointer"><i class="fa-solid fa-trash text-base"></i></button>
                         </div>
@@ -416,7 +416,7 @@
                     <div class="sm:col-span-2">
                         <label class="block text-xs font-medium text-gray-500 mb-1 sm:hidden">Cari / Pilih Bahan Baku</label>
                         <div class="relative custom-select-container">
-                            <input type="hidden" class="input-rm-id" required>
+                            <input type="hidden" class="input-rm-id">
                             <div class="relative">
                                 <input type="text"
                                        placeholder="Ketik nama dagang atau kode bahan baku..."
@@ -448,7 +448,7 @@
                     </div>
                     <div class="flex items-center space-x-2">
                         <div class="w-full">
-                            <input type="number" step="0.001" class="input-percentage block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-indigo-500" required oninput="calculateFormulaTotal()" placeholder="0.000">
+                            <input type="number" step="0.001" class="input-percentage block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-indigo-500" oninput="calculateFormulaTotal()" placeholder="0.000">
                         </div>
                         <button type="button" onclick="this.parentElement.parentElement.remove(); calculateFormulaTotal();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash text-base"></i></button>
                     </div>
