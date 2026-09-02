@@ -283,14 +283,14 @@
 
                         <!-- Bab I Status -->
                         <td class="px-4 py-3 text-center">
-                            <a href="/products/{{ p.id }}/edit?tab=bab1" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="{% if p.dip_summary and p.dip_summary.b1_ok %}Surat Notifikasi Uploaded — klik untuk edit{% else %}Surat Notifikasi Belum Diupload — klik untuk edit{% endif %}">
+                            <a href="/products/{{ p.id }}/edit?tab=bab1" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="{% if p.dip_summary and p.dip_summary.b1_ok %}Data Administratif Lengkap — klik untuk edit{% else %}Belum lengkap: {{ p.dip_summary.b1_missing | join(', ') if p.dip_summary else '-' }} — klik untuk edit{% endif %}">
                                 {% if p.dip_summary and p.dip_summary.b1_ok %}
                                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 cursor-pointer">
-                                        <i class="fa-solid fa-circle-check mr-1"></i> Lengkap
+                                        <i class="fa-solid fa-circle-check mr-1"></i> 5/5
                                     </span>
                                 {% else %}
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-700 cursor-pointer">
-                                        <i class="fa-solid fa-circle-xmark mr-1"></i> Belum
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 cursor-pointer">
+                                        {{ p.dip_summary.b1_ratio if p.dip_summary else '0/5' }} File
                                     </span>
                                 {% endif %}
                             </a>

@@ -4511,11 +4511,52 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
         except Exception as e:
             print(f"Gagal tarik formula lines: {e}")
 
+        # Data pendukung Bab I: NIB, CPKB, Tidak Pidana itu per-perusahaan (bukan per-produk),
+        # Hak & Lisensi Merk itu per-brand+perusahaan. Ambil sekali di luar loop biar efisien.
+        nib_by_company = {}
+        try:
+            nib_resp = supabase.table("nib_documents").select("perusahaan, file_url").execute()
+            for row in (nib_resp.data or []):
+                if row.get("file_url"):
+                    nib_by_company[row["perusahaan"]] = True
+        except Exception as e:
+            print(f"Gagal tarik nib_documents: {e}")
+
+        cpkb_by_company = {}
+        try:
+            cpkb_resp = supabase.table("sertifikat_cpkb_documents").select("perusahaan, file_url").execute()
+            for row in (cpkb_resp.data or []):
+                if row.get("file_url"):
+                    cpkb_by_company[row["perusahaan"]] = True
+        except Exception as e:
+            print(f"Gagal tarik sertifikat_cpkb_documents: {e}")
+
+        pidana_by_company = {}
+        try:
+            pidana_resp = supabase.table("surat_tidak_pidana_documents").select("perusahaan, file_url").execute()
+            for row in (pidana_resp.data or []):
+                if row.get("file_url"):
+                    pidana_by_company[row["perusahaan"]] = True
+        except Exception as e:
+            print(f"Gagal tarik surat_tidak_pidana_documents: {e}")
+
+        hak_merk_by_brand_company = {}
+        try:
+            hak_merk_resp = supabase.table("brand_legal_documents").select("brand_id, perusahaan, hak_lisensi_merk_file_url").execute()
+            for row in (hak_merk_resp.data or []):
+                if row.get("hak_lisensi_merk_file_url"):
+                    hak_merk_by_brand_company[(row["brand_id"], row["perusahaan"])] = True
+        except Exception as e:
+            print(f"Gagal tarik brand_legal_documents: {e}")
+
+
         # 3. Hitung status NA dan matriks kelengkapan dokumen Bab I - IV per produk
         for p in products:
             # Inisialisasi default value dulu biar Jinja2 gak crash
             p["dip_summary"] = {
                 "b1_ok": False,
+                "b1_ratio": "0/5",
+                "b1_missing": ["NIB", "Sertifikat CPKB", "Hak & Lisensi Merk", "Surat Tidak Pidana", "Surat Notifikasi BPOM"],
                 "b2_ok": False,
                 "b3_ok": False,
                 "b3_ratio": "0/7",
@@ -4528,7 +4569,19 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             try:
                 p["status_na"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
                 
-                b1_ok = bool(p.get("no_notifikasi_file_url"))
+                b1_perusahaan = p.get("perusahaan") or "PT Erfi"
+                b1_brand_id = p.get("brand_id")
+                b1_items = {
+                    "NIB": bool(nib_by_company.get(b1_perusahaan)),
+                    "Sertifikat CPKB": bool(cpkb_by_company.get(b1_perusahaan)),
+                    "Hak & Lisensi Merk": bool(hak_merk_by_brand_company.get((b1_brand_id, b1_perusahaan))),
+                    "Surat Tidak Pidana": bool(pidana_by_company.get(b1_perusahaan)),
+                    "Surat Notifikasi BPOM": bool(p.get("no_notifikasi_file_url")),
+                }
+                b1_count = sum(1 for v in b1_items.values() if v)
+                b1_ok = (b1_count == len(b1_items))
+                b1_missing = [k for k, v in b1_items.items() if not v]
+                
                 b2_ok = p.get("id") in prods_with_formula
                 
                 b3_files = [
@@ -4553,12 +4606,14 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
                 b4_count = sum(1 for f in b4_files if f)
                 b4_ok = (b4_count == len(b4_files))
                 
-                total_checks = 1 + 1 + len(b3_files) + len(b4_files)
-                current_checks = (1 if b1_ok else 0) + (1 if b2_ok else 0) + b3_count + b4_count
+                total_checks = len(b1_items) + 1 + len(b3_files) + len(b4_files)
+                current_checks = b1_count + (1 if b2_ok else 0) + b3_count + b4_count
                 progress_pct = int((current_checks / total_checks) * 100)
                 
                 p["dip_summary"] = {
                     "b1_ok": b1_ok,
+                    "b1_ratio": f"{b1_count}/{len(b1_items)}",
+                    "b1_missing": b1_missing,
                     "b2_ok": b2_ok,
                     "b3_ok": b3_ok,
                     "b3_ratio": f"{b3_count}/{len(b3_files)}",
