@@ -4369,6 +4369,13 @@ async def manage_users_page(request: Request, current_user: dict = Depends(get_c
         # Tarik semua data dari tabel profiles
         profiles_res = supabase.table("profiles").select("*").order("full_name").execute()
         users_list = profiles_res.data or []
+
+        # Sembunyikan akun yang di-protect dari admin lain -- akun itu cuma bisa
+        # lihat dirinya sendiri di list, admin lain sama sekali gak lihat baris ini
+        users_list = [
+            u for u in users_list
+            if not u.get("is_protected") or u["id"] == current_user["id"]
+        ]
     except Exception as e:
         print(f"Gagal ambil data profiles: {e}")
         users_list = []
@@ -4448,6 +4455,12 @@ async def admin_reset_password(
     if len(new_password.strip()) < 6:
         return RedirectResponse(url="/admin/users?error=password_too_short", status_code=303)
 
+    # Cek apakah target akun terproteksi -- kalau iya dan yang minta bukan akun itu sendiri, tolak
+    if target_uid != current_user["id"]:
+        target_check = supabase.table("profiles").select("is_protected").eq("id", target_uid).execute()
+        if target_check.data and target_check.data[0].get("is_protected"):
+            return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
+
     try:
         # Ambil nama user target buat activity log
         target_res = supabase.table("profiles").select("full_name").eq("id", target_uid).execute()
@@ -4481,7 +4494,13 @@ async def update_user_role(
 ):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Akses ditolak!")
-        
+
+    # Cek apakah target akun terproteksi -- kalau iya dan yang minta bukan akun itu sendiri, tolak
+    if target_uid != current_user["id"]:
+        target_check = supabase.table("profiles").select("is_protected").eq("id", target_uid).execute()
+        if target_check.data and target_check.data[0].get("is_protected"):
+            return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
+
     try:
         # Update kolom role di tabel profiles berdasarkan UUID user yang dipilih
         # (updated_at pakai timestamp ISO asli, bukan string "now()" biar gak gagal cast di PostgREST)
@@ -4664,6 +4683,12 @@ async def delete_user(
     # Cek biar admin gak ketidaksengajaan ngapus akunnya sendiri
     if target_uid == current_user["id"]:
         return RedirectResponse(url="/admin/users?error=cannot_delete_self", status_code=303)
+
+    # Cek apakah target akun terproteksi (dan bukan dirinya sendiri -- walau baris di atas
+    # sudah menangkap kasus itu, ini sebagai lapis proteksi tambahan)
+    target_check = supabase.table("profiles").select("is_protected").eq("id", target_uid).execute()
+    if target_check.data and target_check.data[0].get("is_protected"):
+        return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
 
     try:
         # Inisialisasi admin client buat hapus user dari Supabase Auth
