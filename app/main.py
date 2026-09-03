@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile, status, Depends
+from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile, status, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -2540,7 +2540,7 @@ async def save_finished_spec(
     sections_json: str = Form(...),
     current_user: dict = Depends(get_current_user)
 ):
-    product_res = supabase.table("products").select("nama_produk").eq("id", product_id).single().execute()
+    product_res = supabase.table("products").select("nama_produk").eq("id", product_id).eq("is_deleted", False).single().execute()
     if not product_res.data:
         raise HTTPException(status_code=404, detail="Product not found")
     product = product_res.data
@@ -3673,8 +3673,16 @@ async def update_product(
     if tgl_aktif_na_val == "": tgl_aktif_na_val = None
 
     # Ambil data lama dulu sebelum diubah, buat dibandingin di activity log
-    old_product_resp = supabase.table("products").select("*").eq("id", product_id).single().execute()
-    old_product = old_product_resp.data or {}
+    try:
+        old_product_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
+    except Exception as e:
+        print(f"Produk {product_id} tidak ditemukan atau sudah dihapus: {e}")
+        return RedirectResponse(url="/", status_code=303)
+
+    if not old_product_resp.data:
+        return RedirectResponse(url="/", status_code=303)
+
+    old_product = old_product_resp.data
 
     update_payload = {
         "nama_produk": nama_produk,
