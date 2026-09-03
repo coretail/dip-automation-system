@@ -43,6 +43,11 @@
             <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Username sudah dipakai! Pilih username lain yang unik.</span>
             <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        {% elif request.query_params.get('error') == 'email_exists' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Email ini sudah terdaftar di sistem. Gunakan alamat email lain, atau cek apakah user ini sudah punya akun sebelumnya.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
         {% elif request.query_params.get('error') == 'protected_account' %}
         <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
             <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Akun ini dilindungi dan tidak bisa diubah/dihapus oleh admin lain.</span>

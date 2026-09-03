@@ -4446,6 +4446,9 @@ async def admin_create_user(
 
     except Exception as e:
         print(f"Gagal bikin user baru (admin): {e}")
+        error_str = str(e).lower()
+        if "already been registered" in error_str or "already registered" in error_str or "user already exists" in error_str:
+            return RedirectResponse(url="/admin/users?error=email_exists", status_code=303)
         return RedirectResponse(url="/admin/users?error=create_failed", status_code=303)
 
 # 2. PROSES RESET PASSWORD USER (KHUSUS ADMIN)
