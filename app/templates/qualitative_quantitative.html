@@ -145,10 +145,10 @@
             {% for item in trade_breakdown %}
                 {% if item.components %}
                     {% for comp in item.components %}
-                    {% set ns.no = ns.no + 1 %}
                     <tr>
-                        <td class="p-2 text-center" style="border: 1px solid #c0c0c0;">{{ ns.no }}</td>
                         {% if loop.first %}
+                        {% set ns.no = ns.no + 1 %}
+                        <td class="p-2 text-center align-top bg-gray-50" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ ns.no }}</td>
                         <td class="p-2 align-top font-medium bg-gray-50" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ item.nama_dagang }}</td>
                         <td class="p-2 align-top font-mono bg-gray-50 rm-code-col" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ item.kode_bahan_baku or '-' }}</td>
                         {% endif %}
