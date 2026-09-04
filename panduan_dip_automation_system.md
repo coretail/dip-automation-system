@@ -60,7 +60,7 @@ Sistem menerapkan mekanisme *Role-Based Access Control (RBAC)* dengan 2 tingkat 
 
 ### 2.2 Autentikasi Dual & HTTP-Only Cookie JWT
 - **Login Dual-Identifier:** pengguna dapat masuk menggunakan **Email** maupun **Username**.
-- **Sesi Keamanan JWT:** token autentikasi disimpan dalam cookie `HTTP-Only` (`access_token`, `SameSite=Lax`), melindungi dari pencurian token lewat *Cross-Site Scripting (XSS)*. Masa berlaku sesi adalah **24 jam**, setelah itu pengguna perlu login ulang.
+- **Sesi Keamanan JWT:** token autentikasi disimpan dalam cookie `HTTP-Only` (`access_token`, `SameSite=Lax`), melindungi dari pencurian token lewat *Cross-Site Scripting (XSS)*. Masa berlaku sesi adalah **4 jam**, setelah itu pengguna perlu login ulang.
 - **Deteksi Sesi Expired:** jika sesi habis, sistem menampilkan peringatan (*session expired*) dan mengarahkan kembali ke halaman login secara otomatis.
 
 ### 2.3 Panel Admin User (`/admin/users`) & Audit Logging
@@ -314,7 +314,7 @@ PT Erfi dan PT Heka adalah dua badan hukum terpisah dengan sertifikat CPKB dan s
 Kalau lampiran bahan baku sangat banyak/tebal (apalagi MSDS yang bisa puluhan halaman), ZIP lebih ringan diproses dan lebih mudah ditelusuri per bahan baku dibanding satu PDF raksasa.
 
 **Q3: Bagaimana mengatasi pesan "Sesi Anda Telah Berakhir"?**
-Cookie sesi (JWT) sudah kedaluwarsa (masa berlaku 24 jam). Silakan login ulang.
+Cookie sesi (JWT) sudah kedaluwarsa (masa berlaku 4 jam). Silakan login ulang.
 
 **Q4: Apakah link publik verifikator BPOM aman dari kebocoran data produk lain?**
 Aman — setiap link memakai kombinasi slug nama produk (kosmetik) dan UUID acak 36-karakter yang divalidasi di server (*unguessable*). Portal publik hanya menampilkan data 1 produk sesuai UUID pada URL tersebut, dan setiap akses tercatat di audit log.

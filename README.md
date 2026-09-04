@@ -12,7 +12,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 
 ---
 
-## 📌 Status Pengembangan Sistem (Update: 26 Agustus 2026)
+## 📌 Status Pengembangan Sistem (Update: 4 September 2026)
 
 | Modul / Fase | Fitur & Cakupan | Status |
 | :--- | :--- | :---: |
