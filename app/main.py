@@ -2035,8 +2035,7 @@ async def _gather_qualquant_data(product_id: str) -> dict:
         for comp in group["components"]:
             inci_name_raw = (comp["inci_name"] or "").strip()
             # Normalisasi key: hapus spasi berlebih & samakan besar-kecil huruf,
-            # supaya "Aqua", "AQUA", "Aqua " (ada spasi nyempil) dianggap 1 bahan yang sama
-            inci_key = inci_name_raw.upper()
+            inci_key = inci_name_raw.lower()
             if inci_key not in grouped_pure:
                 grouped_pure[inci_key] = {
                     "inci_name": inci_name_raw,
