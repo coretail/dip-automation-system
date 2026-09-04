@@ -22,7 +22,6 @@ import unicodedata
 from xhtml2pdf import pisa
 from pypdf import PdfReader, PdfWriter
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from typing import Optional
 from slugify import slugify
@@ -117,17 +116,30 @@ def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
     else:
         return "aktif"
 
+def _client_ip(request: Request) -> str:
+    """Ekstrak alamat IP client.
+    Prioritas: X-Forwarded-For (saat app di belakang proxy seperti Render/nginx)
+    -> X-Real-IP -> request.client.host (IP langsung)."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else "-"
+
+
 app = FastAPI(title="DIP Kosmetik Automation")
 
 # Rate limiter (proteksi brute-force di /login, dibatasi per-IP)
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=_client_ip)
 app.state.limiter = limiter
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     # Redirect balik ke login dengan pesan, biar konsisten sama flow warning/error yang lain
     # (bukan JSON mentah), dan gak bocorin detail rate limit ke user.
-    print(f"\n🚫 [RATE LIMIT] Terlalu banyak percobaan login dari IP: {get_remote_address(request)}\n")
+    print(f"\n🚫 [RATE LIMIT] Terlalu banyak percobaan login dari IP: {_client_ip(request)}\n")
     return RedirectResponse(url="/login?error=too_many_attempts", status_code=303)
 
 # Setup static files (Tailwind CSS) dan Jinja2 Templates
@@ -3221,17 +3233,6 @@ def _storage_signed_url(public_url: str, expires_in: int = 3600):
         return public_url
 
 
-def _client_ip(request: Request) -> str:
-    """Ekstrak alamat IP client.
-    Prioritas: X-Forwarded-For (saat app di belakang proxy seperti Render/nginx)
-    -> X-Real-IP -> request.client.host (IP langsung)."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
-    return request.client.host if request.client else "-"
 
 
 def _get_audit_username(request: Request) -> str:
