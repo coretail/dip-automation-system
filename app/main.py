@@ -2033,16 +2033,19 @@ async def _gather_qualquant_data(product_id: str) -> dict:
     grouped_pure = {}
     for group in trade_breakdown:
         for comp in group["components"]:
-            inci_name = comp["inci_name"]
-            if inci_name not in grouped_pure:
-                grouped_pure[inci_name] = {
-                    "inci_name": inci_name,
+            inci_name_raw = (comp["inci_name"] or "").strip()
+            # Normalisasi key: hapus spasi berlebih & samakan besar-kecil huruf,
+            # supaya "Aqua", "AQUA", "Aqua " (ada spasi nyempil) dianggap 1 bahan yang sama
+            inci_key = inci_name_raw.upper()
+            if inci_key not in grouped_pure:
+                grouped_pure[inci_key] = {
+                    "inci_name": inci_name_raw,
                     "function": comp["function"],
                     # Gunakan Decimal('0.0') sebagai inisialisasi awal agar presisi
                     "pct_ww_decimal": Decimal('0.0')
                 }
             # Jumlahkan dengan tipe data Decimal murni
-            grouped_pure[inci_name]["pct_ww_decimal"] += Decimal(str(comp["pct_ww"]))
+            grouped_pure[inci_key]["pct_ww_decimal"] += Decimal(str(comp["pct_ww"]))
 
     # KUNCI PERBAIKAN: Konversi hasil akhir ke float yang bersih setelah selesai dijumlahkan
     pure_breakdown = []
