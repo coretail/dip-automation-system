@@ -8,6 +8,7 @@
 Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokumen Informasi Produk (DIP) Kosmetik** sesuai dengan regulasi standar BPOM dan pedoman ASEAN Cosmetic Directive (ACD).
 
 🌐 **Live Demo:** [https://dip-automation-system.onrender.com/](https://dip-automation-system.onrender.com/)
+📄 **Panduan Sistem:** [panduan_dip_automation_system.md](panduan_dip_automation_system.md)
 
 ---
 
