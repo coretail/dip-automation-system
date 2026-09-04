@@ -132,6 +132,7 @@
     <table id="table-trade" class="w-full text-xs text-left border-collapse" style="border: 1px solid #c0c0c0;">
         <thead>
             <tr class="bg-orange-100 text-center font-bold">
+                <th class="p-2 w-10" style="border: 1px solid #c0c0c0;">No</th>
                 <th class="p-2 w-1/4" style="border: 1px solid #c0c0c0;">Nama Dagang</th>
                 <th class="p-2 w-28 rm-code-col" style="border: 1px solid #c0c0c0;">Kode</th>
                 <th class="p-2 w-1/3" style="border: 1px solid #c0c0c0;">Ingredients</th>
@@ -140,10 +141,13 @@
             </tr>
         </thead>
         <tbody>
+            {% set ns = namespace(no=0) %}
             {% for item in trade_breakdown %}
                 {% if item.components %}
                     {% for comp in item.components %}
+                    {% set ns.no = ns.no + 1 %}
                     <tr>
+                        <td class="p-2 text-center" style="border: 1px solid #c0c0c0;">{{ ns.no }}</td>
                         {% if loop.first %}
                         <td class="p-2 align-top font-medium bg-gray-50" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ item.nama_dagang }}</td>
                         <td class="p-2 align-top font-mono bg-gray-50 rm-code-col" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ item.kode_bahan_baku or '-' }}</td>
@@ -154,7 +158,9 @@
                     </tr>
                     {% endfor %}
                 {% else %}
+                    {% set ns.no = ns.no + 1 %}
                     <tr>
+                        <td class="p-2 text-center" style="border: 1px solid #c0c0c0;">{{ ns.no }}</td>
                         <td class="p-2 font-medium bg-gray-50" style="border: 1px solid #c0c0c0;">{{ item.nama_dagang }}</td>
                         <td class="p-2 font-mono bg-gray-50 rm-code-col" style="border: 1px solid #c0c0c0;">{{ item.kode_bahan_baku or '-' }}</td>
                         <td class="p-2 text-gray-400" style="border: 1px solid #c0c0c0;">-</td>
@@ -164,7 +170,7 @@
                 {% endif %}
             {% endfor %}
             <tr class="bg-gray-100 font-bold text-center">
-                <td colspan="4" class="p-2 text-right" style="border: 1px solid #c0c0c0;">Total</td>
+                <td colspan="5" class="p-2 text-right" style="border: 1px solid #c0c0c0;">Total</td>
                 <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">100</td>
             </tr>
         </tbody>
@@ -203,6 +209,7 @@
     <table id="table-pure" class="w-full text-xs text-left border-collapse" style="border: 1px solid #c0c0c0;">
         <thead>
             <tr class="bg-orange-100 text-center font-bold">
+                <th class="p-2 w-10" style="border: 1px solid #c0c0c0;">No</th>
                 <th class="p-2 w-1/2" style="border: 1px solid #c0c0c0;">Ingredients</th>
                 <th class="p-2 w-1/3" style="border: 1px solid #c0c0c0;">Function</th>
                 <th class="p-2 w-24" style="border: 1px solid #c0c0c0;">% w/w</th>
@@ -211,13 +218,14 @@
         <tbody>
             {% for comp in pure_breakdown %}
             <tr>
+                <td class="p-2 text-center" style="border: 1px solid #c0c0c0;">{{ loop.index }}</td>
                 <td class="p-2 font-medium" style="border: 1px solid #c0c0c0;">{{ comp.inci_name }}</td>
                 <td class="p-2 text-gray-600" style="border: 1px solid #c0c0c0;">{{ comp.function }}</td>
                 <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">{{ comp.pct_ww|clean_pct }}</td>
             </tr>
             {% endfor %}
             <tr class="bg-gray-100 font-bold text-center">
-                <td colspan="2" class="p-2 text-right" style="border: 1px solid #c0c0c0;">Total</td>
+                <td colspan="3" class="p-2 text-right" style="border: 1px solid #c0c0c0;">Total</td>
                 <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">100.0000</td>
             </tr>
         </tbody>
