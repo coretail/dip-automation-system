@@ -63,7 +63,7 @@
                     </div>
                 </td>
                 <td class="px-4 py-3 text-right">
-                    <button type="button" onclick="openEditModal('{{ b.id }}', '{{ b.name }}')" class="text-indigo-600 hover:text-indigo-800 font-medium text-xs cursor-pointer">
+                    <button type="button" onclick='openEditModal({{ b.id | tojson }}, {{ b.name | tojson }})' class="text-indigo-600 hover:text-indigo-800 font-medium text-xs cursor-pointer">
                         <i class="fa-solid fa-pen mr-1"></i> Edit Dokumen
                     </button>
                 </td>
@@ -164,34 +164,45 @@ function openEditModal(brandId, brandName) {
     
     // Find the table row for this brand to get legal_docs data
     const row = document.querySelector(`tr[data-brand-id="${brandId}"]`);
-    if (row) {
-        const legalDocs = JSON.parse(row.dataset.legalDocs || '{}');
-        
-        // Set form actions
-        document.getElementById('edit-brand-form-erfi').action = `/brands/${brandId}/update-documents`;
-        document.getElementById('edit-brand-form-heka').action = `/brands/${brandId}/update-documents`;
-        
-        // Populate current file info for PT Erfi
-        const erfiDoc = legalDocs['PT Erfi'] || {};
-        const erfiCurrentDiv = document.getElementById('current-file-erfi');
-        const erfiLink = document.getElementById('current-file-link-erfi');
-        if (erfiDoc.hak_lisensi_merk_file_url) {
-            erfiLink.href = erfiDoc.hak_lisensi_merk_file_url;
-            erfiCurrentDiv.classList.remove('hidden');
-        } else {
-            erfiCurrentDiv.classList.add('hidden');
+    
+    // Default empty legal docs
+    let legalDocs = {
+        'PT Erfi': {'hak_lisensi_merk_file_url': null},
+        'PT Heka': {'hak_lisensi_merk_file_url': null}
+    };
+
+    if (row && row.dataset.legalDocs) {
+        try {
+            legalDocs = JSON.parse(row.dataset.legalDocs);
+        } catch (e) {
+            console.error("Error parsing legal docs:", e);
         }
-        
-        // Populate current file info for PT Heka
-        const hekaDoc = legalDocs['PT Heka'] || {};
-        const hekaCurrentDiv = document.getElementById('current-file-heka');
-        const hekaLink = document.getElementById('current-file-link-heka');
-        if (hekaDoc.hak_lisensi_merk_file_url) {
-            hekaLink.href = hekaDoc.hak_lisensi_merk_file_url;
-            hekaCurrentDiv.classList.remove('hidden');
-        } else {
-            hekaCurrentDiv.classList.add('hidden');
-        }
+    }
+    
+    // Set form actions
+    document.getElementById('edit-brand-form-erfi').action = `/brands/${brandId}/update-documents`;
+    document.getElementById('edit-brand-form-heka').action = `/brands/${brandId}/update-documents`;
+    
+    // Populate current file info for PT Erfi
+    const erfiDoc = legalDocs['PT Erfi'] || {};
+    const erfiCurrentDiv = document.getElementById('current-file-erfi');
+    const erfiLink = document.getElementById('current-file-link-erfi');
+    if (erfiDoc.hak_lisensi_merk_file_url) {
+        erfiLink.href = erfiDoc.hak_lisensi_merk_file_url;
+        erfiCurrentDiv.classList.remove('hidden');
+    } else {
+        erfiCurrentDiv.classList.add('hidden');
+    }
+    
+    // Populate current file info for PT Heka
+    const hekaDoc = legalDocs['PT Heka'] || {};
+    const hekaCurrentDiv = document.getElementById('current-file-heka');
+    const hekaLink = document.getElementById('current-file-link-heka');
+    if (hekaDoc.hak_lisensi_merk_file_url) {
+        hekaLink.href = hekaDoc.hak_lisensi_merk_file_url;
+        hekaCurrentDiv.classList.remove('hidden');
+    } else {
+        hekaCurrentDiv.classList.add('hidden');
     }
     
     document.getElementById('edit-brand-modal').classList.remove('hidden');

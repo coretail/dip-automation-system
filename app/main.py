@@ -4282,6 +4282,7 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
             
             # Attach to each brand
             for b in brands:
+                # Pastikan selalu ada struktur default, meski merk baru
                 b["legal_docs"] = docs_by_brand.get(b["id"], {
                     "PT Erfi": {"hak_lisensi_merk_file_url": None},
                     "PT Heka": {"hak_lisensi_merk_file_url": None},
@@ -4294,8 +4295,12 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
                     "PT Heka": {"hak_lisensi_merk_file_url": None},
                 }
     else:
-        # No brands, but still ensure structure exists
-        pass
+        # Tambahkan fallback untuk kasus merk ada tapi docs_by_brand kosong
+        for b in brands:
+            b["legal_docs"] = {
+                "PT Erfi": {"hak_lisensi_merk_file_url": None},
+                "PT Heka": {"hak_lisensi_merk_file_url": None},
+            }
 
     success_msg = request.cookies.get("success_msg")
     error_msg = request.cookies.get("error_msg")
