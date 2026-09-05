@@ -8,6 +8,15 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" type="image/png" href="/static/images/favicon.png">
+    <style>
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .greeting-fade-in {
+            animation: fadeInUp 0.5s ease-out both;
+        }
+    </style>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans antialiased">
 

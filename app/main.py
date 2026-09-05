@@ -4,11 +4,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import List
 from app.database import supabase
+from app.config import settings
 from app.excel_generator import XLSX_MIME, build_formula_workbook
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from supabase import create_client
+import random
 import os
 import io
 import re
@@ -39,6 +41,76 @@ except Exception:
 # Zona waktu bisnis (WIB) — dipakai buat semua logika berbasis "hari ini"
 # (kode FSP, hitungan revisi) biar gak geser gara-gara server jalan di UTC.
 WIB = ZoneInfo("Asia/Jakarta")
+
+_CASUAL_PHRASES = [
+    "Santai aja, kerjaan gak kemana kok.",
+    "Yuk, beresin satu-satu.",
+    "Semoga harimu lancar!",
+    "Alon-alon asal kelakon.",
+    "Alon-alon asal marathon.",
+    "Jangan lupa istirahat sebentar.",
+    "Satu langkah kecil, tetap langkah.",
+    "Hari yang baik buat beresin dokumen.",
+]
+
+def get_time_greeting() -> dict:
+    """Greeting berbasis jam WIB (tanpa phrase AI). Dipakai di halaman
+    login (sebelum ada nama user) dan sebagai fallback di dashboard
+    kalau cache AI greeting gagal/hilang."""
+    hour = datetime.now(WIB).hour
+    if 5 <= hour < 11:
+        base = {"text": "Selamat Pagi", "icon": "fa-solid fa-sun", "color": "text-amber-400"}
+    elif 11 <= hour < 15:
+        base = {"text": "Selamat Siang", "icon": "fa-solid fa-sun", "color": "text-yellow-500"}
+    elif 15 <= hour < 18:
+        base = {"text": "Selamat Sore", "icon": "fa-solid fa-cloud-sun", "color": "text-orange-400"}
+    else:
+        base = {"text": "Selamat Malam", "icon": "fa-solid fa-moon", "color": "text-indigo-400"}
+    base["phrase"] = random.choice(_CASUAL_PHRASES)
+    return base
+
+_GEMINI_MODELS_FALLBACK = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite",
+]
+
+async def _generate_ai_greeting_phrase(nama_user: str) -> str | None:
+    """Coba generate 1 kalimat sapaan santai gaya gen-Z pakai Gemini API,
+    nyoba beberapa model flash-lite berurutan (kalau satu limit/gagal,
+    lanjut ke model berikutnya). Return None kalau semua model gagal --
+    caller WAJIB fallback ke _CASUAL_PHRASES, jangan sampai proses login
+    gagal gara-gara fitur dekoratif ini."""
+    api_key = settings.gemini_api_key
+    if not api_key:
+        return None
+
+    prompt = (
+        f"Buatkan SATU kalimat sapaan singkat (maksimal 12 kata) dalam Bahasa "
+        f"Indonesia gaya santai/gen-Z buat user bernama '{nama_user}' yang baru "
+        f"login ke aplikasi kerja. Jangan pakai tanda kutip di jawaban. Jangan "
+        f"pakai emoji. Cukup 1 kalimat saja, tanpa basa-basi/penjelasan tambahan."
+    )
+
+    async with httpx.AsyncClient(timeout=4.0) as client:
+        for model in _GEMINI_MODELS_FALLBACK:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                resp = await client.post(url, json={
+                    "contents": [{"parts": [{"text": prompt}]}]
+                })
+                if resp.status_code != 200:
+                    print(f"[AI GREETING] Model {model} gagal (status {resp.status_code}), coba model berikutnya.")
+                    continue
+                data = resp.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if text:
+                    return text
+            except Exception as e:
+                print(f"[AI GREETING] Model {model} error: {e}, coba model berikutnya.")
+                continue
+    return None
+
 
 def _extract_jwt_email(token: str):
     """Best-effort baca email/sub dari payload JWT (buat log doang, tanpa validasi signature)."""
@@ -467,7 +539,8 @@ async def login_page(request: Request, warning: str = None, error: str = None):
         name="login.html",
         context={
             "warning": warning,
-            "error": error
+            "error": error,
+            "greeting": get_time_greeting()
         }
     )
 
@@ -524,6 +597,17 @@ async def login_submit(
         print(f"   • Waktu   : {waktu_login}")
         print("="*50 + "\n")
 
+        # Generate greeting (waktu + kalimat AI) sekali di sini, dipakai terus
+        # sepanjang sesi (gak manggil AI lagi tiap buka dashboard)
+        import json
+        profile_resp = supabase_admin.table("profiles").select("full_name").eq("id", user_data.id).execute()
+        nama_user = profile_resp.data[0]["full_name"] if profile_resp.data else "Kamu"
+
+        greeting = get_time_greeting()
+        ai_phrase = await _generate_ai_greeting_phrase(nama_user)
+        if ai_phrase:
+            greeting["phrase"] = ai_phrase
+
         session_token = auth_response.session.access_token
         redirect = RedirectResponse(url="/", status_code=303)
         redirect.set_cookie(
@@ -531,6 +615,13 @@ async def login_submit(
             value=f"Bearer {session_token}",
             httponly=True,
             max_age=86400,
+            samesite="lax"
+        )
+        redirect.set_cookie(
+            key="greeting_cache",
+            value=json.dumps(greeting),
+            httponly=True,
+            max_age=14400,  # samain sama masa berlaku JWT asli (4 jam), bukan 86400-nya cookie access_token
             samesite="lax"
         )
         return redirect
@@ -546,6 +637,7 @@ async def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
     # Hapus cookie token yang tersimpan di browser
     response.delete_cookie(key="access_token")
+    response.delete_cookie(key="greeting_cache")
 
     # 💡 LOG LOGOUT
     waktu_logout = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
@@ -4670,6 +4762,12 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
     
     ed_notification_count = await get_ed_notification_count()
     
+    import json
+    try:
+        greeting = json.loads(request.cookies.get("greeting_cache", ""))
+    except Exception:
+        greeting = get_time_greeting()
+    
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html", 
@@ -4680,6 +4778,7 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             "user": current_user,
             "brands": brands,
             "ed_notification_count": ed_notification_count,
+            "greeting": greeting,
             "error_msg": error_msg,
             "success_msg": success_msg
         }
