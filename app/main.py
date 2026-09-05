@@ -86,11 +86,23 @@ async def _generate_ai_greeting_phrase(nama_user: str) -> str | None:
         return None
 
     prompt = (
-        f"Buatkan SATU kalimat sapaan singkat (maksimal 12 kata) dalam Bahasa "
-        f"Indonesia gaya santai/gen-Z buat user bernama '{nama_user}' yang baru "
-        f"login ke aplikasi kerja. Jangan pakai tanda kutip di jawaban. Jangan "
-        f"pakai emoji. Cukup 1 kalimat saja, tanpa basa-basi/penjelasan tambahan."
-    )
+        f"Buat SATU kalimat sapaan singkat untuk user bernama '{nama_user}' " 
+        f"yang baru login ke aplikasi kerja. " 
+        f"Gunakan Bahasa Indonesia yang santai, natural ala gen-z, sedikit nyeleneh, " 
+        f"absurd ringan, atau deadpan seperti candaan teman sekantor. " 
+        f"Humornya harus tetap aman dan sopan untuk lingkungan kerja. " 
+        f"Boleh menyinggung hal umum seperti deadline, meeting, kerjaan, " 
+        f"Excel, kopi, lembur, atau kehidupan kantor. " 
+        f"Jangan terlalu berusaha lucu dan jangan sampai terdengar cringe. " 
+        f"Maksimal 12 kata. " 
+        f"Jangan gunakan emoji atau emoticon. " 
+        f"Jangan gunakan tanda kutip. " 
+        f"Jangan gunakan hashtag. " 
+        f"Jangan menyebut AI, Gemini, prompt, atau instruksi ini. " 
+        f"Jangan mengandung hinaan, SARA, konten seksual, politik, " 
+        f"atau topik sensitif. " 
+        f"Cukup SATU kalimat saja, tanpa penjelasan atau tambahan apa pun."
+    ) 
 
     async with httpx.AsyncClient(timeout=4.0) as client:
         for model in _GEMINI_MODELS_FALLBACK:
