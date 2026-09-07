@@ -1492,7 +1492,7 @@ async def edit_raw_material(
     spec_parameters_heka: str = Form("[]"),
     current_user: dict = Depends(get_current_user)
 ):
-    kode_check = kode_bahan_baku.strip()
+    kode_check = " ".join(kode_bahan_baku.split())  # trim + collapse spasi ganda jadi 1
     existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).neq("id", rm_id).execute()
     
     if existing_rm.data:
@@ -1507,7 +1507,7 @@ async def edit_raw_material(
     # 1. UPDATE IDENTITAS DI RAW_MATERIALS (spec & MSDS udah pindah ke raw_material_company_docs)
     update_data = {
         "nama_dagang": nama_dagang,
-        "kode_bahan_baku": kode_bahan_baku,
+        "kode_bahan_baku": kode_check,
         "tipe": tipe,
         "produsen": produsen,
     }
@@ -1608,15 +1608,43 @@ async def delete_raw_material(rm_id: str, current_user: dict = Depends(get_curre
     nama_sebelum_hapus = rm_before.data.get("nama_dagang") if rm_before.data else rm_id
 
     try:
-        # Hapus komponen internal dulu (kalau bahan komposit)
+        # Cascade delete: kumpulkan semua URL file (batch: CoA/Halal/CPBB, company docs: Spek/MSDS)
+        # sebelum baris DB-nya dihapus, biar filenya juga ikut dibersihkan dari storage
+        batches_resp = supabase.table("raw_material_batches") \
+            .select("coa_file_url, halal_batch_file_url, qc_report_file_url") \
+            .eq("raw_material_id", rm_id).execute()
+        docs_resp = supabase.table("raw_material_company_docs") \
+            .select("msds_file_url, spec_sheet_file_url") \
+            .eq("raw_material_id", rm_id).execute()
+
+        urls_to_delete = []
+        for b in (batches_resp.data or []):
+            urls_to_delete += [b.get("coa_file_url"), b.get("halal_batch_file_url"), b.get("qc_report_file_url")]
+        for d in (docs_resp.data or []):
+            urls_to_delete += [d.get("msds_file_url"), d.get("spec_sheet_file_url")]
+
+        for url in urls_to_delete:
+            if not url:
+                continue
+            bucket, path = _parse_storage_url(url)
+            if bucket and path:
+                try:
+                    supabase.storage.from_(bucket).remove([path])
+                except Exception as e:
+                    print(f"Gagal hapus file storage {path}: {e}")
+
+        # Hapus baris-baris dependent dulu, baru bahan bakunya sendiri
+        supabase.table("raw_material_batches").delete().eq("raw_material_id", rm_id).execute()
+        supabase.table("raw_material_company_docs").delete().eq("raw_material_id", rm_id).execute()
         supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
         supabase.table("raw_materials").delete().eq("id", rm_id).execute()
     except Exception as e:
-        return RedirectResponse(url=f"/raw-materials?error=Gagal+menghapus:+{str(e)}", status_code=303)
+        print(f"Gagal hapus raw_material {rm_id}: {e}")
+        return RedirectResponse(url="/raw-materials?error=Gagal+menghapus+bahan+baku.+Coba+lagi+atau+hubungi+admin.", status_code=303)
 
     log_activity(current_user, "delete", "raw_material", rm_id, nama_sebelum_hapus)
 
-    return RedirectResponse(url="/raw-materials?success=Bahan+baku+berhasil+dihapus", status_code=303)
+    return RedirectResponse(url="/raw-materials?success=Bahan+baku+beserta+seluruh+riwayat+batch+%26+dokumen+terkait+berhasil+dihapus", status_code=303)
 
 @app.post("/raw-materials/batches/add")
 async def add_material_batch(
