@@ -21,6 +21,7 @@ import tempfile
 import zipfile
 import httpx
 import unicodedata
+import logging
 from xhtml2pdf import pisa
 from pypdf import PdfReader, PdfWriter
 from slowapi import Limiter
@@ -222,6 +223,46 @@ app = FastAPI(title="DIP Kosmetik Automation")
 # Rate limiter (proteksi brute-force di /login, dibatasi per-IP)
 limiter = Limiter(key_func=_client_ip)
 app.state.limiter = limiter
+
+
+class _QuietAccessLogFilter(logging.Filter):
+    """Sembunyikan access log yang nge-spam terminal:
+    - HEAD/GET /health (uptime monitor)
+    - POST /api/presence/heartbeat (polling 25 dtk per user)
+    """
+    SKIP_PATHS = frozenset({"/health", "/api/presence/heartbeat"})
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        path = None
+        args = record.args
+        if isinstance(args, dict):
+            path = args.get("full_path") or args.get("path")
+        elif isinstance(args, (tuple, list)) and len(args) >= 3:
+            # uvicorn default: (client_addr, method, path, http_version, status)
+            path = args[2]
+        if path is None:
+            try:
+                msg = record.getMessage()
+            except Exception:
+                return True
+            return all(p not in msg for p in self.SKIP_PATHS)
+        path_only = str(path).split("?", 1)[0]
+        return path_only not in self.SKIP_PATHS
+
+
+def _install_quiet_access_log() -> None:
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, _QuietAccessLogFilter) for f in access_logger.filters):
+        access_logger.addFilter(_QuietAccessLogFilter())
+
+
+_install_quiet_access_log()
+
+
+@app.on_event("startup")
+async def _on_startup_quiet_access_log():
+    # Uvicorn kadang configure logging setelah app di-import; pasang ulang di startup.
+    _install_quiet_access_log()
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
