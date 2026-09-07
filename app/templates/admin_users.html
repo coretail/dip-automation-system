@@ -149,14 +149,14 @@
                                         </form>
 
                                         <!-- Tombol Reset Password Modal -->
-                                        <button type="button" onclick="openResetModal('{{ u.id }}', '{{ u.full_name }}')" title="Reset Password"
+                                        <button type="button" onclick='openResetModal({{ u.id | tojson }}, {{ u.full_name | tojson }})' title="Reset Password"
                                                 class="px-2 py-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded transition cursor-pointer">
                                             <i class="fa-solid fa-key"></i>
                                         </button>
 
                                         <!-- Tombol Hapus User -->
                                         {% if u.id != user.id %}
-                                        <form action="/admin/users/delete" method="POST" class="inline" onsubmit="return confirm('Yakin mau hapus akun {{ u.full_name }}? Akun ga bisa dibalikin lagi!');">
+                                        <form action="/admin/users/delete" method="POST" class="inline" onsubmit='return confirm("Yakin mau hapus akun " + {{ u.full_name | tojson }} + "? Akun ga bisa dibalikin lagi!");'>
                                             <input type="hidden" name="target_uid" value="{{ u.id }}">
                                             <button type="submit" title="Hapus User"
                                                     class="px-2 py-1 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded transition cursor-pointer">
