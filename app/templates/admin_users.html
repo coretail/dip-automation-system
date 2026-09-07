@@ -6,6 +6,15 @@
     <title>DIP ERFI APP - User Management</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @keyframes presence-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+            50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+        }
+        .dot-online {
+            animation: presence-pulse 1.8s ease-out infinite;
+        }
+    </style>
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans antialiased">
 
@@ -107,30 +116,66 @@
 
             <!-- KOLOM KIRI: DAFTAR USER & AKSI -->
             <div class="lg:col-span-2 lg:order-1 bg-white rounded-xl border border-gray-200 shadow-xs p-6">
-                <h2 class="text-md font-bold uppercase tracking-wider text-gray-700 mb-4"><i class="fa-solid fa-users text-indigo-500 mr-2"></i> Anggota Tim Lab & Dokumen</h2>
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h2 class="text-md font-bold uppercase tracking-wider text-gray-700"><i class="fa-solid fa-users text-indigo-500 mr-2"></i> Anggota Tim Lab & Dokumen</h2>
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            <span id="onlineCountBadge">{{ online_count }}</span> Online
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-semibold">
+                            <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+                            <span id="offlineCountBadge">{{ offline_count }}</span> Offline
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 mb-3">
+                    <button type="button" data-filter="all" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-600 text-white">Semua</button>
+                    <button type="button" data-filter="online" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Online</button>
+                    <button type="button" data-filter="offline" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Offline</button>
+                    <span class="ml-auto text-[11px] text-gray-400" id="presenceRefreshHint">Monitor live · refresh 15 dtk</span>
+                </div>
                 
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead>
                             <tr class="border-b border-gray-200 bg-gray-50/70 text-xs font-semibold uppercase tracking-wider text-gray-500">
                                 <th class="p-3">Username / Identifier</th>
+                                <th class="p-3">Status</th>
                                 <th class="p-3">Role Saat Ini</th>
                                 <th class="p-3 text-right">Aksi Manajemen</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             {% for u in users %}
-                            <tr class="hover:bg-gray-50/50 transition-colors">
+                            <tr class="hover:bg-gray-50/50 transition-colors user-row" data-user-id="{{ u.id }}" data-online="{{ '1' if u.is_online else '0' }}">
                                 <td class="p-3 font-medium text-gray-900">
                                     <div class="flex items-center gap-2">
-                                        <div class="w-7 h-7 bg-indigo-50 text-indigo-600 font-bold rounded-full flex items-center justify-center text-xs uppercase">
-                                            {{ u.full_name[:2] }}
+                                        <div class="relative">
+                                            <div class="w-7 h-7 bg-indigo-50 text-indigo-600 font-bold rounded-full flex items-center justify-center text-xs uppercase">
+                                                {{ u.full_name[:2] }}
+                                            </div>
+                                            <span class="presence-dot absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white {{ 'bg-emerald-500 dot-online' if u.is_online else 'bg-gray-300' }}"></span>
                                         </div>
                                         <div>
                                             <p class="font-bold text-gray-800">{{ u.full_name }}</p>
                                             <p class="text-xs text-gray-400">ID: {{ u.id[:8] }}...</p>
                                         </div>
                                     </div>
+                                </td>
+                                <td class="p-3">
+                                    {% if u.is_online %}
+                                    <span class="presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Online
+                                    </span>
+                                    <p class="presence-label text-[11px] text-emerald-600 mt-0.5">Aktif sekarang</p>
+                                    {% else %}
+                                    <span class="presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> Offline
+                                    </span>
+                                    <p class="presence-label text-[11px] text-gray-400 mt-0.5">{{ u.last_seen_label }}</p>
+                                    {% endif %}
                                 </td>
                                 <td class="p-3">
                                     <span class="px-2 py-0.5 text-xs font-semibold rounded {{ 'bg-red-50 text-red-700 border border-red-200' if u.role == 'admin' else 'bg-amber-50 text-amber-700 border border-amber-200' }} uppercase">
@@ -173,7 +218,7 @@
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="3" class="p-8 text-center text-sm text-gray-400">Belum ada user terdaftar.</td>
+                                <td colspan="4" class="p-8 text-center text-sm text-gray-400">Belum ada user terdaftar.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -218,7 +263,78 @@
         function closeResetModal() {
             document.getElementById('resetModal').classList.add('hidden');
         }
+
+        (function () {
+            var currentFilter = 'all';
+
+            function applyFilter() {
+                document.querySelectorAll('.user-row').forEach(function (row) {
+                    var online = row.getAttribute('data-online') === '1';
+                    var show = currentFilter === 'all' || (currentFilter === 'online' && online) || (currentFilter === 'offline' && !online);
+                    row.classList.toggle('hidden', !show);
+                });
+            }
+
+            document.querySelectorAll('.presence-filter').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    currentFilter = btn.getAttribute('data-filter');
+                    document.querySelectorAll('.presence-filter').forEach(function (b) {
+                        b.className = 'presence-filter px-2.5 py-1 text-xs font-semibold rounded-md ' +
+                            (b === btn ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200');
+                    });
+                    applyFilter();
+                });
+            });
+
+            function paintRow(row, item) {
+                var online = !!item.is_online;
+                row.setAttribute('data-online', online ? '1' : '0');
+                var dot = row.querySelector('.presence-dot');
+                var badge = row.querySelector('.presence-badge');
+                var label = row.querySelector('.presence-label');
+                if (dot) {
+                    dot.className = 'presence-dot absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ' +
+                        (online ? 'bg-emerald-500 dot-online' : 'bg-gray-300');
+                }
+                if (badge) {
+                    badge.className = 'presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full ' +
+                        (online
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-gray-100 text-gray-500 border border-gray-200');
+                    badge.innerHTML = online
+                        ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Online'
+                        : '<span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> Offline';
+                }
+                if (label) {
+                    label.className = 'presence-label text-[11px] mt-0.5 ' + (online ? 'text-emerald-600' : 'text-gray-400');
+                    label.textContent = online ? 'Aktif sekarang' : (item.last_seen_label || 'Belum pernah online');
+                }
+            }
+
+            async function refreshPresence() {
+                try {
+                    var res = await fetch('/api/admin/users/presence', { credentials: 'same-origin' });
+                    if (!res.ok) return;
+                    var data = await res.json();
+                    var byId = {};
+                    (data.items || []).forEach(function (item) { byId[item.id] = item; });
+                    document.querySelectorAll('.user-row').forEach(function (row) {
+                        var item = byId[row.getAttribute('data-user-id')];
+                        if (item) paintRow(row, item);
+                    });
+                    var onlineEl = document.getElementById('onlineCountBadge');
+                    var offlineEl = document.getElementById('offlineCountBadge');
+                    if (onlineEl) onlineEl.textContent = data.online_count;
+                    if (offlineEl) offlineEl.textContent = data.offline_count;
+                    applyFilter();
+                } catch (e) {}
+            }
+
+            setInterval(refreshPresence, 15000);
+            refreshPresence();
+        })();
     </script>
+    <script src="/static/presence.js"></script>
 
 </body>
 </html>

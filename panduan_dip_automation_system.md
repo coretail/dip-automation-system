@@ -69,7 +69,8 @@ Melalui menu **Kelola User** (khusus role Admin), Admin dapat:
 2. **Reset Password** — mengubah password akun pengguna.
 3. **Ubah Role Pengguna** — mengalihkan role antara Staff dan Admin.
 4. **Hapus User** — menghapus akses akun dari database.
-5. **Activity Log Integration** — seluruh aktivitas penting (pembuatan/pengeditan/penghapusan bahan baku & produk) tercatat pada tabel `activity_logs` di Supabase, dan sekaligus ditampilkan di terminal server dengan format timestamp WIB (*Asia/Jakarta*) untuk pemantauan cepat.
+5. **Monitor Online/Offline** — kolom Status di daftar user menampilkan apakah anggota sedang Online (heartbeat aktif) atau Offline beserta waktu last seen. Status di-refresh otomatis setiap 15 detik. Logout membuat user langsung Offline; menutup tab tanpa logout otomatis Offline setelah ~90 detik.
+6. **Activity Log Integration** — seluruh aktivitas penting (pembuatan/pengeditan/penghapusan bahan baku & produk) tercatat pada tabel `activity_logs` di Supabase, dan sekaligus ditampilkan di terminal server dengan format timestamp WIB (*Asia/Jakarta*) untuk pemantauan cepat.
 
 ---
 

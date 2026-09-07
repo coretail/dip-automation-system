@@ -124,15 +124,19 @@ async def _generate_ai_greeting_phrase(nama_user: str) -> str | None:
     return None
 
 
-def _extract_jwt_email(token: str):
-    """Best-effort baca email/sub dari payload JWT (buat log doang, tanpa validasi signature)."""
+def _extract_jwt_payload(token: str) -> dict:
+    """Best-effort baca payload JWT (buat log/presence, tanpa validasi signature)."""
     try:
         payload_b64 = token.split(".")[1]
         payload_b64 += "=" * (-len(payload_b64) % 4)  # padding base64url biar valid
-        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-        return payload.get("email") or payload.get("sub") or "-"
+        return json.loads(base64.urlsafe_b64decode(payload_b64))
     except Exception:
-        return "-"
+        return {}
+
+def _extract_jwt_email(token: str):
+    """Best-effort baca email/sub dari payload JWT (buat log doang, tanpa validasi signature)."""
+    payload = _extract_jwt_payload(token)
+    return payload.get("email") or payload.get("sub") or "-"
 
 def _add_years(d: date, years: int) -> date:
     """Tambah tahun ke tanggal, aman buat kasus 29 Feb kena tahun non-kabisat."""
@@ -459,6 +463,90 @@ async def get_current_user(request: Request):
         )
 
 
+PRESENCE_ONLINE_SECONDS = 90
+_presence_schema_warned = False
+
+
+def _parse_presence_ts(value):
+    """Parse timestamptz dari Supabase jadi datetime WIB."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        raw = str(value).strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(raw)
+        except Exception:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=WIB)
+    return dt.astimezone(WIB)
+
+
+def _relative_last_seen(dt: datetime | None) -> str:
+    if not dt:
+        return "Belum pernah online"
+    sec = int((datetime.now(WIB) - dt).total_seconds())
+    if sec < 45:
+        return "Baru saja"
+    if sec < 90:
+        return "1 menit lalu"
+    if sec < 3600:
+        menit = max(1, sec // 60)
+        return f"{menit} menit lalu"
+    if sec < 86400:
+        jam = max(1, sec // 3600)
+        return f"{jam} jam lalu"
+    hari = max(1, sec // 86400)
+    if hari == 1:
+        return "Kemarin " + dt.strftime("%H:%M")
+    if hari < 7:
+        return f"{hari} hari lalu"
+    return dt.strftime("%d-%m-%Y %H:%M WIB")
+
+
+def compute_user_presence(profile: dict) -> dict:
+    """User ONLINE kalau is_online=True DAN last_seen_at masih dalam 90 detik.
+    Logout eksplisit set is_online=False supaya langsung Offline meski last_seen baru.
+    Tab ditutup tanpa logout: heartbeat berhenti, otomatis Offline setelah 90 detik."""
+    last_seen = _parse_presence_ts(profile.get("last_seen_at"))
+    flagged_online = bool(profile.get("is_online"))
+    recently_active = False
+    if last_seen:
+        recently_active = (datetime.now(WIB) - last_seen).total_seconds() <= PRESENCE_ONLINE_SECONDS
+    is_online = flagged_online and recently_active
+    return {
+        "is_online": is_online,
+        "last_seen_at": last_seen.isoformat() if last_seen else None,
+        "last_seen_label": _relative_last_seen(last_seen),
+    }
+
+
+def touch_user_presence(user_id: str, online: bool = True) -> bool:
+    """Update last_seen_at + is_online di tabel profiles. Return False kalau kolom belum ada."""
+    global _presence_schema_warned
+    if not user_id:
+        return False
+    try:
+        supabase.table("profiles").update({
+            "last_seen_at": datetime.now(WIB).isoformat(),
+            "is_online": bool(online),
+        }).eq("id", user_id).execute()
+        return True
+    except Exception as e:
+        if not _presence_schema_warned:
+            _presence_schema_warned = True
+            print(
+                "[PRESENCE] Gagal update last_seen_at/is_online. "
+                "Jalankan SQL di supabase_user_presence.sql di SQL Editor Supabase. "
+                f"Error: {e}"
+            )
+        return False
+
+
 def log_activity(current_user: dict, action: str, entity_type: str, entity_id: str, entity_label: str, changes: list = None):
     """Catat activity log ke DB Supabase + cetak log rapi ke terminal Render."""
     # 1. Cetak log ke terminal Render
@@ -609,6 +697,11 @@ async def login_submit(
         print(f"   • Waktu   : {waktu_login}")
         print("="*50 + "\n")
 
+        try:
+            touch_user_presence(user_data.id, online=True)
+        except Exception as e:
+            print(f"[PRESENCE] Gagal set online saat login: {e}")
+
         # Generate greeting (waktu + kalimat AI) sekali di sini, dipakai terus
         # sepanjang sesi (gak manggil AI lagi tiap buka dashboard)
         import json
@@ -655,7 +748,11 @@ async def logout(request: Request):
     waktu_logout = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
     try:
         token_cookie = request.cookies.get("access_token")
-        email_log = _extract_jwt_email(token_cookie.replace("Bearer ", "")) if token_cookie else "-"
+        claims = _extract_jwt_payload(token_cookie.replace("Bearer ", "")) if token_cookie else {}
+        email_log = claims.get("email") or claims.get("sub") or "-"
+        uid = claims.get("sub")
+        if uid:
+            touch_user_presence(uid, online=False)
     except Exception:
         email_log = "-"
     print("\n" + "="*50)
@@ -4475,6 +4572,61 @@ async def sample_submission_preview(request: Request, submission_id: str, curren
     )
 
 # =====================================================================
+#                     PRESENCE / ONLINE-OFFLINE USER
+# =====================================================================
+
+@app.post("/api/presence/heartbeat")
+async def presence_heartbeat(request: Request, current_user: dict = Depends(get_current_user)):
+    """Dipanggil berkala dari browser (setiap ~25 detik) selama user masih buka aplikasi."""
+    online = True
+    try:
+        body = await request.json()
+        if isinstance(body, dict) and "online" in body:
+            online = bool(body.get("online"))
+    except Exception:
+        online = True
+    ok = touch_user_presence(current_user["id"], online=online)
+    return JSONResponse({"ok": ok, "online": online})
+
+
+@app.get("/api/admin/users/presence")
+async def admin_users_presence(current_user: dict = Depends(get_current_user)):
+    """JSON presence untuk polling live di halaman /admin/users."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+    try:
+        profiles_res = supabase.table("profiles").select("id, last_seen_at, is_online, is_protected").execute()
+        rows = profiles_res.data or []
+    except Exception as e:
+        print(f"[PRESENCE] Gagal tarik last_seen_at (kolom mungkin belum ada): {e}")
+        try:
+            profiles_res = supabase.table("profiles").select("id, is_protected").execute()
+            rows = profiles_res.data or []
+        except Exception as e2:
+            print(f"[PRESENCE] Gagal tarik profiles: {e2}")
+            rows = []
+
+    items = []
+    for u in rows:
+        if u.get("is_protected") and u.get("id") != current_user["id"]:
+            continue
+        presence = compute_user_presence(u)
+        items.append({
+            "id": u.get("id"),
+            "is_online": presence["is_online"],
+            "last_seen_at": presence["last_seen_at"],
+            "last_seen_label": presence["last_seen_label"],
+        })
+    online_count = sum(1 for i in items if i["is_online"])
+    return JSONResponse({
+        "items": items,
+        "online_count": online_count,
+        "offline_count": len(items) - online_count,
+        "threshold_seconds": PRESENCE_ONLINE_SECONDS,
+    })
+
+
+# =====================================================================
 #                     MODUL MANAJEMEN USER (ADMIN ONLY)
 # =====================================================================
 
@@ -4496,14 +4648,29 @@ async def manage_users_page(request: Request, current_user: dict = Depends(get_c
             u for u in users_list
             if not u.get("is_protected") or u["id"] == current_user["id"]
         ]
+        for u in users_list:
+            presence = compute_user_presence(u)
+            u["is_online"] = presence["is_online"]
+            u["last_seen_label"] = presence["last_seen_label"]
+            u["last_seen_at"] = presence["last_seen_at"]
+        online_count = sum(1 for u in users_list if u.get("is_online"))
+        offline_count = len(users_list) - online_count
     except Exception as e:
         print(f"Gagal ambil data profiles: {e}")
         users_list = []
+        online_count = 0
+        offline_count = 0
         
     return templates.TemplateResponse(
         request=request,
         name="admin_users.html",
-        context={"request": request, "user": current_user, "users": users_list}
+        context={
+            "request": request,
+            "user": current_user,
+            "users": users_list,
+            "online_count": online_count,
+            "offline_count": offline_count,
+        }
     )
 
 # CATATAN: Self-register publik (GET/POST /register) sengaja DIHAPUS.
