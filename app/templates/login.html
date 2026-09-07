@@ -61,7 +61,7 @@
         {% endif %}
 
         <!-- Form Login -->
-        <form action="/login" method="POST" class="space-y-5">
+        <form action="/login" method="POST" class="space-y-5" onsubmit="handleLoginSubmit()">
             <div>
                 <!-- Ubah label jadi Username / Email -->
                 <label class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Username / Email</label>
@@ -100,6 +100,21 @@
    
     </div>
     
+
+    <script>
+        function handleLoginSubmit() {
+            const btnEl = document.getElementById('login-submit-btn');
+            const btnTextEl = document.getElementById('login-submit-text');
+            // Cegah double-submit: disable tombol begitu form dikirim, biar klik
+            // kedua/ketiga (spam-click atau koneksi lambat) tidak ikut ngirim
+            // request POST /login lagi. Browser akan tetap navigasi normal
+            // walau tombolnya disabled, karena form submission sudah terjadi
+            // duluan sebelum baris ini jalan.
+            if (btnEl) btnEl.disabled = true;
+            if (btnTextEl) btnTextEl.textContent = 'Memproses...';
+            return true;
+        }
+    </script>
 
 {% if error == 'too_many_attempts' %}
 <script>
