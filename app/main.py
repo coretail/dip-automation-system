@@ -1202,6 +1202,7 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
     company_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
     clean_kode = "".join(c for c in kode_bahan_baku if c.isalnum() or c in ('-', '_')).strip()
 
+    uploaded_documents = []
     msds_url = None
     if msds_file and msds_file.filename:
         try:
@@ -1213,6 +1214,7 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
                 file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             msds_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
+            uploaded_documents.append("MSDS")
         except Exception as e:
             print(f"Gagal upload MSDS ({perusahaan}): {e}")
 
@@ -1227,6 +1229,7 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
                 file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             spec_sheet_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
+            uploaded_documents.append("Spesifikasi")
         except Exception as e:
             print(f"Gagal upload Spesifikasi Asli Supplier ({perusahaan}): {e}")
 
@@ -1251,7 +1254,7 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
                         .eq("raw_material_id", rm_id).eq("perusahaan", perusahaan).execute()
         except Exception as e:
             print(f"Gagal bersihkan baris kosong company_docs ({perusahaan}): {e}")
-        return
+        return uploaded_documents
 
     doc_payload = {
         "raw_material_id": rm_id,
@@ -1266,6 +1269,7 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
     supabase.table("raw_material_company_docs").upsert(
         doc_payload, on_conflict="raw_material_id,perusahaan"
     ).execute()
+    return uploaded_documents
 
 @app.post("/raw-materials/{rm_id}/quick-upload-company-doc")
 async def quick_upload_company_doc(
@@ -1281,12 +1285,13 @@ async def quick_upload_company_doc(
     # (helper itu selalu menimpa kolom spec_parameters dengan apa yang dikirim).
     import json
 
-    rm_resp = supabase.table("raw_materials").select("kode_bahan_baku").eq("id", rm_id).single().execute()
+    rm_resp = supabase.table("raw_materials").select("kode_bahan_baku, nama_dagang").eq("id", rm_id).single().execute()
     if not rm_resp.data:
         response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
         response.set_cookie("error_msg", "Bahan baku tidak ditemukan.")
         return response
     kode_bahan_baku = rm_resp.data["kode_bahan_baku"]
+    nama_bahan_baku = rm_resp.data.get("nama_dagang") or kode_bahan_baku
 
     existing_resp = supabase.table("raw_material_company_docs") \
         .select("spec_parameters") \
@@ -1295,12 +1300,19 @@ async def quick_upload_company_doc(
     spec_parameters_raw = json.dumps(existing_specs or [])
 
     try:
-        await _upload_msds_and_upsert_company_doc(
+        uploaded_documents = await _upload_msds_and_upsert_company_doc(
             rm_id, kode_bahan_baku, perusahaan, spec_parameters_raw, msds_file, spec_sheet_file
         )
-        log_activity(current_user, "edit", "raw_material_company_doc", rm_id, f"Upload cepat dokumen {perusahaan}")
         response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-        response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+        if uploaded_documents:
+            document_list = " dan ".join(uploaded_documents)
+            log_activity(
+                current_user, "edit", "raw_material_company_doc", rm_id,
+                f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} ({perusahaan})"
+            )
+            response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+        else:
+            response.set_cookie("error_msg", "Tidak ada dokumen yang berhasil diupload.")
     except Exception as e:
         print(f"Gagal quick-upload company doc: {e}")
         response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
@@ -1880,16 +1892,24 @@ async def quick_upload_batch_doc(
 ):
     # Route ini CUMA nyentuh kolom file URL, tidak menyentuh field lain
     # (no_batch, supplier, tanggal, kesimpulan, dll) di baris batch tersebut.
-    batch_resp = supabase.table("raw_material_batches").select("no_batch").eq("id", batch_id).single().execute()
+    batch_resp = supabase.table("raw_material_batches").select(
+        "no_batch, raw_materials(nama_dagang)"
+    ).eq("id", batch_id).single().execute()
     if not batch_resp.data:
         response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
         response.set_cookie("error_msg", "Batch tidak ditemukan.")
         return response
 
     no_batch = batch_resp.data["no_batch"]
+    raw_material = batch_resp.data.get("raw_materials")
+    if isinstance(raw_material, list):
+        raw_material = raw_material[0] if raw_material else None
+    nama_bahan_baku = raw_material.get("nama_dagang") if isinstance(raw_material, dict) else None
+    nama_bahan_baku = nama_bahan_baku or "Tanpa Master"
     clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ("-", "_")).strip()
 
     update_data = {}
+    uploaded_documents = []
 
     if coa_file and coa_file.filename:
         try:
@@ -1899,6 +1919,7 @@ async def quick_upload_batch_doc(
                 path=coa_path, file=coa_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             update_data["coa_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
+            uploaded_documents.append("CoA")
         except Exception as e:
             print(f"Gagal quick-upload CoA: {e}")
 
@@ -1910,6 +1931,7 @@ async def quick_upload_batch_doc(
                 path=halal_path, file=halal_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             update_data["halal_batch_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
+            uploaded_documents.append("Halal")
         except Exception as e:
             print(f"Gagal quick-upload Halal: {e}")
 
@@ -1921,13 +1943,18 @@ async def quick_upload_batch_doc(
                 path=qc_report_path, file=qc_report_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             update_data["qc_report_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
+            uploaded_documents.append("Catatan Pemeriksaan Bahan Baku")
         except Exception as e:
             print(f"Gagal quick-upload QC Report: {e}")
 
     if update_data:
         try:
             supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
-            log_activity(current_user, "edit", "raw_material_batch", batch_id, f"Upload cepat dokumen batch {no_batch}")
+            document_list = ", ".join(uploaded_documents)
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} — batch {no_batch}"
+            )
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
             response.set_cookie("success_msg", "Dokumen berhasil diupload.")
         except Exception as e:
