@@ -123,6 +123,10 @@
                             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
                             <span id="onlineCountBadge">{{ online_count }}</span> Online
                         </span>
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-semibold">
+                            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                            <span id="idleCountBadge">{{ idle_count }}</span> Idle
+                        </span>
                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200 font-semibold">
                             <span class="w-2 h-2 rounded-full bg-gray-400"></span>
                             <span id="offlineCountBadge">{{ offline_count }}</span> Offline
@@ -133,6 +137,7 @@
                 <div class="flex items-center gap-2 mb-3">
                     <button type="button" data-filter="all" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-600 text-white">Semua</button>
                     <button type="button" data-filter="online" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Online</button>
+                    <button type="button" data-filter="idle" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Idle</button>
                     <button type="button" data-filter="offline" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Offline</button>
                     <span class="ml-auto text-[11px] text-gray-400" id="presenceRefreshHint">Monitor live · refresh 15 dtk</span>
                 </div>
@@ -149,14 +154,14 @@
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             {% for u in users %}
-                            <tr class="hover:bg-gray-50/50 transition-colors user-row" data-user-id="{{ u.id }}" data-online="{{ '1' if u.is_online else '0' }}">
+                            <tr class="hover:bg-gray-50/50 transition-colors user-row" data-user-id="{{ u.id }}" data-presence-status="{{ u.presence_status }}">
                                 <td class="p-3 font-medium text-gray-900">
                                     <div class="flex items-center gap-2">
                                         <div class="relative">
                                             <div class="w-7 h-7 bg-indigo-50 text-indigo-600 font-bold rounded-full flex items-center justify-center text-xs uppercase">
                                                 {{ u.full_name[:2] }}
                                             </div>
-                                            <span class="presence-dot absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white {{ 'bg-emerald-500 dot-online' if u.is_online else 'bg-gray-300' }}"></span>
+                                            <span class="presence-dot absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white {{ 'bg-emerald-500 dot-online' if u.presence_status == 'online' else ('bg-amber-500' if u.presence_status == 'idle' else 'bg-gray-300') }}"></span>
                                         </div>
                                         <div>
                                             <p class="font-bold text-gray-800">{{ u.full_name }}</p>
@@ -165,11 +170,16 @@
                                     </div>
                                 </td>
                                 <td class="p-3">
-                                    {% if u.is_online %}
+                                    {% if u.presence_status == 'online' %}
                                     <span class="presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Online
                                     </span>
                                     <p class="presence-label text-[11px] text-emerald-600 mt-0.5">Aktif sekarang</p>
+                                    {% elif u.presence_status == 'idle' %}
+                                    <span class="presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Idle
+                                    </span>
+                                    <p class="presence-label text-[11px] text-amber-600 mt-0.5">Tidak ada aktivitas {{ u.last_activity_label }}</p>
                                     {% else %}
                                     <span class="presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
                                         <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> Offline
@@ -269,8 +279,8 @@
 
             function applyFilter() {
                 document.querySelectorAll('.user-row').forEach(function (row) {
-                    var online = row.getAttribute('data-online') === '1';
-                    var show = currentFilter === 'all' || (currentFilter === 'online' && online) || (currentFilter === 'offline' && !online);
+                    var presenceStatus = row.getAttribute('data-presence-status') || 'offline';
+                    var show = currentFilter === 'all' || currentFilter === presenceStatus;
                     row.classList.toggle('hidden', !show);
                 });
             }
@@ -287,27 +297,38 @@
             });
 
             function paintRow(row, item) {
-                var online = !!item.is_online;
-                row.setAttribute('data-online', online ? '1' : '0');
+                var presenceStatus = item.presence_status || (item.is_online ? 'online' : 'offline');
+                row.setAttribute('data-presence-status', presenceStatus);
                 var dot = row.querySelector('.presence-dot');
                 var badge = row.querySelector('.presence-badge');
                 var label = row.querySelector('.presence-label');
+                var isOnline = presenceStatus === 'online';
+                var isIdle = presenceStatus === 'idle';
                 if (dot) {
                     dot.className = 'presence-dot absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ' +
-                        (online ? 'bg-emerald-500 dot-online' : 'bg-gray-300');
+                        (isOnline ? 'bg-emerald-500 dot-online' : (isIdle ? 'bg-amber-500' : 'bg-gray-300'));
                 }
                 if (badge) {
                     badge.className = 'presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full ' +
-                        (online
+                        (isOnline
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-gray-100 text-gray-500 border border-gray-200');
-                    badge.innerHTML = online
+                            : (isIdle
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-gray-100 text-gray-500 border border-gray-200'));
+                    badge.innerHTML = isOnline
                         ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Online'
-                        : '<span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> Offline';
+                        : (isIdle
+                            ? '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Idle'
+                            : '<span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span> Offline');
                 }
                 if (label) {
-                    label.className = 'presence-label text-[11px] mt-0.5 ' + (online ? 'text-emerald-600' : 'text-gray-400');
-                    label.textContent = online ? 'Aktif sekarang' : (item.last_seen_label || 'Belum pernah online');
+                    label.className = 'presence-label text-[11px] mt-0.5 ' +
+                        (isOnline ? 'text-emerald-600' : (isIdle ? 'text-amber-600' : 'text-gray-400'));
+                    label.textContent = isOnline
+                        ? 'Aktif sekarang'
+                        : (isIdle
+                            ? 'Tidak ada aktivitas ' + (item.last_activity_label || 'lebih dari 5 menit')
+                            : (item.last_seen_label || 'Belum pernah online'));
                 }
             }
 
@@ -323,8 +344,10 @@
                         if (item) paintRow(row, item);
                     });
                     var onlineEl = document.getElementById('onlineCountBadge');
+                    var idleEl = document.getElementById('idleCountBadge');
                     var offlineEl = document.getElementById('offlineCountBadge');
                     if (onlineEl) onlineEl.textContent = data.online_count;
+                    if (idleEl) idleEl.textContent = data.idle_count;
                     if (offlineEl) offlineEl.textContent = data.offline_count;
                     applyFilter();
                 } catch (e) {}

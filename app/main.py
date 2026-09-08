@@ -505,6 +505,9 @@ async def get_current_user(request: Request):
 
 
 PRESENCE_ONLINE_SECONDS = 90
+# User tetap terhubung, tetapi dianggap Idle bila tidak ada interaksi browser
+# selama durasi ini. Ubah konstanta ini untuk menyesuaikan kebijakan presence.
+PRESENCE_IDLE_SECONDS = 5 * 60
 _presence_schema_warned = False
 
 
@@ -550,39 +553,58 @@ def _relative_last_seen(dt: datetime | None) -> str:
 
 
 def compute_user_presence(profile: dict) -> dict:
-    """User ONLINE kalau is_online=True DAN last_seen_at masih dalam 90 detik.
-    Logout eksplisit set is_online=False supaya langsung Offline meski last_seen baru.
-    Tab ditutup tanpa logout: heartbeat berhenti, otomatis Offline setelah 90 detik."""
+    """Turunkan status Online/Idle/Offline dari flag, heartbeat, dan aktivitas.
+
+    Logout eksplisit selalu Offline. Heartbeat yang berhenti membuat user Offline
+    setelah grace period; heartbeat yang tetap segar tetapi aktivitasnya lewat
+    batas idle membuat user Idle.
+    """
     last_seen = _parse_presence_ts(profile.get("last_seen_at"))
+    last_activity = _parse_presence_ts(profile.get("last_activity_at"))
     flagged_online = bool(profile.get("is_online"))
-    recently_active = False
+    recently_connected = False
     if last_seen:
-        recently_active = (datetime.now(WIB) - last_seen).total_seconds() <= PRESENCE_ONLINE_SECONDS
-    is_online = flagged_online and recently_active
+        recently_connected = (datetime.now(WIB) - last_seen).total_seconds() <= PRESENCE_ONLINE_SECONDS
+
+    if not flagged_online or not recently_connected:
+        presence_status = "offline"
+    elif last_activity and (datetime.now(WIB) - last_activity).total_seconds() <= PRESENCE_IDLE_SECONDS:
+        presence_status = "online"
+    else:
+        presence_status = "idle"
+
     return {
-        "is_online": is_online,
+        "presence_status": presence_status,
+        "is_online": presence_status == "online",
+        "is_idle": presence_status == "idle",
         "last_seen_at": last_seen.isoformat() if last_seen else None,
         "last_seen_label": _relative_last_seen(last_seen),
+        "last_activity_at": last_activity.isoformat() if last_activity else None,
+        "last_activity_label": _relative_last_seen(last_activity),
     }
 
 
-def touch_user_presence(user_id: str, online: bool = True) -> bool:
-    """Update last_seen_at + is_online di tabel profiles. Return False kalau kolom belum ada."""
+def touch_user_presence(user_id: str, online: bool = True, active: bool = True) -> bool:
+    """Simpan heartbeat; waktu aktivitas hanya berubah saat browser aktif."""
     global _presence_schema_warned
     if not user_id:
         return False
     try:
-        supabase.table("profiles").update({
-            "last_seen_at": datetime.now(WIB).isoformat(),
+        now = datetime.now(WIB).isoformat()
+        update_data = {
+            "last_seen_at": now,
             "is_online": bool(online),
-        }).eq("id", user_id).execute()
+        }
+        if online and active:
+            update_data["last_activity_at"] = now
+        supabase.table("profiles").update(update_data).eq("id", user_id).execute()
         return True
     except Exception as e:
         if not _presence_schema_warned:
             _presence_schema_warned = True
             print(
-                "[PRESENCE] Gagal update last_seen_at/is_online. "
-                "Jalankan SQL di supabase_user_presence.sql di SQL Editor Supabase. "
+                "[PRESENCE] Gagal update data presence. "
+                "Jalankan SQL di supabase_user_presence_idle.sql di SQL Editor Supabase. "
                 f"Error: {e}"
             )
         return False
@@ -4646,16 +4668,20 @@ async def sample_submission_preview(request: Request, submission_id: str, curren
 
 @app.post("/api/presence/heartbeat")
 async def presence_heartbeat(request: Request, current_user: dict = Depends(get_current_user)):
-    """Dipanggil berkala dari browser (setiap ~25 detik) selama user masih buka aplikasi."""
+    """Heartbeat browser yang juga membawa kondisi aktivitas user saat ini."""
     online = True
+    active = True
     try:
         body = await request.json()
         if isinstance(body, dict) and "online" in body:
             online = bool(body.get("online"))
+        if isinstance(body, dict) and "active" in body:
+            active = bool(body.get("active"))
     except Exception:
         online = True
-    ok = touch_user_presence(current_user["id"], online=online)
-    return JSONResponse({"ok": ok, "online": online})
+        active = True
+    ok = touch_user_presence(current_user["id"], online=online, active=active)
+    return JSONResponse({"ok": ok, "online": online, "active": active})
 
 
 @app.get("/api/admin/users/presence")
@@ -4664,7 +4690,9 @@ async def admin_users_presence(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
     try:
-        profiles_res = supabase.table("profiles").select("id, last_seen_at, is_online, is_protected").execute()
+        profiles_res = supabase.table("profiles").select(
+            "id, last_seen_at, last_activity_at, is_online, is_protected"
+        ).execute()
         rows = profiles_res.data or []
     except Exception as e:
         print(f"[PRESENCE] Gagal tarik last_seen_at (kolom mungkin belum ada): {e}")
@@ -4683,15 +4711,22 @@ async def admin_users_presence(current_user: dict = Depends(get_current_user)):
         items.append({
             "id": u.get("id"),
             "is_online": presence["is_online"],
+            "is_idle": presence["is_idle"],
+            "presence_status": presence["presence_status"],
             "last_seen_at": presence["last_seen_at"],
             "last_seen_label": presence["last_seen_label"],
+            "last_activity_at": presence["last_activity_at"],
+            "last_activity_label": presence["last_activity_label"],
         })
-    online_count = sum(1 for i in items if i["is_online"])
+    online_count = sum(1 for i in items if i["presence_status"] == "online")
+    idle_count = sum(1 for i in items if i["presence_status"] == "idle")
     return JSONResponse({
         "items": items,
         "online_count": online_count,
-        "offline_count": len(items) - online_count,
-        "threshold_seconds": PRESENCE_ONLINE_SECONDS,
+        "idle_count": idle_count,
+        "offline_count": len(items) - online_count - idle_count,
+        "online_threshold_seconds": PRESENCE_ONLINE_SECONDS,
+        "idle_threshold_seconds": PRESENCE_IDLE_SECONDS,
     })
 
 
@@ -4720,14 +4755,19 @@ async def manage_users_page(request: Request, current_user: dict = Depends(get_c
         for u in users_list:
             presence = compute_user_presence(u)
             u["is_online"] = presence["is_online"]
+            u["is_idle"] = presence["is_idle"]
+            u["presence_status"] = presence["presence_status"]
             u["last_seen_label"] = presence["last_seen_label"]
             u["last_seen_at"] = presence["last_seen_at"]
-        online_count = sum(1 for u in users_list if u.get("is_online"))
-        offline_count = len(users_list) - online_count
+            u["last_activity_label"] = presence["last_activity_label"]
+        online_count = sum(1 for u in users_list if u.get("presence_status") == "online")
+        idle_count = sum(1 for u in users_list if u.get("presence_status") == "idle")
+        offline_count = len(users_list) - online_count - idle_count
     except Exception as e:
         print(f"Gagal ambil data profiles: {e}")
         users_list = []
         online_count = 0
+        idle_count = 0
         offline_count = 0
         
     return templates.TemplateResponse(
@@ -4738,6 +4778,7 @@ async def manage_users_page(request: Request, current_user: dict = Depends(get_c
             "user": current_user,
             "users": users_list,
             "online_count": online_count,
+            "idle_count": idle_count,
             "offline_count": offline_count,
         }
     )
