@@ -1908,8 +1908,9 @@ function openUsedInProductsModal(rmId, rmName) {
                         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${p.perusahaan === 'PT Heka' ? 'bg-fuchsia-50 text-fuchsia-700' : 'bg-sky-50 text-sky-700'}">${umEscapeHtml(p.perusahaan || '-')}</span>
                     </td>
                     <td class="px-4 py-2.5 text-right font-mono text-indigo-600">${Number(p.percent_in_formula || 0)}%</td>
-                    <td class="px-4 py-2.5 text-center whitespace-nowrap">
-                        <a href="/products/${encodeURIComponent(p.product_id)}" target="_blank" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium" title="Detail Produk"><i class="fa-solid fa-eye"></i> Detail</a>
+                    <td class="px-4 py-2.5 text-center whitespace-nowrap space-x-2">
+                        <a href="/products/${encodeURIComponent(p.product_id)}/edit?tab=bab2" target="_blank" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium" title="Edit Formula Produk (Bab 2)"><i class="fa-solid fa-pen-to-square"></i> Formula</a>
+                        <a href="/products/${encodeURIComponent(p.product_id)}/qualitative-quantitative" target="_blank" class="text-emerald-600 hover:text-emerald-800 text-xs font-medium" title="Lihat Kualitatif & Kuantitatif"><i class="fa-solid fa-file-lines"></i> Qual-Quan</a>
                     </td>
                 </tr>`).join('');
         })
