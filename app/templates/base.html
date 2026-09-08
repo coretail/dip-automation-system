@@ -209,5 +209,24 @@
     </script>
     <script src="/static/presence.js"></script>
 
+    <!-- Floating Jump-to-Top Button -->
+    <button id="jumpToTopBtn" class="fixed bottom-6 right-6 hidden bg-indigo-600 text-white p-3 rounded-full shadow-lg hover:bg-indigo-700 transition z-50" aria-label="Kembali ke atas">
+        <i class="fa-solid fa-arrow-up"></i>
+    </button>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const jumpToTopBtn = document.getElementById('jumpToTopBtn');
+            window.addEventListener('scroll', function() {
+                if (window.scrollY > 300) {
+                    jumpToTopBtn.classList.remove('hidden');
+                } else {
+                    jumpToTopBtn.classList.add('hidden');
+                }
+            });
+            jumpToTopBtn.addEventListener('click', function() {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        });
+    </script>
 </body>
 </html>
