@@ -1732,7 +1732,7 @@ async def add_material_batch(
                 file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             coa_url = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
-            print(f"--> Sukses upload CoA ke: {coa_url}")
+            print("--> Sukses upload CoA.")
         except Exception as e:
             print(f"Gagal upload CoA: {e}")
 
@@ -1748,7 +1748,7 @@ async def add_material_batch(
                 file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             halal_url = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
-            print(f"--> Sukses upload Halal ke: {halal_url}")
+            print("--> Sukses upload Halal.")
         except Exception as e:
             print(f"Gagal upload Halal Cert: {e}")
 
@@ -1766,7 +1766,7 @@ async def add_material_batch(
                 file_options={"content-type": "application/pdf", "upsert": "true"}
             )
             qc_report_url = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
-            print(f"--> Sukses upload Laporan Pemeriksaan Aktual ke: {qc_report_url}")
+            print("--> Sukses upload Laporan Pemeriksaan Aktual.")
         except Exception as e:
             print(f"Gagal upload Laporan Pemeriksaan Aktual: {e}")
 
