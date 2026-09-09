@@ -4164,7 +4164,7 @@ async def update_product(
     if product_changes:
         log_activity(current_user, "update", "product", product_id, nama_produk, product_changes)
     
-    response = RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
     response.set_cookie("success_msg", f"Data & dokumen DIP produk '{nama_produk}' berhasil diperbarui!")
     return response
 
