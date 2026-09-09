@@ -2934,7 +2934,10 @@ async def download_finished_spec(product_id: str, current_user: dict = Depends(g
 
     spec_res = supabase.table("product_finished_specs").select("*").eq("product_id", product_id).execute()
     if not spec_res.data:
-        raise HTTPException(status_code=400, detail="Spesifikasi produk jadi belum diisi, silakan isi form terlebih dahulu.")
+        # Redirect ke edit page jika belum diisi, biar user tau harus ngapain
+        response = RedirectResponse(url=f"/products/{product_id}/edit?tab=bab3", status_code=303)
+        response.set_cookie("error_msg", "Spesifikasi produk jadi belum diisi, silakan isi form terlebih dahulu.")
+        return response
     spec = spec_res.data[0]
 
     # Grouping logic for "Metode" column merging
@@ -2999,9 +3002,19 @@ async def download_finished_spec(product_id: str, current_user: dict = Depends(g
 
 @app.get("/products/{product_id}/finished-spec/preview")
 async def preview_finished_spec(product_id: str, current_user: dict = Depends(get_current_user)):
-    resp = await download_finished_spec(product_id, current_user)
-    resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
-    return resp
+    try:
+        resp = await download_finished_spec(product_id, current_user)
+        if isinstance(resp, RedirectResponse):
+            return resp
+        if "Content-Disposition" in resp.headers:
+            resp.headers["Content-Disposition"] = resp.headers["Content-Disposition"].replace("attachment", "inline")
+        return resp
+    except HTTPException as e:
+        if e.status_code == 400:
+            response = RedirectResponse(url=f"/products/{product_id}/edit?tab=bab3", status_code=303)
+            response.set_cookie("error_msg", e.detail)
+            return response
+        raise e
 
 # =====================================================================
 #           GENERATOR DOKUMEN BAB I (DATA ADMINISTRATIF, PDF GABUNGAN)
