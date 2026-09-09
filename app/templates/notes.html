@@ -9,8 +9,9 @@
                 <i class="fa-solid fa-note-sticky text-indigo-600 mr-2"></i>Team Notes
             </h1>
             <p class="text-sm text-gray-500 mt-0.5">
-                Tag orang pakai <code class="bg-gray-100 px-1 rounded text-indigo-600">@nama</code>,
-                taut produk pakai <code class="bg-gray-100 px-1 rounded text-emerald-700">#nama</code>.
+                Tag orang <code class="bg-gray-100 px-1 rounded text-indigo-600">@nama</code>,
+                taut produk <code class="bg-gray-100 px-1 rounded text-emerald-700">#nama</code>,
+                taut bahan baku <code class="bg-gray-100 px-1 rounded text-amber-700">/nama</code>.
             </p>
         </div>
         <div class="flex items-center gap-2 text-xs">
@@ -58,9 +59,10 @@
     <div class="bg-white rounded-xl border border-gray-200 shadow-xs p-4">
         <form action="/notes" method="POST" id="noteForm" class="space-y-3">
             <input type="hidden" name="product_ids" id="noteProductIds" value="[]">
+            <input type="hidden" name="rm_ids" id="noteRmIds" value="[]">
             <div class="relative">
                 <textarea id="noteBody" name="body" rows="3" maxlength="4000" required
-                          placeholder="Tulis note… @budi.qc untuk tag orang, #seruni untuk taut produk"
+                          placeholder="Tulis note… @orang, #produk, /bahan baku"
                           class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[80px]"></textarea>
                 <div id="mentionDropdown" class="hidden absolute left-0 right-0 z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"></div>
             </div>
@@ -69,7 +71,9 @@
                     <i class="fa-solid fa-at text-indigo-400"></i>
                     <strong>@</strong> tag rekan &nbsp;·&nbsp;
                     <i class="fa-solid fa-hashtag text-emerald-500"></i>
-                    <strong>#</strong> taut produk (Edit &amp; Qual-Quan; pilih dari daftar, nama boleh ada spasi)
+                    <strong>#</strong> taut produk &nbsp;·&nbsp;
+                    <i class="fa-solid fa-slash text-amber-500"></i>
+                    <strong>/</strong> taut bahan baku
                 </p>
                 <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition cursor-pointer">
                     <i class="fa-solid fa-paper-plane mr-1"></i> Post
@@ -103,7 +107,7 @@
                 {% endif %}
             </div>
             <div class="mt-3 text-sm text-gray-800 leading-relaxed break-words">{{ n.body_html | safe }}</div>
-            {% if n.mentions or n.product_refs %}
+            {% if n.mentions or n.product_refs or n.rm_refs %}
             <div class="mt-3 flex flex-wrap gap-1.5">
                 {% for m in n.mentions %}
                 <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
@@ -132,6 +136,20 @@
                 </span>
                 {% endif %}
                 {% endfor %}
+                {% for r in n.rm_refs %}
+                {% if r.is_live %}
+                <a href="{{ r.search_url }}"
+                   class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100"
+                   title="Cari di Master Bahan Baku">
+                    <i class="fa-solid fa-flask-vial"></i>{{ r.name }}
+                </a>
+                {% else %}
+                <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 line-through opacity-70"
+                      title="Bahan baku tidak ditemukan">
+                    <i class="fa-solid fa-flask-vial"></i>{{ r.name }}
+                </span>
+                {% endif %}
+                {% endfor %}
             </div>
             {% endif %}
         </article>
@@ -154,25 +172,28 @@
     const dd = document.getElementById('mentionDropdown');
     const form = document.getElementById('noteForm');
     const hiddenIds = document.getElementById('noteProductIds');
+    const hiddenRmIds = document.getElementById('noteRmIds');
     if (!ta || !dd) return;
 
-    const PRODUCT_TOKEN_RE = /#\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|([^\]]*)\]/g;
+    const UUID = '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})';
+    const PRODUCT_TOKEN_RE = new RegExp('#\\[' + UUID + '\\|([^\\]]*)\\]', 'g');
+    const RM_TOKEN_RE = new RegExp('/\\[' + UUID + '\\|([^\\]]*)\\]', 'g');
 
     let itemsCache = [];
     let activeIdx = -1;
     let triggerStart = -1;
-    let mode = null; // 'user' | 'product'
+    let mode = null; // 'user' | 'product' | 'rm'
 
     function sanitizeLabel(name) {
-        return String(name || '').replace(/[\[\]|#@]/g, ' ').replace(/\s+/g, ' ').trim();
+        return String(name || '').replace(/[\[\]|#@/]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    function collectProductIds(text) {
+    function collectIds(text, re) {
         const ids = [];
         const seen = new Set();
+        const r = new RegExp(re.source, 'g');
         let m;
-        const re = new RegExp(PRODUCT_TOKEN_RE.source, 'g');
-        while ((m = re.exec(text || '')) !== null) {
+        while ((m = r.exec(text || '')) !== null) {
             const id = m[1];
             if (!seen.has(id.toLowerCase())) {
                 seen.add(id.toLowerCase());
@@ -183,12 +204,13 @@
     }
 
     function syncHiddenIds() {
-        if (hiddenIds) hiddenIds.value = JSON.stringify(collectProductIds(ta.value));
+        if (hiddenIds) hiddenIds.value = JSON.stringify(collectIds(ta.value, PRODUCT_TOKEN_RE));
+        if (hiddenRmIds) hiddenRmIds.value = JSON.stringify(collectIds(ta.value, RM_TOKEN_RE));
     }
 
-    async function loadUsers(q) {
+    async function loadList(url) {
         try {
-            const res = await fetch('/api/notes/users?q=' + encodeURIComponent(q || ''), { credentials: 'same-origin' });
+            const res = await fetch(url, { credentials: 'same-origin' });
             if (!res.ok) return [];
             const data = await res.json();
             return data.items || [];
@@ -197,15 +219,14 @@
         }
     }
 
-    async function loadProducts(q) {
-        try {
-            const res = await fetch('/api/notes/products?q=' + encodeURIComponent(q || ''), { credentials: 'same-origin' });
-            if (!res.ok) return [];
-            const data = await res.json();
-            return data.items || [];
-        } catch (e) {
-            return [];
-        }
+    function loadUsers(q) {
+        return loadList('/api/notes/users?q=' + encodeURIComponent(q || ''));
+    }
+    function loadProducts(q) {
+        return loadList('/api/notes/products?q=' + encodeURIComponent(q || ''));
+    }
+    function loadRawMaterials(q) {
+        return loadList('/api/notes/raw-materials?q=' + encodeURIComponent(q || ''));
     }
 
     function getTrigger() {
@@ -215,10 +236,13 @@
         if (userM) {
             return { mode: 'user', start: before.lastIndexOf('@'), query: userM[2] };
         }
-        // #query — skip already-completed tokens that start with #[
         const prodM = before.match(/(^|[\s])#(?!\[)([^\s#[\]]*)$/);
         if (prodM) {
             return { mode: 'product', start: before.lastIndexOf('#'), query: prodM[2] };
+        }
+        const rmM = before.match(/(^|[\s])\/(?!\[)([^\s\/[\]]*)$/);
+        if (rmM) {
+            return { mode: 'rm', start: before.lastIndexOf('/'), query: rmM[2] };
         }
         return null;
     }
@@ -249,6 +273,19 @@
                     <span class="min-w-0">
                         <span class="font-medium text-gray-800 block truncate">${escapeHtml(p.nama_produk)}</span>
                         ${p.brand ? `<span class="text-[11px] text-gray-400 block truncate">${escapeHtml(p.brand)}</span>` : ''}
+                    </span>
+                </button>
+            `).join('');
+        } else if (mode === 'rm') {
+            dd.innerHTML = items.map((r, i) => `
+                <button type="button" data-idx="${i}"
+                    class="ac-item w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-2 ${i === activeIdx ? 'bg-amber-50' : ''}">
+                    <span class="w-6 h-6 rounded bg-amber-100 text-amber-800 text-[10px] flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-flask-vial"></i>
+                    </span>
+                    <span class="min-w-0">
+                        <span class="font-medium text-gray-800 block truncate">${escapeHtml(r.nama_dagang)}</span>
+                        <span class="text-[11px] text-gray-400 block truncate">${escapeHtml([r.kode_bahan_baku, r.tipe].filter(Boolean).join(' · '))}</span>
                     </span>
                 </button>
             `).join('');
@@ -293,8 +330,9 @@
         const item = itemsCache[idx];
         if (!item) return;
         if (mode === 'product') {
-            const label = sanitizeLabel(item.nama_produk);
-            insertAtTrigger('#[' + item.id + '|' + label + '] ');
+            insertAtTrigger('#[' + item.id + '|' + sanitizeLabel(item.nama_produk) + '] ');
+        } else if (mode === 'rm') {
+            insertAtTrigger('/[' + item.id + '|' + sanitizeLabel(item.nama_dagang) + '] ');
         } else {
             insertAtTrigger('@' + item.full_name + ' ');
         }
@@ -312,9 +350,10 @@
         triggerStart = info.start;
         mode = info.mode;
         timer = setTimeout(async () => {
-            const items = info.mode === 'product'
-                ? await loadProducts(info.query)
-                : await loadUsers(info.query);
+            let items;
+            if (info.mode === 'product') items = await loadProducts(info.query);
+            else if (info.mode === 'rm') items = await loadRawMaterials(info.query);
+            else items = await loadUsers(info.query);
             itemsCache = items;
             activeIdx = items.length ? 0 : -1;
             renderDropdown(items);

@@ -129,6 +129,7 @@
             <tbody class="bg-white divide-y divide-gray-200">
                 {% for rm in raw_materials %}
                 <tr class="hover:bg-gray-50 transition rm-row"
+                    data-id="{{ rm.id }}"
                     data-nama="{{ rm.nama_dagang | lower }}"
                     data-kode="{{ (rm.kode_bahan_baku or '') | lower }}"
                     data-tipe="{{ rm.tipe or '' }}"
@@ -1849,9 +1850,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Check URL param for tab
+    // Check URL param for tab / notes deep-link to a raw material
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab');
+    const qParam = urlParams.get('q');
+    const rmParam = urlParams.get('rm');
     
     if (tabParam === 'ed-tab') {
         switchTab('ed-tab');
@@ -1860,6 +1863,27 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         // Default: render ED badges anyway in case user switches
         renderEDBadges();
+    }
+
+    if (qParam || rmParam) {
+        switchTab('master-tab');
+        const search = document.getElementById('search-input');
+        if (qParam && search) {
+            search.value = qParam;
+        }
+        if (rmParam) {
+            const row = document.querySelector('.rm-row[data-id="' + CSS.escape(rmParam) + '"]');
+            if (row) {
+                if (!qParam && search) {
+                    search.value = row.dataset.nama || '';
+                }
+                row.classList.add('bg-amber-50', 'ring-2', 'ring-inset', 'ring-amber-400');
+                setTimeout(function () {
+                    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 50);
+            }
+        }
+        filterTable();
     }
     
     // Hide Dimusnahkan rows in batch-tab on load
