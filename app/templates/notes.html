@@ -69,7 +69,7 @@
                     <i class="fa-solid fa-at text-indigo-400"></i>
                     <strong>@</strong> tag rekan &nbsp;·&nbsp;
                     <i class="fa-solid fa-hashtag text-emerald-500"></i>
-                    <strong>#</strong> taut produk (pilih dari daftar, nama boleh ada spasi)
+                    <strong>#</strong> taut produk (Edit &amp; Qual-Quan; pilih dari daftar, nama boleh ada spasi)
                 </p>
                 <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition cursor-pointer">
                     <i class="fa-solid fa-paper-plane mr-1"></i> Post
@@ -111,10 +111,26 @@
                 </span>
                 {% endfor %}
                 {% for p in n.product_refs %}
-                <a href="/products/{{ p.id }}/edit"
-                   class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">
+                {% if p.is_live %}
+                <span class="inline-flex items-stretch overflow-hidden rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <a href="/products/{{ p.id }}/edit"
+                       class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 hover:bg-emerald-100"
+                       title="Buka halaman Edit Produk">
+                        <i class="fa-solid fa-box-open"></i>{{ p.name }}
+                    </a>
+                    <a href="/products/{{ p.id }}/qualitative-quantitative"
+                       class="inline-flex items-center px-2 border-l border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100"
+                       title="Buka Formula Kualitatif &amp; Kuantitatif"
+                       aria-label="Buka Formula Kualitatif dan Kuantitatif untuk {{ p.name }}">
+                        <i class="fa-solid fa-file-lines text-xs"></i>
+                    </a>
+                </span>
+                {% else %}
+                <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 line-through opacity-70"
+                      title="Produk tidak ditemukan / sudah dihapus">
                     <i class="fa-solid fa-box-open"></i>{{ p.name }}
-                </a>
+                </span>
+                {% endif %}
                 {% endfor %}
             </div>
             {% endif %}

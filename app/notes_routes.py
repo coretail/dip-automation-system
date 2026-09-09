@@ -86,21 +86,22 @@ def _render_note_html(body: str, live_product_ids: set | None = None) -> str:
     def _prod(m):
         pid = m.group(1)
         label = m.group(2) or "produk"
-        chip_inner = (
-            f'<i class="fa-solid fa-box-open"></i> {label}'
-        )
-        chip_cls = (
-            "inline-flex items-center gap-1 px-1.5 py-0.5 rounded "
-            "bg-emerald-100 text-emerald-800 font-semibold text-xs"
-        )
+        chip_inner = f'<i class="fa-solid fa-box-open"></i> {label}'
+        chip_cls = "inline-flex items-center gap-1 px-1.5 py-0.5 font-semibold text-xs"
         if live_product_ids is not None and pid not in live_product_ids and pid.lower() not in live_product_ids:
             return (
-                f'<span class="{chip_cls} line-through opacity-70" '
+                f'<span class="{chip_cls} rounded bg-emerald-100 text-emerald-800 line-through opacity-70" '
                 f'title="Produk tidak ditemukan / sudah dihapus">{chip_inner}</span>'
             )
         return (
+            f'<span class="inline-flex items-stretch overflow-hidden rounded bg-emerald-100 text-emerald-800">'
             f'<a href="/products/{pid}/edit" class="{chip_cls} hover:bg-emerald-200" '
-            f'title="Buka halaman produk">{chip_inner}</a>'
+            f'title="Buka halaman Edit Produk">{chip_inner}</a>'
+            f'<a href="/products/{pid}/qualitative-quantitative" '
+            f'class="inline-flex items-center px-1.5 border-l border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100" '
+            f'title="Buka Formula Kualitatif &amp; Kuantitatif" '
+            f'aria-label="Buka Formula Kualitatif dan Kuantitatif untuk {label}">'
+            f'<i class="fa-solid fa-file-lines text-xs"></i></a></span>'
         )
 
     rendered = _PRODUCT_TOKEN_RE.sub(_prod, escaped)
@@ -303,6 +304,13 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         for n in notes:
             ments = mentions_by_note.get(n["id"], [])
             prefs = _parse_product_refs(n.get("body") or "")
+            for pref in prefs:
+                pid = pref["id"]
+                pref["is_live"] = (
+                    live_product_ids is None
+                    or pid in live_product_ids
+                    or pid.lower() in live_product_ids
+                )
             enriched.append({
                 **n,
                 "body_html": _render_note_html(n.get("body") or "", live_product_ids),
