@@ -5141,3 +5141,8 @@ async def delete_user(
     except Exception as e:
         print(f"Gagal hapus user: {e}")
         return RedirectResponse(url="/admin/users?error=delete_failed", status_code=303)
+
+
+from app.notes_routes import register_notes_routes
+register_notes_routes(app, get_current_user, get_ed_notification_count, log_activity)
+
