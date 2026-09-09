@@ -37,8 +37,9 @@
                     <a href="/brands" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
                         <i class="fa-solid fa-copyright mr-1"></i> Kelola Merk
                     </a>
-                    <a href="/notes" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
+                    <a href="/notes" id="notes-nav-link" class="relative px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
                         <i class="fa-solid fa-note-sticky mr-1"></i> Notes
+                        <span id="notes-mention-badge" class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center hidden">0</span>
                     </a>
                     {% if current_user.role == 'admin' %}
                     <a href="/admin/trash" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
@@ -194,6 +195,39 @@
                 div.textContent = text;
                 return div.innerHTML;
             }
+        });
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const badge = document.getElementById('notes-mention-badge');
+            if (!badge) return;
+
+            function applyCount(count) {
+                const n = Number(count) || 0;
+                if (n > 0) {
+                    badge.textContent = n > 99 ? '99+' : String(n);
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            }
+
+            async function fetchNotesMentionCount() {
+                try {
+                    const response = await fetch('/api/notes/mentions/unread-count', { credentials: 'same-origin' });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    applyCount(data.count);
+                } catch (error) {
+                    // silent — badge stays as-is
+                }
+            }
+
+            fetchNotesMentionCount();
+            setInterval(fetchNotesMentionCount, 30000);
+            document.addEventListener('visibilitychange', function() {
+                if (document.visibilityState === 'visible') fetchNotesMentionCount();
+            });
         });
     </script>
     <script src="/static/presence.js"></script>

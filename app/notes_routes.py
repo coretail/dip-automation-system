@@ -1,7 +1,8 @@
-"""Team Notes + @mention routes."""
+"""Team Notes + @mention + #product-reference routes."""
 from __future__ import annotations
 
 import html as _html
+import json
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -16,6 +17,12 @@ WIB = ZoneInfo("Asia/Jakarta")
 templates = Jinja2Templates(directory="app/templates")
 
 _MENTION_RE = re.compile(r"(?<!\w)@([a-zA-Z0-9._\-]+)")
+_UUID_RE = (
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+# Token inserted by autocomplete: #[uuid|Display Name With Spaces]
+_PRODUCT_TOKEN_RE = re.compile(r"#\[(" + _UUID_RE + r")\|([^\]]*)\]")
 
 
 def _parse_mentions(body: str, username_to_id: dict) -> list:
@@ -33,15 +40,80 @@ def _parse_mentions(body: str, username_to_id: dict) -> list:
     return found
 
 
-def _render_note_html(body: str) -> str:
+def _parse_product_refs(body: str) -> list:
+    """Extract product refs from #[uuid|label] tokens. UUID is the source of truth."""
+    found = []
+    seen = set()
+    for m in _PRODUCT_TOKEN_RE.finditer(body or ""):
+        pid = m.group(1)
+        label = (m.group(2) or "").strip() or pid
+        key = pid.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append({"id": pid, "name": label})
+    return found
+
+
+def _parse_product_ids_field(raw: str) -> list:
+    """Fallback: hidden input may send JSON array or comma-separated UUIDs."""
+    text = (raw or "").strip()
+    if not text:
+        return []
+    ids = []
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            ids = [str(x).strip() for x in parsed if str(x).strip()]
+        elif isinstance(parsed, str):
+            ids = [p.strip() for p in parsed.split(",") if p.strip()]
+    except Exception:
+        ids = [p.strip() for p in text.split(",") if p.strip()]
+    uuid_ok = re.compile(r"^" + _UUID_RE + r"$")
+    out, seen = [], set()
+    for pid in ids:
+        key = pid.lower()
+        if not uuid_ok.match(pid) or key in seen:
+            continue
+        seen.add(key)
+        out.append(pid)
+    return out
+
+
+def _render_note_html(body: str, live_product_ids: set | None = None) -> str:
     escaped = _html.escape(body or "")
-    def _repl(m):
+
+    def _prod(m):
+        pid = m.group(1)
+        label = m.group(2) or "produk"
+        chip_inner = (
+            f'<i class="fa-solid fa-box-open"></i> {label}'
+        )
+        chip_cls = (
+            "inline-flex items-center gap-1 px-1.5 py-0.5 rounded "
+            "bg-emerald-100 text-emerald-800 font-semibold text-xs"
+        )
+        if live_product_ids is not None and pid not in live_product_ids and pid.lower() not in live_product_ids:
+            return (
+                f'<span class="{chip_cls} line-through opacity-70" '
+                f'title="Produk tidak ditemukan / sudah dihapus">{chip_inner}</span>'
+            )
+        return (
+            f'<a href="/products/{pid}/edit" class="{chip_cls} hover:bg-emerald-200" '
+            f'title="Buka halaman produk">{chip_inner}</a>'
+        )
+
+    rendered = _PRODUCT_TOKEN_RE.sub(_prod, escaped)
+
+    def _mention(m):
         return (
             f'<span class="inline-flex items-center px-1.5 py-0.5 rounded '
             f'bg-indigo-100 text-indigo-700 font-semibold text-xs">@'
-            f'{_html.escape(m.group(1))}</span>'
+            f'{m.group(1)}</span>'
         )
-    return _MENTION_RE.sub(_repl, escaped).replace("\n", "<br>")
+
+    rendered = _MENTION_RE.sub(_mention, rendered)
+    return rendered.replace("\n", "<br>")
 
 
 def _parse_presence_ts(value):
@@ -82,6 +154,10 @@ def _relative_last_seen(dt):
     return dt.strftime("%d-%m-%Y %H:%M WIB")
 
 
+def _sanitize_ilike(q: str) -> str:
+    return re.sub(r"[%_,()\"'\\]", " ", q or "").strip()[:80]
+
+
 def register_notes_routes(app, get_current_user, get_ed_notification_count, log_activity):
     """Attach notes endpoints to the FastAPI app (avoids circular imports)."""
 
@@ -105,6 +181,68 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             if len(items) >= 12:
                 break
         return JSONResponse({"items": items})
+
+    @app.get("/api/notes/products")
+    async def api_notes_products(q: str = "", current_user: dict = Depends(get_current_user)):
+        qn = _sanitize_ilike(q)
+        rows = []
+        try:
+            query = (
+                supabase.table("products")
+                .select("id, nama_produk, brands(name)")
+                .eq("is_deleted", False)
+            )
+            if qn:
+                query = query.ilike("nama_produk", f"%{qn}%")
+            res = query.order("nama_produk").limit(12).execute()
+            rows = res.data or []
+        except Exception as e:
+            print(f"[NOTES] Gagal ambil products (join brands): {e}")
+            try:
+                query = (
+                    supabase.table("products")
+                    .select("id, nama_produk")
+                    .eq("is_deleted", False)
+                )
+                if qn:
+                    query = query.ilike("nama_produk", f"%{qn}%")
+                res = query.order("nama_produk").limit(12).execute()
+                rows = res.data or []
+            except Exception as e2:
+                print(f"[NOTES] Gagal ambil products: {e2}")
+                rows = []
+        items = []
+        for r in rows:
+            name = (r.get("nama_produk") or "").strip()
+            if not name:
+                continue
+            brand = ""
+            b = r.get("brands")
+            if isinstance(b, dict):
+                brand = (b.get("name") or "").strip()
+            items.append({"id": r["id"], "nama_produk": name, "brand": brand})
+        return JSONResponse({"items": items})
+
+    @app.get("/api/notes/mentions/unread-count")
+    async def api_notes_unread_count(current_user: dict = Depends(get_current_user)):
+        """Read-only. Do NOT mark mentions as read — this is polled from every page."""
+        count = 0
+        try:
+            res = (
+                supabase.table("team_note_mentions")
+                .select("id", count="exact")
+                .eq("mentioned_user_id", current_user["id"])
+                .eq("is_read", False)
+                .execute()
+            )
+            if getattr(res, "count", None) is not None:
+                count = int(res.count)
+            else:
+                count = len(res.data or [])
+        except Exception as e:
+            print(f"[NOTES] Gagal hitung unread mentions: {e}")
+            count = 0
+        return JSONResponse({"count": count})
 
     @app.get("/notes", response_class=HTMLResponse)
     async def notes_page(request: Request, filter: str = "all", current_user: dict = Depends(get_current_user)):
@@ -133,6 +271,30 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         except Exception as e:
             print(f"[NOTES] Gagal tarik mentions: {e}")
 
+        live_product_ids: set = set()
+        try:
+            pref_ids = []
+            seen_p = set()
+            for n in notes:
+                for p in _parse_product_refs(n.get("body") or ""):
+                    key = p["id"].lower()
+                    if key not in seen_p:
+                        seen_p.add(key)
+                        pref_ids.append(p["id"])
+            if pref_ids:
+                pr = (
+                    supabase.table("products")
+                    .select("id")
+                    .in_("id", pref_ids)
+                    .eq("is_deleted", False)
+                    .execute()
+                )
+                live_product_ids = {str(r["id"]) for r in (pr.data or [])}
+                live_product_ids |= {x.lower() for x in live_product_ids}
+        except Exception as e:
+            print(f"[NOTES] Gagal cek produk live: {e}")
+            live_product_ids = None  # fail open: still render as links
+
         if filter == "mentioned":
             my_id = current_user["id"]
             notes = [n for n in notes if any(m.get("mentioned_user_id") == my_id for m in mentions_by_note.get(n["id"], []))]
@@ -140,10 +302,12 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         enriched = []
         for n in notes:
             ments = mentions_by_note.get(n["id"], [])
+            prefs = _parse_product_refs(n.get("body") or "")
             enriched.append({
                 **n,
-                "body_html": _render_note_html(n.get("body") or ""),
+                "body_html": _render_note_html(n.get("body") or "", live_product_ids),
                 "mentions": ments,
+                "product_refs": prefs,
                 "mentioned_me": any(m.get("mentioned_user_id") == current_user["id"] for m in ments),
                 "created_label": _relative_last_seen(_parse_presence_ts(n.get("created_at"))) if n.get("created_at") else "-",
             })
@@ -169,7 +333,12 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         )
 
     @app.post("/notes")
-    async def create_note(request: Request, body: str = Form(...), current_user: dict = Depends(get_current_user)):
+    async def create_note(
+        request: Request,
+        body: str = Form(...),
+        product_ids: str = Form(""),
+        current_user: dict = Depends(get_current_user),
+    ):
         text = (body or "").strip()
         if not text:
             return RedirectResponse(url="/notes?error=empty", status_code=303)
@@ -188,6 +357,11 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             username_to_id = {}
 
         mentions = _parse_mentions(text, username_to_id)
+        product_refs = _parse_product_refs(text)
+        if not product_refs:
+            # Fallback: IDs sent separately (hidden field), not parsed from free-text names.
+            for pid in _parse_product_ids_field(product_ids):
+                product_refs.append({"id": pid, "name": pid})
 
         try:
             ins = supabase.table("team_notes").insert({
@@ -216,9 +390,12 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                 } for m in mentions]
                 supabase.table("team_note_mentions").insert(rows).execute()
 
+            extra = ""
+            if product_refs:
+                extra = " | produk: " + ", ".join(p.get("name") or p["id"] for p in product_refs[:5])
             log_activity(
                 current_user, "create", "note", note_id or "-",
-                text[:80] + ("…" if len(text) > 80 else ""),
+                (text[:80] + ("…" if len(text) > 80 else "")) + extra,
             )
         except Exception as e:
             print(f"[NOTES] Gagal simpan note: {e}")

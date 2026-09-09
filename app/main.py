@@ -229,8 +229,9 @@ class _QuietAccessLogFilter(logging.Filter):
     """Sembunyikan access log yang nge-spam terminal:
     - HEAD/GET /health (uptime monitor)
     - POST /api/presence/heartbeat (polling 25 dtk per user)
+    - GET /api/notes/mentions/unread-count (polling 30 dtk dari navbar)
     """
-    SKIP_PATHS = frozenset({"/health", "/api/presence/heartbeat"})
+    SKIP_PATHS = frozenset({"/health", "/api/presence/heartbeat", "/api/notes/mentions/unread-count"})
 
     def filter(self, record: logging.LogRecord) -> bool:
         path = None

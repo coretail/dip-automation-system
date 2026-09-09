@@ -8,7 +8,10 @@
             <h1 class="text-xl font-bold text-gray-900">
                 <i class="fa-solid fa-note-sticky text-indigo-600 mr-2"></i>Team Notes
             </h1>
-            <p class="text-sm text-gray-500 mt-0.5">Catatan singkat tim. Tag orang pakai <code class="bg-gray-100 px-1 rounded text-indigo-600">@username</code>.</p>
+            <p class="text-sm text-gray-500 mt-0.5">
+                Tag orang pakai <code class="bg-gray-100 px-1 rounded text-indigo-600">@nama</code>,
+                taut produk pakai <code class="bg-gray-100 px-1 rounded text-emerald-700">#nama</code>.
+            </p>
         </div>
         <div class="flex items-center gap-2 text-xs">
             <a href="/notes?filter=all"
@@ -54,16 +57,19 @@
 
     <div class="bg-white rounded-xl border border-gray-200 shadow-xs p-4">
         <form action="/notes" method="POST" id="noteForm" class="space-y-3">
+            <input type="hidden" name="product_ids" id="noteProductIds" value="[]">
             <div class="relative">
                 <textarea id="noteBody" name="body" rows="3" maxlength="4000" required
-                          placeholder="Tulis note… ketik @ untuk tag rekan (contoh: @budi.qc cek formula sunscreen ya)"
+                          placeholder="Tulis note… @budi.qc untuk tag orang, #seruni untuk taut produk"
                           class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[80px]"></textarea>
                 <div id="mentionDropdown" class="hidden absolute left-0 right-0 z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"></div>
             </div>
             <div class="flex items-center justify-between gap-2">
                 <p class="text-xs text-gray-400">
                     <i class="fa-solid fa-at text-indigo-400"></i>
-                    Ketik <strong>@</strong> lalu pilih username. Matching ke username di profiles.
+                    <strong>@</strong> tag rekan &nbsp;·&nbsp;
+                    <i class="fa-solid fa-hashtag text-emerald-500"></i>
+                    <strong>#</strong> taut produk (pilih dari daftar, nama boleh ada spasi)
                 </p>
                 <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition cursor-pointer">
                     <i class="fa-solid fa-paper-plane mr-1"></i> Post
@@ -97,12 +103,18 @@
                 {% endif %}
             </div>
             <div class="mt-3 text-sm text-gray-800 leading-relaxed break-words">{{ n.body_html | safe }}</div>
-            {% if n.mentions %}
+            {% if n.mentions or n.product_refs %}
             <div class="mt-3 flex flex-wrap gap-1.5">
                 {% for m in n.mentions %}
                 <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
                     <i class="fa-solid fa-at text-indigo-400"></i>{{ m.mentioned_username }}
                 </span>
+                {% endfor %}
+                {% for p in n.product_refs %}
+                <a href="/products/{{ p.id }}/edit"
+                   class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">
+                    <i class="fa-solid fa-box-open"></i>{{ p.name }}
+                </a>
                 {% endfor %}
             </div>
             {% endif %}
@@ -124,11 +136,39 @@
 (function () {
     const ta = document.getElementById('noteBody');
     const dd = document.getElementById('mentionDropdown');
+    const form = document.getElementById('noteForm');
+    const hiddenIds = document.getElementById('noteProductIds');
     if (!ta || !dd) return;
 
-    let usersCache = null;
+    const PRODUCT_TOKEN_RE = /#\[([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\|([^\]]*)\]/g;
+
+    let itemsCache = [];
     let activeIdx = -1;
-    let mentionStart = -1;
+    let triggerStart = -1;
+    let mode = null; // 'user' | 'product'
+
+    function sanitizeLabel(name) {
+        return String(name || '').replace(/[\[\]|#@]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function collectProductIds(text) {
+        const ids = [];
+        const seen = new Set();
+        let m;
+        const re = new RegExp(PRODUCT_TOKEN_RE.source, 'g');
+        while ((m = re.exec(text || '')) !== null) {
+            const id = m[1];
+            if (!seen.has(id.toLowerCase())) {
+                seen.add(id.toLowerCase());
+                ids.push(id);
+            }
+        }
+        return ids;
+    }
+
+    function syncHiddenIds() {
+        if (hiddenIds) hiddenIds.value = JSON.stringify(collectProductIds(ta.value));
+    }
 
     async function loadUsers(q) {
         try {
@@ -141,12 +181,39 @@
         }
     }
 
-    function getMentionQuery() {
+    async function loadProducts(q) {
+        try {
+            const res = await fetch('/api/notes/products?q=' + encodeURIComponent(q || ''), { credentials: 'same-origin' });
+            if (!res.ok) return [];
+            const data = await res.json();
+            return data.items || [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function getTrigger() {
         const pos = ta.selectionStart;
         const before = ta.value.slice(0, pos);
-        const m = before.match(/(^|[\s])@([a-zA-Z0-9._\-]*)$/);
-        if (!m) return null;
-        return { start: before.lastIndexOf('@'), query: m[2] };
+        const userM = before.match(/(^|[\s])@([a-zA-Z0-9._\-]*)$/);
+        if (userM) {
+            return { mode: 'user', start: before.lastIndexOf('@'), query: userM[2] };
+        }
+        // #query — skip already-completed tokens that start with #[
+        const prodM = before.match(/(^|[\s])#(?!\[)([^\s#[\]]*)$/);
+        if (prodM) {
+            return { mode: 'product', start: before.lastIndexOf('#'), query: prodM[2] };
+        }
+        return null;
+    }
+
+    function hideDropdown() {
+        dd.classList.add('hidden');
+        dd.innerHTML = '';
+        activeIdx = -1;
+        triggerStart = -1;
+        mode = null;
+        itemsCache = [];
     }
 
     function renderDropdown(items) {
@@ -156,75 +223,115 @@
             activeIdx = -1;
             return;
         }
-        dd.innerHTML = items.map((u, i) => `
-            <button type="button" data-idx="${i}" data-name="${u.full_name.replace(/"/g, '&quot;')}"
-                class="mention-item w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 flex items-center gap-2 ${i === activeIdx ? 'bg-indigo-50' : ''}">
-                <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center uppercase">${(u.full_name || '?').slice(0,2)}</span>
-                <span class="font-medium text-gray-800">@${u.full_name}</span>
-            </button>
-        `).join('');
+        if (mode === 'product') {
+            dd.innerHTML = items.map((p, i) => `
+                <button type="button" data-idx="${i}"
+                    class="ac-item w-full text-left px-3 py-2 text-sm hover:bg-emerald-50 flex items-center gap-2 ${i === activeIdx ? 'bg-emerald-50' : ''}">
+                    <span class="w-6 h-6 rounded bg-emerald-100 text-emerald-700 text-[10px] flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-box-open"></i>
+                    </span>
+                    <span class="min-w-0">
+                        <span class="font-medium text-gray-800 block truncate">${escapeHtml(p.nama_produk)}</span>
+                        ${p.brand ? `<span class="text-[11px] text-gray-400 block truncate">${escapeHtml(p.brand)}</span>` : ''}
+                    </span>
+                </button>
+            `).join('');
+        } else {
+            dd.innerHTML = items.map((u, i) => `
+                <button type="button" data-idx="${i}"
+                    class="ac-item w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 flex items-center gap-2 ${i === activeIdx ? 'bg-indigo-50' : ''}">
+                    <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center uppercase">${escapeHtml((u.full_name || '?').slice(0,2))}</span>
+                    <span class="font-medium text-gray-800">@${escapeHtml(u.full_name)}</span>
+                </button>
+            `).join('');
+        }
         dd.classList.remove('hidden');
-        dd.querySelectorAll('.mention-item').forEach(btn => {
+        dd.querySelectorAll('.ac-item').forEach(btn => {
             btn.addEventListener('mousedown', function (e) {
                 e.preventDefault();
-                insertMention(btn.getAttribute('data-name'));
+                pickItem(parseInt(btn.getAttribute('data-idx'), 10));
             });
         });
     }
 
-    function insertMention(name) {
-        if (mentionStart < 0) return;
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text == null ? '' : String(text);
+        return div.innerHTML;
+    }
+
+    function insertAtTrigger(replacement) {
+        if (triggerStart < 0) return;
         const pos = ta.selectionStart;
-        const before = ta.value.slice(0, mentionStart);
+        const before = ta.value.slice(0, triggerStart);
         const after = ta.value.slice(pos);
-        ta.value = before + '@' + name + ' ' + after;
-        const newPos = before.length + name.length + 2;
+        ta.value = before + replacement + after;
+        const newPos = before.length + replacement.length;
         ta.focus();
         ta.setSelectionRange(newPos, newPos);
-        dd.classList.add('hidden');
-        mentionStart = -1;
-        activeIdx = -1;
+        hideDropdown();
+        syncHiddenIds();
+    }
+
+    function pickItem(idx) {
+        const item = itemsCache[idx];
+        if (!item) return;
+        if (mode === 'product') {
+            const label = sanitizeLabel(item.nama_produk);
+            insertAtTrigger('#[' + item.id + '|' + label + '] ');
+        } else {
+            insertAtTrigger('@' + item.full_name + ' ');
+        }
     }
 
     let timer = null;
     ta.addEventListener('input', function () {
         clearTimeout(timer);
-        const info = getMentionQuery();
+        const info = getTrigger();
         if (!info) {
-            dd.classList.add('hidden');
-            mentionStart = -1;
+            hideDropdown();
+            syncHiddenIds();
             return;
         }
-        mentionStart = info.start;
+        triggerStart = info.start;
+        mode = info.mode;
         timer = setTimeout(async () => {
-            const items = await loadUsers(info.query);
-            usersCache = items;
+            const items = info.mode === 'product'
+                ? await loadProducts(info.query)
+                : await loadUsers(info.query);
+            itemsCache = items;
             activeIdx = items.length ? 0 : -1;
             renderDropdown(items);
         }, 120);
     });
 
     ta.addEventListener('keydown', function (e) {
-        if (dd.classList.contains('hidden') || !usersCache || !usersCache.length) return;
+        if (dd.classList.contains('hidden') || !itemsCache.length) return;
         if (e.key === 'ArrowDown') {
             e.preventDefault();
-            activeIdx = (activeIdx + 1) % usersCache.length;
-            renderDropdown(usersCache);
+            activeIdx = (activeIdx + 1) % itemsCache.length;
+            renderDropdown(itemsCache);
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
-            activeIdx = (activeIdx - 1 + usersCache.length) % usersCache.length;
-            renderDropdown(usersCache);
+            activeIdx = (activeIdx - 1 + itemsCache.length) % itemsCache.length;
+            renderDropdown(itemsCache);
         } else if (e.key === 'Enter' && activeIdx >= 0) {
             e.preventDefault();
-            insertMention(usersCache[activeIdx].full_name);
+            pickItem(activeIdx);
         } else if (e.key === 'Escape') {
-            dd.classList.add('hidden');
+            hideDropdown();
         }
     });
 
     document.addEventListener('click', function (e) {
-        if (!dd.contains(e.target) && e.target !== ta) dd.classList.add('hidden');
+        if (!dd.contains(e.target) && e.target !== ta) hideDropdown();
     });
+
+    if (form) {
+        form.addEventListener('submit', function () {
+            syncHiddenIds();
+        });
+    }
 })();
 </script>
 {% endblock %}
