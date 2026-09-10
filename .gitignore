@@ -1,7 +1,7 @@
-# Byte-compiled / optimized / DLL files
+﻿# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*$py.class
+*.class
 
 # C extensions
 *.so
@@ -66,6 +66,5 @@ Thumbs.db
 .agents/
 skills-lock.json
 .vscode/mcp.json
-# Note: .vscode/settings.json is already partially covered by .vscode/, 
-# but specifically ensuring these are ignored:
+.mcp.json
 !.vscode/settings.json
