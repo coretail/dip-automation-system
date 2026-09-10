@@ -44,6 +44,7 @@ venv.bak/
 # Professional IDES and Editors
 .idea/
 .vscode/
+!/.vscode/settings.json
 *.swp
 *.swo
 .project
@@ -60,3 +61,11 @@ Thumbs.db
 *.xls
 *.csv
 ~*
+
+# Agent Skills & MCP Local Config
+.agents/
+skills-lock.json
+.vscode/mcp.json
+# Note: .vscode/settings.json is already partially covered by .vscode/, 
+# but specifically ensuring these are ignored:
+!.vscode/settings.json
