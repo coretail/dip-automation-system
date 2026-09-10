@@ -15,12 +15,12 @@
             </p>
         </div>
         <div class="flex items-center gap-2 text-xs">
-            <a href="/notes?filter=all"
+            <a href="/notes?filter=all&status_filter={{ status_filter }}"
                class="px-3 py-1.5 rounded-full font-semibold border transition
                {{ 'bg-indigo-600 text-white border-indigo-600' if filter == 'all' else 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50' }}">
                 Semua
             </a>
-            <a href="/notes?filter=mentioned"
+            <a href="/notes?filter=mentioned&status_filter={{ status_filter }}"
                class="px-3 py-1.5 rounded-full font-semibold border transition inline-flex items-center gap-1.5
                {{ 'bg-indigo-600 text-white border-indigo-600' if filter == 'mentioned' else 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50' }}">
                 Mention Saya
@@ -28,7 +28,20 @@
                 <span class="bg-rose-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">{{ mention_count }}</span>
                 {% endif %}
             </a>
+            <div class="h-4 w-px bg-gray-300 mx-1"></div>
+            <a href="/notes?filter={{ filter }}&status_filter=pending"
+               class="px-3 py-1.5 rounded-full font-semibold border transition inline-flex items-center gap-1.5
+               {{ 'bg-emerald-600 text-white border-emerald-600' if status_filter == 'pending' else 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50' }}">
+                <i class="fa-regular fa-clock text-[10px]"></i> Belum Selesai
+            </a>
+            {% if status_filter == 'pending' %}
+            <a href="/notes?filter={{ filter }}&status_filter=all"
+               class="px-2 py-1.5 text-gray-400 hover:text-gray-600" title="Clear filter status">
+                <i class="fa-solid fa-circle-xmark"></i>
+            </a>
+            {% endif %}
         </div>
+
     </div>
 
     {% if not schema_ok %}
@@ -48,12 +61,26 @@
         <span><i class="fa-solid fa-circle-check mr-1"></i> Note dihapus.</span>
         <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700"><i class="fa-solid fa-xmark"></i></button>
     </div>
+    {% elif request.query_params.get('status') == 'completed' %}
+    <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-2.5 rounded-lg text-sm flex justify-between items-center">
+        <span><i class="fa-solid fa-circle-check mr-1"></i> Note berhasil ditandai selesai!</span>
+        <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    {% elif request.query_params.get('status') == 'reopened' %}
+    <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg text-sm flex justify-between items-center">
+        <span><i class="fa-solid fa-rotate-left mr-1"></i> Note dibuka kembali.</span>
+        <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+    </div>
     {% elif request.query_params.get('error') == 'empty' %}
     <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-2.5 rounded-lg text-sm">Isi note dulu sebelum post.</div>
     {% elif request.query_params.get('error') == 'too_long' %}
     <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-2.5 rounded-lg text-sm">Note maksimal 4000 karakter.</div>
     {% elif request.query_params.get('error') == 'save_failed' %}
     <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-2.5 rounded-lg text-sm">Gagal simpan note. Cek tabel Supabase sudah dibuat belum.</div>
+    {% elif request.query_params.get('error') == 'complete_failed' %}
+    <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-2.5 rounded-lg text-sm">Gagal menandai selesai.</div>
+    {% elif request.query_params.get('error') == 'reopen_failed' %}
+    <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-2.5 rounded-lg text-sm">Gagal membuka kembali note.</div>
     {% endif %}
 
     <div class="bg-white rounded-xl border border-gray-200 shadow-xs p-4">
@@ -84,7 +111,9 @@
 
     <div class="space-y-3">
         {% for n in notes %}
-        <article class="bg-white rounded-xl border border-gray-200 shadow-xs p-4 {{ 'ring-1 ring-indigo-200 bg-indigo-50/30' if n.mentioned_me else '' }}">
+        <article class="bg-white rounded-xl border border-gray-200 shadow-xs p-4 
+            {{ 'ring-1 ring-indigo-200 bg-indigo-50/30' if n.mentioned_me else '' }}
+            {{ 'opacity-60 bg-gray-50' if n.is_completed else '' }}">
             <div class="flex items-start justify-between gap-3">
                 <div class="flex items-center gap-2.5 min-w-0">
                     <div class="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center uppercase shrink-0">
@@ -97,16 +126,58 @@
                     {% if n.mentioned_me %}
                     <span class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 border border-indigo-200">Tagged kamu</span>
                     {% endif %}
+                    {% if n.is_completed %}
+                    <span class="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        <i class="fa-solid fa-check mr-0.5"></i> Selesai
+                    </span>
+                    {% endif %}
                 </div>
-                {% if n.author_id == current_user.id or current_user.role == 'admin' %}
-                <form action="/notes/{{ n.id }}/delete" method="POST" onsubmit="return confirm('Hapus note ini?');">
-                    <button type="submit" class="text-gray-300 hover:text-rose-500 transition p-1 cursor-pointer" title="Hapus">
-                        <i class="fa-solid fa-trash-can text-xs"></i>
+                <div class="flex items-center gap-2">
+                    {% if not n.is_completed %}
+                    <button type="button" onclick="document.getElementById('completeForm_{{ n.id }}').classList.toggle('hidden')"
+                        class="text-gray-400 hover:text-emerald-600 transition text-xs p-1" title="Tandai Selesai">
+                        <i class="fa-regular fa-square-check"></i>
                     </button>
-                </form>
-                {% endif %}
+                    {% else %}
+                    <form action="/notes/{{ n.id }}/reopen" method="POST" onsubmit="return confirm('Buka kembali note ini?');">
+                        <button type="submit" class="text-gray-400 hover:text-amber-600 transition text-xs p-1" title="Buka kembali">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+
+                    {% if n.author_id == current_user.id or current_user.role == 'admin' %}
+                    <form action="/notes/{{ n.id }}/delete" method="POST" onsubmit="return confirm('Hapus note ini?');">
+                        <button type="submit" class="text-gray-300 hover:text-rose-500 transition p-1 cursor-pointer" title="Hapus">
+                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
             </div>
-            <div class="mt-3 text-sm text-gray-800 leading-relaxed break-words">{{ n.body_html | safe }}</div>
+            <div class="mt-3 text-sm text-gray-800 leading-relaxed break-words {{ 'line-through' if n.is_completed else '' }}">{{ n.body_html | safe }}</div>
+            
+            {% if not n.is_completed %}
+            <div id="completeForm_{{ n.id }}" class="hidden mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <form action="/notes/{{ n.id }}/complete" method="POST" class="space-y-2">
+                    <textarea name="completion_note" rows="2" class="w-full text-sm p-2 border border-gray-300 rounded-lg focus:ring-1 focus:ring-emerald-500" placeholder="Keterangan penyelesaian (opsional)"></textarea>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" onclick="this.closest('div').classList.add('hidden')" class="text-xs text-gray-500 hover:text-gray-700">Batal</button>
+                        <button type="submit" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg">Tandai Selesai</button>
+                    </div>
+                </form>
+            </div>
+            {% endif %}
+
+            {% if n.is_completed and n.completion_note_html %}
+            <div class="mt-3 pl-3 border-l-2 border-emerald-500 text-xs text-gray-600">
+                <p class="font-semibold text-emerald-800 mb-1">
+                    <i class="fa-solid fa-check-double mr-1"></i> Diselesaikan oleh {{ n.completed_by_user_name }}
+                    <span class="text-gray-400 font-normal">• {{ n.completed_at_label }}</span>
+                </p>
+                <div class="break-words">{{ n.completion_note_html | safe }}</div>
+            </div>
+            {% endif %}
             {% if n.mentions or n.product_refs or n.rm_refs %}
             <div class="mt-3 flex flex-wrap gap-1.5">
                 {% for m in n.mentions %}

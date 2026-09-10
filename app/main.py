@@ -86,24 +86,43 @@ async def _generate_ai_greeting_phrase(nama_user: str) -> str | None:
     if not api_key:
         return None
 
-    prompt = (
-        f"Buat SATU kalimat sapaan singkat untuk user bernama '{nama_user}' " 
-        f"yang baru login ke aplikasi kerja. " 
-        f"Gunakan Bahasa Indonesia yang santai, natural ala gen-z, sedikit nyeleneh, " 
-        f"absurd ringan, atau deadpan seperti candaan teman sekantor. " 
-        f"Humornya harus tetap aman dan sopan untuk lingkungan kerja. " 
-        f"Boleh menyinggung hal umum seperti deadline, meeting, kerjaan, " 
-        f"Excel, kopi, lembur, atau kehidupan kantor. " 
-        f"Jangan terlalu berusaha lucu dan jangan sampai terdengar cringe. " 
-        f"Maksimal 12 kata. " 
-        f"Jangan gunakan emoji atau emoticon. " 
-        f"Jangan gunakan tanda kutip. " 
-        f"Jangan gunakan hashtag. " 
-        f"Jangan menyebut AI, Gemini, prompt, atau instruksi ini. " 
-        f"Jangan mengandung hinaan, SARA, konten seksual, politik, " 
-        f"atau topik sensitif. " 
-        f"Cukup SATU kalimat saja, tanpa penjelasan atau tambahan apa pun."
-    ) 
+    day = datetime.now(WIB).day
+    if day % 2 != 0:
+        # Tanggal ganjil: prompt asli (gaya Gen-Z)
+        prompt = (
+            f"Buat SATU kalimat sapaan singkat untuk user bernama '{nama_user}' " 
+            f"yang baru login ke aplikasi kerja. " 
+            f"Gunakan Bahasa Indonesia yang santai, natural ala gen-z, sedikit nyeleneh, " 
+            f"absurd ringan, atau deadpan seperti candaan teman sekantor. " 
+            f"Humornya harus tetap aman dan sopan untuk lingkungan kerja. " 
+            f"Boleh menyinggung hal umum seperti deadline, meeting, kerjaan, " 
+            f"Excel, kopi, lembur, atau kehidupan kantor. " 
+            f"Jangan terlalu berusaha lucu dan jangan sampai terdengar cringe. " 
+            f"Maksimal 12 kata. " 
+            f"Jangan gunakan emoji atau emoticon. " 
+            f"Jangan gunakan tanda kutip. " 
+            f"Jangan gunakan hashtag. " 
+            f"Jangan menyebut AI, Gemini, prompt, atau instruksi ini. " 
+            f"Jangan mengandung hinaan, SARA, konten seksual, politik, " 
+            f"atau topik sensitif. " 
+            f"Cukup SATU kalimat saja, tanpa penjelasan atau tambahan apa pun."
+        )
+    else:
+        # Tanggal genap: prompt lebih halus dan menyemangati
+        prompt = (
+            f"Buat SATU kalimat sapaan hangat dan menyemangati untuk user bernama '{nama_user}' " 
+            f"yang baru login ke aplikasi kerja. " 
+            f"Gunakan bahasa yang sopan, ramah, dan profesional namun tetap menenangkan. " 
+            f"Boleh memberikan semangat terkait produktivitas atau suasana kerja yang positif. " 
+            f"Maksimal 12 kata. " 
+            f"Jangan gunakan emoji atau emoticon. " 
+            f"Jangan gunakan tanda kutip. " 
+            f"Jangan gunakan hashtag. " 
+            f"Jangan menyebut AI, Gemini, prompt, atau instruksi ini. " 
+            f"Jangan mengandung hinaan, SARA, konten seksual, politik, " 
+            f"atau topik sensitif. " 
+            f"Cukup SATU kalimat saja, tanpa penjelasan atau tambahan apa pun."
+        )
 
     async with httpx.AsyncClient(timeout=4.0) as client:
         for model in _GEMINI_MODELS_FALLBACK:

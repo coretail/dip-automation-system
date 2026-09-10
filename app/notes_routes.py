@@ -313,14 +313,16 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         return JSONResponse({"count": count})
 
     @app.get("/notes", response_class=HTMLResponse)
-    async def notes_page(request: Request, filter: str = "all", current_user: dict = Depends(get_current_user)):
+    async def notes_page(request: Request, filter: str = "all", status_filter: str = "all", current_user: dict = Depends(get_current_user)):
         notes = []
         mention_count = 0
         schema_ok = True
         try:
-            notes_res = (
-                supabase.table("team_notes").select("*").order("created_at", desc=True).limit(100).execute()
-            )
+            query = supabase.table("team_notes").select("*").order("created_at", desc=True).limit(100)
+            if status_filter == "pending":
+                query = query.eq("is_completed", False)
+            
+            notes_res = query.execute()
             notes = notes_res.data or []
         except Exception as e:
             print(f"[NOTES] Gagal tarik team_notes (jalankan supabase_team_notes.sql?): {e}")
@@ -415,11 +417,13 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             enriched.append({
                 **n,
                 "body_html": _render_note_html(n.get("body") or "", live_product_ids, live_rm_ids),
+                "completion_note_html": _render_note_html(n.get("completion_note") or "", live_product_ids, live_rm_ids) if n.get("is_completed") else None,
                 "mentions": ments,
                 "product_refs": prefs,
                 "rm_refs": rrefs,
                 "mentioned_me": any(m.get("mentioned_user_id") == current_user["id"] for m in ments),
                 "created_label": _relative_last_seen(_parse_presence_ts(n.get("created_at"))) if n.get("created_at") else "-",
+                "completed_at_label": _relative_last_seen(_parse_presence_ts(n.get("completed_at"))) if n.get("completed_at") else None,
             })
 
         try:
@@ -436,6 +440,8 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                 "current_user": current_user,
                 "notes": enriched,
                 "filter": filter,
+                "status_filter": status_filter,
+                "status_filter": status_filter,
                 "mention_count": mention_count,
                 "schema_ok": schema_ok,
                 "ed_notification_count": await get_ed_notification_count(),
@@ -537,3 +543,46 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             print(f"[NOTES] Gagal hapus note: {e}")
             return RedirectResponse(url="/notes?error=delete_failed", status_code=303)
         return RedirectResponse(url="/notes?status=deleted", status_code=303)
+
+    @app.post("/notes/{note_id}/complete")
+    async def complete_note(
+        note_id: str,
+        completion_note: str = Form(""),
+        current_user: dict = Depends(get_current_user),
+    ):
+        try:
+            # Update status
+            supabase.table("team_notes").update({
+                "is_completed": True,
+                "completion_note": completion_note.strip() if completion_note.strip() else None,
+                "completed_by_user_id": current_user["id"],
+                "completed_by_user_name": current_user.get("full_name") or "User",
+                "completed_at": datetime.now(WIB).isoformat(),
+            }).eq("id", note_id).execute()
+            
+            # Log
+            log_activity(current_user, "complete", "note", note_id, "Selesai")
+        except Exception as e:
+            print(f"[NOTES] Gagal menyelesaikan note: {e}")
+            return RedirectResponse(url="/notes?error=complete_failed", status_code=303)
+        return RedirectResponse(url="/notes?status=completed", status_code=303)
+
+    @app.post("/notes/{note_id}/reopen")
+    async def reopen_note(note_id: str, current_user: dict = Depends(get_current_user)):
+        try:
+            # Reopen
+            supabase.table("team_notes").update({
+                "is_completed": False,
+                "completion_note": None,
+                "completed_by_user_id": None,
+                "completed_by_user_name": None,
+                "completed_at": None,
+            }).eq("id", note_id).execute()
+            
+            # Log
+            log_activity(current_user, "reopen", "note", note_id, "Reopened")
+        except Exception as e:
+            print(f"[NOTES] Gagal membuka kembali note: {e}")
+            return RedirectResponse(url="/notes?error=reopen_failed", status_code=303)
+        return RedirectResponse(url="/notes?status=reopened", status_code=303)
+
