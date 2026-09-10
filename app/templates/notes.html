@@ -135,12 +135,12 @@
                 <div class="flex items-center gap-2">
                     {% if not n.is_completed %}
                     <button type="button" onclick="document.getElementById('completeForm_{{ n.id }}').classList.toggle('hidden')"
-                        class="text-gray-400 hover:text-emerald-600 transition text-xs p-1" title="Tandai Selesai">
+                        class="text-gray-400 hover:text-emerald-600 transition text-xl p-1.5" title="Tandai Selesai">
                         <i class="fa-regular fa-square-check"></i>
                     </button>
                     {% else %}
                     <form action="/notes/{{ n.id }}/reopen" method="POST" onsubmit="return confirm('Buka kembali note ini?');">
-                        <button type="submit" class="text-gray-400 hover:text-amber-600 transition text-xs p-1" title="Buka kembali">
+                        <button type="submit" class="text-gray-400 hover:text-amber-600 transition text-xl p-1.5" title="Buka kembali">
                             <i class="fa-solid fa-rotate-left"></i>
                         </button>
                     </form>
@@ -148,8 +148,8 @@
 
                     {% if n.author_id == current_user.id or current_user.role == 'admin' %}
                     <form action="/notes/{{ n.id }}/delete" method="POST" onsubmit="return confirm('Hapus note ini?');">
-                        <button type="submit" class="text-gray-300 hover:text-rose-500 transition p-1 cursor-pointer" title="Hapus">
-                            <i class="fa-solid fa-trash-can text-xs"></i>
+                        <button type="submit" class="text-gray-300 hover:text-rose-500 transition text-xl p-1.5 cursor-pointer" title="Hapus">
+                            <i class="fa-solid fa-trash-can"></i>
                         </button>
                     </form>
                     {% endif %}
