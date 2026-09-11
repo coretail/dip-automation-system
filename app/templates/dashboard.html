@@ -319,7 +319,7 @@
 
                         <!-- Bab III Status -->
                         <td class="px-4 py-3 text-center">
-                            <a href="/products/{{ p.id }}/edit?tab=bab3" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="Mutu PJ — klik untuk edit">
+                            <a href="/products/{{ p.id }}/edit?tab=bab3" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="{% if p.dip_summary and p.dip_summary.b3_ok %}Mutu PJ Lengkap — klik untuk edit{% else %}Belum lengkap: {{ p.dip_summary.b3_missing | join(', ') if p.dip_summary else '-' }} — klik untuk edit{% endif %}">
                                 {% if p.dip_summary and p.dip_summary.b3_ok %}
                                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 cursor-pointer">
                                         <i class="fa-solid fa-circle-check mr-1"></i> 7/7
@@ -334,7 +334,7 @@
 
                         <!-- Bab IV Status -->
                         <td class="px-4 py-3 text-center">
-                            <a href="/products/{{ p.id }}/edit?tab=bab4" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="Keamanan — klik untuk edit">
+                            <a href="/products/{{ p.id }}/edit?tab=bab4" class="inline-block hover:opacity-75 hover:ring-2 hover:ring-indigo-300 rounded-full transition" title="{% if p.dip_summary and p.dip_summary.b4_ok %}Keamanan Lengkap — klik untuk edit{% else %}Belum lengkap: {{ p.dip_summary.b4_missing | join(', ') if p.dip_summary else '-' }} — klik untuk edit{% endif %}">
                                 {% if p.dip_summary and p.dip_summary.b4_ok %}
                                     <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 cursor-pointer">
                                         <i class="fa-solid fa-circle-check mr-1"></i> 5/5

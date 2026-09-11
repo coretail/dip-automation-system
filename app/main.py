@@ -5039,8 +5039,10 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
                 "b2_ok": False,
                 "b3_ok": False,
                 "b3_ratio": "0/7",
+                "b3_missing": ["Ringkasan Cara Pembuatan Kosmetik", "Sistem Penomoran Batch Spesifik", "Spesifikasi Produk Jadi", "Spesifikasi Bahan Pengemas", "Laporan Hasil Uji Lab Eksternal (SIG)", "Protokol Pemantauan Stabilitas", "Hasil Studi Stabilitas"],
                 "b4_ok": False,
                 "b4_ratio": "0/5",
+                "b4_missing": ["Laporan Penilaian Keamanan Kosmetik", "Laporan Monitoring Efek Samping Kosmetik", "Data Pendukung Klaim Kosmetik", "Penandaan & Desain Kemasan Primer", "Penandaan & Desain Kemasan Sekunder"],
                 "progress_pct": 0,
                 "is_complete": False
             }
@@ -5063,29 +5065,31 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
                 
                 b2_ok = p.get("id") in prods_with_formula
                 
-                b3_files = [
-                    p.get("cara_pembuatan_file_url"),
-                    p.get("sistem_penomoran_batch_file_url"),
-                    p.get("spek_produk_jadi_file_url"),
-                    p.get("spek_pengemas_file_url"),
-                    p.get("laporan_uji_sig_file_url"),
-                    p.get("protokol_stabilitas_file_url"),
-                    p.get("hasil_stabilitas_file_url")
-                ]
-                b3_count = sum(1 for f in b3_files if f)
-                b3_ok = (b3_count == len(b3_files))
+                b3_items = {
+                    "Ringkasan Cara Pembuatan Kosmetik": bool(p.get("cara_pembuatan_file_url")),
+                    "Sistem Penomoran Batch Spesifik": bool(p.get("sistem_penomoran_batch_file_url")),
+                    "Spesifikasi Produk Jadi": bool(p.get("spek_produk_jadi_file_url")),
+                    "Spesifikasi Bahan Pengemas": bool(p.get("spek_pengemas_file_url")),
+                    "Laporan Hasil Uji Lab Eksternal (SIG)": bool(p.get("laporan_uji_sig_file_url")),
+                    "Protokol Pemantauan Stabilitas": bool(p.get("protokol_stabilitas_file_url")),
+                    "Hasil Studi Stabilitas": bool(p.get("hasil_stabilitas_file_url")),
+                }
+                b3_count = sum(1 for v in b3_items.values() if v)
+                b3_ok = (b3_count == len(b3_items))
+                b3_missing = [k for k, v in b3_items.items() if not v]
+
+                b4_items = {
+                    "Laporan Penilaian Keamanan Kosmetik": bool(p.get("laporan_keamanan_file_url")),
+                    "Laporan Monitoring Efek Samping Kosmetik": bool(p.get("monitoring_efek_samping_file_url")),
+                    "Data Pendukung Klaim Kosmetik": bool(p.get("data_klaim_file_url")),
+                    "Penandaan & Desain Kemasan Primer": bool(p.get("desain_primer_file_url")),
+                    "Penandaan & Desain Kemasan Sekunder": bool(p.get("desain_sekunder_file_url")),
+                }
+                b4_count = sum(1 for v in b4_items.values() if v)
+                b4_ok = (b4_count == len(b4_items))
+                b4_missing = [k for k, v in b4_items.items() if not v]
                 
-                b4_files = [
-                    p.get("laporan_keamanan_file_url"),
-                    p.get("monitoring_efek_samping_file_url"),
-                    p.get("data_klaim_file_url"),
-                    p.get("desain_primer_file_url"),
-                    p.get("desain_sekunder_file_url")
-                ]
-                b4_count = sum(1 for f in b4_files if f)
-                b4_ok = (b4_count == len(b4_files))
-                
-                total_checks = len(b1_items) + 1 + len(b3_files) + len(b4_files)
+                total_checks = len(b1_items) + 1 + len(b3_items) + len(b4_items)
                 current_checks = b1_count + (1 if b2_ok else 0) + b3_count + b4_count
                 progress_pct = int((current_checks / total_checks) * 100)
                 
@@ -5095,9 +5099,11 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
                     "b1_missing": b1_missing,
                     "b2_ok": b2_ok,
                     "b3_ok": b3_ok,
-                    "b3_ratio": f"{b3_count}/{len(b3_files)}",
+                    "b3_ratio": f"{b3_count}/{len(b3_items)}",
+                    "b3_missing": b3_missing,
                     "b4_ok": b4_ok,
-                    "b4_ratio": f"{b4_count}/{len(b4_files)}",
+                    "b4_ratio": f"{b4_count}/{len(b4_items)}",
+                    "b4_missing": b4_missing,
                     "progress_pct": progress_pct,
                     "is_complete": progress_pct == 100
                 }
