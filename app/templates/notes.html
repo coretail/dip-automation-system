@@ -11,7 +11,8 @@
             <p class="text-sm text-gray-500 mt-0.5">
                 Tag user <code class="bg-gray-100 px-1 rounded text-indigo-600">@namauser</code>,
                 taut produk <code class="bg-gray-100 px-1 rounded text-emerald-700">#namaproduk</code>,
-                taut bahan baku <code class="bg-gray-100 px-1 rounded text-amber-700">/namabahanbaku</code>.
+                taut bahan baku <code class="bg-gray-100 px-1 rounded text-amber-700">/namabahanbaku</code>,
+                taut merk <code class="bg-gray-100 px-1 rounded text-violet-700">~namamerk</code>.
             </p>
         </div>
         <div class="flex items-center gap-2 text-xs">
@@ -87,9 +88,10 @@
         <form action="/notes" method="POST" id="noteForm" class="space-y-3">
             <input type="hidden" name="product_ids" id="noteProductIds" value="[]">
             <input type="hidden" name="rm_ids" id="noteRmIds" value="[]">
+            <input type="hidden" name="brand_ids" id="noteBrandIds" value="[]">
             <div class="relative">
                 <textarea id="noteBody" name="body" rows="3" maxlength="4000" required
-                          placeholder="Tulis note… @orang, #produk, /bahan baku"
+                          placeholder="Tulis note… @orang, #produk, /bahan baku, ~merk"
                           class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[80px]"></textarea>
                 <div id="mentionDropdown" class="hidden absolute left-0 right-0 z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"></div>
             </div>
@@ -100,7 +102,9 @@
                     <i class="fa-solid fa-hashtag text-emerald-500"></i>
                     <strong>#</strong> taut produk &nbsp;·&nbsp;
                     <i class="fa-solid fa-slash text-amber-500"></i>
-                    <strong>/</strong> taut bahan baku
+                    <strong>/</strong> taut bahan baku &nbsp;·&nbsp;
+                    <i class="fa-solid fa-copyright text-violet-500"></i>
+                    <strong>~</strong> taut merk
                 </p>
                 <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition cursor-pointer">
                     <i class="fa-solid fa-paper-plane mr-1"></i> Post
@@ -178,7 +182,7 @@
                 <div class="break-words">{{ n.completion_note_html | safe }}</div>
             </div>
             {% endif %}
-            {% if n.mentions or n.product_refs or n.rm_refs %}
+            {% if n.mentions or n.product_refs or n.rm_refs or n.brand_refs %}
             <div class="mt-3 flex flex-wrap gap-1.5">
                 {% for m in n.mentions %}
                 <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
@@ -221,6 +225,20 @@
                 </span>
                 {% endif %}
                 {% endfor %}
+                {% for b in n.brand_refs or [] %}
+                {% if b.is_live %}
+                <a href="{{ b.search_url }}"
+                   class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-violet-50 text-violet-800 border border-violet-200 hover:bg-violet-100"
+                   title="Buka Kelola Merk">
+                    <i class="fa-solid fa-copyright"></i>{{ b.name }}
+                </a>
+                {% else %}
+                <span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-violet-50 text-violet-800 border border-violet-200 line-through opacity-70"
+                      title="Merk tidak ditemukan">
+                    <i class="fa-solid fa-copyright"></i>{{ b.name }}
+                </span>
+                {% endif %}
+                {% endfor %}
             </div>
             {% endif %}
         </article>
@@ -244,19 +262,21 @@
     const form = document.getElementById('noteForm');
     const hiddenIds = document.getElementById('noteProductIds');
     const hiddenRmIds = document.getElementById('noteRmIds');
+    const hiddenBrandIds = document.getElementById('noteBrandIds');
     if (!ta || !dd) return;
 
     const UUID = '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})';
     const PRODUCT_TOKEN_RE = new RegExp('#\\[' + UUID + '\\|([^\\]]*)\\]', 'g');
     const RM_TOKEN_RE = new RegExp('/\\[' + UUID + '\\|([^\\]]*)\\]', 'g');
+    const BRAND_TOKEN_RE = new RegExp('~\\[' + UUID + '\\|([^\\]]*)\\]', 'g');
 
     let itemsCache = [];
     let activeIdx = -1;
     let triggerStart = -1;
-    let mode = null; // 'user' | 'product' | 'rm'
+    let mode = null; // 'user' | 'product' | 'rm' | 'brand'
 
     function sanitizeLabel(name) {
-        return String(name || '').replace(/[\[\]|#@/]/g, ' ').replace(/\s+/g, ' ').trim();
+        return String(name || '').replace(/[\[\]|#@/~]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
     function collectIds(text, re) {
@@ -277,6 +297,7 @@
     function syncHiddenIds() {
         if (hiddenIds) hiddenIds.value = JSON.stringify(collectIds(ta.value, PRODUCT_TOKEN_RE));
         if (hiddenRmIds) hiddenRmIds.value = JSON.stringify(collectIds(ta.value, RM_TOKEN_RE));
+        if (hiddenBrandIds) hiddenBrandIds.value = JSON.stringify(collectIds(ta.value, BRAND_TOKEN_RE));
     }
 
     async function loadList(url) {
@@ -299,6 +320,9 @@
     function loadRawMaterials(q) {
         return loadList('/api/notes/raw-materials?q=' + encodeURIComponent(q || ''));
     }
+    function loadBrands(q) {
+        return loadList('/api/notes/brands?q=' + encodeURIComponent(q || ''));
+    }
 
     function getTrigger() {
         const pos = ta.selectionStart;
@@ -314,6 +338,10 @@
         const rmM = before.match(/(^|[\s])\/(?!\[)([^\s\/[\]]*)$/);
         if (rmM) {
             return { mode: 'rm', start: before.lastIndexOf('/'), query: rmM[2] };
+        }
+        const brandM = before.match(/(^|[\s])~(?!\[)([^\s~[\]]*)$/);
+        if (brandM) {
+            return { mode: 'brand', start: before.lastIndexOf('~'), query: brandM[2] };
         }
         return null;
     }
@@ -357,6 +385,19 @@
                     <span class="min-w-0">
                         <span class="font-medium text-gray-800 block truncate">${escapeHtml(r.nama_dagang)}</span>
                         <span class="text-[11px] text-gray-400 block truncate">${escapeHtml([r.kode_bahan_baku, r.tipe].filter(Boolean).join(' · '))}</span>
+                    </span>
+                </button>
+            `).join('');
+        } else if (mode === 'brand') {
+            dd.innerHTML = items.map((b, i) => `
+                <button type="button" data-idx="${i}"
+                    class="ac-item w-full text-left px-3 py-2 text-sm hover:bg-violet-50 flex items-center gap-2 ${i === activeIdx ? 'bg-violet-50' : ''}">
+                    <span class="w-6 h-6 rounded bg-violet-100 text-violet-800 text-[10px] flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-copyright"></i>
+                    </span>
+                    <span class="min-w-0">
+                        <span class="font-medium text-gray-800 block truncate">${escapeHtml(b.name)}</span>
+                        ${b.producer ? `<span class="text-[11px] text-gray-400 block truncate">${escapeHtml(b.producer)}</span>` : ''}
                     </span>
                 </button>
             `).join('');
@@ -404,6 +445,8 @@
             insertAtTrigger('#[' + item.id + '|' + sanitizeLabel(item.nama_produk) + '] ');
         } else if (mode === 'rm') {
             insertAtTrigger('/[' + item.id + '|' + sanitizeLabel(item.nama_dagang) + '] ');
+        } else if (mode === 'brand') {
+            insertAtTrigger('~[' + item.id + '|' + sanitizeLabel(item.name) + '] ');
         } else {
             insertAtTrigger('@' + item.full_name + ' ');
         }
@@ -424,6 +467,7 @@
             let items;
             if (info.mode === 'product') items = await loadProducts(info.query);
             else if (info.mode === 'rm') items = await loadRawMaterials(info.query);
+            else if (info.mode === 'brand') items = await loadBrands(info.query);
             else items = await loadUsers(info.query);
             itemsCache = items;
             activeIdx = items.length ? 0 : -1;

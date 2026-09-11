@@ -26,6 +26,8 @@ _UUID_RE = (
 _PRODUCT_TOKEN_RE = re.compile(r"#\[(" + _UUID_RE + r")\|([^\]]*)\]")
 # Token inserted by autocomplete: /[uuid|Nama Dagang With Spaces]
 _RM_TOKEN_RE = re.compile(r"/\[(" + _UUID_RE + r")\|([^\]]*)\]")
+# Token inserted by autocomplete: ~[uuid|Nama Merk With Spaces]
+_BRAND_TOKEN_RE = re.compile(r"~\[(" + _UUID_RE + r")\|([^\]]*)\]")
 
 
 def _parse_mentions(body: str, username_to_id: dict) -> list:
@@ -73,6 +75,21 @@ def _parse_rm_refs(body: str) -> list:
     return found
 
 
+def _parse_brand_refs(body: str) -> list:
+    """Extract brand refs from ~[uuid|label] tokens. UUID is the source of truth."""
+    found = []
+    seen = set()
+    for m in _BRAND_TOKEN_RE.finditer(body or ""):
+        bid = m.group(1)
+        label = (m.group(2) or "").strip() or bid
+        key = bid.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append({"id": bid, "name": label})
+    return found
+
+
 def _parse_product_ids_field(raw: str) -> list:
     """Fallback: hidden input may send JSON array or comma-separated UUIDs."""
     text = (raw or "").strip()
@@ -98,7 +115,12 @@ def _parse_product_ids_field(raw: str) -> list:
     return out
 
 
-def _render_note_html(body: str, live_product_ids: set | None = None, live_rm_ids: set | None = None) -> str:
+def _render_note_html(
+    body: str,
+    live_product_ids: set | None = None,
+    live_rm_ids: set | None = None,
+    live_brand_ids: set | None = None,
+) -> str:
     escaped = _html.escape(body or "")
 
     def _prod(m):
@@ -142,6 +164,24 @@ def _render_note_html(body: str, live_product_ids: set | None = None, live_rm_id
         )
 
     rendered = _RM_TOKEN_RE.sub(_rm, rendered)
+
+    def _brand(m):
+        bid = m.group(1)
+        label = m.group(2) or "merk"
+        chip_inner = f'<i class="fa-solid fa-copyright"></i> {label}'
+        chip_cls = "inline-flex items-center gap-1 px-1.5 py-0.5 font-semibold text-xs"
+        if live_brand_ids is not None and bid not in live_brand_ids and bid.lower() not in live_brand_ids:
+            return (
+                f'<span class="{chip_cls} rounded bg-violet-100 text-violet-800 line-through opacity-70" '
+                f'title="Merk tidak ditemukan">{chip_inner}</span>'
+            )
+        href = f"/brands?brand={bid}"
+        return (
+            f'<a href="{href}" class="{chip_cls} rounded bg-violet-100 text-violet-800 hover:bg-violet-200" '
+            f'title="Buka Kelola Merk">{chip_inner}</a>'
+        )
+
+    rendered = _BRAND_TOKEN_RE.sub(_brand, rendered)
 
     def _mention(m):
         return (
@@ -291,6 +331,31 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             })
         return JSONResponse({"items": items})
 
+    @app.get("/api/notes/brands")
+    async def api_notes_brands(q: str = "", current_user: dict = Depends(get_current_user)):
+        qn = _sanitize_ilike(q)
+        rows = []
+        try:
+            query = supabase.table("brands").select("id, name, producers(name)")
+            if qn:
+                query = query.ilike("name", f"%{qn}%")
+            res = query.order("name").limit(12).execute()
+            rows = res.data or []
+        except Exception as e:
+            print(f"[NOTES] Gagal ambil brands: {e}")
+            rows = []
+        items = []
+        for r in rows:
+            name = (r.get("name") or "").strip()
+            if not name:
+                continue
+            producer = ""
+            p = r.get("producers")
+            if isinstance(p, dict):
+                producer = (p.get("name") or "").strip()
+            items.append({"id": r["id"], "name": name, "producer": producer})
+        return JSONResponse({"items": items})
+
     @app.get("/api/notes/mentions/unread-count")
     async def api_notes_unread_count(current_user: dict = Depends(get_current_user)):
         """Read-only. Do NOT mark mentions as read — this is polled from every page."""
@@ -388,6 +453,29 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             print(f"[NOTES] Gagal cek bahan baku live: {e}")
             live_rm_ids = None
 
+        live_brand_ids: set = set()
+        try:
+            brand_ids = []
+            seen_b = set()
+            for n in notes:
+                for b in _parse_brand_refs(n.get("body") or "") + _parse_brand_refs(n.get("completion_note") or ""):
+                    key = b["id"].lower()
+                    if key not in seen_b:
+                        seen_b.add(key)
+                        brand_ids.append(b["id"])
+            if brand_ids:
+                br = (
+                    supabase.table("brands")
+                    .select("id")
+                    .in_("id", brand_ids)
+                    .execute()
+                )
+                live_brand_ids = {str(row["id"]) for row in (br.data or [])}
+                live_brand_ids |= {x.lower() for x in live_brand_ids}
+        except Exception as e:
+            print(f"[NOTES] Gagal cek merk live: {e}")
+            live_brand_ids = None
+
         if filter == "mentioned":
             my_id = current_user["id"]
             notes = [n for n in notes if any(m.get("mentioned_user_id") == my_id for m in mentions_by_note.get(n["id"], []))]
@@ -414,13 +502,23 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                 rref["search_url"] = (
                     f"/raw-materials?q={quote(rref['name'], safe='')}&rm={rid}"
                 )
+            brefs = _parse_brand_refs(n.get("body") or "")
+            for bref in brefs:
+                bid = bref["id"]
+                bref["is_live"] = (
+                    live_brand_ids is None
+                    or bid in live_brand_ids
+                    or bid.lower() in live_brand_ids
+                )
+                bref["search_url"] = f"/brands?brand={bid}"
             enriched.append({
                 **n,
-                "body_html": _render_note_html(n.get("body") or "", live_product_ids, live_rm_ids),
-                "completion_note_html": _render_note_html(n.get("completion_note") or "", live_product_ids, live_rm_ids) if n.get("is_completed") else None,
+                "body_html": _render_note_html(n.get("body") or "", live_product_ids, live_rm_ids, live_brand_ids),
+                "completion_note_html": _render_note_html(n.get("completion_note") or "", live_product_ids, live_rm_ids, live_brand_ids) if n.get("is_completed") else None,
                 "mentions": ments,
                 "product_refs": prefs,
                 "rm_refs": rrefs,
+                "brand_refs": brefs,
                 "mentioned_me": any(m.get("mentioned_user_id") == current_user["id"] for m in ments),
                 "created_label": _relative_last_seen(_parse_presence_ts(n.get("created_at"))) if n.get("created_at") else "-",
                 "completed_at_label": _relative_last_seen(_parse_presence_ts(n.get("completed_at"))) if n.get("completed_at") else None,
@@ -454,6 +552,7 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         body: str = Form(...),
         product_ids: str = Form(""),
         rm_ids: str = Form(""),
+        brand_ids: str = Form(""),
         current_user: dict = Depends(get_current_user),
     ):
         text = (body or "").strip()
@@ -483,6 +582,10 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         if not rm_refs:
             for rid in _parse_product_ids_field(rm_ids):
                 rm_refs.append({"id": rid, "name": rid})
+        brand_refs = _parse_brand_refs(text)
+        if not brand_refs:
+            for bid in _parse_product_ids_field(brand_ids):
+                brand_refs.append({"id": bid, "name": bid})
 
         try:
             ins = supabase.table("team_notes").insert({
@@ -516,6 +619,8 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                 extra += " | produk: " + ", ".join(p.get("name") or p["id"] for p in product_refs[:5])
             if rm_refs:
                 extra += " | rm: " + ", ".join(r.get("name") or r["id"] for r in rm_refs[:5])
+            if brand_refs:
+                extra += " | merk: " + ", ".join(b.get("name") or b["id"] for b in brand_refs[:5])
             log_activity(
                 current_user, "create", "note", note_id or "-",
                 (text[:80] + ("…" if len(text) > 80 else "")) + extra,

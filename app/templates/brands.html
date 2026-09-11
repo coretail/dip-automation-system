@@ -210,5 +210,16 @@ function openEditModal(brandId, brandName) {
 function closeEditModal() {
     document.getElementById('edit-brand-modal').classList.add('hidden');
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    const brandId = new URLSearchParams(window.location.search).get('brand');
+    if (!brandId) return;
+    const row = document.querySelector('tr[data-brand-id="' + CSS.escape(brandId) + '"]');
+    if (!row) return;
+    row.classList.add('bg-violet-50', 'ring-2', 'ring-inset', 'ring-violet-400');
+    setTimeout(function () {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+});
 </script>
 {% endblock %}
