@@ -26,8 +26,8 @@ _UUID_RE = (
 _PRODUCT_TOKEN_RE = re.compile(r"#\[(" + _UUID_RE + r")\|([^\]]*)\]")
 # Token inserted by autocomplete: /[uuid|Nama Dagang With Spaces]
 _RM_TOKEN_RE = re.compile(r"/\[(" + _UUID_RE + r")\|([^\]]*)\]")
-# Token inserted by autocomplete: ~[uuid|Nama Merk With Spaces]
-_BRAND_TOKEN_RE = re.compile(r"~\[(" + _UUID_RE + r")\|([^\]]*)\]")
+# Token inserted by autocomplete: ![uuid|Nama Merk With Spaces]
+_BRAND_TOKEN_RE = re.compile(r"!\[(" + _UUID_RE + r")\|([^\]]*)\]")
 
 
 def _parse_mentions(body: str, username_to_id: dict) -> list:
@@ -76,7 +76,7 @@ def _parse_rm_refs(body: str) -> list:
 
 
 def _parse_brand_refs(body: str) -> list:
-    """Extract brand refs from ~[uuid|label] tokens. UUID is the source of truth."""
+    """Extract brand refs from ![uuid|label] tokens. UUID is the source of truth."""
     found = []
     seen = set()
     for m in _BRAND_TOKEN_RE.finditer(body or ""):

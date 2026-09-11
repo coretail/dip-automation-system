@@ -12,7 +12,7 @@
                 Tag user <code class="bg-gray-100 px-1 rounded text-indigo-600">@namauser</code>,
                 taut produk <code class="bg-gray-100 px-1 rounded text-emerald-700">#namaproduk</code>,
                 taut bahan baku <code class="bg-gray-100 px-1 rounded text-amber-700">/namabahanbaku</code>,
-                taut merk <code class="bg-gray-100 px-1 rounded text-violet-700">~namamerk</code>.
+                taut merk <code class="bg-gray-100 px-1 rounded text-violet-700">!namamerk</code>.
             </p>
         </div>
         <div class="flex items-center gap-2 text-xs">
@@ -91,7 +91,7 @@
             <input type="hidden" name="brand_ids" id="noteBrandIds" value="[]">
             <div class="relative">
                 <textarea id="noteBody" name="body" rows="3" maxlength="4000" required
-                          placeholder="Tulis note… @orang, #produk, /bahan baku, ~merk"
+                          placeholder="Tulis note… @orang, #produk, /bahan baku, !merk"
                           class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y min-h-[80px]"></textarea>
                 <div id="mentionDropdown" class="hidden absolute left-0 right-0 z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"></div>
             </div>
@@ -104,7 +104,7 @@
                     <i class="fa-solid fa-slash text-amber-500"></i>
                     <strong>/</strong> taut bahan baku &nbsp;·&nbsp;
                     <i class="fa-solid fa-copyright text-violet-500"></i>
-                    <strong>~</strong> taut merk
+                    <strong>!</strong> taut merk
                 </p>
                 <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition cursor-pointer">
                     <i class="fa-solid fa-paper-plane mr-1"></i> Post
@@ -268,7 +268,7 @@
     const UUID = '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})';
     const PRODUCT_TOKEN_RE = new RegExp('#\\[' + UUID + '\\|([^\\]]*)\\]', 'g');
     const RM_TOKEN_RE = new RegExp('/\\[' + UUID + '\\|([^\\]]*)\\]', 'g');
-    const BRAND_TOKEN_RE = new RegExp('~\\[' + UUID + '\\|([^\\]]*)\\]', 'g');
+    const BRAND_TOKEN_RE = new RegExp('!\\[UUID\\]'.replace('UUID', UUID) + '\\|([^\\]]*)\\]', 'g');
 
     let itemsCache = [];
     let activeIdx = -1;
@@ -276,7 +276,7 @@
     let mode = null; // 'user' | 'product' | 'rm' | 'brand'
 
     function sanitizeLabel(name) {
-        return String(name || '').replace(/[\[\]|#@/~]/g, ' ').replace(/\s+/g, ' ').trim();
+        return String(name || '').replace(/[\[\]|#@/!]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
     function collectIds(text, re) {
@@ -339,9 +339,9 @@
         if (rmM) {
             return { mode: 'rm', start: before.lastIndexOf('/'), query: rmM[2] };
         }
-        const brandM = before.match(/(^|[\s])~(?!\[)([^\s~[\]]*)$/);
+        const brandM = before.match(/(^|[\s])!([^\s]*)$/);
         if (brandM) {
-            return { mode: 'brand', start: before.lastIndexOf('~'), query: brandM[2] };
+            return { mode: 'brand', start: before.lastIndexOf('!'), query: brandM[2] };
         }
         return null;
     }
@@ -446,7 +446,7 @@
         } else if (mode === 'rm') {
             insertAtTrigger('/[' + item.id + '|' + sanitizeLabel(item.nama_dagang) + '] ');
         } else if (mode === 'brand') {
-            insertAtTrigger('~[' + item.id + '|' + sanitizeLabel(item.name) + '] ');
+            insertAtTrigger('![' + item.id + '|' + sanitizeLabel(item.name) + '] ');
         } else {
             insertAtTrigger('@' + item.full_name + ' ');
         }
@@ -476,6 +476,13 @@
     });
 
     ta.addEventListener('keydown', function (e) {
+        // Shortcut: Ctrl + Enter untuk post note
+        if (e.key === 'Enter' && e.ctrlKey) {
+            e.preventDefault();
+            if (form) form.submit();
+            return;
+        }
+
         if (dd.classList.contains('hidden') || !itemsCache.length) return;
         if (e.key === 'ArrowDown') {
             e.preventDefault();
