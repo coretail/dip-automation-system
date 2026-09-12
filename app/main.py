@@ -1728,6 +1728,22 @@ async def add_material_batch(
     import json
     
     clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
+
+    # 1.5 Cegah duplikasi batch — cek kombinasi (no_batch + raw_material_id + perusahaan)
+    # Ditaruh di sini, SEBELUM proses upload file apa pun, biar kalau ditolak
+    # gak ada storage call yang kebuang sia-sia.
+    dup_check = (
+        supabase.table("raw_material_batches")
+        .select("id")
+        .eq("no_batch", no_batch.strip())
+        .eq("raw_material_id", raw_material_id)
+        .eq("perusahaan", perusahaan)
+        .execute()
+    )
+    if dup_check.data:
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", f"Batch {no_batch.strip()} untuk bahan baku ini di {perusahaan} sudah ada. Tidak boleh duplikat.")
+        return response
     
     # 1. Parse string data QC Aktual dari frontend ke Python list
     try:
@@ -1789,20 +1805,6 @@ async def add_material_batch(
         except Exception as e:
             print(f"Gagal upload Laporan Pemeriksaan Aktual: {e}")
 
-    # 3.5 Cegah duplikasi batch — cek kombinasi (no_batch + raw_material_id + perusahaan)
-    dup_check = (
-        supabase.table("raw_material_batches")
-        .select("id")
-        .eq("no_batch", no_batch.strip())
-        .eq("raw_material_id", raw_material_id)
-        .eq("perusahaan", perusahaan)
-        .execute()
-    )
-    if dup_check.data:
-        response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("error_msg", f"Batch {no_batch.strip()} untuk bahan baku ini di {perusahaan} sudah ada. Tidak boleh duplikat.")
-        return response
-
     # 4. Simpan record data lengkap ke tabel raw_material_batches
     batch_data = {
         "raw_material_id": raw_material_id,
@@ -1835,8 +1837,6 @@ async def add_material_batch(
 
     # Redirect balik ke halaman utama bahan baku
     return RedirectResponse(url="/raw-materials", status_code=303)
-
-
 
 @app.post("/raw-materials/batches/edit/{batch_id}")
 async def edit_material_batch(
