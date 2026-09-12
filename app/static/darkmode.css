@@ -12,6 +12,13 @@ html.dark body {
   color: #e2e8f0;
 }
 
+html.dark nav.bg-indigo-600 {
+  background-color: #1e293b !important; /* slate-800 */
+}
+html.dark nav .hover\:bg-indigo-700:hover {
+  background-color: #334155 !important; /* slate-700 */
+}
+
 html.force-light #theme-toggle {
   display: none !important;
 }
