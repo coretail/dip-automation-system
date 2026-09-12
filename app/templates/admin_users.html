@@ -4,8 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DIP ERFI APP - User Management</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('heka-theme');
+          if (t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/darkmode.css">
     <style>
         @keyframes presence-pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
@@ -24,8 +35,11 @@
             <a href="/" class="text-gray-500 hover:text-indigo-600 transition-colors"><i class="fa-solid fa-arrow-left text-lg"></i></a>
             <h1 class="text-lg font-bold tracking-tight text-gray-900">Control Panel Admin</h1>
         </div>
-        <div class="text-sm text-gray-600">
-            Login sebagai: <span class="font-bold text-indigo-600 uppercase">{{ user.full_name }} ({{ user.role }})</span>
+        <div class="flex items-center gap-3 text-sm text-gray-600">
+            <button type="button" id="theme-toggle" class="p-2 rounded-full hover:bg-gray-100 transition text-gray-600" aria-label="Ganti tema" title="Ganti tema">
+                <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
+            </button>
+            <span>Login sebagai: <span class="font-bold text-indigo-600 uppercase">{{ user.full_name }} ({{ user.role }})</span></span>
         </div>
     </header>
 
@@ -358,6 +372,6 @@
         })();
     </script>
     <script src="/static/presence.js"></script>
-
+    <script src="/static/darkmode.js"></script>
 </body>
 </html>

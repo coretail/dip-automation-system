@@ -1,12 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="{% block html_class %}{% endblock %}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}DIP Kosmetik Automation{% endblock %}</title>
+    <script>
+      (function () {
+        try {
+          if (document.documentElement.classList.contains('force-light')) return;
+          var t = localStorage.getItem('heka-theme');
+          if (t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/darkmode.css">
     <link rel="icon" type="image/png" href="/static/images/favicon.png">
     <style>
         @keyframes fadeInUp {
@@ -41,6 +53,9 @@
                         <i class="fa-solid fa-note-sticky mr-1"></i> Notes
                         <span id="notes-mention-badge" class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center hidden">0</span>
                     </a>
+                    <button type="button" id="theme-toggle" class="p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Ganti tema" title="Ganti tema">
+                        <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
+                    </button>
                     {% if current_user.role == 'admin' %}
                     <a href="/admin/trash" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
                         <i class="fa-solid fa-trash mr-1"></i> Sampah
@@ -231,6 +246,7 @@
         });
     </script>
     <script src="/static/presence.js"></script>
+    <script src="/static/darkmode.js"></script>
 
     <!-- Floating Jump-to-Top Button -->
     <button id="jumpToTopBtn" class="fixed bottom-6 right-6 hidden bg-indigo-600 text-white p-3 rounded-full shadow-lg hover:bg-indigo-700 transition z-50" aria-label="Kembali ke atas">
