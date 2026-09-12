@@ -864,7 +864,7 @@
             <!-- FOOTER BUTTONS -->
             <div class="flex justify-end space-x-2 border-t pt-4">
                 <button type="button" onclick="closeBatchModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50">Batal</button>
-                <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md shadow-sm hover:bg-green-700">Simpan Catatan Uji</button>
+                <button type="submit" id="batch-submit-btn" class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md shadow-sm hover:bg-green-700">Simpan Catatan Uji</button>
             </div>
         </form>
     </div>
@@ -1647,7 +1647,17 @@ function validateBatchForm() {
 
     const coaInput = document.querySelector('#batch-modal input[name="coa_file"]');
     if (coaInput && coaInput.files.length === 0) {
-        return confirm('Dokumen CoA (Certificate of Analysis) belum diupload. Batch ini akan tersimpan tanpa CoA — lanjutkan simpan?');
+        if (!confirm('Dokumen CoA (Certificate of Analysis) belum diupload. Batch ini akan tersimpan tanpa CoA — lanjutkan simpan?')) {
+            return false;
+        }
+    }
+
+    // Kunci tombol submit agar tidak bisa double-submit
+    const submitBtn = document.getElementById('batch-submit-btn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        submitBtn.textContent = 'Sedang menyimpan...';
     }
 
     return true;
@@ -1655,6 +1665,14 @@ function validateBatchForm() {
 
 function closeBatchModal() {
     const modal = document.getElementById('batch-modal');
+
+    // Pulihkan tombol submit jika sebelumnya di-disable
+    const submitBtn = document.getElementById('batch-submit-btn');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        submitBtn.textContent = 'Simpan Catatan Uji';
+    }
 
     modal.classList.add('hidden');
     modal.querySelector('form').reset();
