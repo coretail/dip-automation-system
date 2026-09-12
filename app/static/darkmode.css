@@ -212,9 +212,22 @@ html.dark .text-fuchsia-700 { color: #f0abfc !important; }
 html.dark .bg-fuchsia-50 { background-color: rgb(112 26 117 / 0.45) !important; }
 html.dark .bg-fuchsia-100 { background-color: rgb(134 25 143 / 0.45) !important; }
 
-/* Native form controls */
-html.dark input,
+/* Native form controls — explicit colors so closed select + options stay readable */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
 html.dark select,
 html.dark textarea {
   color-scheme: dark;
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-color: #475569 !important;
+}
+html.dark select option,
+html.dark select optgroup {
+  background-color: #1e293b;
+  color: #f1f5f9;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1;
 }
