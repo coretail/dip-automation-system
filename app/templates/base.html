@@ -53,9 +53,6 @@
                         <i class="fa-solid fa-note-sticky mr-1"></i> Notes
                         <span id="notes-mention-badge" class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center hidden">0</span>
                     </a>
-                    <button type="button" id="theme-toggle" class="p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Ganti tema" title="Ganti tema">
-                        <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
-                    </button>
                     {% if current_user.role == 'admin' %}
                     <a href="/admin/trash" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
                         <i class="fa-solid fa-trash mr-1"></i> Sampah
@@ -83,6 +80,9 @@
                             </div>
                         </div>
                     </div>
+                    <button type="button" id="theme-toggle" class="p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Ganti tema" title="Ganti tema">
+                        <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
+                    </button>
                 </div>
             </div>
         </div>
