@@ -3,8 +3,8 @@ Generator file Excel (.xlsx) untuk dokumen Formula Kualitatif & Kuantitatif.
 
 Modul ini menggantikan export client-side berbasis SheetJS agar hasil .xlsx
 jauh lebih rapi, terstruktur, dan profesional:
-  - Kop surat: logo perusahaan + nama/alamat/kontak di sampingnya
-    (sheet Formula Nama Dagang & Formula INCI Murni).
+  - Kop surat: gambar kop penuh (`kop_erfi.png` / `kop_heka.png`)
+    di sheet Formula Nama Dagang & Formula INCI Murni.
   - Sheet Text Design tanpa kop surat.
   - Auto-fit lebar kolom dinamis (min 15, maks 50) dari isi teks terpanjang.
   - Header tabel ber-fill abu-abu muda (#E5E7EB) + bold.
@@ -59,9 +59,10 @@ ALIGN_CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=
 ALIGN_CENTER_TOP_WRAP = Alignment(horizontal="center", vertical="top", wrap_text=True)
 ALIGN_RIGHT = Alignment(horizontal="right", vertical="top")
 
-# Tinggi logo kop (px). Lebar dihitung proporsional dari ukuran file.
-LOGO_HEIGHT_PX = 64
-LETTERHEAD_ROW_HEIGHT = 22  # points; 3 baris ≈ tinggi logo + padding
+# Lebar gambar kop (px) ≈ 5 kolom min-width 15 (Calibri ~7px/char).
+KOP_WIDTH_PX = 550
+LETTERHEAD_ROWS = 3
+LETTERHEAD_ROW_HEIGHT = 22  # fallback points kalau gambar kop tidak ada
 
 
 # ==================== HELPER UTILITAS ====================
@@ -141,12 +142,9 @@ def _auto_fit_columns(ws, min_col: int = 1, max_col: int = 5):
         ws.column_dimensions[get_column_letter(col)].width = width
 
 
-def _logo_fs_path(company: dict) -> str | None:
-    """Map company['logo'] URI (/static/images/...) ke path file lokal.
-
-    Fail soft: None kalau URI kosong / file tidak ada.
-    """
-    uri = ((company or {}).get("logo") or "").strip()
+def _static_fs_path(uri: str) -> str | None:
+    """Map URI `/static/...` ke path file lokal. None kalau tidak ada."""
+    uri = (uri or "").strip()
     if not uri.startswith("/static/"):
         return None
     candidates = [
@@ -159,33 +157,52 @@ def _logo_fs_path(company: dict) -> str | None:
     return None
 
 
-def _letterhead(ws, company: dict, last_col: str = "E"):
-    """Kop surat: logo di kolom A, nama/alamat/kontak di B s/d last_col (baris 1-3).
+def _kop_fs_path(company: dict) -> str | None:
+    """Path gambar kop surat (kop_erfi / kop_heka)."""
+    company = company or {}
+    uri = (company.get("kop") or "").strip()
+    if not uri:
+        logo = (company.get("logo") or "").lower()
+        nama = (company.get("nama") or "").lower()
+        if "heka" in logo or "haraka" in nama:
+            uri = "/static/images/kop_heka.png"
+        elif "erfi" in logo or "erfi" in nama:
+            uri = "/static/images/kop_erfi.png"
+    return _static_fs_path(uri)
 
-    Logo gagal di-load tidak menggagalkan export — teks kop tetap ditulis.
+
+def _letterhead(ws, company: dict, last_col: str = "E"):
+    """Kop surat: gambar kop penuh di A1, merentang last_col baris 1-3.
+
+    Tidak menulis nama/alamat/email terpisah — sudah ada di file kop.
+    Kalau file kop hilang, fallback ke teks (tanpa gambar).
     """
+    path = _kop_fs_path(company)
+    if path:
+        try:
+            img = XLImage(path)
+            orig_w, orig_h = img.width, img.height
+            if orig_w and orig_h:
+                img.width = KOP_WIDTH_PX
+                img.height = max(1, round(orig_h * KOP_WIDTH_PX / orig_w))
+            img.anchor = "A1"
+            ws.add_image(img)
+            total_pt = (img.height or 80) * 72 / 96
+            per_row = max(LETTERHEAD_ROW_HEIGHT, total_pt / LETTERHEAD_ROWS)
+            for r in range(1, LETTERHEAD_ROWS + 1):
+                ws.row_dimensions[r].height = per_row
+            return
+        except Exception as e:
+            print(f"[EXCEL] Gagal embed kop {path}: {e}")
+
     left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
-    _set_merged(ws, f"B1:{last_col}1", _dash(company.get("nama")),
+    _set_merged(ws, f"A1:{last_col}1", _dash(company.get("nama")),
                 font=FONT_COMPANY, align=left_align)
-    _set_merged(ws, f"B2:{last_col}2", _dash(company.get("alamat")), align=left_align)
+    _set_merged(ws, f"A2:{last_col}2", _dash(company.get("alamat")), align=left_align)
     contact = f"Email: {_dash(company.get('email'))} | Website: {_dash(company.get('website'))}"
-    _set_merged(ws, f"B3:{last_col}3", contact, align=left_align)
+    _set_merged(ws, f"A3:{last_col}3", contact, align=left_align)
     for r in range(1, 4):
         ws.row_dimensions[r].height = LETTERHEAD_ROW_HEIGHT
-
-    path = _logo_fs_path(company)
-    if not path:
-        return
-    try:
-        img = XLImage(path)
-        orig_w, orig_h = img.width, img.height
-        if orig_w and orig_h:
-            img.height = LOGO_HEIGHT_PX
-            img.width = max(1, round(orig_w * LOGO_HEIGHT_PX / orig_h))
-        img.anchor = "A1"
-        ws.add_image(img)
-    except Exception as e:
-        print(f"[EXCEL] Gagal embed logo {path}: {e}")
 
 
 def _info_block(ws, start_row: int, pairs) -> int:

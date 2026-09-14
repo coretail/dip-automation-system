@@ -365,14 +365,16 @@ COMPANY_INFO = {
         "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
         "email": "erfikaryaabadi@gmail.com",
         "website": "www.erfikaryaabadi.com",
-        "logo": "/static/images/logo_erfi.png"
+        "logo": "/static/images/logo_erfi.png",
+        "kop": "/static/images/kop_erfi.png",
     },
     "PT Heka": {
         "nama": "PT. HARAKA ERFI KOSMETINDO ABADI",          
         "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
         "email": "harakaerfi.pt@gmail.com",
         "website": "www.harakaerfi.com",
-        "logo": "/static/images/logo_heka.png"
+        "logo": "/static/images/logo_heka.png",
+        "kop": "/static/images/kop_heka.png",
     }
 }
 
