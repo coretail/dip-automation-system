@@ -9,12 +9,21 @@
   var lastActivityAt = Date.now();
   var idleTimer = null;
   var lastMouseMoveAt = 0;
+  var heartbeatInterval = null; // Stored reference
+  var isRedirecting = false; // Guard flag
 
   function isActive() {
     return Date.now() - lastActivityAt < PRESENCE_IDLE_MS;
   }
 
+  function stopHeartbeat() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (idleTimer) clearTimeout(idleTimer);
+  }
+  window.stopPresenceHeartbeat = stopHeartbeat;
+
   function ping(active) {
+    if (isRedirecting) return;
     var payload = JSON.stringify({ online: true, active: active !== false });
     fetch(endpoint, {
       method: "POST",
@@ -22,6 +31,12 @@
       body: payload,
       credentials: "same-origin",
       keepalive: true
+    }).then(function (response) {
+      if (response.redirected && response.url.includes("/login")) {
+        isRedirecting = true;
+        stopHeartbeat();
+        window.location.href = response.url;
+      }
     }).catch(function () {});
   }
 
@@ -56,7 +71,7 @@
 
   ping(true);
   scheduleIdleHeartbeat();
-  setInterval(function () {
+  heartbeatInterval = setInterval(function () {
     // Background tabs sering ditunda browser; pertahankan grace period Offline yang ada.
     if (document.visibilityState === "hidden") return;
     ping(isActive());

@@ -14,6 +14,16 @@
           }
         } catch (e) {}
       })();
+      
+      // Helper untuk menangani session expired
+      window.handleSessionRedirect = function(response, onRedirectCallback) {
+        if (response.redirected && response.url.includes("/login")) {
+          if (onRedirectCallback) onRedirectCallback();
+          window.location.href = response.url;
+          return true;
+        }
+        return false;
+      };
     </script>
     <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
@@ -230,6 +240,10 @@
             async function fetchNotesMentionCount() {
                 try {
                     const response = await fetch('/api/notes/mentions/unread-count', { credentials: 'same-origin' });
+                    if (window.handleSessionRedirect(response, () => {
+                        if (notesInterval) clearInterval(notesInterval);
+                    })) return;
+                    
                     if (!response.ok) return;
                     const data = await response.json();
                     applyCount(data.count);
@@ -238,8 +252,7 @@
                 }
             }
 
-            fetchNotesMentionCount();
-            setInterval(fetchNotesMentionCount, 30000);
+            let notesInterval = setInterval(fetchNotesMentionCount, 30000);
             document.addEventListener('visibilitychange', function() {
                 if (document.visibilityState === 'visible') fetchNotesMentionCount();
             });
