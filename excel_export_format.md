@@ -109,24 +109,24 @@ kecuali perlu tweak kecil supaya tidak bentrok dengan tinggi baris logo.
 
 ## 5. Fase pengerjaan
 
-- [ ] **Fase 0 — Resolve path logo**  
+- [x] **Fase 0 — Resolve path logo**  
   Helper di `excel_generator.py`: dari `company["logo"]` (`/static/images/...`)
   → path filesystem `app/static/images/...`. Fail soft (tanpa logo) kalau
   file hilang, tetap render teks.
 
-- [ ] **Fase 1 — `_letterhead` logo + teks**  
+- [x] **Fase 1 — `_letterhead` logo + teks**  
   Embed image + merge/tulis nama, alamat, kontak di samping/bawah logo.
   Row height baris 1–4 disesuaikan supaya logo tidak ketiban teks.
 
-- [ ] **Fase 2 — Wire ke 2 sheet formula**  
+- [x] **Fase 2 — Wire ke 2 sheet formula**  
   `_sheet_formula_trade` dan `_sheet_formula_pure` pakai letterhead baru;
   geser start row judul/info/tabel bila perlu.
 
-- [ ] **Fase 3 — Text Design tanpa kop**  
+- [x] **Fase 3 — Text Design tanpa kop**  
   Pastikan `_sheet_text_design` tidak memanggil letterhead (dan tidak
   menyisakan baris kosong “bekas” kop).
 
-- [ ] **Fase 4 — Smoke test**  
+- [x] **Fase 4 — Smoke test**  
   Export 1 produk PT Erfi + 1 produk PT Heka; buka di Excel/LibreOffice:
   logo benar per PT, teks kebaca, tabel utuh, Text Design tanpa logo,
   kolom Kode masih ada, 1 baris per ingredients.

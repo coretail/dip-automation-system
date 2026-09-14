@@ -3,7 +3,9 @@ Generator file Excel (.xlsx) untuk dokumen Formula Kualitatif & Kuantitatif.
 
 Modul ini menggantikan export client-side berbasis SheetJS agar hasil .xlsx
 jauh lebih rapi, terstruktur, dan profesional:
-  - Kop surat perusahaan & judul dokumen di-merge selebar tabel (kolom A-E).
+  - Kop surat: logo perusahaan + nama/alamat/kontak di sampingnya
+    (sheet Formula Nama Dagang & Formula INCI Murni).
+  - Sheet Text Design tanpa kop surat.
   - Auto-fit lebar kolom dinamis (min 15, maks 50) dari isi teks terpanjang.
   - Header tabel ber-fill abu-abu muda (#E5E7EB) + bold.
   - Border tipis (#D1D5DB) di seluruh sel tabel data.
@@ -19,8 +21,10 @@ Dipakai oleh route:
 """
 
 import io
+import os
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -54,6 +58,11 @@ ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
 ALIGN_CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
 ALIGN_CENTER_TOP_WRAP = Alignment(horizontal="center", vertical="top", wrap_text=True)
 ALIGN_RIGHT = Alignment(horizontal="right", vertical="top")
+
+# Tinggi logo kop (px). Lebar dihitung proporsional dari ukuran file.
+LOGO_HEIGHT_PX = 64
+LETTERHEAD_ROW_HEIGHT = 22  # points; 3 baris ≈ tinggi logo + padding
+
 
 # ==================== HELPER UTILITAS ====================
 def _has_value(value) -> bool:
@@ -131,17 +140,52 @@ def _auto_fit_columns(ws, min_col: int = 1, max_col: int = 5):
                     COL_WIDTH_MAX)
         ws.column_dimensions[get_column_letter(col)].width = width
 
-def _letterhead(ws, company: dict, last_col: str = "E"):
-    """Kop surat perusahaan: merge baris 1-3 selebar kolom A s/d last_col.
 
-    Nama PT dibuat BOLD & besar; alamat + kontak normal di bawahnya.
+def _logo_fs_path(company: dict) -> str | None:
+    """Map company['logo'] URI (/static/images/...) ke path file lokal.
+
+    Fail soft: None kalau URI kosong / file tidak ada.
+    """
+    uri = ((company or {}).get("logo") or "").strip()
+    if not uri.startswith("/static/"):
+        return None
+    candidates = [
+        os.path.join("app", uri.lstrip("/").replace("/", os.sep)),
+        os.path.join(os.path.dirname(__file__), uri[len("/static/"):].replace("/", os.sep)),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _letterhead(ws, company: dict, last_col: str = "E"):
+    """Kop surat: logo di kolom A, nama/alamat/kontak di B s/d last_col (baris 1-3).
+
+    Logo gagal di-load tidak menggagalkan export — teks kop tetap ditulis.
     """
     left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
-    _set_merged(ws, f"A1:{last_col}1", _dash(company.get("nama")),
+    _set_merged(ws, f"B1:{last_col}1", _dash(company.get("nama")),
                 font=FONT_COMPANY, align=left_align)
-    _set_merged(ws, f"A2:{last_col}2", _dash(company.get("alamat")), align=left_align)
+    _set_merged(ws, f"B2:{last_col}2", _dash(company.get("alamat")), align=left_align)
     contact = f"Email: {_dash(company.get('email'))} | Website: {_dash(company.get('website'))}"
-    _set_merged(ws, f"A3:{last_col}3", contact, align=left_align)
+    _set_merged(ws, f"B3:{last_col}3", contact, align=left_align)
+    for r in range(1, 4):
+        ws.row_dimensions[r].height = LETTERHEAD_ROW_HEIGHT
+
+    path = _logo_fs_path(company)
+    if not path:
+        return
+    try:
+        img = XLImage(path)
+        orig_w, orig_h = img.width, img.height
+        if orig_w and orig_h:
+            img.height = LOGO_HEIGHT_PX
+            img.width = max(1, round(orig_w * LOGO_HEIGHT_PX / orig_h))
+        img.anchor = "A1"
+        ws.add_image(img)
+    except Exception as e:
+        print(f"[EXCEL] Gagal embed logo {path}: {e}")
 
 
 def _info_block(ws, start_row: int, pairs) -> int:
@@ -277,8 +321,8 @@ def _sheet_formula_pure(wb: Workbook, product: dict, pure_breakdown: list, compa
     """Sheet 2 'Formula INCI Murni': Ingredients | Function | % w/w."""
     ws = wb.create_sheet("Formula INCI Murni")
 
-    _letterhead(ws, company, last_col="C")
-    _set_merged(ws, "A5:C5", "FORMULA KUALITATIF & KUANTITATIF",
+    _letterhead(ws, company, last_col="E")
+    _set_merged(ws, "A5:E5", "FORMULA KUALITATIF & KUANTITATIF",
                 font=FONT_TITLE, align=ALIGN_CENTER)
 
     next_row = _info_block(ws, 7, [
@@ -324,11 +368,13 @@ def _sheet_formula_pure(wb: Workbook, product: dict, pure_breakdown: list, compa
 
 
 def _sheet_text_design(wb: Workbook, product: dict, pure_breakdown: list, company: dict):
-    """Sheet 3 'Text Design': informasi label/kemasan (Komposisi, Cara Pakai, dll)."""
+    """Sheet 3 'Text Design': informasi label/kemasan (Komposisi, Cara Pakai, dll).
+
+    Tanpa kop surat / logo — mulai langsung dari judul.
+    """
     ws = wb.create_sheet("Text Design")
 
-    _letterhead(ws, company, last_col="E")
-    _set_merged(ws, "A5:E5", "TEXT DESIGN", font=FONT_TITLE, align=ALIGN_CENTER)
+    _set_merged(ws, "A1:E1", "TEXT DESIGN", font=FONT_TITLE, align=ALIGN_CENTER)
 
     komposisi = ", ".join(str(c.get("inci_name")) for c in pure_breakdown if c.get("inci_name"))
     komposisi = (komposisi + ".") if komposisi else "-"
@@ -352,7 +398,7 @@ def _sheet_text_design(wb: Workbook, product: dict, pure_breakdown: list, compan
     if _has_value(product.get("penyimpanan")):
         rows_spec.append(("Penyimpanan", product.get("penyimpanan"), True))
 
-    row = 7
+    row = 3
     for label, value, is_long in rows_spec:
         label_cell = ws.cell(row=row, column=1, value=label)
         label_cell.font = FONT_BOLD
