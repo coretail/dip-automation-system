@@ -252,6 +252,7 @@
                 }
             }
 
+            fetchNotesMentionCount();
             let notesInterval = setInterval(fetchNotesMentionCount, 30000);
             document.addEventListener('visibilitychange', function() {
                 if (document.visibilityState === 'visible') fetchNotesMentionCount();
