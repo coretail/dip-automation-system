@@ -151,7 +151,7 @@
                     {% endif %}
 
                     {% if n.author_id == current_user.id or current_user.role == 'admin' %}
-                    <form action="/notes/{{ n.id }}/delete" method="POST" onsubmit="return confirm('Hapus note ini?');">
+                    <form action="/notes/{{ n.id }}/delete" method="POST" onsubmit='return confirm("Hapus note ini? (isi note gak akan bisa dibalikin)");'>
                         <button type="submit" class="text-gray-300 hover:text-rose-500 transition text-xl p-1.5 cursor-pointer" title="Hapus">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
