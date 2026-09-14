@@ -1731,22 +1731,6 @@ async def add_material_batch(
     
     clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
 
-    # 1.5 Cegah duplikasi batch — cek kombinasi (no_batch + raw_material_id + perusahaan)
-    # Ditaruh di sini, SEBELUM proses upload file apa pun, biar kalau ditolak
-    # gak ada storage call yang kebuang sia-sia.
-    dup_check = (
-        supabase.table("raw_material_batches")
-        .select("id")
-        .eq("no_batch", no_batch.strip())
-        .eq("raw_material_id", raw_material_id)
-        .eq("perusahaan", perusahaan)
-        .execute()
-    )
-    if dup_check.data:
-        response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("error_msg", f"Batch {no_batch.strip()} untuk bahan baku ini di {perusahaan} sudah ada. Tidak boleh duplikat.")
-        return response
-    
     # 1. Parse string data QC Aktual dari frontend ke Python list
     try:
         parsed_qc = json.loads(qc_results)
