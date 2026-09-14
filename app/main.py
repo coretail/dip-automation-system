@@ -2067,57 +2067,6 @@ async def acc_dimusnahkan_batch(
         return response
 
 
-@app.post("/raw-materials/cpkb/update")
-async def update_cpkb_document(
-    request: Request,
-    perusahaan: str = Form(...),
-    cpkb_file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user)
-):
-    # Validasi perusahaan (hanya 2 PT yang didukung di app ini)
-    if perusahaan not in ("PT Erfi", "PT Heka"):
-        response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("error_msg", "Perusahaan tidak valid.")
-        return response
-
-    if not cpkb_file or not cpkb_file.filename:
-        response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("error_msg", "File dokumen SOP CPKB wajib dipilih.")
-        return response
-
-    try:
-        file_bytes = await cpkb_file.read()
-        company_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
-        path = f"sop-cpkb/sop_cpkb_{company_slug}.pdf"
-
-        # Upload (overwrite in-place) ke bucket raw-material-docs
-        supabase.storage.from_("raw-material-docs").upload(
-            path=path,
-            file=file_bytes,
-            file_options={"content-type": "application/pdf", "upsert": "true"}
-        )
-        file_url = supabase.storage.from_("raw-material-docs").get_public_url(path)
-
-        # Upsert 1 baris per perusahaan di tabel cpkb_raw_material (dibaca generator Bab II)
-        existing = supabase.table("cpkb_raw_material") \
-            .select("id").eq("perusahaan", perusahaan).limit(1).execute()
-        if existing.data:
-            supabase.table("cpkb_raw_material").update({"file_url": file_url}).eq("perusahaan", perusahaan).execute()
-        else:
-            supabase.table("cpkb_raw_material").insert({"perusahaan": perusahaan, "file_url": file_url}).execute()
-
-        log_activity(current_user, "update", "cpkb_raw_material", perusahaan, f"SOP CPKB {perusahaan}")
-
-        response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("success_msg", f"SOP CPKB {perusahaan} berhasil diperbarui.")
-        return response
-
-    except Exception as e:
-        print(f"Gagal update SOP CPKB ({perusahaan}): {e}")
-        response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("error_msg", "Gagal upload SOP CPKB. Coba lagi.")
-        return response
-
 @app.get("/admin/trash", response_class=HTMLResponse)
 async def admin_trash_page(request: Request, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
@@ -2157,22 +2106,26 @@ async def restore_product(product_id: str, current_user: dict = Depends(get_curr
 
 # =====================================================================
 #  HALAMAN DOKUMEN PERUSAHAAN (admin-only)
-#  7 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat
+#  8 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat
 #  Tidak Pidana, Protap No. Batch, Protap Pemeriksaan FG, CV Safety
-#  Assessor, Monitoring Efek Samping) yang dipakai lintas Bab I/III/IV
-#  pas generate PDF. Sebelumnya cuma bisa diganti lewat Supabase
-#  dashboard langsung; sekarang lewat aplikasi + tercatat di activity log.
+#  Assessor, Monitoring Efek Samping, SOP CPKB Bahan Baku) yang dipakai
+#  lintas Bab I/III/IV pas generate PDF. Sebelumnya cuma bisa diganti
+#  lewat Supabase dashboard langsung; sekarang lewat aplikasi + tercatat
+#  di activity log.
 # =====================================================================
 
-# Mapping doc_type -> (tabel, kolom). Dipakai sama oleh GET (baca) & POST (upsert).
+# Mapping doc_type -> (tabel, kolom, bucket, path_template).
+# Default bucket "legal-documents" & path "company-docs/{doc_type}_{slug}.pdf"
+# untuk 7 dokumen pertama; CPKB override ke bucket "raw-material-docs" & path sendiri.
 COMPANY_DOC_MAP = {
-    "nib":                     ("nib_documents",                "file_url"),
-    "sertifikat_cpkb":         ("sertifikat_cpkb_documents",    "file_url"),
-    "surat_tidak_pidana":      ("surat_tidak_pidana_documents", "file_url"),
-    "protap_no_batch":         ("company_sop_documents",        "protap_no_batch_url"),
-    "protap_pemeriksaan_fg":   ("company_sop_documents",        "protap_pemeriksaan_fg_url"),
-    "cv_safety_assessor":      ("company_sop_documents",        "cv_safety_assessor_url"),
-    "monitoring_efek_samping": ("company_sop_documents",        "monitoring_efek_samping_file_url"),
+    "nib":                     ("nib_documents",                "file_url",                            "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
+    "sertifikat_cpkb":         ("sertifikat_cpkb_documents",    "file_url",                            "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
+    "surat_tidak_pidana":      ("surat_tidak_pidana_documents", "file_url",                            "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
+    "protap_no_batch":         ("company_sop_documents",        "protap_no_batch_url",                 "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
+    "protap_pemeriksaan_fg":   ("company_sop_documents",        "protap_pemeriksaan_fg_url",           "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
+    "cv_safety_assessor":      ("company_sop_documents",        "cv_safety_assessor_url",              "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
+    "monitoring_efek_samping": ("company_sop_documents",        "monitoring_efek_samping_file_url",    "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
+    "cpkb_raw_material":       ("cpkb_raw_material",            "file_url",                            "raw-material-docs",  "sop-cpkb/sop_cpkb_{slug}.pdf"),
 }
 
 # Label tampilan tiap doc_type (urutan menentukan urutan baris di tabel)
@@ -2184,6 +2137,7 @@ COMPANY_DOC_LABELS = {
     "protap_pemeriksaan_fg":   "Protap Pemeriksaan Produk Jadi",
     "cv_safety_assessor":      "CV Safety Assessor",
     "monitoring_efek_samping": "Monitoring Efek Samping",
+    "cpkb_raw_material":       "SOP CPKB Pemeriksaan Bahan Baku",
 }
 
 
@@ -2197,7 +2151,7 @@ async def admin_company_documents_page(request: Request, current_user: dict = De
     docs = {c: {} for c in companies}
 
     # Ambil data per tabel (1 baris per perusahaan)
-    for doc_type, (table, column) in COMPANY_DOC_MAP.items():
+    for doc_type, (table, column, _, _) in COMPANY_DOC_MAP.items():
         try:
             resp = supabase.table(table).select("perusahaan, " + column).execute()
             by_company = {row.get("perusahaan"): row for row in (resp.data or [])}
@@ -2243,7 +2197,7 @@ async def update_company_document(
         response.set_cookie("error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
         return response
 
-    table, column = mapping
+    table, column, bucket, path_template = mapping
     label = COMPANY_DOC_LABELS.get(doc_type, doc_type)
     company_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
 
@@ -2257,13 +2211,13 @@ async def update_company_document(
             response.set_cookie("error_msg", "Ukuran file melebihi batas 10 MB.")
             return response
 
-        path = f"company-docs/{doc_type}_{company_slug}.pdf"
-        supabase.storage.from_("legal-documents").upload(
+        path = path_template.format(doc_type=doc_type, slug=company_slug)
+        supabase.storage.from_(bucket).upload(
             path=path,
             file=file_bytes,
             file_options={"content-type": "application/pdf", "upsert": "true"}
         )
-        file_url = supabase.storage.from_("legal-documents").get_public_url(path)
+        file_url = supabase.storage.from_(bucket).get_public_url(path)
 
         # Upsert 1 baris per perusahaan:
         # - 3 tabel pertama (nib_documents, sertifikat_cpkb_documents,

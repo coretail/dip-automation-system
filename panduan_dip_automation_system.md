@@ -305,11 +305,13 @@ Di Dashboard, tiap produk punya indikator kelengkapan (`progress_pct`) yang dihi
 - Terminal server (Uvicorn/Render) menampilkan log yang sama secara real-time dengan format timestamp **WIB (Asia/Jakarta)** — berguna untuk pengecekan cepat, tapi diingat log Render sendiri **cuma disimpan 7 hari**; untuk riwayat jangka panjang selalu rujuk ke tabel `activity_logs`.
 
 ### 6.4 Manajemen Dokumen Perusahaan (`/admin/company-documents`)
-Sebelum September 2026, 7 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, Monitoring Efek Samping) hanya bisa diubah lewat Supabase Dashboard langsung. Kini tersedia halaman admin khusus (`/admin/company-documents`) yang memungkinkan admin mengunggah dan mengganti file-file tersebut langsung dari aplikasi.
+Sebelum September 2026, 8 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, Monitoring Efek Samping, serta **SOP CPKB Pemeriksaan Bahan Baku**) hanya bisa diubah lewat Supabase Dashboard langsung (atau dari halaman bahan baku untuk SOP CPKB). Kini tersedia halaman admin khusus (`/admin/company-documents`) yang memungkinkan admin mengunggah dan mengganti file-file tersebut langsung dari aplikasi.
 - **Akses:** Admin-only (`/admin/company-documents`), link tersedia di dashboard.
-- **7 Dokumen × 2 Perusahaan:** Tabel matriks menampilkan status (ada/tidak) + tombol "Upload"/"Ganti" untuk masing-masing. Satu modal upload dipakai bersama, hidden input diisi via JS.
-- **Storage:** File PDF disimpan di bucket `legal-documents` dengan path `company-docs/{doc_type}_{erfi|heka}.pdf` (`upsert: true`).
-- **Upsert:** 3 tabel pertama (`nib_documents`, `sertifikat_cpkb_documents`, `surat_tidak_pidana_documents`) masing-masing 1 baris per perusahaan, kolom `file_url`. Untuk `company_sop_documents` (4 kolom berbeda dalam 1 tabel), update hanya kolom spesifik — tidak overwrite seluruh baris atau bikin duplikat.
+- **8 Dokumen × 2 Perusahaan:** Tabel matriks menampilkan status (ada/tidak) + tombol "Upload"/"Ganti" untuk masing-masing. Satu modal upload dipakai bersama, hidden input diisi via JS.
+- **Storage:** Dokumen disimpan di 2 bucket berbeda:
+  - `legal-documents` (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, Monitoring Efek Samping) — path `company-docs/{doc_type}_{erfi|heka}.pdf`
+  - `raw-material-docs` (SOP CPKB Pemeriksaan Bahan Baku) — path `sop-cpkb/sop_cpkb_{erfi|heka}.pdf`
+- **Upsert:** 4 tabel pertama (`nib_documents`, `sertifikat_cpkb_documents`, `surat_tidak_pidana_documents`, `cpkb_raw_material`) masing-masing 1 baris per perusahaan, kolom `file_url`. Untuk `company_sop_documents` (4 kolom berbeda dalam 1 tabel), update hanya kolom spesifik — tidak overwrite seluruh baris atau bikin duplikat.
 - **Audit Trail:** Setiap upload tercatat di `activity_logs` dengan detail jenis dokumen & perusahaan.
 - **Validasi:** File wajib PDF, maksimal 10 MB (konsisten dengan upload lain di aplikasi).
 
