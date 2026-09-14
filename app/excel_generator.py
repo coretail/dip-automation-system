@@ -7,10 +7,10 @@ jauh lebih rapi, terstruktur, dan profesional:
     di sheet Formula Nama Dagang & Formula INCI Murni.
   - Sheet Text Design tanpa kop surat.
   - Auto-fit lebar kolom dinamis (min 15, maks 50) dari isi teks terpanjang.
-  - Header tabel ber-fill abu-abu muda (#E5E7EB) + bold.
-  - Border tipis (#D1D5DB) di seluruh sel tabel data.
+  - Header tabel ber-fill oranye muda (#FABF8F) + bold.
+  - Border medium (#6B7280) di seluruh sel tabel data.
   - Kolom angka (% w/w) align RIGHT dengan format desimal 0.0000.
-  - Baris TOTAL: bold, highlight, top border tipis + bottom border ganda.
+  - Baris TOTAL: bold, highlight, top border medium + bottom border ganda.
   - Sheet Text Design: merge B-E + wrap_text untuk teks panjang.
   - Blok tanda tangan: Sheet "Nama Dagang" 3 kolom (A-B Registrasi /
     D-E R&D); Sheet "INCI Murni" ringkas dalam area A-C (kolom A & C);
@@ -36,22 +36,23 @@ COL_WIDTH_PADDING = 2.0        # padding ditambahkan ke panjang teks terpanjang
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-HEADER_FILL = PatternFill("solid", fgColor="E5E7EB")  # header tabel: abu-abu muda
+HEADER_FILL = PatternFill("solid", fgColor="FABF8F")  # header tabel: oranye muda
 TOTAL_FILL = PatternFill("solid", fgColor="FEF3C7")   # baris Total: highlight kuning muda
 NOTE_FILL = PatternFill("solid", fgColor="FEF9C3")    # kotak keterangan tambahan
 
-_SIDE_THIN_GRAY = Side(style="thin", color="D1D5DB")
-BORDER_THIN = Border(left=_SIDE_THIN_GRAY, right=_SIDE_THIN_GRAY,
-                     top=_SIDE_THIN_GRAY, bottom=_SIDE_THIN_GRAY)
-# Baris TOTAL: top border tipis + bottom border ganda (double)
-BORDER_TOTAL = Border(left=_SIDE_THIN_GRAY, right=_SIDE_THIN_GRAY,
-                      top=Side(style="thin", color="D1D5DB"),
+_SIDE_MED_GRAY = Side(style="medium", color="6B7280")
+BORDER_THIN = Border(left=_SIDE_MED_GRAY, right=_SIDE_MED_GRAY,
+                     top=_SIDE_MED_GRAY, bottom=_SIDE_MED_GRAY)
+# Baris TOTAL: top border medium abu-abu + bottom border ganda (double) hitam
+BORDER_TOTAL = Border(left=_SIDE_MED_GRAY, right=_SIDE_MED_GRAY,
+                      top=Side(style="medium", color="6B7280"),
                       bottom=Side(style="double", color="000000"))
 
-FONT_NORMAL = Font(name="Calibri", size=11)
-FONT_BOLD = Font(name="Calibri", size=11, bold=True)
-FONT_COMPANY = Font(name="Calibri", size=14, bold=True)
-FONT_TITLE = Font(name="Calibri", size=12, bold=True)
+FONT_NORMAL = Font(name="Trebuchet MS", size=11)
+FONT_BOLD = Font(name="Trebuchet MS", size=11, bold=True)
+FONT_TITLE = Font(name="Trebuchet MS", size=12, bold=True)
+# Font khusus fallback letterhead (teks, tanpa gambar kop):
+_FONT_LETTERHEAD_FALLBACK = Font(name="Trebuchet MS", size=14, bold=True)
 
 ALIGN_LEFT_TOP_WRAP = Alignment(horizontal="left", vertical="top", wrap_text=True)
 ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
@@ -197,7 +198,7 @@ def _letterhead(ws, company: dict, last_col: str = "E"):
 
     left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
     _set_merged(ws, f"A1:{last_col}1", _dash(company.get("nama")),
-                font=FONT_COMPANY, align=left_align)
+                font=_FONT_LETTERHEAD_FALLBACK, align=left_align)
     _set_merged(ws, f"A2:{last_col}2", _dash(company.get("alamat")), align=left_align)
     contact = f"Email: {_dash(company.get('email'))} | Website: {_dash(company.get('website'))}"
     _set_merged(ws, f"A3:{last_col}3", contact, align=left_align)
