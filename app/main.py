@@ -2154,6 +2154,141 @@ async def restore_product(product_id: str, current_user: dict = Depends(get_curr
         print(f"Gagal restore produk: {e}")
         return RedirectResponse(url="/admin/trash?error=Gagal mengembalikan produk", status_code=303)
 
+
+# =====================================================================
+#  HALAMAN DOKUMEN PERUSAHAAN (admin-only)
+#  7 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat
+#  Tidak Pidana, Protap No. Batch, Protap Pemeriksaan FG, CV Safety
+#  Assessor, Monitoring Efek Samping) yang dipakai lintas Bab I/III/IV
+#  pas generate PDF. Sebelumnya cuma bisa diganti lewat Supabase
+#  dashboard langsung; sekarang lewat aplikasi + tercatat di activity log.
+# =====================================================================
+
+# Mapping doc_type -> (tabel, kolom). Dipakai sama oleh GET (baca) & POST (upsert).
+COMPANY_DOC_MAP = {
+    "nib":                     ("nib_documents",                "file_url"),
+    "sertifikat_cpkb":         ("sertifikat_cpkb_documents",    "file_url"),
+    "surat_tidak_pidana":      ("surat_tidak_pidana_documents", "file_url"),
+    "protap_no_batch":         ("company_sop_documents",        "protap_no_batch_url"),
+    "protap_pemeriksaan_fg":   ("company_sop_documents",        "protap_pemeriksaan_fg_url"),
+    "cv_safety_assessor":      ("company_sop_documents",        "cv_safety_assessor_url"),
+    "monitoring_efek_samping": ("company_sop_documents",        "monitoring_efek_samping_file_url"),
+}
+
+# Label tampilan tiap doc_type (urutan menentukan urutan baris di tabel)
+COMPANY_DOC_LABELS = {
+    "nib":                     "NIB",
+    "sertifikat_cpkb":         "Sertifikat CPKB",
+    "surat_tidak_pidana":      "Surat Tidak Pidana",
+    "protap_no_batch":         "Protap No. Batch",
+    "protap_pemeriksaan_fg":   "Protap Pemeriksaan Produk Jadi",
+    "cv_safety_assessor":      "CV Safety Assessor",
+    "monitoring_efek_samping": "Monitoring Efek Samping",
+}
+
+
+@app.get("/admin/company-documents", response_class=HTMLResponse)
+async def admin_company_documents_page(request: Request, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    companies = ["PT Erfi", "PT Heka"]
+    # docs[perusahaan][doc_type] = url_or_None
+    docs = {c: {} for c in companies}
+
+    # Ambil data per tabel (1 baris per perusahaan)
+    for doc_type, (table, column) in COMPANY_DOC_MAP.items():
+        try:
+            resp = supabase.table(table).select("perusahaan, " + column).execute()
+            by_company = {row.get("perusahaan"): row for row in (resp.data or [])}
+            for c in companies:
+                row = by_company.get(c)
+                docs[c][doc_type] = (row or {}).get(column) if row else None
+        except Exception as e:
+            print(f"[COMPANY DOCS] Gagal ambil {table}/{column}: {e}")
+            for c in companies:
+                docs[c].setdefault(doc_type, None)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin_company_documents.html",
+        context={
+            "docs": docs,
+            "doc_labels": COMPANY_DOC_LABELS,
+            "current_user": current_user,
+            "ed_notification_count": await get_ed_notification_count(),
+        }
+    )
+
+
+@app.post("/admin/company-documents/update")
+async def update_company_document(
+    request: Request,
+    doc_type: str = Form(...),
+    perusahaan: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    # Validasi doc_type & perusahaan
+    mapping = COMPANY_DOC_MAP.get(doc_type)
+    if not mapping:
+        response = RedirectResponse(url="/admin/company-documents", status_code=303)
+        response.set_cookie("error_msg", f"Jenis dokumen '{doc_type}' tidak dikenal.")
+        return response
+    if perusahaan not in ("PT Erfi", "PT Heka"):
+        response = RedirectResponse(url="/admin/company-documents", status_code=303)
+        response.set_cookie("error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
+        return response
+
+    table, column = mapping
+    label = COMPANY_DOC_LABELS.get(doc_type, doc_type)
+    company_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
+
+    try:
+        file_bytes = await file.read()
+
+        # Validasi ukuran (10 MB, konsisten dengan upload lain di app)
+        max_size = 10 * 1024 * 1024
+        if len(file_bytes) > max_size:
+            response = RedirectResponse(url="/admin/company-documents", status_code=303)
+            response.set_cookie("error_msg", "Ukuran file melebihi batas 10 MB.")
+            return response
+
+        path = f"company-docs/{doc_type}_{company_slug}.pdf"
+        supabase.storage.from_("legal-documents").upload(
+            path=path,
+            file=file_bytes,
+            file_options={"content-type": "application/pdf", "upsert": "true"}
+        )
+        file_url = supabase.storage.from_("legal-documents").get_public_url(path)
+
+        # Upsert 1 baris per perusahaan:
+        # - 3 tabel pertama (nib_documents, sertifikat_cpkb_documents,
+        #   surat_tidak_pidana_documents) punya kolom file_url -> update kolom itu.
+        # - company_sop_documents punya 4 kolom berbeda -> UPDATE HANYA kolom spesifik,
+        #   jangan overwrite kolom lain (protap_no_batch_url, dll).
+        existing = supabase.table(table).select("id").eq("perusahaan", perusahaan).limit(1).execute()
+        if existing.data:
+            supabase.table(table).update({column: file_url}).eq("perusahaan", perusahaan).execute()
+        else:
+            supabase.table(table).insert({"perusahaan": perusahaan, column: file_url}).execute()
+
+        log_activity(current_user, "update", doc_type, perusahaan, f"{label} {perusahaan}")
+
+        response = RedirectResponse(url="/admin/company-documents", status_code=303)
+        response.set_cookie("success_msg", f"{label} ({perusahaan}) berhasil diperbarui.")
+        return response
+
+    except Exception as e:
+        print(f"[COMPANY DOCS] Gagal update {doc_type} ({perusahaan}): {e}")
+        response = RedirectResponse(url="/admin/company-documents", status_code=303)
+        response.set_cookie("error_msg", f"Gagal upload {label}. Coba lagi.")
+        return response
+
+
 @app.post("/products/add")
 async def add_product(
     nama_produk: str = Form(...),

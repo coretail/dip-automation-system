@@ -1,4 +1,4 @@
-# Aplikasi Penyusun Dokumen Informasi Produk (DIP) Kosmetik
+﻿# Aplikasi Penyusun Dokumen Informasi Produk (DIP) Kosmetik
 
 ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Framework](https://img.shields.io/badge/framework-FastAPI-green)
@@ -12,10 +12,11 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 
 ---
 
-## 📌 Status Pengembangan Sistem (Update: 4 September 2026)
+## 📌 Status Pengembangan Sistem (Update: 14 September 2026)
 
 | Modul / Fase | Fitur & Cakupan | Status |
 | :--- | :--- | :---: |
+| **Manajemen Dokumen Perusahaan** | Halaman admin khusus (`/admin/company-documents`) untuk mengelola 7 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, Monitoring Efek Samping) yang dipakai lintas Bab I, III, dan IV saat generate PDF DIP. Upload file via UI (bucket `legal-documents`), upsert otomatis ke 4 tabel terkait (`nib_documents`, `sertifikat_cpkb_documents`, `surat_tidak_pidana_documents`, `company_sop_documents`), tercatat di `activity_logs`. Sebelumnya hanya bisa diubah lewat Supabase Dashboard langsung. | ✅ **Selesai** |
 | **Spesifikasi Produk Jadi (PT Erfi)** | Form input spesifikasi QC produk jadi (Pemerian, Pengemasan Primer/Sekunder, Uji Mikrobiologi, Uji Cemaran Logam) dengan template default 5 section siap pakai, auto-fill data dari Informasi Dasar (`no_na_produk`, `netto`, `acc_sampel`), generate PDF meniru format dokumen QC resmi PT Erfi. Tabel: `product_finished_specs`. | ✅ **Selesai** |
 | **Field Peringatan & Penyimpanan** | Field `peringatan` & `penyimpanan` di form Tambah/Edit Produk (Informasi Dasar), otomatis muncul di dokumen Bab IV (Text Design), Formula Kualitatif & Kuantitatif (backend openpyxl), dan Export Excel. | ✅ **Selesai** |
 | **Export Excel via Backend (openpyxl)** | Export Qualitative-Quantitative Formula (3 sheet: "Formula Nama Dagang", "Formula INCI Murni", "Text Design") di-generate di server pakai `openpyxl` (styling profesional: header, border, auto-fit kolom), menggantikan SheetJS. | ✅ **Selesai** |
@@ -178,3 +179,4 @@ dip-automation-system/
 
 ## 📄 Lisensi & Hak Cipta
 © 2026 Coretail DIP Automation System. Hak cipta dilindungi undang-undang.
+
