@@ -2129,7 +2129,6 @@ COMPANY_DOC_MAP = {
     "protap_no_batch":         ("company_sop_documents",        "protap_no_batch_url",                 "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
     "protap_pemeriksaan_fg":   ("company_sop_documents",        "protap_pemeriksaan_fg_url",           "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
     "cv_safety_assessor":      ("company_sop_documents",        "cv_safety_assessor_url",              "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
-    "monitoring_efek_samping": ("company_sop_documents",        "monitoring_efek_samping_file_url",    "legal-documents",    "company-docs/{doc_type}_{slug}.pdf"),
     "cpkb_raw_material":       ("cpkb_raw_material",            "file_url",                            "raw-material-docs",  "sop-cpkb/sop_cpkb_{slug}.pdf"),
 }
 
@@ -2141,7 +2140,6 @@ COMPANY_DOC_LABELS = {
     "protap_no_batch":         "Protap No. Batch",
     "protap_pemeriksaan_fg":   "Protap Pemeriksaan Produk Jadi",
     "cv_safety_assessor":      "CV Safety Assessor",
-    "monitoring_efek_samping": "Monitoring Efek Samping",
     "cpkb_raw_material":       "SOP CPKB Pemeriksaan Bahan Baku",
 }
 
@@ -3569,7 +3567,7 @@ async def download_dip_bab4(
     attachment_urls = [
         product.get("laporan_keamanan_file_url"),               # Poin 1
         company_sop.get("cv_safety_assessor_url"),              # Poin 2
-        company_sop.get("monitoring_efek_samping_file_url") or product.get("monitoring_efek_samping_file_url"), # Poin 3
+        product.get("monitoring_efek_samping_file_url"), # Poin 3
         product.get("data_klaim_file_url"),                     # Poin 4
     ]
 

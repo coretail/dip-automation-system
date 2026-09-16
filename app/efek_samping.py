@@ -294,4 +294,61 @@ def register_efek_samping_routes(
             product.get("nama_produk") or product_id,
             [{"field": "Laporan Monitoring Efek Samping", "note": period_label}],
         )
-        return _redirect(f"Laporan monitoring efek samping {period_label} berhasil digenerate.")
+
+    @app.post("/products/{product_id}/monitoring-efek-samping/delete")
+    async def delete_monitoring_efek_samping(
+        product_id: str,
+        current_user: dict = Depends(get_current_user),
+    ):
+        def _redirect(msg: str, error: bool = False):
+            response = RedirectResponse(
+                url=f"/products/{product_id}/edit?tab=bab4", status_code=303
+            )
+            response.set_cookie("error_msg" if error else "success_msg", msg)
+            return response
+
+        try:
+            prod_resp = (
+                supabase.table("products")
+                .select("nama_produk, monitoring_efek_samping_file_url")
+                .eq("id", product_id)
+                .single()
+                .execute()
+            )
+        except Exception as e:
+            print(f"[EFEK SAMPING] Produk {product_id} tidak ditemukan: {e}")
+            return _redirect("Produk tidak ditemukan.", error=True)
+
+        product = prod_resp.data
+        if not product:
+            return _redirect("Produk tidak ditemukan.", error=True)
+
+        file_url = product.get("monitoring_efek_samping_file_url")
+        if file_url:
+            try:
+                # Extract path from URL (assuming raw-material-docs bucket)
+                # URL structure: https://.../storage/v1/object/public/raw-material-docs/products/...
+                path = file_url.split("/raw-material-docs/")[-1]
+                supabase.storage.from_("raw-material-docs").remove([path])
+            except Exception as e:
+                print(f"[EFEK SAMPING] Gagal hapus file {file_url}: {e}")
+
+        try:
+            supabase.table("products").update({
+                "monitoring_efek_samping_file_url": None,
+                "last_efek_samping_period": None,
+            }).eq("id", product_id).execute()
+        except Exception as e:
+            print(f"[EFEK SAMPING] Gagal reset data produk: {e}")
+            return _redirect("Gagal mereset data produk.", error=True)
+
+        log_activity(
+            current_user,
+            "delete",
+            "product",
+            product_id,
+            product.get("nama_produk") or product_id,
+            [{"field": "Laporan Monitoring Efek Samping", "note": "Deleted"}],
+        )
+        return _redirect("Laporan monitoring efek samping berhasil dihapus.")
+
