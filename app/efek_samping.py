@@ -219,6 +219,12 @@ def register_efek_samping_routes(
         period_label = _efek_period_label(year, half)
         start_d, end_d = _efek_period_range(year, half)
         sign_d = _efek_signature_date(year, half)
+        sign_label = format_date_id(sign_d)
+        # contoh referensi pakai 03 Juli 2025 (hari 2 digit)
+        _parts = str(sign_label).split(" ", 1)
+        if _parts and _parts[0].isdigit() and len(_parts[0]) == 1:
+            sign_label = f"0{_parts[0]} {_parts[1]}"
+
         company = get_company_info(product.get("perusahaan"))
 
         has_cases = str(ada_kasus).strip().lower() in ("1", "true", "on", "yes")
@@ -246,7 +252,7 @@ def register_efek_samping_routes(
             "period_end": format_date_id(end_d),
             "cases": cases,
             "signature_place": "Bogor",
-            "signature_date": format_date_id(sign_d),
+            "signature_date": sign_label,
             "apt_signature_uri": _apt_signature_uri(),
         })
 
@@ -397,4 +403,3 @@ def register_efek_samping_routes(
             [{"field": "Laporan Monitoring Efek Samping", "note": "Deleted"}],
         )
         return _redirect("Laporan monitoring efek samping berhasil dihapus.")
-
