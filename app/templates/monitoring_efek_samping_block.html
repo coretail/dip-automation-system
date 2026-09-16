@@ -3,133 +3,152 @@
 <head>
 <meta charset="UTF-8">
 <style>
-    @page { size: A4 landscape; margin: 1.4cm 1cm 1.4cm 1cm; }
-    body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #111; line-height: 1.35; }
-    .lampiran { text-align: center; font-size: 8pt; line-height: 1.35; margin-bottom: 10px; }
-    .lampiran .kicker { font-size: 8pt; letter-spacing: 0.4px; }
-    .title { text-align: center; font-size: 11pt; font-weight: bold; text-decoration: underline; text-transform: uppercase; margin: 8px 0 12px 0; }
-    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    .info-table td { padding: 2px 0; vertical-align: top; font-size: 9pt; }
-    .info-label { width: 150px; }
-    .info-sep { width: 12px; }
-    .main-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-    .main-table th, .main-table td { border: 1px solid #000; padding: 5px 4px; font-size: 8pt; vertical-align: top; }
-    .main-table th { background-color: #f0f0f0; font-weight: bold; text-align: center; }
-    .main-table td.center { text-align: center; }
-    .nihil { text-align: center; font-style: italic; }
-    .note { font-size: 8pt; margin-top: 10px; }
-    .sign-wrap { width: 100%; margin-top: 28px; }
-    .sign-box { width: 260px; margin-left: auto; text-align: center; font-size: 9pt; }
-    .sign-space { height: 58px; }
+    @page { size: A4 landscape; margin: 0.75cm 0.85cm 0.65cm 0.85cm; }
+    * { margin: 0; padding: 0; }
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #000; }
+    .lampiran { font-size: 8pt; line-height: 1.35; text-align: center; }
+    .title { font-size: 12pt; font-weight: bold; text-decoration: underline; text-align: center; padding: 10px 0 12px 0; }
+    .info td { font-size: 9pt; padding: 1px 0; vertical-align: top; }
+    .info .lbl { width: 130px; }
+    .info .sep { width: 14px; }
+    table.grid { width: 100%; border: 1px solid #000; }
+    table.grid td, table.grid th {
+        border: 1px solid #000;
+        font-size: 7.5pt;
+        vertical-align: middle;
+        padding: 5px 3px;
+    }
+    table.grid th {
+        font-weight: bold;
+        text-align: center;
+        vertical-align: middle;
+        background-color: #ffffff;
+        font-size: 7pt;
+        line-height: 1.2;
+    }
+    .c { text-align: center; }
+    .note { font-size: 8pt; padding-top: 10px; line-height: 1.45; }
+    .sign { font-size: 9pt; text-align: center; line-height: 1.45; }
 </style>
 </head>
 <body>
-    <div class="lampiran">
-        <div class="kicker"><b>LAMPIRAN IV</b></div>
-        <div>PERATURAN BADAN PENGAWAS OBAT DAN MAKANAN</div>
-        <div>NOMOR 26</div>
-        <div>TAHUN 2019</div>
-        <div>TENTANG MEKANISME MONITORING EFEK SAMPING KOSMETIK</div>
-    </div>
 
-    <div class="title">TABEL REKAPITULASI HASIL MONITORING EFEK SAMPING KOSMETIKA</div>
+<table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+        <td width="50%"></td>
+        <td width="50%" class="lampiran">
+            <b>LAMPIRAN IV</b><br/>
+            PERATURAN BADAN PENGAWAS OBAT DAN MAKANAN NOMOR 26<br/>
+            TAHUN 2019<br/>
+            TENTANG MEKANISME MONITORING EFEK SAMPING KOSMETIK
+        </td>
+    </tr>
+</table>
 
-    <table class="info-table">
-        <tr>
-            <td class="info-label">Nama Perusahaan</td>
-            <td class="info-sep">:</td>
-            <td><b>{{ company.nama }}</b></td>
-        </tr>
-        <tr>
-            <td class="info-label">Nomor Telepon</td>
-            <td class="info-sep">:</td>
-            <td>{{ company.telepon }}</td>
-        </tr>
-        <tr>
-            <td class="info-label">Email</td>
-            <td class="info-sep">:</td>
-            <td>{{ company.email }}</td>
-        </tr>
-        <tr>
-            <td class="info-label">Periode</td>
-            <td class="info-sep">:</td>
-            <td>{{ period_label }}</td>
-        </tr>
-    </table>
+<div class="title">TABEL REKAPITULASI HASIL MONITORING EFEK SAMPING KOSMETIKA</div>
 
-    <table class="main-table">
-        <thead>
-            <tr>
-                <th style="width: 25px;">No</th>
-                <th>Nama Produk</th>
-                <th>Nomor Notifikasi</th>
-                <th style="width: 60px;">Jumlah Kasus per Produk (*)(**)</th>
-                <th style="width: 80px;">Nama Pengguna (Singkatan) (*)</th>
-                <th style="width: 50px;">Jenis Kelamin (*)</th>
-                <th style="width: 35px;">Usia (*)</th>
-                <th>Jenis Efek yang Tidak Diinginkan (Serius/Non Serius) (*)</th>
-                <th>Bentuk Manifestasi yang Terjadi (*)</th>
-                <th style="width: 80px;">Tanggal Mulai Terjadi Kasus (*)</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% if cases %}
-                {% for c in cases %}
-                <tr>
-                    <td class="center">{{ loop.index }}</td>
-                    <td>{{ product.nama_produk }}</td>
-                    <td>{{ product.no_na_produk or '-' }}</td>
-                    <td class="center">{{ cases|length }}</td>
-                    <td>{{ c.nama }}</td>
-                    <td class="center">{{ c.jenis_kelamin }}</td>
-                    <td class="center">{{ c.usia }}</td>
-                    <td>{{ c.jenis_efek }}</td>
-                    <td>{{ c.manifestasi }}</td>
-                    <td class="center">{{ c.tanggal_mulai }}</td>
-                </tr>
-                {% endfor %}
+<table class="info" cellpadding="0" cellspacing="0" width="75%">
+    <tr>
+        <td class="lbl">Nama Perusahaan</td>
+        <td class="sep">:</td>
+        <td><b>{{ company.nama }}</b></td>
+    </tr>
+    <tr>
+        <td class="lbl">Nomor Telepon</td>
+        <td class="sep">:</td>
+        <td>{{ company.telepon or '-' }}</td>
+    </tr>
+    <tr>
+        <td class="lbl">Email</td>
+        <td class="sep">:</td>
+        <td>{{ company.email }}</td>
+    </tr>
+    <tr>
+        <td class="lbl">Periode</td>
+        <td class="sep">:</td>
+        <td>{{ period_label }}</td>
+    </tr>
+</table>
+
+<br/>
+
+<table class="grid" cellpadding="4" cellspacing="0">
+    <tr>
+        <th width="3%">No</th>
+        <th width="16%">Nama Produk</th>
+        <th width="12%">Nomor<br/>Notifikasi</th>
+        <th width="9%">Jumlah Kasus<br/>per Produk<br/>(*)(**)</th>
+        <th width="10%">Nama Pengguna<br/>(Singkatan) (*)</th>
+        <th width="8%">Jenis<br/>Kelamin (*)</th>
+        <th width="5%">Usia (*)</th>
+        <th width="13%">Jenis Efek yang Tidak<br/>Diinginkan<br/>(Serius/Non Serius) (*)</th>
+        <th width="13%">Bentuk Manifestasi<br/>yang Terjadi (*)</th>
+        <th width="11%">Tanggal Mulai<br/>Terjadi Kasus (*)</th>
+    </tr>
+    {% if cases %}
+        {% for c in cases %}
+        <tr>
+            <td class="c">{{ loop.index }}</td>
+            <td>{{ product.nama_produk }}</td>
+            <td class="c">{{ product.no_na_produk or '-' }}</td>
+            <td class="c">{{ cases|length }}</td>
+            <td class="c">{{ c.nama }}</td>
+            <td class="c">{{ c.jenis_kelamin }}</td>
+            <td class="c">{{ c.usia }}</td>
+            <td class="c">{{ c.jenis_efek }}</td>
+            <td class="c">{{ c.manifestasi }}</td>
+            <td class="c">{{ c.tanggal_mulai }}</td>
+        </tr>
+        {% endfor %}
+    {% else %}
+        <tr>
+            <td class="c">1</td>
+            <td>{{ product.nama_produk }}</td>
+            <td class="c">{{ product.no_na_produk or '-' }}</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+        </tr>
+    {% endif %}
+    {% set filled = cases|length if cases else 1 %}
+    {% for n in range(filled + 1, 6) %}
+        <tr>
+            <td class="c">{{ n }}</td>
+            <td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+        </tr>
+    {% endfor %}
+    {% for i in range(3) %}
+        <tr>
+            <td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+        </tr>
+    {% endfor %}
+</table>
+
+<div class="note">
+    (*) &nbsp;&nbsp;: Apabila dalam periode pelaporan tidak terjadi efek tidak diinginkan, dapat diisi Nihil.<br/>
+    (**) : Apabila terjadi kasus, Formulir Pelaporan Efek Samping Kosmetika dilampirkan.
+</div>
+
+<table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+        <td width="68%"></td>
+        <td width="32%" class="sign">
+            <br/>
+            Tanggal {{ signature_date }}<br/>
+            Penanggung Jawab Teknis<br/>
+            {% if apt_signature_uri %}
+            <img src="{{ apt_signature_uri }}" style="height: 56px; width: auto;"/><br/>
             {% else %}
-                <tr>
-                    <td class="center">1</td>
-                    <td>{{ product.nama_produk }}</td>
-                    <td>{{ product.no_na_produk or '-' }}</td>
-                    <td class="center">Nihil</td>
-                    <td class="center">Nihil</td>
-                    <td class="center">Nihil</td>
-                    <td class="center">Nihil</td>
-                    <td class="center">Nihil</td>
-                    <td class="center">Nihil</td>
-                    <td class="center">Nihil</td>
-                </tr>
+            <br/><br/><br/>
             {% endif %}
-            {# Visual Padding: Tambah baris kosong agar total minimal 8 baris #}
-            {% set total_rows = cases|length if cases else 1 %}
-            {% if total_rows < 8 %}
-                {% for i in range(8 - total_rows) %}
-                <tr style="height: 22px;">
-                    <td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-                </tr>
-                {% endfor %}
-            {% endif %}
-        </tbody>
-    </table>
+            ({{ company.penanggung_jawab_teknis }})
+        </td>
+    </tr>
+</table>
 
-    <div class="note">
-        <div>(*) &nbsp;&nbsp; : Apabila dalam periode pelaporan tidak terjadi efek tidak diinginkan, dapat diisi Nihil.</div>
-        <div>(**) &nbsp; : Apabila terjadi kasus, Formulir Pelaporan Efek Samping Kosmetika dilampirkan.</div>
-    </div>
-
-    <div class="sign-wrap">
-        <div class="sign-box">
-            <div>Tanggal {{ signature_date }}</div>
-            <div>Penanggung Jawab Teknis</div>
-            <div class="sign-space">
-                {% if apt_signature_uri %}
-                <img src="{{ apt_signature_uri }}" style="height: 52px; width: auto;">
-                {% endif %}
-            </div>
-            <div>({{ company.penanggung_jawab_teknis }})</div>
-        </div>
-    </div>
 </body>
 </html>
