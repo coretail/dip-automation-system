@@ -49,8 +49,9 @@ def _next_efek_semester(last_text) -> tuple[int, int]:
 
 
 def _efek_period_label(year: int, half: int) -> str:
-    roman = "I" if half == 1 else "II"
-    return f"Semester {roman} Tahun {year}"
+    if half == 1:
+        return f"Januari - Juni {year}"
+    return f"Juli - Desember {year}"
 
 
 def _efek_period_range(year: int, half: int) -> tuple[date, date]:
@@ -61,8 +62,13 @@ def _efek_period_range(year: int, half: int) -> tuple[date, date]:
 
 def _efek_signature_date(year: int, half: int) -> date:
     if half == 1:
-        return date(year, 7, 10)
-    return date(year + 1, 1, 10)
+        return date(year, 7, 3)
+    return date(year + 1, 1, 3)
+
+def _slugify(text: str) -> str:
+    text = (text or "produk").lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    return text or "produk"
 
 
 def _apt_signature_uri() -> str | None:
@@ -248,7 +254,7 @@ def register_efek_samping_routes(
             print(f"[EFEK SAMPING] Gagal merge PDF: {e}")
             return _redirect("Gagal menggabungkan PDF laporan.", error=True)
 
-        path = f"products/{product_id}/monitoring_efek_samping.pdf"
+        path = f"products/{product_id}/monitoring_efek_samping_{_slugify(product.get('nama_produk'))}.pdf"
         try:
             supabase.storage.from_("raw-material-docs").upload(
                 path=path,

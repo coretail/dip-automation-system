@@ -369,6 +369,7 @@ COMPANY_INFO = {
         "logo": "/static/images/logo_erfi.png",
         "kop": "/static/images/kop_erfi.png",
         "penanggung_jawab_teknis": "Apt. Mutrofin Rakhmawati, S.Farm",
+        "telepon": "0822-2680-2018",
     },
     "PT Heka": {
         "nama": "PT. HARAKA ERFI KOSMETINDO ABADI",          
@@ -378,6 +379,7 @@ COMPANY_INFO = {
         "logo": "/static/images/logo_heka.png",
         "kop": "/static/images/kop_heka.png",
         "penanggung_jawab_teknis": "Apt. Mutrofin Rakhmawati, S.Farm",
+        "telepon": "0812-8193-8715",
     }
 }
 
