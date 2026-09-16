@@ -1,6 +1,7 @@
 """Generate otomatis laporan monitoring efek samping (cosmetovigilance) per produk."""
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 import re
@@ -17,6 +18,11 @@ from xhtml2pdf import pisa
 _EFEK_PERIOD_RE = re.compile(r"^(\d{4})-H([12])$")
 APT_SIGNATURE_URI = "/static/images/apt.png"
 WIB = ZoneInfo("Asia/Jakarta")
+
+# Kunci per-produk untuk mencegah race condition (lost update) saat dua
+# request generate bersamaan untuk produk yang sama.
+_generate_locks: dict[str, asyncio.Lock] = {}
+_generate_locks_guard = asyncio.Lock()
 
 
 def _current_efek_semester(now: datetime | None = None) -> tuple[int, int]:
@@ -155,6 +161,34 @@ def register_efek_samping_routes(
         kasus_manifestasi: List[str] = Form(None),
         kasus_tanggal: List[str] = Form(None),
         current_user: dict = Depends(get_current_user),
+    ):
+        # Serialize request generate per produk: read-modify-write PDF lama
+        # + upload + update DB jadi atomik, tidak ada hasil yang tertimpa.
+        async with _generate_locks_guard:
+            lock = _generate_locks.setdefault(product_id, asyncio.Lock())
+        async with lock:
+            return await _generate_monitoring_efek_samping_inner(
+                product_id,
+                ada_kasus,
+                kasus_nama,
+                kasus_jenis_kelamin,
+                kasus_usia,
+                kasus_jenis_efek,
+                kasus_manifestasi,
+                kasus_tanggal,
+                current_user,
+            )
+
+    async def _generate_monitoring_efek_samping_inner(
+        product_id: str,
+        ada_kasus: str,
+        kasus_nama: List[str] | None,
+        kasus_jenis_kelamin: List[str] | None,
+        kasus_usia: List[str] | None,
+        kasus_jenis_efek: List[str] | None,
+        kasus_manifestasi: List[str] | None,
+        kasus_tanggal: List[str] | None,
+        current_user: dict,
     ):
         def _redirect(msg: str, error: bool = False):
             response = RedirectResponse(
@@ -297,8 +331,6 @@ def register_efek_samping_routes(
         return _redirect(f"Laporan monitoring efek samping {period_label} berhasil digenerate.")
 
     @app.post("/products/{product_id}/monitoring-efek-samping/delete")
-
-    @app.post("/products/{product_id}/monitoring-efek-samping/delete")
     async def delete_monitoring_efek_samping(
         product_id: str,
         current_user: dict = Depends(get_current_user),
@@ -329,10 +361,21 @@ def register_efek_samping_routes(
         file_url = product.get("monitoring_efek_samping_file_url")
         if file_url:
             try:
-                # Extract path from URL (assuming raw-material-docs bucket)
-                # URL structure: https://.../storage/v1/object/public/raw-material-docs/products/...
-                path = file_url.split("/raw-material-docs/")[-1]
+                # Ekstrak path dari URL lalu VALIDASI kepemilikan: path harus
+                # berada di dalam folder produk ini. Mencegah penghapusan file
+                # arbitrer (path traversal) jika kolom DB berisi URL tak terduga.
+                # Struktur URL:
+                # https://.../storage/v1/object/public/raw-material-docs/products/{id}/...
+                marker = "/raw-material-docs/"
+                if marker not in file_url:
+                    raise ValueError("URL tidak mengandung bucket raw-material-docs")
+                path = file_url.split(marker, 1)[1]
+                if not path.startswith(f"products/{product_id}/"):
+                    raise ValueError(f"Path {path!r} bukan milik produk {product_id}")
                 supabase.storage.from_("raw-material-docs").remove([path])
+            except ValueError as e:
+                # Path tidak valid: jangan hapus apa pun, tetap lanjut reset DB.
+                print(f"[EFEK SAMPING] URL file mencurigakan, tidak dihapus: {e}")
             except Exception as e:
                 print(f"[EFEK SAMPING] Gagal hapus file {file_url}: {e}")
 
