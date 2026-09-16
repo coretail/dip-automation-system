@@ -294,6 +294,9 @@ def register_efek_samping_routes(
             product.get("nama_produk") or product_id,
             [{"field": "Laporan Monitoring Efek Samping", "note": period_label}],
         )
+        return _redirect(f"Laporan monitoring efek samping {period_label} berhasil digenerate.")
+
+    @app.post("/products/{product_id}/monitoring-efek-samping/delete")
 
     @app.post("/products/{product_id}/monitoring-efek-samping/delete")
     async def delete_monitoring_efek_samping(
