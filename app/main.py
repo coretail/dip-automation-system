@@ -6,6 +6,7 @@ from typing import List
 from app.database import supabase
 from app.config import settings
 from app.excel_generator import XLSX_MIME, build_formula_workbook
+from app.efek_samping import _efek_samping_meta, register_efek_samping_routes
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -367,6 +368,7 @@ COMPANY_INFO = {
         "website": "www.erfikaryaabadi.com",
         "logo": "/static/images/logo_erfi.png",
         "kop": "/static/images/kop_erfi.png",
+        "penanggung_jawab_teknis": "Apt. Mutrofin Rakhmawati, S.Farm",
     },
     "PT Heka": {
         "nama": "PT. HARAKA ERFI KOSMETINDO ABADI",          
@@ -375,6 +377,7 @@ COMPANY_INFO = {
         "website": "www.harakaerfi.com",
         "logo": "/static/images/logo_heka.png",
         "kop": "/static/images/kop_heka.png",
+        "penanggung_jawab_teknis": "Apt. Mutrofin Rakhmawati, S.Farm",
     }
 }
 
@@ -4050,6 +4053,7 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
 
     # Get error message from cookie (if any)
     error_msg = request.cookies.get("error_msg")
+    success_msg = request.cookies.get("success_msg")
 
     return templates.TemplateResponse(
         request=request,
@@ -4062,6 +4066,8 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
             "bab2_materials": bab2_materials,
             "sop_cpkb_url": sop_cpkb_url,
             "error_msg": error_msg,
+            "success_msg": success_msg,
+            "efek_samping": _efek_samping_meta(product),
             "current_user": current_user,
         }
     )
@@ -5274,3 +5280,13 @@ async def delete_user(
 from app.notes_routes import register_notes_routes
 register_notes_routes(app, get_current_user, get_ed_notification_count, log_activity)
 
+register_efek_samping_routes(
+    app,
+    get_current_user=get_current_user,
+    templates=templates,
+    supabase=supabase,
+    get_company_info=get_company_info,
+    format_date_id=format_date_id,
+    log_activity=log_activity,
+    pdf_link_callback=_pdf_link_callback,
+)
