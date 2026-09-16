@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    @page { size: A4; margin: 1.4cm 1.6cm 1.4cm 1.6cm; }
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #111; line-height: 1.35; }
+    .lampiran { text-align: center; font-size: 8pt; line-height: 1.35; margin-bottom: 10px; }
+    .lampiran .kicker { font-size: 8pt; letter-spacing: 0.4px; }
+    .title { text-align: center; font-size: 11pt; font-weight: bold; text-decoration: underline; text-transform: uppercase; margin: 8px 0 12px 0; }
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .info-table td { padding: 2px 0; vertical-align: top; font-size: 9pt; }
+    .info-label { width: 150px; }
+    .info-sep { width: 12px; }
+    .main-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    .main-table th, .main-table td { border: 1px solid #000; padding: 5px 4px; font-size: 8pt; vertical-align: top; }
+    .main-table th { background-color: #f0f0f0; font-weight: bold; text-align: center; }
+    .main-table td.center { text-align: center; }
+    .nihil { text-align: center; font-style: italic; }
+    .note { font-size: 8pt; margin-top: 10px; }
+    .sign-wrap { width: 100%; margin-top: 28px; }
+    .sign-box { width: 260px; margin-left: auto; text-align: center; font-size: 9pt; }
+    .sign-space { height: 58px; }
+</style>
+</head>
+<body>
+    <div class="lampiran">
+        <div class="kicker"><b>LAMPIRAN</b></div>
+        <div>PERATURAN BADAN PENGAWAS OBAT DAN MAKANAN</div>
+        <div>NOMOR 26 TAHUN 2019</div>
+        <div>TENTANG KOSMETIKA</div>
+    </div>
+
+    <div class="title">Laporan Hasil Monitoring Efek Samping Kosmetika</div>
+
+    <table class="info-table">
+        <tr>
+            <td class="info-label">Nama Industri</td>
+            <td class="info-sep">:</td>
+            <td><b>{{ company.nama }}</b></td>
+        </tr>
+        <tr>
+            <td class="info-label">Alamat</td>
+            <td class="info-sep">:</td>
+            <td>{{ company.alamat }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Nama Produk</td>
+            <td class="info-sep">:</td>
+            <td><b>{{ product.nama_produk }}</b></td>
+        </tr>
+        <tr>
+            <td class="info-label">No. Notifikasi</td>
+            <td class="info-sep">:</td>
+            <td>{{ product.no_na_produk or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Periode Pelaporan</td>
+            <td class="info-sep">:</td>
+            <td>{{ period_label }} ({{ period_start }} s.d. {{ period_end }})</td>
+        </tr>
+    </table>
+
+    <table class="main-table">
+        <thead>
+            <tr>
+                <th style="width: 28px;">No</th>
+                <th>Nama pengguna<br>(inisial/singkatan)</th>
+                <th style="width: 55px;">Jenis<br>kelamin</th>
+                <th style="width: 40px;">Usia</th>
+                <th>Jenis efek samping</th>
+                <th>Bentuk manifestasi</th>
+                <th style="width: 80px;">Tanggal mulai<br>kejadian</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if cases %}
+                {% for c in cases %}
+                <tr>
+                    <td class="center">{{ loop.index }}</td>
+                    <td>{{ c.nama }}</td>
+                    <td class="center">{{ c.jenis_kelamin }}</td>
+                    <td class="center">{{ c.usia }}</td>
+                    <td>{{ c.jenis_efek }}</td>
+                    <td>{{ c.manifestasi }}</td>
+                    <td class="center">{{ c.tanggal_mulai }}</td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td class="center">1</td>
+                    <td class="nihil">Nihil</td>
+                    <td class="nihil">Nihil</td>
+                    <td class="nihil">Nihil</td>
+                    <td class="nihil">Nihil</td>
+                    <td class="nihil">Nihil</td>
+                    <td class="nihil">Nihil</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <p class="note">Keterangan: {% if cases %}Tercatat {{ cases|length }} kasus pada periode ini.{% else %}Tidak ada laporan efek samping pada periode ini.{% endif %}</p>
+
+    <div class="sign-wrap">
+        <div class="sign-box">
+            <div>{{ signature_place }}, {{ signature_date }}</div>
+            <div>Penanggung Jawab Teknis</div>
+            <div class="sign-space">
+                {% if apt_signature_uri %}
+                <img src="{{ apt_signature_uri }}" style="height: 52px; width: auto;">
+                {% endif %}
+            </div>
+            <div><b><u>{{ company.penanggung_jawab_teknis }}</u></b></div>
+        </div>
+    </div>
+</body>
+</html>
