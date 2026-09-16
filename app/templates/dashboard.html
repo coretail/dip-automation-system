@@ -353,9 +353,9 @@
                         <!-- Progress Bar Overall -->
                         <td class="px-4 py-3 text-center">
                             <div class="w-full bg-gray-200 rounded-full h-2.5 max-w-[100px] mx-auto mb-1">
-                                <div class="{% if p.dip_summary and p.dip_summary.is_complete %}bg-emerald-600{% else %}bg-indigo-600{% endif %} h-2.5 rounded-full" style="width: {{ p.dip_summary.progress_pct if p.dip_summary else 0 }}%"></div>
+                                <div class="{% if p.dip_summary and p.dip_summary.progress_pct > 100 %}bg-amber-500{% elif p.dip_summary and p.dip_summary.is_complete %}bg-emerald-600{% else %}bg-indigo-600{% endif %} h-2.5 rounded-full" style="width: {{ [p.dip_summary.progress_pct, 100] | min if p.dip_summary else 0 }}%"></div>
                             </div>
-                            <span class="text-[11px] font-bold {% if p.dip_summary and p.dip_summary.is_complete %}text-emerald-600{% else %}text-gray-600{% endif %}">
+                            <span class="text-[11px] font-bold {% if p.dip_summary and p.dip_summary.progress_pct > 100 %}text-amber-600{% elif p.dip_summary and p.dip_summary.is_complete %}text-emerald-600{% else %}text-gray-600{% endif %}">
                                 {{ p.dip_summary.progress_pct if p.dip_summary else 0 }}%
                             </span>
                         </td>

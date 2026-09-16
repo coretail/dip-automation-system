@@ -5176,7 +5176,6 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
                 b4_items = {
                     "Laporan Penilaian Keamanan Kosmetik": bool(p.get("laporan_keamanan_file_url")),
                     "Laporan Monitoring Efek Samping Kosmetik": bool(p.get("monitoring_efek_samping_file_url")),
-                    "Data Pendukung Klaim Kosmetik": bool(p.get("data_klaim_file_url")),
                     "Penandaan & Desain Kemasan Primer": bool(p.get("desain_primer_file_url")),
                     "Penandaan & Desain Kemasan Sekunder": bool(p.get("desain_sekunder_file_url")),
                 }
@@ -5184,8 +5183,12 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
                 b4_ok = (b4_count == len(b4_items))
                 b4_missing = [k for k, v in b4_items.items() if not v]
                 
+                b4_bonus = bool(p.get("data_klaim_file_url"))
+                
                 total_checks = len(b1_items) + 1 + len(b3_items) + len(b4_items)
                 current_checks = b1_count + (1 if b2_ok else 0) + b3_count + b4_count
+                if b4_bonus:
+                    current_checks += 1
                 progress_pct = int((current_checks / total_checks) * 100)
                 
                 p["dip_summary"] = {
