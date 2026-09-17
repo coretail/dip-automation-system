@@ -281,5 +281,25 @@
             });
         });
     </script>
+
+    <script>
+        // Cache-bust PDF preview iframes/links: product docs di-upsert in-place (URL sama),
+        // browser sering menampilkan PDF lama sampai hard refresh.
+        document.addEventListener('DOMContentLoaded', function() {
+            function bust(url) {
+                if (!url) return url;
+                var sep = url.indexOf('?') >= 0 ? '&' : '?';
+                return url + sep + 'v=' + Date.now();
+            }
+            document.querySelectorAll('iframe[title^="Preview"]').forEach(function(frame) {
+                var u = frame.getAttribute('src');
+                if (u) frame.setAttribute('src', bust(u));
+            });
+            document.querySelectorAll('a[href*="raw-material-docs"], a[href*="legal-documents"]').forEach(function(a) {
+                var u = a.getAttribute('href');
+                if (u && /\.pdf(\?|$)/i.test(u)) a.setAttribute('href', bust(u));
+            });
+        });
+    </script>
 </body>
 </html>
