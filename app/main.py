@@ -1656,7 +1656,8 @@ async def edit_raw_material(
              changes.append({"field": f"Persentase ({inci})", "old": f"{old_c.get('percent_internal')}%", "new": f"{new_c.get('percent_internal')}%"})
         if (old_c.get("function") or "") != (new_c.get("function") or ""):
              changes.append({"field": f"Fungsi ({inci})", "old": old_c.get("function") or "-", "new": new_c.get("function") or "-"})
-
+        if (old_c.get("cas_number") or "") != (new_c.get("cas_number") or ""):
+             changes.append({"field": f"CAS Number ({inci})", "old": old_c.get("cas_number") or "-", "new": new_c.get("cas_number") or "-"})
 
     # 1. UPDATE IDENTITAS DI RAW_MATERIALS (spec & MSDS udah pindah ke raw_material_company_docs)
     update_data = {
