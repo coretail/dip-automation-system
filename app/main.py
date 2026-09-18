@@ -241,6 +241,13 @@ def compute_status_na(tanggal_aktif_na, fallback_status: str) -> tuple[str, Opti
     else:
         return "aktif", None
 
+
+def _flag_bahan_aktif(flags, i: int) -> bool:
+    """Hidden input array is_bahan_aktif kirim '0'/'1' per baris. Index harus sinkron sama inci_name."""
+    if not flags or i >= len(flags):
+        return False
+    return str(flags[i]).strip() == "1"
+
 def _client_ip(request: Request) -> str:
     """Ekstrak alamat IP client.
     Prioritas: X-Forwarded-For (saat app di belakang proxy seperti Render/nginx)
@@ -1398,6 +1405,7 @@ async def add_raw_material(
     cas_number: list[str] = Form(None),
     function: list[str] = Form(None),
     percent_internal: list[float] = Form(None),
+    is_bahan_aktif: list[str] = Form(None),
     spec_parameters_erfi: str = Form("[]"),
     spec_parameters_heka: str = Form("[]"),
     current_user: dict = Depends(get_current_user)
@@ -1440,7 +1448,8 @@ async def add_raw_material(
                 "inci_name": given_inci if given_inci else nama_dagang, 
                 "cas_number": cas_number[0] if cas_number else None,
                 "function": function[0] if function else None,
-                "percent_internal": 100.0
+                "percent_internal": 100.0,
+                "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, 0),
             }
             supabase.table("raw_material_components").insert(comp_data).execute()
         
@@ -1453,7 +1462,8 @@ async def add_raw_material(
                         "inci_name": inci_name[i],
                         "cas_number": cas_number[i] if i < len(cas_number) else None,
                         "function": function[i] if i < len(function) else None,
-                        "percent_internal": percent_internal[i]
+                        "percent_internal": percent_internal[i],
+                        "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, i),
                     })
             if components:
                 supabase.table("raw_material_components").insert(components).execute()
@@ -1581,6 +1591,7 @@ async def edit_raw_material(
     cas_number: List[str] = Form(None),
     function: List[str] = Form(None),
     percent_internal: List[float] = Form(None),
+    is_bahan_aktif: List[str] = Form(None),
     msds_file_erfi: UploadFile = File(None),
     msds_file_heka: UploadFile = File(None),
     spec_sheet_file_erfi: UploadFile = File(None),
@@ -1658,7 +1669,8 @@ async def edit_raw_material(
             "inci_name": given_inci if given_inci else nama_dagang,
             "cas_number": cas_number[0] if cas_number else None,
             "function": function[0] if function else None,
-            "percent_internal": 100.0
+            "percent_internal": 100.0,
+            "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, 0),
         }
         supabase.table("raw_material_components").insert(comp_data).execute()
         
@@ -1671,7 +1683,8 @@ async def edit_raw_material(
                     "inci_name": inci_name[i],
                     "cas_number": cas_number[i] if i < len(cas_number) else None,
                     "function": function[i] if i < len(function) else None,
-                    "percent_internal": percent_internal[i]
+                    "percent_internal": percent_internal[i],
+                    "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, i),
                 })
         if components:
             supabase.table("raw_material_components").insert(components).execute()
@@ -2477,14 +2490,16 @@ async def _gather_qualquant_data(product_id: str) -> dict:
                 grouped_trade[group_key].append({
                     "inci_name": comp.get("inci_name") or "Unknown",
                     "function": comp.get("function") or "-",
-                    "pct_ww": clean_pct
+                    "pct_ww": clean_pct,
+                    "is_bahan_aktif": bool(comp.get("is_bahan_aktif")),
                 })
         else:
             clean_line_pct = float(Decimal(str(line_pct)).normalize())
             grouped_trade[group_key].append({
                 "inci_name": nama_dagang_str,
                 "function": "-",
-                "pct_ww": clean_line_pct
+                "pct_ww": clean_line_pct,
+                "is_bahan_aktif": False,
             })
 
     trade_breakdown = []
@@ -2508,8 +2523,11 @@ async def _gather_qualquant_data(product_id: str) -> dict:
                     "inci_name": inci_name_raw,
                     "function": comp["function"],
                     # Gunakan Decimal('0.0') sebagai inisialisasi awal agar presisi
-                    "pct_ww_decimal": Decimal('0.0')
+                    "pct_ww_decimal": Decimal('0.0'),
+                    "is_bahan_aktif": False,
                 }
+            if comp.get("is_bahan_aktif"):
+                grouped_pure[inci_key]["is_bahan_aktif"] = True
             # Jumlahkan dengan tipe data Decimal murni
             grouped_pure[inci_key]["pct_ww_decimal"] += Decimal(str(comp["pct_ww"]))
 
@@ -2520,7 +2538,8 @@ async def _gather_qualquant_data(product_id: str) -> dict:
         pure_breakdown.append({
             "inci_name": item["inci_name"],
             "function": item["function"],
-            "pct_ww": clean_sum
+            "pct_ww": clean_sum,
+            "is_bahan_aktif": bool(item.get("is_bahan_aktif")),
         })
     pure_breakdown.sort(key=lambda x: x["pct_ww"], reverse=True)
 

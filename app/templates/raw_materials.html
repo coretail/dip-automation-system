@@ -162,7 +162,8 @@
                         <ul class="space-y-1 list-disc list-inside">
                             {% for comp in rm.raw_material_components %}
                             <li>
-                                <strong class="text-gray-700">{{ comp.inci_name }}</strong> 
+                                <strong class="text-gray-700">{{ comp.inci_name }}</strong>
+                                {% if comp.is_bahan_aktif %}<span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">Aktif</span>{% endif %}
                                 <span class="text-xs text-gray-400">({{ comp.cas_number or 'No CAS' }})</span> - 
                                 <span class="font-mono text-indigo-600">{{ comp.percent_internal }}%</span>
                             </li>
@@ -623,7 +624,7 @@
                 
                 <div id="wrapper-rows" class="space-y-3">
                     <!-- Row pertama default untuk single/komposit -->
-                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row">
+                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row">
                         <div>
                             <label class="block text-xs text-gray-500">INCI Name (Opsional)</label>
                             <input type="text" name="inci_name" id="single-inci" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500">
@@ -639,6 +640,10 @@
                         <div>
                             <label class="block text-xs text-gray-500">% Internal</label>
                             <input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full rounded-md bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500">Bahan Aktif</label>
+                            <input type="hidden" name="is_bahan_aktif" value="0"><button type="button" onclick="toggleBahanAktif(this)" aria-pressed="false" class="mt-0.5 w-full px-2 py-1 rounded text-xs font-semibold border bg-gray-100 text-gray-500 hover:bg-gray-200 border-gray-200" title="Tandai sebagai bahan aktif">Aktif</button>
                         </div>
                     </div>
                 </div>
@@ -1242,6 +1247,33 @@ function toggleModal(show) {
     }
 }
 
+
+function toggleBahanAktif(btn) {
+    const hidden = btn.previousElementSibling;
+    const on = hidden.value === '1';
+    hidden.value = on ? '0' : '1';
+    btn.setAttribute('aria-pressed', on ? 'false' : 'true');
+    if (on) {
+        btn.classList.remove('bg-emerald-600', 'text-white', 'border-emerald-600');
+        btn.classList.add('bg-gray-100', 'text-gray-500', 'hover:bg-gray-200', 'border-gray-200');
+    } else {
+        btn.classList.remove('bg-gray-100', 'text-gray-500', 'hover:bg-gray-200', 'border-gray-200');
+        btn.classList.add('bg-emerald-600', 'text-white', 'border-emerald-600');
+    }
+}
+function isAktifFlag(v) {
+    return v === true || v === 1 || v === '1' || v === 'true';
+}
+function bahanAktifControlHtml(isOn, withLabel) {
+    const on = !!isOn;
+    const val = on ? '1' : '0';
+    const btnCls = on ? 'bg-emerald-600 text-white border-emerald-600'
+        : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border-gray-200';
+    const btn = `<input type="hidden" name="is_bahan_aktif" value="${val}"><button type="button" onclick="toggleBahanAktif(this)" aria-pressed="${on ? 'true' : 'false'}" class="${withLabel ? 'mt-0.5 w-full' : 'shrink-0'} px-2 py-1 rounded text-xs font-semibold border ${btnCls}" title="Tandai sebagai bahan aktif">Aktif</button>`;
+    if (withLabel) return `<div><label class="block text-xs text-gray-500">Bahan Aktif</label>${btn}</div>`;
+    return btn;
+}
+
 function handleTypeChange(val) {
     const btnAddRow = document.getElementById('btn-add-row');
     const wrapper = document.getElementById('wrapper-rows');
@@ -1249,12 +1281,14 @@ function handleTypeChange(val) {
     if (val === 'single') {
         btnAddRow.classList.add('hidden');
         wrapper.innerHTML = `
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 class-row">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 class-row">
                 <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
                 <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
                 <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
                 <div><label class="block text-xs text-gray-500">% Internal</label><input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none"></div>
-            </div>`;
+                ${bahanAktifControlHtml(false, true)}
+            </div>
+`;
     } else {
         btnAddRow.classList.remove('hidden');
         wrapper.innerHTML = '';
@@ -1266,7 +1300,7 @@ function handleTypeChange(val) {
 function addTemplateRow() {
     const wrapper = document.getElementById('wrapper-rows');
     const newRow = document.createElement('div');
-    newRow.className = "grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row";
+    newRow.className = "grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row";
     newRow.innerHTML = `
         <div><input type="text" name="inci_name" required placeholder="Nama INCI" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
         <div><input type="text" name="cas_number" placeholder="CAS Number" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
@@ -1274,7 +1308,9 @@ function addTemplateRow() {
         <div class="flex items-center space-x-2">
             <input type="number" step="0.001" name="percent_internal" required placeholder="%" oninput="updateTotalCalculated()" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs font-mono">
             <button type="button" onclick="this.parentElement.parentElement.remove(); updateTotalCalculated();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash"></i></button>
-        </div>`;
+        </div>
+        <div class="flex items-end">${bahanAktifControlHtml(false, false)}</div>
+`;
     wrapper.appendChild(newRow);
     updateTotalCalculated();
 }
@@ -1351,17 +1387,19 @@ function openEditModal(rm) {
         btnAddRow.classList.add('hidden');
         const comp = rm.raw_material_components[0] || {};
         wrapper.innerHTML = `
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 class-row">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row">
                 <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" value="${comp.inci_name || ''}" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
                 <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" value="${comp.cas_number || ''}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
                 <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" value="${comp.function || ''}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
                 <div><label class="block text-xs text-gray-500">% Internal</label><input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none"></div>
-            </div>`;
+                ${bahanAktifControlHtml(isAktifFlag(comp.is_bahan_aktif), true)}
+            </div>
+`;
     } else {
         btnAddRow.classList.remove('hidden');
         rm.raw_material_components.forEach((comp, idx) => {
             const newRow = document.createElement('div');
-            newRow.className = "grid grid-cols-1 gap-2 sm:grid-cols-4 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row";
+            newRow.className = "grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row";
             newRow.innerHTML = `
                 <div><input type="text" name="inci_name" required value="${comp.inci_name}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
                 <div><input type="text" name="cas_number" value="${comp.cas_number || ''}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
@@ -1369,7 +1407,9 @@ function openEditModal(rm) {
                 <div class="flex items-center space-x-2">
                     <input type="number" step="0.001" name="percent_internal" required value="${comp.percent_internal}" oninput="updateTotalCalculated()" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs font-mono">
                     ${idx > 0 ? `<button type="button" onclick="this.parentElement.parentElement.remove(); updateTotalCalculated();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash"></i></button>` : '<div class="w-4"></div>'}
-                </div>`;
+                </div>
+                <div class="flex items-end">${bahanAktifControlHtml(isAktifFlag(comp.is_bahan_aktif), false)}</div>
+`;
             wrapper.appendChild(newRow);
         });
     }

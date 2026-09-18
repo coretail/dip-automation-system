@@ -293,6 +293,7 @@ def _sheet_formula_trade(wb: Workbook, product: dict, trade_breakdown: list, com
         group_first_row = row
         for comp in components:
             inci_cell = ws.cell(row=row, column=3, value=_dash(comp.get("inci_name")))
+            inci_cell.font = FONT_BOLD if comp.get("is_bahan_aktif") else FONT_NORMAL
             inci_cell.alignment = ALIGN_LEFT_TOP_WRAP
 
             func_cell = ws.cell(row=row, column=4, value=_dash(comp.get("function")))
@@ -355,6 +356,7 @@ def _sheet_formula_pure(wb: Workbook, product: dict, pure_breakdown: list, compa
     row = header_row + 1
     for comp in pure_breakdown:
         inci_cell = ws.cell(row=row, column=1, value=_dash(comp.get("inci_name")))
+        inci_cell.font = FONT_BOLD if comp.get("is_bahan_aktif") else FONT_NORMAL
         inci_cell.alignment = ALIGN_LEFT_TOP_WRAP
 
         func_cell = ws.cell(row=row, column=2, value=_dash(comp.get("function")))
