@@ -152,7 +152,9 @@
                         <td class="p-2 align-top font-medium bg-gray-50" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ item.nama_dagang }}</td>
                         <td class="p-2 align-top font-mono bg-gray-50 rm-code-col" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ item.kode_bahan_baku or '-' }}</td>
                         {% endif %}
-                        <td class="p-2" style="border: 1px solid #c0c0c0;{% if comp.is_bahan_aktif %} font-weight:bold; color:#b45309;{% endif %}">{{ comp.inci_name }}{% if comp.is_bahan_aktif %} <span style="font-size:10px; background:#fef3c7; color:#b45309; padding:1px 4px; border-radius:3px; margin-left:4px;">Aktif</span>{% endif %}</td>
+                        <td class="p-2" style="border: 1px solid #c0c0c0; {% if comp.is_bahan_aktif %} font-weight:bold; color:#b45309;{% endif %} ">
+                            {{ comp.inci_name }}{# {% if comp.is_bahan_aktif %} <span style="font-size:10px; background:#fef3c7; color:#b45309; padding:1px 4px; border-radius:3px; margin-left:4px;">Aktif</span>{% endif %} #}
+                        </td>
                         <td class="p-2 text-gray-600" style="border: 1px solid #c0c0c0;">{{ comp.function }}</td>
                         <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">{{ comp.pct_ww|clean_pct }}</td>
                     </tr>
@@ -219,7 +221,9 @@
             {% for comp in pure_breakdown %}
             <tr>
                 <td class="p-2 text-center" style="border: 1px solid #c0c0c0;">{{ loop.index }}</td>
-                <td class="p-2 font-medium" style="border: 1px solid #c0c0c0;{% if comp.is_bahan_aktif %} font-weight:bold; color:#b45309;{% endif %}">{{ comp.inci_name }}{% if comp.is_bahan_aktif %} <span style="font-size:10px; background:#fef3c7; color:#b45309; padding:1px 4px; border-radius:3px; margin-left:4px;">Aktif</span>{% endif %}</td>
+                <td class="p-2 font-medium" style="border: 1px solid #c0c0c0; {% if comp.is_bahan_aktif %} font-weight:bold; color:#b45309;{% endif %} ">
+                    {{ comp.inci_name }}{# {% if comp.is_bahan_aktif %} <span style="font-size:10px; background:#fef3c7; color:#b45309; padding:1px 4px; border-radius:3px; margin-left:4px;">Aktif</span>{% endif %} #}
+                </td>
                 <td class="p-2 text-gray-600" style="border: 1px solid #c0c0c0;">{{ comp.function }}</td>
                 <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">{{ comp.pct_ww|clean_pct }}</td>
             </tr>
