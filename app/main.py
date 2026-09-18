@@ -192,19 +192,33 @@ async def get_ed_notification_count():
                     count += 1
             except Exception:
                 continue
+        
+        # Ambil produk dengan NA yang akan expired atau sudah expired
+        products_query = (
+            supabase.table("products")
+            .select("id, tanggal_aktif_na, status_na")
+            .in_("status_na", ["akan_expired", "expired"])
+            .execute()
+        )
+        for p in (products_query.data or []):
+            status_na, _ = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
+            if status_na in ["akan_expired", "expired"]:
+                count += 1
+
         return count
     except Exception as e:
         print(f"Gagal hitung ED notifications: {e}")
         return 0
 
-def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
+def compute_status_na(tanggal_aktif_na, fallback_status: str) -> tuple[str, Optional[int]]:
     """
     Hitung status NA otomatis dari tanggal_aktif_na (NA BPOM berlaku 3 tahun sejak
     tanggal aktif). Kalau tanggal_aktif_na belum diisi, tetap pakai status manual
     yang lama (fallback_status) -- ini yang nutup kasus 'belum_terdaftar'.
+    Mengembalikan tuple (status, days_remaining).
     """
     if not tanggal_aktif_na:
-        return fallback_status
+        return fallback_status, None
 
     try:
         if isinstance(tanggal_aktif_na, str):
@@ -212,18 +226,20 @@ def compute_status_na(tanggal_aktif_na, fallback_status: str) -> str:
         else:
             start = tanggal_aktif_na
     except Exception:
-        return fallback_status
+        return fallback_status, None
 
     expired_date = _add_years(start, 3)
     today = datetime.now(WIB).date()
     warning_date = expired_date - timedelta(days=180)  # ~6 bulan sebelum expired
 
+    days_remaining = (expired_date - today).days
+
     if today > expired_date:
-        return "expired"
+        return "expired", days_remaining
     elif today >= warning_date:
-        return "akan_expired"
+        return "akan_expired", days_remaining
     else:
-        return "aktif"
+        return "aktif", None
 
 def _client_ip(request: Request) -> str:
     """Ekstrak alamat IP client.
@@ -1201,14 +1217,34 @@ async def get_ed_notifications(current_user: dict = Depends(get_current_user)):
         # Sort by days_remaining (expired first, then closest to expiry)
         critical_batches.sort(key=lambda x: x["days_remaining"])
         
+        # Ambil produk dengan NA yang akan expired atau sudah expired
+        products_query = supabase.table("products") \
+            .select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na") \
+            .execute()
+        
+        na_items = []
+        for p in (products_query.data or []):
+            # Hitung status asli berdasarkan tanggal
+            status_na, days_remaining = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
+            
+            if status_na in ["akan_expired", "expired"]:
+                na_items.append({
+                    "id": p.get("id"),
+                    "nama_produk": p.get("nama_produk"),
+                    "no_na_produk": p.get("no_na_produk"),
+                    "status_na": status_na,
+                    "days_remaining": days_remaining
+                })
+        
         return {
-            "count": len(critical_batches),
-            "items": critical_batches[:20]  # Limit to 20 items in dropdown
+            "count": len(critical_batches) + len(na_items),
+            "batch_items": critical_batches[:20],
+            "na_items": na_items[:20]
         }
         
     except Exception as e:
         print(f"Error fetching ED notifications: {e}")
-        return {"count": 0, "items": []}
+        return {"count": 0, "batch_items": [], "na_items": []}
 
 
 async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, perusahaan: str, spec_parameters_raw: str, msds_file: UploadFile, spec_sheet_file: UploadFile = None):
@@ -2114,7 +2150,7 @@ async def restore_product(product_id: str, current_user: dict = Depends(get_curr
 #  8 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat
 #  Tidak Pidana, Protap No. Batch, Protap Pemeriksaan FG, CV Safety
 #  Assessor, Monitoring Efek Samping, SOP CPKB Bahan Baku) yang dipakai
-#  lintas Bab I/III/IV pas generate PDF. Sebelumnya cuma bisa diganti
+#  lintas Bab I/II/III/IV pas generate PDF. Sebelumnya cuma bisa diganti
 #  lewat Supabase dashboard langsung; sekarang lewat aplikasi + tercatat
 #  di activity log.
 # =====================================================================
@@ -5143,7 +5179,9 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
             }
 
             try:
-                p["status_na"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
+                p["status_na"], p["na_days_remaining"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
+                p["status_na"], p["na_days_remaining"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
+
                 
                 b1_perusahaan = p.get("perusahaan") or "PT Erfi"
                 b1_brand_id = p.get("brand_id")
