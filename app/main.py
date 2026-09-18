@@ -3466,7 +3466,7 @@ async def download_dip_bab3(
         poin6a_spj = product.get("spek_produk_jadi_file_url")
     else:
         poin5_sapj = product.get("spek_produk_jadi_file_url")
-        poin6a_spj = product.get("spek_produk_jadi_file_url")
+        poin6a_spj = None  
 
     attachments = [
         product.get("cara_pembuatan_file_url"),              # Poin 2
