@@ -1611,6 +1611,52 @@ async def edit_raw_material(
     old_rm = old_rm_resp.data or {}
     old_company_docs_resp = supabase.table("raw_material_company_docs").select("*").eq("raw_material_id", rm_id).execute()
     old_company_docs = {d["perusahaan"]: d for d in (old_company_docs_resp.data or [])}
+    # --- Ambil data komponen LAMA buat dibandingin ---
+    old_components_resp = supabase.table("raw_material_components").select("*").eq("raw_material_id", rm_id).order("id").execute()
+    old_components = old_components_resp.data or []
+
+    # --- Bangun list komponen BARU dari form data ---
+    new_components = []
+    if tipe == "single":
+        given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
+        comp_data = {
+            "inci_name": given_inci if given_inci else nama_dagang,
+            "cas_number": cas_number[0] if cas_number else None,
+            "function": function[0] if function else None,
+            "percent_internal": 100.0,
+            "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, 0),
+        }
+        new_components.append(comp_data)
+    elif tipe == "komposit" and inci_name:
+        for i in range(len(inci_name)):
+            if inci_name[i].strip():
+                new_components.append({
+                    "inci_name": inci_name[i],
+                    "cas_number": cas_number[i] if i < len(cas_number) else None,
+                    "function": function[i] if i < len(function) else None,
+                    "percent_internal": percent_internal[i],
+                    "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, i),
+                })
+
+    # --- Bandingin komponen lama vs baru ---
+    changes = []
+    old_map = {c["inci_name"]: c for c in old_components}
+    new_map = {c["inci_name"]: c for c in new_components}
+
+    for inci in set(old_map.keys()) - set(new_map.keys()):
+        changes.append({"field": f"Bahan ({inci})", "note": "Dihapus dari breakdown"})
+    for inci in set(new_map.keys()) - set(old_map.keys()):
+        changes.append({"field": f"Bahan ({inci})", "note": "Ditambahkan ke breakdown"})
+    for inci in set(old_map.keys()) & set(new_map.keys()):
+        old_c = old_map[inci]
+        new_c = new_map[inci]
+        if old_c.get("is_bahan_aktif") != new_c.get("is_bahan_aktif"):
+             changes.append({"field": f"Bahan Aktif ({inci})", "old": "Ya" if old_c.get("is_bahan_aktif") else "Tidak", "new": "Ya" if new_c.get("is_bahan_aktif") else "Tidak"})
+        if float(old_c.get("percent_internal", 0)) != float(new_c.get("percent_internal", 0)):
+             changes.append({"field": f"Persentase ({inci})", "old": f"{old_c.get('percent_internal')}%", "new": f"{new_c.get('percent_internal')}%"})
+        if (old_c.get("function") or "") != (new_c.get("function") or ""):
+             changes.append({"field": f"Fungsi ({inci})", "old": old_c.get("function") or "-", "new": new_c.get("function") or "-"})
+
 
     # 1. UPDATE IDENTITAS DI RAW_MATERIALS (spec & MSDS udah pindah ke raw_material_company_docs)
     update_data = {
@@ -1628,7 +1674,7 @@ async def edit_raw_material(
         "tipe": "Tipe",
         "produsen": "Produsen",
     }
-    changes = _build_diff_changes(old_rm, update_data, field_labels)
+    changes.extend(_build_diff_changes(old_rm, update_data, field_labels))
 
     # --- Bandingin perubahan spesifikasi & dokumen per perusahaan ---
     import json as _json_diff
