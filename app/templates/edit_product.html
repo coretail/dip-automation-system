@@ -489,7 +489,7 @@
             {{ pdf_upload_card('3. Laporan / Data Monitoring Efek Samping (Cosmetovigilance)', 'monitoring_efek_samping_file', product.monitoring_efek_samping_file_url, 'Catatan/rekapan evaluasi efek tidak diinginkan khusus untuk produk ini. Generate per semester akan menambahkan blok baru di PDF yang sama (append).') }}
             {% if product.monitoring_efek_samping_file_url %}
             <div class="flex justify-end mt-2">
-                <button type="button" onclick="if(confirm('Yakin ingin menghapus laporan Monitoring Efek Samping untuk produk: {{ product.nama_produk }}? File akan dihapus permanen dan progress periode akan di-reset.')) { fetch('/products/{{ product.id }}/monitoring-efek-samping/delete', {method: 'POST'}).then(r => window.location.reload()); }" class="text-xs font-semibold text-red-600 hover:text-red-700 hover:underline">
+                <button type="button" onclick='if(confirm("Yakin ingin menghapus laporan Monitoring Efek Samping untuk produk: " + {{ product.nama_produk | tojson }} + "? File akan dihapus permanen dan progress periode akan di-reset.")) { fetch("/products/{{ product.id }}/monitoring-efek-samping/delete", {method: "POST"}).then(r => window.location.reload()); }' class="text-xs font-semibold text-red-600 hover:text-red-700 hover:underline">
                     <i class="fa-solid fa-trash-can mr-1"></i> Hapus Laporan MESK
                 </button>
             </div>

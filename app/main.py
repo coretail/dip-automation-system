@@ -273,8 +273,14 @@ class _QuietAccessLogFilter(logging.Filter):
     - HEAD/GET /health (uptime monitor)
     - POST /api/presence/heartbeat (polling 25 dtk per user)
     - GET /api/notes/mentions/unread-count (polling 30 dtk dari navbar)
+    - GET /api/admin/users/presence (polling 15 dtk dari halaman /admin/users)
     """
-    SKIP_PATHS = frozenset({"/health", "/api/presence/heartbeat", "/api/notes/mentions/unread-count"})
+    SKIP_PATHS = frozenset({
+        "/health",
+        "/api/presence/heartbeat",
+        "/api/notes/mentions/unread-count",
+        "/api/admin/users/presence",
+    })
 
     def filter(self, record: logging.LogRecord) -> bool:
         path = None

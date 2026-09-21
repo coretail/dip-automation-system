@@ -346,9 +346,18 @@
                 }
             }
 
+            var presencePollInterval = null;
+
             async function refreshPresence() {
                 try {
                     var res = await fetch('/api/admin/users/presence', { credentials: 'same-origin' });
+                    // Sesi habis: backend balas 303 redirect ke /login?warning=session_expired.
+                    // Stop polling + ikut redirect biar gak spam 401 tiap 15 detik.
+                    if (res.redirected && res.url.indexOf('/login') !== -1) {
+                        if (presencePollInterval) clearInterval(presencePollInterval);
+                        window.location.href = res.url;
+                        return;
+                    }
                     if (!res.ok) return;
                     var data = await res.json();
                     var byId = {};
@@ -367,8 +376,16 @@
                 } catch (e) {}
             }
 
-            setInterval(refreshPresence, 15000);
+            presencePollInterval = setInterval(function () {
+                // Background tabs sering ditunda browser; skip polling saat hidden.
+                if (document.visibilityState === 'hidden') return;
+                refreshPresence();
+            }, 15000);
             refreshPresence();
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') refreshPresence();
+            });
         })();
     </script>
     <script src="/static/presence.js"></script>
