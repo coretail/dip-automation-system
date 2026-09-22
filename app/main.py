@@ -2853,7 +2853,7 @@ async def _gather_qualquant_data(product_id: str) -> dict:
             "pct_ww": clean_sum,
             "is_bahan_aktif": bool(item.get("is_bahan_aktif")),
         })
-    pure_breakdown.sort(key=lambda x: x["pct_ww"], reverse=True)
+    pure_breakdown.sort(key=lambda x: (-x["pct_ww"], (x["inci_name"] or "").casefold()))
 
     clean_product = {}
     if isinstance(product, list) and len(product) > 0:
