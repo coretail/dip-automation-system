@@ -937,9 +937,74 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         content={"detail": exc.detail}
     )
 
+# ==================== HELPER RESOLUSI VARIAN KOMPOSISI ====================
+def _resolve_variant_components(raw_material, variant_id: str | None) -> list:
+    """Sumber tunggal resolusi breakdown INCI per varian bahan baku.
+
+    Dipakai bareng oleh:
+      - generate_inci_report   (Ingredient Report)
+      - download_dip_bab3      (processed_formula Bab III)
+      - download_dip_bab4      (komposisi text design)
+      - _gather_qualquant_data (preview HTML + export Excel Qual-Quan)
+
+    raw_material: dict hasil query nested
+      raw_materials(*, raw_material_components(*),
+      raw_material_composition_variants(*, raw_material_components(*)))
+      (boleh juga list hasil embed / None)
+    variant_id: product_formula_lines.variant_id (boleh None).
+
+    Urutan resolusi:
+      1. variant_id eksplisit kalau ketemu di daftar varian.
+      2. Varian is_default=True.
+      3. Varian pertama yang ada (data korup/lama).
+      4. Komponen yang nempel langsung (fallback skema lama / komponen baru
+         yang belum punya varian), biar gak ada breakdown hilang diam-diam.
+      5. List kosong kalau beneran gak ada apa-apa.
+    """
+    if isinstance(raw_material, list):
+        raw_material = raw_material[0] if raw_material else None
+    if not isinstance(raw_material, dict):
+        return []
+
+    variants = raw_material.get("raw_material_composition_variants") or []
+    if isinstance(variants, dict):
+        variants = [variants]
+
+    if variants:
+        chosen = None
+        if variant_id:
+            for v in variants:
+                if v.get("id") == variant_id:
+                    chosen = v
+                    break
+        if chosen is None:
+            for v in variants:
+                if v.get("is_default"):
+                    chosen = v
+                    break
+        if chosen is None:
+            chosen = variants[0]
+        comps = chosen.get("raw_material_components") or []
+        return comps if isinstance(comps, list) else []
+
+    # Fallback: bahan baku belum punya varian (belum dimigrasi / komponen baru
+    # dari kode lama yang belum set variant_id) — pakai komponen langsung.
+    legacy = raw_material.get("raw_material_components") or []
+    return legacy if isinstance(legacy, list) else []
+
+
 @app.get("/raw-materials", response_class=HTMLResponse)
 async def raw_materials_page(request: Request, current_user: dict = Depends(get_current_user)):
-    rm_resp = supabase.table("raw_materials").select("*, raw_material_components(*), raw_material_company_docs(*)").order("nama_dagang").execute()
+    rm_resp = supabase.table("raw_materials").select(
+        "*, raw_material_components(*), "
+        "raw_material_composition_variants(*, raw_material_components(*)), "
+        "raw_material_company_docs(*)"
+    ).order("nama_dagang").execute()
+
+    # Tampilan ringkas pakai komponen varian default; struktur variants penuh
+    # tetap dibawa buat modal edit (masterRawMaterials di raw_materials.html).
+    for rm in (rm_resp.data or []):
+        rm["raw_material_components"] = _resolve_variant_components(rm, None)
     
     success_msg = request.cookies.get("success_msg") or request.query_params.get("success")
     error_msg = request.cookies.get("error_msg") or request.query_params.get("error")
@@ -952,9 +1017,12 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
                 raw_materials (
                     nama_dagang,
                     produsen,
-                    raw_material_components (
-                        inci_name,
-                        cas_number
+                    raw_material_composition_variants (
+                        is_default,
+                        raw_material_components (
+                            inci_name,
+                            cas_number
+                        )
                     ),
                     raw_material_company_docs (
                         perusahaan,
@@ -966,6 +1034,15 @@ async def raw_materials_page(request: Request, current_user: dict = Depends(get_
             .execute()
         )
         batches_data = query_batches.data
+        # CAS di kartu batch cukup dari varian default (tampilan ringkas,
+        # bukan per-produk-spesifik di context ini). Flatten biar kontrak
+        # data b.raw_materials.raw_material_components tetap sama.
+        for b in batches_data:
+            rm_nested = b.get("raw_materials")
+            if isinstance(rm_nested, list) and rm_nested:
+                rm_nested = rm_nested[0]
+            if isinstance(rm_nested, dict):
+                rm_nested["raw_material_components"] = _resolve_variant_components(rm_nested, None)
     except Exception as e:
         print(f"Gagal ambil data batches: {e}")
         batches_data = []
@@ -2426,19 +2503,32 @@ async def generate_inci_report(request: Request, product_id: str, current_user: 
     if not prod_resp.data:
         return RedirectResponse(url="/", status_code=303)
 
-    formula_resp = supabase.table("product_formula_lines").select("*").eq("product_id", product_id).execute()
+    formula_resp = (
+        supabase.table("product_formula_lines")
+        .select(
+            "percent_in_formula, variant_id, "
+            "raw_materials(*, raw_material_components(*), "
+            "raw_material_composition_variants(*, raw_material_components(*)))"
+        )
+        .eq("product_id", product_id)
+        .execute()
+    )
     
     inci_totals = {}
     
     if formula_resp.data:
         for line in formula_resp.data:
             pct_in_formula = float(line.get("percent_in_formula") or 0)
-            rm_id = line.get("raw_material_id")
             
-            comp_resp = supabase.table("raw_material_components").select("*").eq("raw_material_id", rm_id).execute()
+            # Resolusi varian terpusat: variant_id eksplisit dari baris formula,
+            # fallback ke varian default lewat _resolve_variant_components.
+            # (Sekalian menghilangkan N+1 query per baris formula.)
+            components = _resolve_variant_components(
+                line.get("raw_materials"), line.get("variant_id")
+            )
             
-            if comp_resp.data:
-                for comp in comp_resp.data:
+            if components:
+                for comp in components:
                     inci_name = comp.get("inci_name")
                     cas_number = comp.get("cas_number") or "-"
                     func = comp.get("function") or "-"
@@ -2491,14 +2581,12 @@ async def _gather_qualquant_data(product_id: str) -> dict:
     product = product_resp.data
 
     lines_resp = supabase.table("product_formula_lines") \
-        .select("*, raw_materials(*)") \
+        .select(
+            "*, raw_materials(*, raw_material_components(*), "
+            "raw_material_composition_variants(*, raw_material_components(*)))"
+        ) \
         .eq("product_id", product_id) \
         .execute()
-
-    breakdown_resp = supabase.table("raw_material_components") \
-        .select("*") \
-        .execute()
-    all_inci_items = breakdown_resp.data
 
     grouped_trade = {}
 
@@ -2524,9 +2612,10 @@ async def _gather_qualquant_data(product_id: str) -> dict:
         kode_bahan_baku_str = str(kode_bahan_baku or "-")
 
         line_pct = float(line.get("percent_in_formula") or 0.0)
-        raw_mat_id = line.get("raw_material_id")
 
-        components = [item for item in all_inci_items if item.get("raw_material_id") == raw_mat_id]
+        # Resolusi varian terpusat: variant_id eksplisit dari baris formula,
+        # fallback ke varian default lewat _resolve_variant_components.
+        components = _resolve_variant_components(raw_mat, line.get("variant_id"))
 
         group_key = (nama_dagang_str, kode_bahan_baku_str)
         if group_key not in grouped_trade:
@@ -3366,7 +3455,11 @@ async def download_dip_bab3(
     # dan kolom persentase-nya "percent_internal" -- ini yang dipakai konsisten di
     # seluruh app (Formula Builder, Ingredient Report, Bab II).
     formula_resp = supabase.table("product_formula_lines") \
-        .select("percent_in_formula, raw_materials(*, raw_material_components(*))") \
+        .select(
+            "percent_in_formula, variant_id, "
+            "raw_materials(*, raw_material_components(*), "
+            "raw_material_composition_variants(*, raw_material_components(*)))"
+        ) \
         .eq("product_id", product_id) \
         .execute()
 
@@ -3376,7 +3469,7 @@ async def download_dip_bab3(
     for line in raw_formula:
         rm = line.get("raw_materials") or {}
         percent_total = float(line.get("percent_in_formula") or 0)
-        compositions = rm.get("raw_material_components") or []
+        compositions = _resolve_variant_components(rm, line.get("variant_id"))
         
         if compositions and len(compositions) > 0:
             comp_list = []
@@ -3611,7 +3704,11 @@ async def download_dip_bab4(
     komposisi_text = "-"
     try:
         formula_resp = supabase.table("product_formula_lines") \
-            .select("percent_in_formula, raw_materials(nama_dagang, raw_material_components(*))") \
+            .select(
+                "percent_in_formula, variant_id, "
+                "raw_materials(nama_dagang, raw_material_components(*), "
+                "raw_material_composition_variants(*, raw_material_components(*)))"
+            ) \
             .eq("product_id", product_id) \
             .execute()
         
@@ -3619,7 +3716,7 @@ async def download_dip_bab4(
         for line in (formula_resp.data or []):
             pct_in_formula = float(line.get("percent_in_formula") or 0)
             rm = line.get("raw_materials") or {}
-            components = rm.get("raw_material_components") or []
+            components = _resolve_variant_components(rm, line.get("variant_id"))
             
             if components:
                 for comp in components:
