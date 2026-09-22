@@ -101,6 +101,7 @@
             <option value="">Semua Tipe</option>
             <option value="single">Single</option>
             <option value="komposit">Komposit</option>
+            <option value="__aktif__">Ada Bahan Aktif</option>
         </select>
 
         <button onclick="resetFilter()" title="Reset Filter"
@@ -131,7 +132,8 @@
                     data-tipe="{{ rm.tipe or '' }}"
                     data-company="{{ rm.raw_material_company_docs | map(attribute='perusahaan') | join(' ') }}"
                     data-inci="{{ rm.raw_material_components | map(attribute='inci_name') | join(' ') | lower }}"
-                    data-batch-numbers="{{ (rm.all_batch_numbers or '') | lower }}">
+                    data-batch-numbers="{{ (rm.all_batch_numbers or '') | lower }}"
+                    data-aktif="{{ 1 if rm.raw_material_components | selectattr('is_bahan_aktif') | list | length else 0 }}">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm font-medium text-gray-900">{{ rm.nama_dagang }}</div>
                         <div class="text-xs text-gray-400 font-mono">{{ rm.kode_bahan_baku }}</div>
@@ -622,6 +624,26 @@
                     </button>
                 </div>
                 
+                <!-- Variant bar: pill per varian/produsen + tombol kelola (Fase 3) -->
+                <div id="variant-bar" class="hidden mb-3 p-2.5 bg-indigo-50/60 border border-indigo-100 rounded-lg dark:bg-indigo-950/40 dark:border-indigo-800">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Varian/Produsen:</span>
+                        <div id="variant-pills" class="flex flex-wrap gap-1.5"></div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        <button type="button" onclick="promptAddVariant()" class="text-xs bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-2 py-1 rounded font-medium transition cursor-pointer dark:bg-gray-800 dark:border-indigo-700 dark:text-indigo-200 dark:hover:bg-indigo-900">
+                            <i class="fa-solid fa-plus mr-1"></i> Tambah Varian
+                        </button>
+                        <button type="button" id="btn-variant-default" onclick="setDefaultVariant()" class="text-xs bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-100 px-2 py-1 rounded font-medium transition cursor-pointer dark:bg-gray-800 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/40">
+                            <i class="fa-solid fa-star mr-1"></i> Jadikan Default
+                        </button>
+                        <button type="button" id="btn-variant-delete" onclick="deleteVariant()" class="text-xs bg-white border border-red-200 text-red-600 hover:bg-red-100 px-2 py-1 rounded font-medium transition cursor-pointer dark:bg-gray-800 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/40">
+                            <i class="fa-solid fa-trash mr-1"></i> Hapus Varian
+                        </button>
+                    </div>
+                    <input type="hidden" name="variant_id" id="editing-variant-id" value="">
+                </div>
+
                 <div id="wrapper-rows" class="space-y-3">
                     <!-- Row pertama default untuk single/komposit -->
                     <div class="grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row">
@@ -1228,6 +1250,12 @@ function toggleModal(show) {
         modal.querySelector('h3').innerText = "Tambah Master Bahan Baku";
         form.action = "/raw-materials/add";
 
+        // Mode tambah: belum ada varian — sembunyikan variant bar.
+        editingRmId = null;
+        editingVariants = [];
+        editingVariantId = null;
+        renderVariantPills();
+
         // 1. Kosongkan value input identitas
         form.querySelector('input[name="nama_dagang"]').value = '';
         form.querySelector('input[name="kode_bahan_baku"]').value = '';
@@ -1274,21 +1302,158 @@ function bahanAktifControlHtml(isOn, withLabel) {
     return btn;
 }
 
+// ==================== VARIAN KOMPOSISI (Fase 3) ====================
+// State varian bahan baku yang lagi diedit di modal CRUD.
+let editingRmId = null;
+let editingVariants = [];
+let editingVariantId = null;
+
+function escapeHtmlText(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function componentsOfVariant(variantId) {
+    const v = editingVariants.find(x => x.id === variantId);
+    if (v) return v.raw_material_components || [];
+    return [];
+}
+
+function currentVariant() {
+    return editingVariants.find(x => x.id === editingVariantId) || null;
+}
+
+function renderVariantPills() {
+    const bar = document.getElementById('variant-bar');
+    const pills = document.getElementById('variant-pills');
+    if (!editingRmId) { bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    pills.innerHTML = '';
+    editingVariants.forEach(v => {
+        const active = v.id === editingVariantId;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = active
+            ? 'text-xs font-semibold rounded-full px-3 py-1 bg-indigo-600 text-white transition cursor-pointer dark:bg-indigo-500'
+            : 'text-xs font-semibold rounded-full px-3 py-1 bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition cursor-pointer dark:bg-gray-800 dark:text-indigo-200 dark:border-indigo-700 dark:hover:bg-indigo-900';
+        btn.textContent = v.nama_varian + (v.is_default ? ' ★' : '');
+        btn.title = v.is_default ? 'Varian default' : 'Pilih varian ini';
+        btn.addEventListener('click', () => switchEditingVariant(v.id));
+        pills.appendChild(btn);
+    });
+    document.getElementById('editing-variant-id').value = editingVariantId || '';
+}
+// ==================== VARIAN KOMPOSISI (bagian 2) ====================
+function switchEditingVariant(variantId) {
+    if (variantId === editingVariantId) return;
+    if (!confirm('Ganti varian? Isian breakdown yang belum disimpan akan hilang.')) return;
+    editingVariantId = variantId;
+    renderVariantPills();
+    renderComponentRows(componentsOfVariant(variantId));
+    updateTotalCalculated();
+}
+
+async function refreshEditingVariants() {
+    try {
+        const res = await fetch(`/raw-materials/${editingRmId}/variants`);
+        const data = await res.json();
+        const variants = (data && data.variants) || [];
+        const master = (typeof masterRawMaterials !== 'undefined')
+            ? masterRawMaterials.find(item => item.id === editingRmId) : null;
+        const masterVariants = (master && master.raw_material_composition_variants) || null;
+        editingVariants = variants.map(v => {
+            let comps = [];
+            if (masterVariants) {
+                const mv = masterVariants.find(x => x.id === v.id);
+                comps = (mv && mv.raw_material_components) || [];
+            }
+            return { ...v, raw_material_components: comps };
+        });
+        if (!editingVariants.some(v => v.id === editingVariantId)) {
+            const def = editingVariants.find(v => v.is_default) || editingVariants[0];
+            editingVariantId = def ? def.id : null;
+        }
+    } catch (e) {
+        console.error('Gagal memuat varian:', e);
+    }
+    renderVariantPills();
+}
+
+function postVariantAction(url, fieldName, fieldValue) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    if (fieldName) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = fieldName;
+        input.value = fieldValue;
+        form.appendChild(input);
+    }
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function promptAddVariant() {
+    const nama = prompt('Nama varian/produsen baru (misal: BASF Germany):');
+    if (!nama || !nama.trim()) return;
+    postVariantAction(`/raw-materials/${editingRmId}/variants/add`, 'nama_varian', nama.trim());
+}
+
+function setDefaultVariant() {
+    const v = currentVariant();
+    if (!v) return;
+    if (v.is_default) { alert('Varian ini sudah menjadi default.'); return; }
+    if (!confirm(`Jadikan "${v.nama_varian}" sebagai varian default?`)) return;
+    postVariantAction(`/raw-materials/${editingRmId}/variants/${v.id}/set-default`);
+}
+
+function deleteVariant() {
+    const v = currentVariant();
+    if (!v) return;
+    if (!confirm(`Hapus varian "${v.nama_varian}" beserta seluruh breakdown-nya? Sistem akan menolak kalau varian ini masih dipakai di formula produk.`)) return;
+    postVariantAction(`/raw-materials/${editingRmId}/variants/${v.id}/delete`);
+}
+// ==================== /VARIAN KOMPOSISI (bagian 2) ====================
+
+// ==================== VARIAN KOMPOSISI (bagian 3: render rows) ====================
+function singleVariantRowHtml(comp) {
+    const c = comp || {};
+    return `
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row">
+                <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" value="${escapeHtmlText(c.inci_name)}" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" value="${escapeHtmlText(c.cas_number)}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" value="${escapeHtmlText(c.function)}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">% Internal</label><input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none"></div>
+                ${bahanAktifControlHtml(isAktifFlag(c.is_bahan_aktif), true)}
+            </div>
+    `;
+}
+
+function kompositVariantRowHtml(comp, idx) {
+    const c = comp || {};
+    const trash = idx > 0
+        ? '<button type="button" onclick="this.parentElement.parentElement.remove(); updateTotalCalculated();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash"></i></button>'
+        : '<div class="w-4"></div>';
+    return `
+                <div><input type="text" name="inci_name" required value="${escapeHtmlText(c.inci_name)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div><input type="text" name="cas_number" value="${escapeHtmlText(c.cas_number)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div><input type="text" name="function" value="${escapeHtmlText(c.function)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div class="flex items-center space-x-2">
+                    <input type="number" step="0.001" name="percent_internal" required value="${escapeHtmlText(c.percent_internal)}" oninput="updateTotalCalculated()" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs font-mono">
+                    ${trash}
+                </div>
+                <div class="flex items-end">${bahanAktifControlHtml(isAktifFlag(c.is_bahan_aktif), false)}</div>
+    `;
+}
+// ==================== /VARIAN KOMPOSISI (bagian 3) ====================
+
 function handleTypeChange(val) {
     const btnAddRow = document.getElementById('btn-add-row');
     const wrapper = document.getElementById('wrapper-rows');
 
     if (val === 'single') {
         btnAddRow.classList.add('hidden');
-        wrapper.innerHTML = `
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 class-row">
-                <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
-                <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
-                <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
-                <div><label class="block text-xs text-gray-500">% Internal</label><input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none"></div>
-                ${bahanAktifControlHtml(false, true)}
-            </div>
-`;
+        wrapper.innerHTML = singleVariantRowHtml({});
     } else {
         btnAddRow.classList.remove('hidden');
         wrapper.innerHTML = '';
@@ -1314,6 +1479,32 @@ function addTemplateRow() {
     wrapper.appendChild(newRow);
     updateTotalCalculated();
 }
+
+function renderComponentRows(comps) {
+    const tipeEl = document.querySelector('input[name="tipe"]:checked');
+    const isSingle = !tipeEl || tipeEl.value === 'single';
+    const btnAddRow = document.getElementById('btn-add-row');
+    const wrapper = document.getElementById('wrapper-rows');
+    wrapper.innerHTML = '';
+    const list = comps || [];
+    if (isSingle) {
+        btnAddRow.classList.add('hidden');
+        wrapper.innerHTML = singleVariantRowHtml(list[0] || {});
+        return;
+    }
+    btnAddRow.classList.remove('hidden');
+    if (list.length === 0) {
+        addTemplateRow();
+        return;
+    }
+    list.forEach((comp, idx) => {
+        const newRow = document.createElement('div');
+        newRow.className = "grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row";
+        newRow.innerHTML = kompositVariantRowHtml(comp, idx);
+        wrapper.appendChild(newRow);
+    });
+}
+// ==================== /renderComponentRows ====================
 
 function updateTotalCalculated() {
     const pctInputs = document.getElementsByName('percent_internal');
@@ -1379,40 +1570,27 @@ function openEditModal(rm) {
         if (r.value === rm.tipe) r.checked = true;
     });
 
-    const btnAddRow = document.getElementById('btn-add-row');
-    const wrapper = document.getElementById('wrapper-rows');
-    wrapper.innerHTML = '';
-
-    if (rm.tipe === 'single') {
-        btnAddRow.classList.add('hidden');
-        const comp = rm.raw_material_components[0] || {};
-        wrapper.innerHTML = `
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row">
-                <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" value="${comp.inci_name || ''}" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
-                <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" value="${comp.cas_number || ''}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
-                <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" value="${comp.function || ''}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
-                <div><label class="block text-xs text-gray-500">% Internal</label><input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none"></div>
-                ${bahanAktifControlHtml(isAktifFlag(comp.is_bahan_aktif), true)}
-            </div>
-`;
-    } else {
-        btnAddRow.classList.remove('hidden');
-        rm.raw_material_components.forEach((comp, idx) => {
-            const newRow = document.createElement('div');
-            newRow.className = "grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row";
-            newRow.innerHTML = `
-                <div><input type="text" name="inci_name" required value="${comp.inci_name}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
-                <div><input type="text" name="cas_number" value="${comp.cas_number || ''}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
-                <div><input type="text" name="function" value="${comp.function || ''}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
-                <div class="flex items-center space-x-2">
-                    <input type="number" step="0.001" name="percent_internal" required value="${comp.percent_internal}" oninput="updateTotalCalculated()" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs font-mono">
-                    ${idx > 0 ? `<button type="button" onclick="this.parentElement.parentElement.remove(); updateTotalCalculated();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash"></i></button>` : '<div class="w-4"></div>'}
-                </div>
-                <div class="flex items-end">${bahanAktifControlHtml(isAktifFlag(comp.is_bahan_aktif), false)}</div>
-`;
-            wrapper.appendChild(newRow);
-        });
+    // ==================== STATE VARIAN (Fase 3) ====================
+    editingRmId = rm.id;
+    const nestedVariants = rm.raw_material_composition_variants || [];
+    editingVariants = nestedVariants.map(v => ({
+        id: v.id,
+        nama_varian: v.nama_varian,
+        is_default: !!v.is_default,
+        raw_material_components: v.raw_material_components || [],
+    }));
+    if (editingVariants.length === 0) {
+        // Fallback: belum ada varian (data lama) — anggap komponen langsung
+        // sebagai breakdown varian default sementara.
+        editingVariants = [{
+            id: null, nama_varian: 'Varian Default', is_default: true,
+            raw_material_components: rm.raw_material_components || [],
+        }];
     }
+    const defVariant = editingVariants.find(v => v.is_default) || editingVariants[0];
+    editingVariantId = defVariant ? defVariant.id : null;
+    renderVariantPills();
+    renderComponentRows(componentsOfVariant(editingVariantId));
 
     // ==================== INTEGRASI PARSING JSONB BAB II (PER PERUSAHAAN) ====================
     resetCompanyDocFields();
@@ -1477,7 +1655,8 @@ function filterTable() {
             const batchNumbers = row.dataset.batchNumbers || '';
 
             const matchSearch = !searchVal || nama.includes(searchVal) || kode.includes(searchVal) || inci.includes(searchVal) || batchNumbers.includes(searchVal);
-            const matchTipe = !tipeVal || tipe === tipeVal;
+            // Opsi khusus "__aktif__": tampilkan bahan yang punya komponen Bahan Aktif (abaikan tipe).
+            const matchTipe = !tipeVal || (tipeVal === '__aktif__' ? (row.dataset.aktif === '1') : tipe === tipeVal);
             const matchCompany = !companyVal || company.includes(companyVal);
 
             const show = matchSearch && matchTipe && matchCompany;

@@ -993,6 +993,32 @@ def _resolve_variant_components(raw_material, variant_id: str | None) -> list:
     return legacy if isinstance(legacy, list) else []
 
 
+# ==================== HELPER KELOLA VARIAN KOMPOSISI ====================
+def _default_variant_name(produsen: str | None) -> str:
+    """Nama varian default: pakai produsen kalau ada, else 'Varian Default'."""
+    nama = (produsen or "").strip()
+    return nama if nama else "Varian Default"
+
+
+def _ensure_default_variant(rm_id: str, produsen: str | None = None) -> str:
+    """Get-or-create varian default sebuah bahan baku. Return id variannya.
+
+    Dipakai handler create/edit biar selalu ada minimal 1 varian
+    (guard Fase 3: gak boleh hapus varian terakhir yang tersisa).
+    """
+    existing = supabase.table("raw_material_composition_variants") \
+        .select("id").eq("raw_material_id", rm_id).eq("is_default", True) \
+        .limit(1).execute()
+    if existing.data:
+        return existing.data[0]["id"]
+    new_variant = supabase.table("raw_material_composition_variants").insert({
+        "raw_material_id": rm_id,
+        "nama_varian": _default_variant_name(produsen),
+        "is_default": True,
+    }).execute()
+    return new_variant.data[0]["id"]
+
+
 @app.get("/raw-materials", response_class=HTMLResponse)
 async def raw_materials_page(request: Request, current_user: dict = Depends(get_current_user)):
     rm_resp = supabase.table("raw_materials").select(
@@ -1524,10 +1550,15 @@ async def add_raw_material(
         await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi)
         await _upload_msds_and_upsert_company_doc(new_rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
 
+        # Bahan baru selalu mulai dengan 1 varian default (nama dari produsen);
+        # semua komponen breakdown nempel ke varian ini.
+        default_variant_id = _ensure_default_variant(new_rm_id, produsen)
+
         if tipe == "single":
             given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
             comp_data = {
                 "raw_material_id": new_rm_id,
+                "variant_id": default_variant_id,
                 "inci_name": given_inci if given_inci else nama_dagang, 
                 "cas_number": cas_number[0] if cas_number else None,
                 "function": function[0] if function else None,
@@ -1542,6 +1573,7 @@ async def add_raw_material(
                 if inci_name[i].strip():
                     components.append({
                         "raw_material_id": new_rm_id,
+                        "variant_id": default_variant_id,
                         "inci_name": inci_name[i],
                         "cas_number": cas_number[i] if i < len(cas_number) else None,
                         "function": function[i] if i < len(function) else None,
@@ -1681,22 +1713,39 @@ async def edit_raw_material(
     spec_sheet_file_heka: UploadFile = File(None),
     spec_parameters_erfi: str = Form("[]"),
     spec_parameters_heka: str = Form("[]"),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    variant_id: str = Form(None),
 ):
     kode_check = " ".join(kode_bahan_baku.split())  # trim + collapse spasi ganda jadi 1
     existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).neq("id", rm_id).execute()
-    
+
     if existing_rm.data:
         raise HTTPException(status_code=400, detail=f"Gagal Edit! Kode '{kode_check}' sudah dipakai oleh bahan baku lain.")
+
+    # --- Target varian yang lagi diedit (form baru kirim variant_id; form lama
+    #     / tanpa kirim = varian default, get-or-create biar selalu ada) ---
+    editing_variant_id = (variant_id or "").strip() or None
+    if editing_variant_id:
+        variant_check = supabase.table("raw_material_composition_variants") \
+            .select("id").eq("id", editing_variant_id).eq("raw_material_id", rm_id) \
+            .limit(1).execute()
+        if not variant_check.data:
+            raise HTTPException(status_code=400, detail="Varian yang dipilih tidak cocok dengan bahan baku ini.")
+    else:
+        editing_variant_id = _ensure_default_variant(rm_id, produsen)
 
     # --- Ambil data LAMA dulu sebelum diubah, buat dibandingin di activity log ---
     old_rm_resp = supabase.table("raw_materials").select("*").eq("id", rm_id).single().execute()
     old_rm = old_rm_resp.data or {}
     old_company_docs_resp = supabase.table("raw_material_company_docs").select("*").eq("raw_material_id", rm_id).execute()
     old_company_docs = {d["perusahaan"]: d for d in (old_company_docs_resp.data or [])}
-    # --- Ambil data komponen LAMA buat dibandingin ---
+    # --- Ambil data komponen LAMA buat dibandingin (scoped ke varian yang lagi
+    #     diedit + sisa legacy tanpa varian) ---
     old_components_resp = supabase.table("raw_material_components").select("*").eq("raw_material_id", rm_id).order("id").execute()
-    old_components = old_components_resp.data or []
+    old_components = [
+        c for c in (old_components_resp.data or [])
+        if c.get("variant_id") in (None, editing_variant_id)
+    ]
 
     # --- Bangun list komponen BARU dari form data ---
     new_components = []
@@ -1721,26 +1770,31 @@ async def edit_raw_material(
                     "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, i),
                 })
 
-    # --- Bandingin komponen lama vs baru ---
+    # --- Bandingin komponen lama vs baru (scoped ke varian yang lagi diedit) ---
     changes = []
     old_map = {c["inci_name"]: c for c in old_components}
     new_map = {c["inci_name"]: c for c in new_components}
+    variant_label = ""
+    variant_name_resp = supabase.table("raw_material_composition_variants") \
+        .select("nama_varian").eq("id", editing_variant_id).limit(1).execute()
+    if variant_name_resp.data:
+        variant_label = f" [varian {variant_name_resp.data[0].get('nama_varian')}]"
 
     for inci in set(old_map.keys()) - set(new_map.keys()):
-        changes.append({"field": f"Bahan ({inci})", "note": "Dihapus dari breakdown"})
+        changes.append({"field": f"Bahan ({inci}){variant_label}", "note": "Dihapus dari breakdown"})
     for inci in set(new_map.keys()) - set(old_map.keys()):
-        changes.append({"field": f"Bahan ({inci})", "note": "Ditambahkan ke breakdown"})
+        changes.append({"field": f"Bahan ({inci}){variant_label}", "note": "Ditambahkan ke breakdown"})
     for inci in set(old_map.keys()) & set(new_map.keys()):
         old_c = old_map[inci]
         new_c = new_map[inci]
         if old_c.get("is_bahan_aktif") != new_c.get("is_bahan_aktif"):
-             changes.append({"field": f"Bahan Aktif ({inci})", "old": "Ya" if old_c.get("is_bahan_aktif") else "Tidak", "new": "Ya" if new_c.get("is_bahan_aktif") else "Tidak"})
+             changes.append({"field": f"Bahan Aktif ({inci}){variant_label}", "old": "Ya" if old_c.get("is_bahan_aktif") else "Tidak", "new": "Ya" if new_c.get("is_bahan_aktif") else "Tidak"})
         if float(old_c.get("percent_internal", 0)) != float(new_c.get("percent_internal", 0)):
-             changes.append({"field": f"Persentase ({inci})", "old": f"{old_c.get('percent_internal')}%", "new": f"{new_c.get('percent_internal')}%"})
+             changes.append({"field": f"Persentase ({inci}){variant_label}", "old": f"{old_c.get('percent_internal')}%", "new": f"{new_c.get('percent_internal')}%"})
         if (old_c.get("function") or "") != (new_c.get("function") or ""):
-             changes.append({"field": f"Fungsi ({inci})", "old": old_c.get("function") or "-", "new": new_c.get("function") or "-"})
+             changes.append({"field": f"Fungsi ({inci}){variant_label}", "old": old_c.get("function") or "-", "new": new_c.get("function") or "-"})
         if (old_c.get("cas_number") or "") != (new_c.get("cas_number") or ""):
-             changes.append({"field": f"CAS Number ({inci})", "old": old_c.get("cas_number") or "-", "new": new_c.get("cas_number") or "-"})
+             changes.append({"field": f"CAS Number ({inci}){variant_label}", "old": old_c.get("cas_number") or "-", "new": new_c.get("cas_number") or "-"})
 
     # 1. UPDATE IDENTITAS DI RAW_MATERIALS (spec & MSDS udah pindah ke raw_material_company_docs)
     update_data = {
@@ -1790,12 +1844,16 @@ async def edit_raw_material(
         log_activity(current_user, "update", "raw_material", rm_id, nama_dagang, changes)
 
     # --- Sisa kode management komponen INCI lu di bawah biarkan utuh ---
-    supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
-    
+    # TAPI scoped ke varian yang lagi diedit: komponen milik varian itu + sisa
+    # legacy tanpa varian dihapus & diganti (varian lain tidak disentuh).
+    supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).is_("variant_id", None).execute()
+    supabase.table("raw_material_components").delete().eq("variant_id", editing_variant_id).execute()
+
     if tipe == "single":
         given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
         comp_data = {
             "raw_material_id": rm_id,
+            "variant_id": editing_variant_id,
             "inci_name": given_inci if given_inci else nama_dagang,
             "cas_number": cas_number[0] if cas_number else None,
             "function": function[0] if function else None,
@@ -1810,6 +1868,7 @@ async def edit_raw_material(
             if inci_name[i].strip():
                 components.append({
                     "raw_material_id": rm_id,
+                    "variant_id": editing_variant_id,
                     "inci_name": inci_name[i],
                     "cas_number": cas_number[i] if i < len(cas_number) else None,
                     "function": function[i] if i < len(function) else None,
@@ -1877,6 +1936,9 @@ async def delete_raw_material(rm_id: str, current_user: dict = Depends(get_curre
         supabase.table("raw_material_batches").delete().eq("raw_material_id", rm_id).execute()
         supabase.table("raw_material_company_docs").delete().eq("raw_material_id", rm_id).execute()
         supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).execute()
+        # Varian komposisi ikut dibersihkan (FK raw_material_id pakai CASCADE,
+        # tapi di sini eksplisit biar tetap bersih walau skema belum migrasi penuh)
+        supabase.table("raw_material_composition_variants").delete().eq("raw_material_id", rm_id).execute()
         supabase.table("raw_materials").delete().eq("id", rm_id).execute()
     except Exception as e:
         print(f"Gagal hapus raw_material {rm_id}: {e}")
@@ -1885,6 +1947,114 @@ async def delete_raw_material(rm_id: str, current_user: dict = Depends(get_curre
     log_activity(current_user, "delete", "raw_material", rm_id, nama_sebelum_hapus)
 
     return RedirectResponse(url="/raw-materials?success=Bahan+baku+beserta+seluruh+riwayat+batch+%26+dokumen+terkait+berhasil+dihapus", status_code=303)
+
+# ==================== ENDPOINT KELOLA VARIAN KOMPOSISI ====================
+@app.get("/raw-materials/{rm_id}/variants")
+async def list_raw_material_variants(rm_id: str, current_user: dict = Depends(get_current_user)):
+    """JSON daftar varian sebuah bahan baku (dipakai modal edit + Fase 4 formula)."""
+    resp = supabase.table("raw_material_composition_variants") \
+        .select("id, nama_varian, is_default") \
+        .eq("raw_material_id", rm_id).order("created_at").execute()
+    return JSONResponse(content={"success": True, "variants": resp.data or []})
+
+
+@app.post("/raw-materials/{rm_id}/variants/add")
+async def add_raw_material_variant(
+    rm_id: str,
+    nama_varian: str = Form(...),
+    current_user: dict = Depends(get_current_user),
+):
+    nama = (nama_varian or "").strip()
+    if not nama:
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", "Nama varian/produsen wajib diisi.")
+        return response
+    rm_check = supabase.table("raw_materials").select("id, nama_dagang").eq("id", rm_id).limit(1).execute()
+    if not rm_check.data:
+        raise HTTPException(status_code=404, detail="Bahan baku tidak ditemukan.")
+    dup = supabase.table("raw_material_composition_variants") \
+        .select("id").eq("raw_material_id", rm_id).ilike("nama_varian", nama).limit(1).execute()
+    if dup.data:
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", f"Varian '{nama}' sudah ada untuk bahan ini.")
+        return response
+    new_variant = supabase.table("raw_material_composition_variants").insert({
+        "raw_material_id": rm_id,
+        "nama_varian": nama,
+        "is_default": False,
+    }).execute()
+    log_activity(current_user, "create", "raw_material_variant", new_variant.data[0]["id"], f"{rm_check.data[0].get('nama_dagang')} / {nama}")
+    response = RedirectResponse(url="/raw-materials", status_code=303)
+    response.set_cookie("success_msg", f"Varian '{nama}' berhasil ditambahkan. Isi breakdown INCI-nya lewat menu Edit.")
+    return response
+
+
+@app.post("/raw-materials/{rm_id}/variants/{variant_id}/set-default")
+async def set_default_raw_material_variant(rm_id: str, variant_id: str, current_user: dict = Depends(get_current_user)):
+    target = supabase.table("raw_material_composition_variants") \
+        .select("id, nama_varian, raw_material_id").eq("id", variant_id).limit(1).execute()
+    if not target.data or target.data[0].get("raw_material_id") != rm_id:
+        raise HTTPException(status_code=400, detail="Varian yang dipilih tidak cocok dengan bahan baku ini.")
+    # Unset semua dulu baru set yang baru (aman terhadap unique index 1-default).
+    supabase.table("raw_material_composition_variants") \
+        .update({"is_default": False}).eq("raw_material_id", rm_id).execute()
+    supabase.table("raw_material_composition_variants") \
+        .update({"is_default": True}).eq("id", variant_id).execute()
+    log_activity(current_user, "update", "raw_material_variant", variant_id, f"{target.data[0].get('nama_varian')} (jadi default)")
+    response = RedirectResponse(url="/raw-materials", status_code=303)
+    response.set_cookie("success_msg", f"Varian '{target.data[0].get('nama_varian')}' sekarang jadi varian default.")
+    return response
+
+
+@app.post("/raw-materials/{rm_id}/variants/{variant_id}/delete")
+async def delete_raw_material_variant(rm_id: str, variant_id: str, current_user: dict = Depends(get_current_user)):
+    target = supabase.table("raw_material_composition_variants") \
+        .select("id, nama_varian, is_default, raw_material_id").eq("id", variant_id).limit(1).execute()
+    if not target.data or target.data[0].get("raw_material_id") != rm_id:
+        raise HTTPException(status_code=400, detail="Varian yang dipilih tidak cocok dengan bahan baku ini.")
+    nama_varian = target.data[0].get("nama_varian") or variant_id
+
+    # Guard 1: minimal harus ada 1 varian yang tersisa.
+    all_variants = supabase.table("raw_material_composition_variants") \
+        .select("id").eq("raw_material_id", rm_id).execute()
+    if len(all_variants.data or []) <= 1:
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", f"Varian '{nama_varian}' tidak bisa dihapus karena ini satu-satunya varian yang tersisa.")
+        return response
+
+    # Guard 2: tolak kalau masih dipakai eksplisit di formula produk manapun.
+    usage = supabase.table("product_formula_lines") \
+        .select("product_id, products(nama_produk)").eq("variant_id", variant_id).execute()
+    if usage.data:
+        produk_list = []
+        for line in usage.data:
+            if line.get("products") and line.get("products").get("nama_produk"):
+                produk_list.append(line["products"]["nama_produk"])
+        produk_str = ", ".join(produk_list[:3])
+        if len(produk_list) > 3:
+            produk_str += "..."
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("error_msg", f"Varian '{nama_varian}' masih dipakai di formula produk: {produk_str}. Pindahkan dulu ke varian lain sebelum menghapus.")
+        return response
+
+    # Hapus komponen milik varian ini, lalu variannya.
+    supabase.table("raw_material_components").delete().eq("variant_id", variant_id).execute()
+    supabase.table("raw_material_composition_variants").delete().eq("id", variant_id).execute()
+
+    # Kalau yang dihapus adalah default, promosikan varian tertua lain jadi default
+    # biar invariant "tepat 1 default" tetap terjaga.
+    if target.data[0].get("is_default"):
+        remaining = supabase.table("raw_material_composition_variants") \
+            .select("id").eq("raw_material_id", rm_id).order("created_at").limit(1).execute()
+        if remaining.data:
+            supabase.table("raw_material_composition_variants") \
+                .update({"is_default": True}).eq("id", remaining.data[0]["id"]).execute()
+
+    log_activity(current_user, "delete", "raw_material_variant", variant_id, nama_varian)
+    response = RedirectResponse(url="/raw-materials", status_code=303)
+    response.set_cookie("success_msg", f"Varian '{nama_varian}' berhasil dihapus.")
+    return response
+
 
 @app.post("/raw-materials/batches/add")
 async def add_material_batch(
@@ -4208,10 +4378,28 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
     sop_cpkb_url = None
     try:
         formula_resp = supabase.table("product_formula_lines") \
-            .select("*, raw_materials(nama_dagang, kode_bahan_baku)") \
+            .select("*, raw_materials(nama_dagang, kode_bahan_baku, raw_material_composition_variants(id, nama_varian, is_default))") \
             .eq("product_id", product_id) \
             .order("created_at").execute()
         formula = formula_resp.data or []
+
+        # Normalisasi embed raw_materials (dict vs list-of-1) + siapkan daftar
+        # varian terurut (default dulu) per baris untuk dropdown Fase 4.
+        for line in formula:
+            rm_embed = line.get("raw_materials")
+            if isinstance(rm_embed, list):
+                rm_embed = rm_embed[0] if rm_embed else {}
+                line["raw_materials"] = rm_embed
+            if not isinstance(rm_embed, dict):
+                rm_embed = {}
+                line["raw_materials"] = rm_embed
+            variants = rm_embed.get("raw_material_composition_variants") or []
+            if isinstance(variants, dict):
+                variants = [variants]
+            line["rm_variants"] = sorted(
+                variants,
+                key=lambda v: (not v.get("is_default"), v.get("nama_varian") or ""),
+            )
 
         rm_resp = supabase.table("raw_materials") \
             .select("id, nama_dagang, kode_bahan_baku") \
@@ -4319,6 +4507,7 @@ async def update_product(
     formula_submitted: str = Form(None),
     raw_material_id: List[str] = Form(None),
     percentage: List[str] = Form(None),
+    variant_id: List[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
     acc_sampel_val = acc_sampel.strip() if acc_sampel else None
@@ -4440,6 +4629,18 @@ async def update_product(
         try:
             supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
             if raw_material_id:
+                # --- Validasi variant_id per baris (Fase 4): varian wajib milik
+                #     bahan bakunya sendiri; kosong/invalid = default (NULL) ---
+                rm_ids_needed = [r.strip() for r in (raw_material_id or []) if (r or "").strip()]
+                variant_owner = {}
+                if rm_ids_needed:
+                    try:
+                        v_resp = supabase.table("raw_material_composition_variants") \
+                            .select("id, raw_material_id").in_("raw_material_id", rm_ids_needed).execute()
+                        for v in (v_resp.data or []):
+                            variant_owner[v["id"]] = v.get("raw_material_id")
+                    except Exception as e:
+                        print(f"Gagal validasi variant_id produk {product_id}: {e}")
                 lines = []
                 for i in range(len(raw_material_id)):
                     rm_id = (raw_material_id[i] or "").strip()
@@ -4448,10 +4649,17 @@ async def update_product(
                             pct = float(percentage[i]) if percentage and i < len(percentage) else 0.0
                         except (TypeError, ValueError):
                             pct = 0.0
+                        v_raw = (variant_id[i] if variant_id and i < len(variant_id) else "") or ""
+                        v_clean = v_raw.strip() or None
+                        # Tolak variant_id yang bukan milik bahan baku baris ini
+                        # (misal hasil manipulasi form) -> fallback ke default.
+                        if v_clean and variant_owner.get(v_clean) != rm_id:
+                            v_clean = None
                         lines.append({
                             "product_id": product_id,
                             "raw_material_id": rm_id,
                             "percent_in_formula": pct,
+                            "variant_id": v_clean,
                         })
                 if lines:
                     supabase.table("product_formula_lines").insert(lines).execute()

@@ -347,6 +347,17 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="variant-picker mt-2{% if (line.rm_variants|length) <= 1 %} hidden{% endif %}">
+                                <label class="block text-xs font-medium text-gray-500 mb-1">Varian / Produsen</label>
+                                <select name="variant_id" class="variant-select block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500">
+                                    {% if line.rm_variants|length == 0 %}
+                                    <option value="">-</option>
+                                    {% endif %}
+                                    {% for v in line.rm_variants %}
+                                    <option value="{{ v.id }}"{% if line.variant_id and line.variant_id == v.id %} selected{% endif %}>{{ v.nama_varian }}{% if v.is_default %} (default){% endif %}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                         </div>
                         <div class="flex items-center space-x-2">
                             <div class="w-full">
@@ -456,6 +467,12 @@
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                        <div class="variant-picker mt-2 hidden">
+                            <label class="block text-xs font-medium text-gray-500 mb-1 sm:hidden">Varian / Produsen</label>
+                            <select class="variant-select input-variant-id block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500">
+                                <option value="">- Pilih bahan baku dulu -</option>
+                            </select>
                         </div>
                     </div>
                     <div class="flex items-center space-x-2">
@@ -708,6 +725,7 @@ function filterRmDropdown(inputElem) {
     const selectedLabel = container.getAttribute('data-selected-label');
     if (inputElem.value !== selectedLabel) {
         hiddenInput.value = "";
+        resetRowVariantPicker(container);
     }
 
     dropdown.classList.remove('hidden');
@@ -733,6 +751,61 @@ function filterRmDropdown(inputElem) {
     }
 }
 
+// ==================== VARIAN PER BARIS FORMULA (Fase 4) ====================
+function escapeVariantText(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function resetRowVariantPicker(container) {
+    const picker = container.closest('.class-formula-row').querySelector('.variant-picker');
+    if (!picker) return;
+    const sel = picker.querySelector('.variant-select');
+    picker.classList.add('hidden');
+    if (sel) {
+        sel.innerHTML = '<option value="">- Pilih bahan baku dulu -</option>';
+        if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
+    }
+}
+
+async function loadRowVariants(container, rmId, keepSelectedId) {
+    const row = container.closest('.class-formula-row');
+    const picker = row ? row.querySelector('.variant-picker') : null;
+    if (!picker) return;
+    const sel = picker.querySelector('.variant-select');
+    if (!rmId) { resetRowVariantPicker(container); return; }
+    try {
+        const res = await fetch('/raw-materials/' + rmId + '/variants');
+        const data = await res.json();
+        const variants = (data && data.variants) || [];
+        if (variants.length <= 1) {
+            // 0 varian: kirim '' (default). 1 varian: auto-pilih diam-diam.
+            picker.classList.add('hidden');
+            if (sel) {
+                sel.innerHTML = variants.length === 1
+                    ? '<option value="' + variants[0].id + '" selected></option>'
+                    : '<option value=""></option>';
+                if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
+            }
+            return;
+        }
+        picker.classList.remove('hidden');
+        const sorted = [...variants].sort((a, b) =>
+            ((b.is_default ? 1 : 0) - (a.is_default ? 1 : 0)) ||
+            String(a.nama_varian || '').localeCompare(String(b.nama_varian || '')));
+        const keep = keepSelectedId || null;
+        sel.innerHTML = sorted.map(v => {
+            const isSel = (keep && String(keep) === String(v.id)) ||
+                (!keep && v.is_default) ? ' selected' : '';
+            return '<option value="' + v.id + '"' + isSel + '>' +
+                escapeVariantText(v.nama_varian) + (v.is_default ? ' (default)' : '') + '</option>';
+        }).join('');
+        if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
+    } catch (e) {
+        console.error('Gagal memuat varian:', e);
+    }
+}
+// ==================== /VARIAN PER BARIS FORMULA ====================
+
 function selectRmOption(optionElem) {
     const container = optionElem.closest('.custom-select-container');
     const hiddenInput = container.querySelector('input[name="raw_material_id"]');
@@ -747,6 +820,9 @@ function selectRmOption(optionElem) {
     container.setAttribute('data-selected-label', label);
 
     dropdown.classList.add('hidden');
+    resetRowVariantPicker(container);
+    loadRowVariants(container, val);
+
 }
 
 function addFormulaRow() {
@@ -757,6 +833,7 @@ function addFormulaRow() {
     // Tempel atribut name cuma pas baris masuk ke form
     clone.querySelector('.input-rm-id').setAttribute('name', 'raw_material_id');
     clone.querySelector('.input-percentage').setAttribute('name', 'percentage');
+    clone.querySelector('.input-variant-id').setAttribute('name', 'variant_id');
 
     container.appendChild(clone);
     calculateFormulaTotal();
@@ -1033,6 +1110,7 @@ document.getElementById('quick-add-form').addEventListener('submit', async funct
             if (hiddenInput) hiddenInput.value = newRmId;
             if (searchInput) searchInput.value = newRmLabel;
             quickAddTargetContainer.setAttribute('data-selected-label', newRmLabel);
+            loadRowVariants(quickAddTargetContainer, newRmId);
         }
 
         // 4. Cleanup
