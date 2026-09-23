@@ -19,6 +19,20 @@ _EFEK_PERIOD_RE = re.compile(r"^(\d{4})-H([12])$")
 APT_SIGNATURE_URI = "/static/images/apt.png"
 WIB = ZoneInfo("Asia/Jakarta")
 
+_BULAN_ID = {
+    1: "Januari", 2: "Februari", 3: "Maret", 4: "April",
+    5: "Mei", 6: "Juni", 7: "Juli", 8: "Agustus",
+    9: "September", 10: "Oktober", 11: "November", 12: "Desember",
+}
+
+
+def _format_sign_date_id(value: date) -> str:
+    """Tanggal TTD gaya referensi: '03 Januari 2026' (hari 2 digit)."""
+    try:
+        return f"{value.day:02d} {_BULAN_ID[value.month]} {value.year}"
+    except Exception:
+        return str(value)
+
 # Kunci per-produk untuk mencegah race condition (lost update) saat dua
 # request generate bersamaan untuk produk yang sama.
 _generate_locks: dict[str, asyncio.Lock] = {}
@@ -79,9 +93,16 @@ def _slugify(text: str) -> str:
 
 def _apt_signature_uri() -> str | None:
     local = os.path.join("app", "static", "images", "apt.png")
-    if os.path.isfile(local):
+    if not os.path.isfile(local):
+        return None
+    try:
+        import base64
+        with open(local, "rb") as f:
+            data = base64.b64encode(f.read()).decode("ascii")
+        return f"data:image/png;base64,{data}"
+    except Exception as e:
+        print(f"[EFEK SAMPING] Gagal encode TTD apt.png: {e}")
         return APT_SIGNATURE_URI
-    return None
 
 
 def _efek_samping_meta(product: dict) -> dict:
@@ -219,11 +240,7 @@ def register_efek_samping_routes(
         period_label = _efek_period_label(year, half)
         start_d, end_d = _efek_period_range(year, half)
         sign_d = _efek_signature_date(year, half)
-        sign_label = format_date_id(sign_d)
-        # contoh referensi pakai 03 Juli 2025 (hari 2 digit)
-        _parts = str(sign_label).split(" ", 1)
-        if _parts and _parts[0].isdigit() and len(_parts[0]) == 1:
-            sign_label = f"0{_parts[0]} {_parts[1]}"
+        sign_label = _format_sign_date_id(sign_d)
 
         company = get_company_info(product.get("perusahaan"))
 
@@ -258,10 +275,9 @@ def register_efek_samping_routes(
 
         dest = io.BytesIO()
         pdf_status = pisa.CreatePDF(
-            src=io.StringIO(html),
+            src=io.BytesIO(html.encode("UTF-8")),
             dest=dest,
             link_callback=pdf_link_callback,
-            encoding="UTF-8",
         )
         if pdf_status.err:
             print(f"[EFEK SAMPING] pisa error: {pdf_status.err}")

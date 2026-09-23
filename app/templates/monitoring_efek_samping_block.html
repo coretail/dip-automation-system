@@ -3,148 +3,159 @@
 <head>
 <meta charset="UTF-8"/>
 <style>
-    @page { size: A4 landscape; margin: 18pt 22pt 16pt 22pt; }
-    body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #000; }
+    @page { size: A4 portrait; margin: 1.8cm 1.5cm 1.5cm 1.5cm; }
+    body { font-family: Times-Roman, Times, serif; font-size: 9pt; color: #000; line-height: 1.35; }
+    .lampiran { font-size: 8pt; line-height: 1.35; text-align: right; }
+    .doc-title { font-size: 11pt; font-weight: bold; text-align: center; text-decoration: underline; margin-top: 20pt; margin-bottom: 14pt; }
+    .info-table { border-collapse: collapse; margin-left: 18pt; margin-bottom: 10pt; }
+    .info-table td { padding: 1pt 0; vertical-align: top; font-size: 9pt; }
+    .info-label { width: 130pt; }
+    .info-colon { width: 12pt; }
+    .info-val-company { font-weight: bold; }
+    .main-table { width: 100%; border-collapse: collapse; }
+    .main-table th, .main-table td { border: 0.6pt solid #000; padding: 4pt 3pt; vertical-align: middle; }
+    .main-table td.notif { font-size: 7.5pt; }
+    .main-table th { font-size: 7pt; font-weight: bold; text-align: center; line-height: 1.25; }
+    .main-table td { font-size: 8pt; } .main-table td.notif { font-size: 7pt; text-align: center; }
+    .c { text-align: center; }
+    .l { text-align: left; }
+    .footnote { font-size: 7.5pt; margin-top: 8pt; line-height: 1.4; }
+    .sign-wrap { margin-top: 18pt; }
+    .sign-box { font-size: 9pt; line-height: 1.4; }
 </style>
 </head>
 <body>
 
 <table width="100%" border="0" cellpadding="0" cellspacing="0">
     <tr>
-        <td align="right">
-            <font size="2">
-                <b>LAMPIRAN IV</b><br/>
+        <td align="right" class="lampiran">
+            LAMPIRAN IV<br/>
                 PERATURAN BADAN PENGAWAS OBAT DAN MAKANAN NOMOR 26<br/>
                 TAHUN 2019<br/>
                 TENTANG MEKANISME MONITORING EFEK SAMPING KOSMETIK
-            </font>
         </td>
     </tr>
 </table>
 
-<p align="center">
-    <font size="4"><b><u>TABEL REKAPITULASI HASIL MONITORING EFEK SAMPING KOSMETIKA</u></b></font>
-</p>
+<p class="doc-title">TABEL REKAPITULASI HASIL MONITORING EFEK SAMPING KOSMETIKA</p>
 
-<table border="0" cellpadding="1" cellspacing="0">
+<table class="info-table" border="0" cellpadding="0" cellspacing="0">
     <tr>
-        <td width="130">Nama Perusahaan</td>
-        <td width="14">:</td>
-        <td><b>{{ company.nama }}</b></td>
+        <td class="info-label">Nama Perusahaan</td>
+        <td class="info-colon">:</td>
+        <td class="info-val-company">{{ company.nama }}</td>
     </tr>
     <tr>
-        <td width="130">Nomor Telepon</td>
-        <td width="14">:</td>
+        <td class="info-label">Nomor Telepon</td>
+        <td class="info-colon">:</td>
         <td>{{ company.telepon or '-' }}</td>
     </tr>
     <tr>
-        <td width="130">Email</td>
-        <td width="14">:</td>
+        <td class="info-label">Email</td>
+        <td class="info-colon">:</td>
         <td>{{ company.email }}</td>
     </tr>
     <tr>
-        <td width="130">Periode</td>
-        <td width="14">:</td>
+        <td class="info-label">Periode</td>
+        <td class="info-colon">:</td>
         <td>{{ period_label }}</td>
     </tr>
 </table>
 
-<br/>
-
-<table border="1" cellpadding="3" cellspacing="0">
+<table class="main-table" cellpadding="3" cellspacing="0">
+    <thead>
     <tr>
-        <td width="28" align="center"><b><font size="1">No</font></b></td>
-        <td width="130" align="center"><b><font size="1">Nama Produk</font></b></td>
-        <td width="88" align="center"><b><font size="1">Nomor<br/>Notifikasi</font></b></td>
-        <td width="72" align="center"><b><font size="1">Jumlah Kasus<br/>per Produk<br/>(*)(**)</font></b></td>
-        <td width="78" align="center"><b><font size="1">Nama Pengguna<br/>(Singkatan) (*)</font></b></td>
-        <td width="58" align="center"><b><font size="1">Jenis<br/>Kelamin (*)</font></b></td>
-        <td width="40" align="center"><b><font size="1">Usia (*)</font></b></td>
-        <td width="108" align="center"><b><font size="1">Jenis Efek yang Tidak<br/>Diinginkan<br/>(Serius/Non Serius) (*)</font></b></td>
-        <td width="100" align="center"><b><font size="1">Bentuk Manifestasi<br/>yang Terjadi (*)</font></b></td>
-        <td width="80" align="center"><b><font size="1">Tanggal Mulai<br/>Terjadi Kasus (*)</font></b></td>
+        <th width="4%">No</th>
+        <th width="20%">Nama Produk</th>
+        <th width="13%">Nomor Notifikasi</th>
+        <th width="8%">Jumlah Kasus per Produk (*) (**)</th>
+        <th width="8%">Nama Pengguna (Singkatan) (*)</th>
+        <th width="7%">Jenis Kelamin (*)</th>
+        <th width="5%">Usia (*)</th>
+        <th width="13%">Jenis Efek yang Tidak Diinginkan (Serius/Non Serius) (*)</th>
+        <th width="11%">Bentuk Manifestasi yang Terjadi (*)</th>
+        <th width="11%">Tanggal Mulai Terjadi Kasus (*)</th>
     </tr>
+    </thead>
+    <tbody>
     {% if cases %}
         {% for c in cases %}
         <tr>
-            <td width="28" align="center"><font size="1">{{ loop.index }}</font></td>
-            <td width="130"><font size="1">{{ product.nama_produk }}</font></td>
-            <td width="88" align="center"><font size="1">{{ product.no_na_produk or '-' }}</font></td>
-            <td width="72" align="center"><font size="1">{{ cases|length }}</font></td>
-            <td width="78" align="center"><font size="1">{{ c.nama }}</font></td>
-            <td width="58" align="center"><font size="1">{{ c.jenis_kelamin }}</font></td>
-            <td width="40" align="center"><font size="1">{{ c.usia }}</font></td>
-            <td width="108" align="center"><font size="1">{{ c.jenis_efek }}</font></td>
-            <td width="100" align="center"><font size="1">{{ c.manifestasi }}</font></td>
-            <td width="80" align="center"><font size="1">{{ c.tanggal_mulai }}</font></td>
+            <td class="c">{{ loop.index }}</td>
+            <td class="l">{{ product.nama_produk }}</td>
+            <td class="notif">{{ product.no_na_produk or '-' }}</td>
+            <td class="c">{{ cases|length }}</td>
+            <td class="c">{{ c.nama }}</td>
+            <td class="c">{{ c.jenis_kelamin }}</td>
+            <td class="c">{{ c.usia }}</td>
+            <td class="c">{{ c.jenis_efek }}</td>
+            <td class="c">{{ c.manifestasi }}</td>
+            <td class="c">{{ c.tanggal_mulai }}</td>
         </tr>
         {% endfor %}
     {% else %}
         <tr>
-            <td width="28" align="center"><font size="1">1</font></td>
-            <td width="130"><font size="1">{{ product.nama_produk }}</font></td>
-            <td width="88" align="center"><font size="1">{{ product.no_na_produk or '-' }}</font></td>
-            <td width="72" align="center"><font size="1">Nihil</font></td>
-            <td width="78" align="center"><font size="1">Nihil</font></td>
-            <td width="58" align="center"><font size="1">Nihil</font></td>
-            <td width="40" align="center"><font size="1">Nihil</font></td>
-            <td width="108" align="center"><font size="1">Nihil</font></td>
-            <td width="100" align="center"><font size="1">Nihil</font></td>
-            <td width="80" align="center"><font size="1">Nihil</font></td>
+            <td class="c">1</td>
+            <td class="l">{{ product.nama_produk }}</td>
+            <td class="notif">{{ product.no_na_produk or '-' }}</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
+            <td class="c">Nihil</td>
         </tr>
     {% endif %}
     {% set filled = cases|length if cases else 1 %}
     {% for n in range(filled + 1, 6) %}
         <tr>
-            <td width="28" align="center"><font size="1">{{ n }}</font></td>
-            <td width="130">&nbsp;</td>
-            <td width="88"></td>
-            <td width="72"></td>
-            <td width="78"></td>
-            <td width="58"></td>
-            <td width="40"></td>
-            <td width="108"></td>
-            <td width="100"></td>
-            <td width="80"></td>
+            <td class="c">{{ n }}</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
         </tr>
     {% endfor %}
-    {% for i in range(2) %}
+    {% for i in range(5) %}
         <tr>
-            <td width="28">&nbsp;</td>
-            <td width="130"></td>
-            <td width="88"></td>
-            <td width="72"></td>
-            <td width="78"></td>
-            <td width="58"></td>
-            <td width="40"></td>
-            <td width="108"></td>
-            <td width="100"></td>
-            <td width="80"></td>
+            <td>&nbsp;</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
         </tr>
     {% endfor %}
+    </tbody>
 </table>
 
-<p>
-    <font size="2">
-        (*) &nbsp;: Apabila dalam periode pelaporan tidak terjadi efek tidak diinginkan, dapat diisi Nihil.<br/>
-        (**) : Apabila terjadi kasus, Formulir Pelaporan Efek Samping Kosmetika dilampirkan.
-    </font>
+<p class="footnote">
+    (*) &nbsp;: Apabila dalam periode pelaporan tidak terjadi efek tidak diinginkan, dapat diisi Nihil.<br/>
+    (**) : Apabila terjadi kasus, Formulir Pelaporan Efek Samping Kosmetika dilampirkan.
 </p>
 
-<table width="100%" border="0" cellpadding="0" cellspacing="0">
+<table class="sign-wrap" width="100%" border="0" cellpadding="0" cellspacing="0">
     <tr>
-        <td width="68%"></td>
-        <td width="32%" align="center">
-            <font size="2">
-                Tanggal {{ signature_date }}<br/>
-                Penanggung Jawab Teknis<br/>
-                {% if apt_signature_uri %}
-                <img src="{{ apt_signature_uri }}" height="48"/><br/>
-                {% else %}
-                <br/><br/><br/>
-                {% endif %}
-                ({{ company.penanggung_jawab_teknis }})
-            </font>
+        <td width="62%"></td>
+        <td width="38%" align="center" class="sign-box">
+            Tanggal {{ signature_date }}<br/>
+            Penanggung Jawab Teknis<br/>
+            {% if apt_signature_uri %}
+            <img src="{{ apt_signature_uri }}" height="52"/><br/>
+            {% else %}
+            <br/><br/><br/>
+            {% endif %}
+            ({{ company.penanggung_jawab_teknis }})
         </td>
     </tr>
 </table>
