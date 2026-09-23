@@ -3281,6 +3281,16 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
     except Exception as e:
         print(f"Gagal ambil data Bab 2 buat halaman edit produk {product_id}: {e}")
 
+    # Status "sudah diisi" spek produk jadi (khusus PT Erfi) buat kartu inline Bab 3
+    has_finished_spec = False
+    if product.get("perusahaan") == "PT Erfi":
+        try:
+            spec_check = supabase.table("product_finished_specs").select("id").eq("product_id", product_id).execute()
+            has_finished_spec = bool(spec_check.data)
+        except Exception as e:
+            print(f"Gagal cek finished spec produk {product_id}: {e}")
+            has_finished_spec = False
+
     # Get error message from cookie (if any)
     error_msg = request.cookies.get("error_msg")
     success_msg = request.cookies.get("success_msg")
@@ -3295,6 +3305,7 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
             "raw_materials": raw_materials,
             "bab2_materials": bab2_materials,
             "sop_cpkb_url": sop_cpkb_url,
+            "has_finished_spec": has_finished_spec,
             "error_msg": error_msg,
             "success_msg": success_msg,
             "efek_samping": _efek_samping_meta(product),

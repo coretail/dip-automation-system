@@ -67,14 +67,6 @@
                 <i class="fa-solid fa-file-pdf"></i> Preview Bab 4
             </a>
 
-            {% if product.perusahaan == 'PT Erfi' %}
-            <a href="/products/{{ product.id }}/finished-spec/preview" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-rose-600 rounded-md hover:bg-rose-700">
-                <i class="fa-solid fa-file-pdf"></i> Preview Spek Produk Jadi
-            </a>
-            <a href="/products/{{ product.id }}/finished-spec" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gray-700 rounded-md hover:bg-gray-800">
-                <i class="fa-solid fa-file-pen"></i> Isi Spek Produk Jadi
-            </a>
-            {% endif %}
         </div>
     </div>
 
@@ -490,7 +482,39 @@
             {{ pdf_upload_card('2. Ringkasan Cara Pembuatan Kosmetik', 'cara_pembuatan_file', product.cara_pembuatan_file_url) }}
             {{ pdf_upload_card('4. Sistem Penomoran Batch Spesifik', 'sistem_penomoran_batch_file', product.sistem_penomoran_batch_file_url) }}
             {% if product.perusahaan == 'PT Erfi' %}
-            {{ pdf_upload_card('6a. Spesifikasi Produk Jadi', 'spek_produk_jadi_file', product.spek_produk_jadi_file_url) }}
+            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div class="flex items-center justify-between mb-2 gap-2">
+                    <label class="block text-sm font-semibold text-gray-900">6a. Spesifikasi Produk Jadi</label>
+                    {% if has_finished_spec %}
+                    <span class="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">
+                        <i class="fa-solid fa-circle-check"></i> Ada
+                    </span>
+                    {% else %}
+                    <span class="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">
+                        <i class="fa-solid fa-circle-exclamation"></i> Belum diisi
+                    </span>
+                    {% endif %}
+                </div>
+                <p class="text-xs text-gray-500 mb-2">Spesifikasi QC produk jadi (pemerian, pengemasan, uji mikro &amp; cemaran)</p>
+                {% if has_finished_spec %}
+                <div class="bg-white border border-gray-200 rounded-md mb-2 overflow-hidden">
+                    <iframe src="/products/{{ product.id }}/finished-spec/preview" class="w-full h-64 border-0" title="Preview 6a. Spesifikasi Produk Jadi"></iframe>
+                </div>
+                <p class="text-xs text-emerald-600 font-semibold mb-2"><a href="/products/{{ product.id }}/finished-spec/preview" target="_blank" class="hover:underline"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> Buka preview di tab baru</a></p>
+                <a href="/products/{{ product.id }}/finished-spec" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gray-700 rounded-md hover:bg-gray-800">
+                    <i class="fa-solid fa-file-pen"></i> Isi Ulang
+                </a>
+                {% else %}
+                <div class="w-full h-40 border-2 border-dashed border-gray-300 rounded-md bg-white flex flex-col items-center justify-center text-gray-400 mb-2">
+                    <i class="fa-regular fa-file-pdf text-3xl mb-1.5"></i>
+                    <p class="text-xs font-medium">Belum ada file</p>
+                    <p class="text-[11px]">Isi form spek produk jadi untuk preview</p>
+                </div>
+                <a href="/products/{{ product.id }}/finished-spec" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700">
+                    <i class="fa-solid fa-file-pen"></i> Isi Spek Produk Jadi
+                </a>
+                {% endif %}
+            </div>
             {% else %}
             {{ pdf_upload_card('5. SAPJ dan Spesifikasi Produk Jadi', 'spek_produk_jadi_file', product.spek_produk_jadi_file_url) }}
             {% endif %}
