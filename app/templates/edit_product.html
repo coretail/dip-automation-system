@@ -1074,8 +1074,14 @@ function _buildRmOptionElement(rmId, namaDagang, kodeBahanBaku) {
     div.setAttribute('data-label', label);
     div.setAttribute('data-search', search);
     div.setAttribute('onclick', 'selectRmOption(this)');
-    div.innerHTML = '<span class="font-medium text-gray-900">' + namaDagang + '</span>' +
-        '<span class="text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded">' + kodeBahanBaku + '</span>';
+    var rmNameSpan = document.createElement('span');
+    rmNameSpan.className = 'font-medium text-gray-900';
+    rmNameSpan.textContent = namaDagang;
+    div.appendChild(rmNameSpan);
+    var rmKodeSpan = document.createElement('span');
+    rmKodeSpan.className = 'text-xs text-gray-500 font-mono bg-gray-100 px-1.5 py-0.5 rounded';
+    rmKodeSpan.textContent = kodeBahanBaku;
+    div.appendChild(rmKodeSpan);
     return div;
 }
 
@@ -1215,8 +1221,14 @@ document.getElementById('quick-add-brand-form').addEventListener('submit', async
         newOption.setAttribute('data-label', newBrandLabel);
         newOption.setAttribute('data-search', result.name.toLowerCase() + ' ' + result.producer_name.toLowerCase());
         newOption.setAttribute('onclick', 'selectBrandOption(this)');
-        newOption.innerHTML = '<span class="font-medium text-gray-900">' + result.name + '</span>' +
-            '<span class="text-xs text-gray-500">' + result.producer_name + '</span>';
+        var epBrandNameSpan = document.createElement('span');
+        epBrandNameSpan.className = 'font-medium text-gray-900';
+        epBrandNameSpan.textContent = result.name;
+        newOption.appendChild(epBrandNameSpan);
+        var epBrandProducerSpan = document.createElement('span');
+        epBrandProducerSpan.className = 'text-xs text-gray-500';
+        epBrandProducerSpan.textContent = result.producer_name;
+        newOption.appendChild(epBrandProducerSpan);
 
         document.querySelectorAll('.brand-options-list').forEach(function(list) {
             const noMatch = list.querySelector('.no-match-msg');

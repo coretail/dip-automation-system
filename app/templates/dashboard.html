@@ -742,8 +742,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 newOption.setAttribute('data-label', newBrandLabel);
                 newOption.setAttribute('data-search', result.name.toLowerCase() + ' ' + result.producer_name.toLowerCase());
                 newOption.setAttribute('onclick', 'selectBrandOption(this)');
-                newOption.innerHTML = '<span class="font-medium text-gray-900">' + result.name + '</span>' +
-                    '<span class="text-xs text-gray-500">' + result.producer_name + '</span>';
+                var qaNameSpan = document.createElement('span');
+                qaNameSpan.className = 'font-medium text-gray-900';
+                qaNameSpan.textContent = result.name;
+                newOption.appendChild(qaNameSpan);
+                var qaProducerSpan = document.createElement('span');
+                qaProducerSpan.className = 'text-xs text-gray-500';
+                qaProducerSpan.textContent = result.producer_name;
+                newOption.appendChild(qaProducerSpan);
 
                 document.querySelectorAll('.brand-options-list').forEach(function(list) {
                     const noMatch = list.querySelector('.no-match-msg');
