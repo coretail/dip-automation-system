@@ -3603,7 +3603,9 @@ async def create_sample_submission(
         prod_master = supabase.table("products").select("nama_produk", "perusahaan").eq("id", final_product_id).execute()
         if prod_master.data:
             final_product_name = prod_master.data[0]['nama_produk']
-            final_company = prod_master.data[0]['perusahaan']
+            # sample_submissions.company constraint: 'Erfi'|'Heka' (tanpa prefix "PT")
+            raw_company = (prod_master.data[0].get("perusahaan") or "").strip()
+            final_company = re.sub(r"(?i)^PT\s+", "", raw_company).strip()
         else:
             final_product_name = product_name
             final_company = company
