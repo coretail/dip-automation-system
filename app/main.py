@@ -4571,3 +4571,6 @@ register_raw_materials_routes(
     _parse_storage_url,
     _upload_msds_and_upsert_company_doc,
 )
+
+from app.po_routes import register_po_routes
+register_po_routes(app, get_current_user, log_activity, templates, get_ed_notification_count)

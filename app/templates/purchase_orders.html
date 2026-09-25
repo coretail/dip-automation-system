@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% block title %}Input PO / QC - DIP Builder{% endblock %}
+{% block content %}
+<div class="sm:flex sm:items-center sm:justify-between mb-6">
+<div>
+<h1 class="text-2xl font-bold text-gray-950">Input PO / QC</h1>
+<p class="mt-1 text-sm text-gray-500">Tambah item batch produksi ke PO existing atau PO baru. 1 form = 1 item.</p>
+</div>
+<div class="mt-4 sm:mt-0 flex gap-2">
+<button onclick="togglePoModal(true)" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 cursor-pointer">PO Baru</button>
+</div>
+</div>
+{% if success_msg %}
+<div class="mb-4 rounded-md bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">{{ success_msg }}</div>
+{% endif %}
+{% if error_msg %}
+<div class="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">{{ error_msg }}</div>
+{% endif %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+<form method="get" action="/purchase-orders" class="flex gap-2 mb-3">
+<input type="text" name="q" value="{{ q or '' }}" placeholder="Cari No. PO..." class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm">
+<button class="rounded-md bg-gray-900 text-white px-3 text-sm cursor-pointer">Cari</button>
+</form>
+<div class="max-h-[480px] overflow-y-auto divide-y divide-gray-100">
+{% for po in pos %}
+<a href="/purchase-orders?po_id={{ po.id }}{% if q %}&q={{ q }}{% endif %}" class="block px-3 py-2.5 rounded-lg transition {% if sel_po and sel_po.id == po.id %}bg-indigo-50 border border-indigo-200{% else %}hover:bg-indigo-50 border border-transparent{% endif %}">
+<div class="flex items-center justify-between gap-2">
+<span class="text-sm font-semibold text-gray-900 truncate">{{ po.no_po }}</span>
+{% if sel_po and sel_po.id == po.id %}<span class="text-[10px] font-bold text-indigo-600 bg-indigo-100 rounded px-1.5 py-0.5">AKTIF</span>{% endif %}
+</div>
+<div class="mt-0.5 text-[11px] text-gray-500">{{ po.tanggal_po or '-' }}{% if po.qty_pcs is not none %} &middot; {{ po.qty_pcs }} pcs{% endif %}</div>
+</a>
+{% else %}
+<div class="text-sm text-gray-400 py-8 text-center">Belum ada PO. Buat PO baru dulu.</div>
+{% endfor %}
+</div>
+</div>
+<div class="lg:col-span-2 space-y-6">
+{% if not sel_po %}
+<div class="bg-white rounded-xl shadow-sm border border-dashed border-gray-300 p-10 text-center text-sm text-gray-400">Pilih PO di kiri.</div>
+{% else %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+<div class="mb-3 flex flex-wrap items-start justify-between gap-2"><div><div class="text-lg font-bold text-gray-950">{{ sel_po.no_po }}</div><div class="mt-0.5 text-xs text-gray-500">Tgl PO: {{ sel_po.tanggal_po or '-' }}{% if sel_po.qty_pcs is not none %} &middot; Qty: {{ sel_po.qty_pcs }} pcs{% endif %} &middot; {{ items|length }} item &middot; Urutan berikutnya: {{ next_urutan }}</div></div><span class="text-[11px] font-semibold text-gray-500 bg-gray-100 rounded px-2 py-1">1 form = 1 item</span></div>
+<div class="overflow-x-auto border border-gray-200 rounded-lg">
+<table class="min-w-[1400px] w-full text-xs">
+<thead class="bg-gray-50 text-gray-500 uppercase text-[10px]"><tr><th class="px-2 py-2 text-left">#</th><th class="px-2 py-2 text-left">Tgl Catat</th><th class="px-2 py-2 text-left">Produk / NA</th><th class="px-2 py-2 text-left">Batch</th><th class="px-2 py-2 text-right">WIP</th><th class="px-2 py-2 text-left">Netto</th><th class="px-2 py-2 text-right">Qty kg</th><th class="px-2 py-2 text-left">Keterangan</th><th class="px-2 py-2 text-right">Blm SOP</th><th class="px-2 py-2 text-right">Qty PO kg</th><th class="px-2 py-2 text-left">BPOM</th><th class="px-2 py-2 text-left">Aksi</th></tr></thead>
+<tbody class="divide-y divide-gray-100">
+{% for it in items %}
+<tr class="hover:bg-gray-50 align-top"><td class="px-2 py-2 font-semibold">{{ it.urutan }}</td><td class="px-2 py-2 whitespace-nowrap">{{ it.tanggal_catatan_batch or '-' }}</td><td class="px-2 py-2"><div class="font-medium text-gray-900">{{ it.products.nama_produk if it.products else '-' }}</div><div class="text-[10px] text-gray-500 font-mono">{{ it.products.no_na_produk if it.products else '' }}</div></td><td class="px-2 py-2 font-mono font-semibold">{{ it.product_batches.no_batch if it.product_batches else '-' }}</td><td class="px-2 py-2 text-right">{{ it.wip if it.wip is not none else '-' }}</td><td class="px-2 py-2">{{ it.netto or '-' }}</td><td class="px-2 py-2 text-right">{{ it.qty_kg if it.qty_kg is not none else '-' }}</td><td class="px-2 py-2 max-w-[180px] truncate" title="{{ it.keterangan or '' }}">{{ it.keterangan or '-' }}</td><td class="px-2 py-2 text-right">{{ it.qty_belum_sop if it.qty_belum_sop is not none else '-' }}</td><td class="px-2 py-2 text-right">{{ it.qty_po_kg if it.qty_po_kg is not none else '-' }}</td><td class="px-2 py-2 max-w-[140px] truncate" title="{{ it.status_bpom or '' }}">{{ it.status_bpom or '-' }}</td><td class="px-2 py-2 whitespace-nowrap"><button type="button" onclick='openEditModal({{ it|tojson }})' class="text-indigo-600 hover:text-indigo-800 text-xs font-semibold mr-2 cursor-pointer">Edit</button><form method="post" action="/purchase-orders/{{ sel_po.id }}/items/{{ it.id }}/delete" class="inline" onsubmit="return confirm('Hapus item urutan {{ it.urutan }}?');"><button class="text-red-600 hover:text-red-800 text-xs font-semibold cursor-pointer">Hapus</button></form></td></tr>
+{% else %}
+<tr><td colspan="12" class="px-2 py-6 text-center text-gray-400">Belum ada item di PO ini. Tambahkan item pertama lewat form di bawah.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+<h2 class="text-sm font-bold text-gray-900 mb-1">Tambah Item — Urutan {{ next_urutan }}</h2>
+<p class="text-xs text-gray-500 mb-4">1 form = 1 item. Cari produk via No. NA (prioritas) / nama, lalu pilih batch. Kalau batch belum ada, buat via tombol Batch Baru.</p>
+<form method="post" action="/purchase-orders/{{ sel_po.id }}/items" class="space-y-4" id="addItemForm">
+<input type="hidden" name="product_id" id="ai_product_id" required>
+<input type="hidden" name="product_batch_id" id="ai_batch_id" required>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="relative">
+<label class="block text-xs font-semibold text-gray-700 mb-1">Produk (No. NA prioritas) *</label>
+<input type="text" id="ai_product_q" autocomplete="off" placeholder="Ketik NA / nama produk..." class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+<div id="ai_product_list" class="hidden absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto"></div>
+<p class="mt-1 text-[11px] text-gray-400" id="ai_product_hint">Pilih dari daftar — tidak bisa buat produk baru dari sini.</p>
+</div>
+<div class="relative">
+<label class="block text-xs font-semibold text-gray-700 mb-1">Batch *</label>
+<div class="flex gap-2">
+<input type="text" id="ai_batch_q" autocomplete="off" placeholder="Pilih produk dulu..." disabled class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none disabled:bg-gray-100">
+<button type="button" onclick="toggleBatchModal(true)" class="shrink-0 rounded-md bg-amber-500 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-400 cursor-pointer">Batch Baru</button>
+</div>
+<div id="ai_batch_list" class="hidden absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"></div>
+</div>
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Tgl Catatan Batch</label><input type="date" name="tanggal_catatan_batch" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">WIP</label><input type="number" step="any" name="wip" placeholder="0" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Netto</label><input type="text" name="netto" placeholder="cth: 100 ml" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Qty (kg)</label><input type="number" step="any" name="qty_kg" placeholder="0" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Qty Belum SOP</label><input type="number" step="any" name="qty_belum_sop" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Qty PO (kg)</label><input type="number" step="any" name="qty_po_kg" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Status BPOM</label><input type="text" name="status_bpom" placeholder="cth: Sudah BPOM" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Temporary Reject</label><input type="text" name="temporary_reject" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+</div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Keterangan</label><input type="text" name="keterangan" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Catatan Produksi</label><textarea name="catatan_produksi" rows="2" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"></textarea></div>
+<div><label class="block text-xs font-semibold text-gray-700 mb-1">Revisi Produksi</label><textarea name="revisi_produksi" rows="2" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"></textarea></div>
+<div class="flex justify-end"><button class="rounded-md bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 cursor-pointer">Simpan Item #{{ next_urutan }}</button></div>
+</form>
+</div>
+{% endif %}
+</div>
+</div>
+
+<div id="poModal" class="hidden fixed inset-0 z-30 bg-black/40 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-lg w-full max-w-md p-5">
+<div class="flex items-center justify-between mb-3"><h3 class="font-bold">Buat PO Baru</h3><button type="button" onclick="togglePoModal(false)" class="text-gray-400 text-xl">×</button></div>
+<form method="post" action="/purchase-orders" class="space-y-3">
+<div><label class="block text-xs font-semibold mb-1">No. PO *</label><input type="text" name="no_po" required placeholder="cth: 203/PO-ERFI/VII/26" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"></div>
+<div class="grid grid-cols-2 gap-3">
+<div><label class="block text-xs font-semibold mb-1">Tgl PO</label><input type="date" name="tanggal_po" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Qty (pcs)</label><input type="number" step="any" name="qty_pcs" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+</div>
+<div class="flex justify-end gap-2"><button type="button" onclick="togglePoModal(false)" class="px-4 py-2 text-sm text-gray-500">Batal</button><button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Simpan PO</button></div>
+</form>
+</div>
+</div>
+<div id="batchModal" class="hidden fixed inset-0 z-30 bg-black/40 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-lg w-full max-w-md p-5">
+<div class="flex items-center justify-between mb-3"><h3 class="font-bold">Batch Baru</h3><button type="button" onclick="toggleBatchModal(false)" class="text-gray-400 text-xl">×</button></div>
+<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3" id="batchModalHint">Pilih produk dulu di form atas.</p>
+<form method="post" action="/product-batches" class="space-y-3">
+<input type="hidden" name="product_id" id="bm_product_id">
+<input type="hidden" name="po_id" value="{{ sel_po.id if sel_po else '' }}">
+<div><label class="block text-xs font-semibold mb-1">No. Batch *</label><input type="text" name="no_batch" required class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono"></div>
+<div class="grid grid-cols-2 gap-3">
+<div><label class="block text-xs font-semibold mb-1">Tgl Produksi</label><input type="date" name="tanggal_produksi" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Tgl ED</label><input type="date" name="tanggal_ed" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+</div>
+<div class="flex justify-end gap-2"><button type="button" onclick="toggleBatchModal(false)" class="px-4 py-2 text-sm text-gray-500">Batal</button><button class="rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white">Simpan Batch</button></div>
+</form>
+</div>
+</div>
+<div id="editModal" class="hidden fixed inset-0 z-30 bg-black/40 flex items-center justify-center p-4">
+<div class="bg-white rounded-xl shadow-lg w-full max-w-2xl p-5 max-h-[90vh] overflow-y-auto">
+<div class="flex items-center justify-between mb-3"><h3 class="font-bold">Edit Item <span id="em_urutan" class="text-indigo-600"></span></h3><button type="button" onclick="toggleEditModal(false)" class="text-gray-400 text-xl">×</button></div>
+<form method="post" id="editForm" class="space-y-3">
+<input type="hidden" name="product_id" id="em_product_id">
+<input type="hidden" name="product_batch_id" id="em_batch_id">
+<div class="grid grid-cols-2 gap-3">
+<div><label class="block text-xs font-semibold mb-1">Produk</label><input type="text" id="em_product_txt" readonly class="block w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Batch</label><input type="text" id="em_batch_txt" readonly class="block w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-mono"></div>
+<div><label class="block text-xs font-semibold mb-1">Tgl Catatan</label><input type="date" name="tanggal_catatan_batch" id="em_tgl" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">WIP</label><input type="number" step="any" name="wip" id="em_wip" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Netto</label><input type="text" name="netto" id="em_netto" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Qty kg</label><input type="number" step="any" name="qty_kg" id="em_qtykg" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Qty Belum SOP</label><input type="number" step="any" name="qty_belum_sop" id="em_blmsop" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Qty PO kg</label><input type="number" step="any" name="qty_po_kg" id="em_qtypokg" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Status BPOM</label><input type="text" name="status_bpom" id="em_bpom" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Temporary Reject</label><input type="text" name="temporary_reject" id="em_reject" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"></div>
+</div>
+<div><label class="block text-xs font-semibold mb-1">Keterangan</label><input type="text" name="keterangan" id="em_ket" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"></div>
+<div><label class="block text-xs font-semibold mb-1">Catatan Produksi</label><textarea name="catatan_produksi" id="em_catprod" rows="2" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"></textarea></div>
+<div><label class="block text-xs font-semibold mb-1">Revisi Produksi</label><textarea name="revisi_produksi" id="em_revisi" rows="2" class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm"></textarea></div>
+<div class="flex justify-end gap-2"><button type="button" onclick="toggleEditModal(false)" class="px-4 py-2 text-sm text-gray-500">Batal</button><button class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Simpan Perubahan</button></div>
+</form>
+</div>
+</div>
+<script>
+function togglePoModal(s){document.getElementById('poModal').classList.toggle('hidden',!s);}
+function toggleBatchModal(s){var m=document.getElementById('batchModal');if(m)m.classList.toggle('hidden',!s);if(s){var pid=document.getElementById('ai_product_id').value;document.getElementById('bm_product_id').value=pid;var q=document.getElementById('ai_product_q').value;document.getElementById('batchModalHint').textContent=pid?('Batch baru utk: '+q):'Pilih produk dulu di form atas.';}}
+function toggleEditModal(s){document.getElementById('editModal').classList.toggle('hidden',!s);}
+function openEditModal(it){var poId="{{ sel_po.id if sel_po else '' }}";document.getElementById('editForm').action="/purchase-orders/"+poId+"/items/"+it.id+"/update";document.getElementById('em_urutan').textContent="#"+it.urutan;document.getElementById('em_product_id').value=it.product_id||'';document.getElementById('em_batch_id').value=it.product_batch_id||'';document.getElementById('em_product_txt').value=(it.products?(it.products.nama_produk||'')+' ('+(it.products.no_na_produk||'')+')':'');document.getElementById('em_batch_txt').value=it.product_batches?(it.product_batches.no_batch||''):'';document.getElementById('em_tgl').value=it.tanggal_catatan_batch||'';document.getElementById('em_wip').value=(it.wip==null?'':it.wip);document.getElementById('em_netto').value=it.netto||'';document.getElementById('em_qtykg').value=(it.qty_kg==null?'':it.qty_kg);document.getElementById('em_ket').value=it.keterangan||'';document.getElementById('em_blmsop').value=(it.qty_belum_sop==null?'':it.qty_belum_sop);document.getElementById('em_qtypokg').value=(it.qty_po_kg==null?'':it.qty_po_kg);document.getElementById('em_bpom').value=it.status_bpom||'';document.getElementById('em_catprod').value=it.catatan_produksi||'';document.getElementById('em_revisi').value=it.revisi_produksi||'';document.getElementById('em_reject').value=it.temporary_reject||'';toggleEditModal(true);}
+(function(){
+var pq=document.getElementById('ai_product_q'),pl=document.getElementById('ai_product_list'),pid=document.getElementById('ai_product_id'),bq=document.getElementById('ai_batch_q'),bl=document.getElementById('ai_batch_list'),bid=document.getElementById('ai_batch_id'),hint=document.getElementById('ai_product_hint');
+if(!pq)return;
+var t=null;
+function hide(el){if(el)el.classList.add('hidden');}
+function show(el){if(el)el.classList.remove('hidden');}
+pq.addEventListener('input',function(){clearTimeout(t);var q=pq.value.trim();pid.value='';bid.value='';if(bq){bq.value='';bq.disabled=true;bq.placeholder='Pilih produk dulu...';}if(hint)hint.textContent='Pilih dari daftar.';if(q.length<2){hide(pl);return;}t=setTimeout(function(){fetch('/api/po/products?q='+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){var arr=(d.items||[]);if(!arr.length){pl.innerHTML='<div class="px-3 py-2 text-xs text-gray-400">Tidak ketemu. Produk tidak bisa dibuat dari sini.</div>';show(pl);return;}pl.innerHTML='';arr.forEach(function(p){var b=document.createElement('button');b.type='button';b.className='block w-full text-left px-3 py-2 hover:bg-indigo-50';b.innerHTML='<div class="text-xs font-semibold">'+p.nama_produk+'</div><div class="text-[10px] font-mono text-indigo-600">'+p.no_na_produk+'</div>';b.onclick=function(){pid.value=p.id;pq.value=p.nama_produk+' ('+p.no_na_produk+')';hide(pl);if(hint)hint.textContent='Terpilih: '+p.no_na_produk;if(bq){bq.disabled=false;bq.placeholder='Ketik no. batch...';bq.focus();}};pl.appendChild(b);});show(pl);}).catch(function(){hide(pl);});},250);});
+document.addEventListener('click',function(e){if(pl&&!pl.contains(e.target)&&e.target!==pq)hide(pl);if(bl&&!bl.contains(e.target)&&e.target!==bq)hide(bl);});
+if(bq){var t2=null;bq.addEventListener('input',function(){clearTimeout(t2);var q=bq.value.trim();bid.value='';if(!pid.value||q.length<1){hide(bl);return;}t2=setTimeout(function(){fetch('/api/po/batches?product_id='+encodeURIComponent(pid.value)).then(function(r){return r.json();}).then(function(d){var arr=(d.items||[]).filter(function(x){return !q||(x.no_batch||'').toLowerCase().indexOf(q.toLowerCase())>=0;});if(!arr.length){bl.innerHTML='<div class="px-3 py-2 text-xs text-gray-400">Batch belum ada — klik Batch Baru.</div>';show(bl);return;}bl.innerHTML='';arr.forEach(function(x){var b=document.createElement('button');b.type='button';b.className='block w-full text-left px-3 py-2 hover:bg-indigo-50 font-mono text-xs font-semibold';b.textContent=x.no_batch+(x.tanggal_produksi?' — '+x.tanggal_produksi:'');b.onclick=function(){bid.value=x.id;bq.value=x.no_batch;hide(bl);};bl.appendChild(b);});show(bl);});},200);});bq.addEventListener('focus',function(){if(pid.value&&!bq.value){bq.dispatchEvent(new Event('input'));}});}
+var f=document.getElementById('addItemForm');if(f)f.addEventListener('submit',function(e){if(!pid.value||!bid.value){e.preventDefault();alert('Pilih Produk dan Batch dari daftar dulu.');}});
+})();
+</script>
+{% endblock %}

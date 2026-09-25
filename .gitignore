@@ -68,3 +68,7 @@ skills-lock.json
 .vscode/mcp.json
 .mcp.json
 !.vscode/settings.json
+
+# Migration (local only, contains sensitive data)
+/migration/
+migration/
