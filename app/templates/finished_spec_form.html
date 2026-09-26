@@ -126,22 +126,47 @@
     function createRowElement(rowData = {parameter: '', spesifikasi: '', metode: ''}) {
         const tr = document.createElement('tr');
         tr.className = 'group';
-        tr.innerHTML = `
-            <td class="p-2">
-                <input type="text" value="${rowData.parameter || ''}" placeholder="Parameter" class="row-parameter w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:border-indigo-500 outline-none">
-            </td>
-            <td class="p-2">
-                <input type="text" value="${rowData.spesifikasi || ''}" placeholder="Spesifikasi" class="row-spesifikasi w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:border-indigo-500 outline-none">
-            </td>
-            <td class="p-2">
-                <input type="text" value="${rowData.metode || ''}" placeholder="Metode" class="row-metode w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:border-indigo-500 outline-none">
-            </td>
-            <td class="p-2 text-center">
-                <button type="button" onclick="this.closest('tr').remove()" class="text-gray-400 hover:text-red-600 transition-colors">
-                    <i class="fa-solid fa-trash-can"></i>
-                </button>
-            </td>
-        `;
+
+        const inputClass = 'w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:border-indigo-500 outline-none';
+
+        // Nilai dari DB/user di-set lewat properti .value, bukan lewat string innerHTML,
+        // supaya karakter kutip / tag tidak bisa memutus atribut atau menyisipkan HTML.
+        [
+            ['row-parameter', 'Parameter', rowData.parameter],
+            ['row-spesifikasi', 'Spesifikasi', rowData.spesifikasi],
+            ['row-metode', 'Metode', rowData.metode]
+        ].forEach(function (col) {
+            const td = document.createElement('td');
+            td.className = 'p-2';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = col[2] || '';
+            input.placeholder = col[1];
+            input.className = col[0] + ' ' + inputClass;
+
+            td.appendChild(input);
+            tr.appendChild(td);
+        });
+
+        const actionTd = document.createElement('td');
+        actionTd.className = 'p-2 text-center';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'text-gray-400 hover:text-red-600 transition-colors';
+
+        const removeIcon = document.createElement('i');
+        removeIcon.className = 'fa-solid fa-trash-can';
+        removeBtn.appendChild(removeIcon);
+
+        removeBtn.addEventListener('click', function () {
+            tr.remove();
+        });
+
+        actionTd.appendChild(removeBtn);
+        tr.appendChild(actionTd);
+
         return tr;
     }
 
@@ -151,32 +176,80 @@
         sectionDiv.className = 'section-card p-5 bg-gray-50 border border-gray-200 rounded-lg relative transition-all hover:border-gray-300';
         sectionDiv.id = sectionId;
         
-        sectionDiv.innerHTML = `
-            <button type="button" onclick="this.closest('.section-card').remove()" class="absolute top-4 right-4 text-gray-400 hover:text-red-600 p-1">
-                <i class="fa-solid fa-xmark text-lg"></i>
-            </button>
-            <div class="mb-4 pr-8">
-                <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Judul Section</label>
-                <input type="text" value="${sectionData.title || ''}" placeholder="Contoh: Pemerian, Uji Mikrobiologi, dll" class="section-title w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none font-semibold">
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full border-collapse">
-                    <thead>
-                        <tr class="bg-gray-100">
-                            <th class="p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/3">Parameter</th>
-                            <th class="p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/3">Spesifikasi</th>
-                            <th class="p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/4">Metode</th>
-                            <th class="p-2 w-10"></th>
-                        </tr>
-                    </thead>
-                    <tbody class="rows-container">
-                    </tbody>
-                </table>
-            </div>
-            <button type="button" onclick="addRowToSection('${sectionId}')" class="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
-                <i class="fa-solid fa-plus-circle"></i> Tambah Baris
-            </button>
-        `;
+        // ===== Header: tombol hapus section =====
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'absolute top-4 right-4 text-gray-400 hover:text-red-600 p-1';
+        const closeIcon = document.createElement('i');
+        closeIcon.className = 'fa-solid fa-xmark text-lg';
+        closeBtn.appendChild(closeIcon);
+        closeBtn.addEventListener('click', function () {
+            sectionDiv.remove();
+        });
+        sectionDiv.appendChild(closeBtn);
+
+        // ===== Input judul section =====
+        // Nilai judul dari DB/user di-set lewat .value agar tidak bisa memutus atribut HTML.
+        const titleWrap = document.createElement('div');
+        titleWrap.className = 'mb-4 pr-8';
+
+        const titleLabel = document.createElement('label');
+        titleLabel.className = 'block text-xs font-bold text-gray-600 uppercase mb-1';
+        titleLabel.textContent = 'Judul Section';
+
+        const titleInput = document.createElement('input');
+        titleInput.type = 'text';
+        titleInput.value = sectionData.title || '';
+        titleInput.placeholder = 'Contoh: Pemerian, Uji Mikrobiologi, dll';
+        titleInput.className = 'section-title w-full md:w-1/2 px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none font-semibold';
+
+        titleWrap.appendChild(titleLabel);
+        titleWrap.appendChild(titleInput);
+        sectionDiv.appendChild(titleWrap);
+
+        // ===== Tabel parameter =====
+        const tableWrap = document.createElement('div');
+        tableWrap.className = 'overflow-x-auto';
+
+        const table = document.createElement('table');
+        table.className = 'w-full border-collapse';
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        headRow.className = 'bg-gray-100';
+        [
+            ['Parameter', 'p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/3'],
+            ['Spesifikasi', 'p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/3'],
+            ['Metode', 'p-2 text-left text-[10px] font-bold text-gray-500 uppercase w-1/4'],
+            ['', 'p-2 w-10']
+        ].forEach(function (head) {
+            const th = document.createElement('th');
+            th.className = head[1];
+            th.textContent = head[0];
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        tbody.className = 'rows-container';
+        table.appendChild(tbody);
+
+        tableWrap.appendChild(table);
+        sectionDiv.appendChild(tableWrap);
+
+        // ===== Tombol tambah baris =====
+        const addRowBtn = document.createElement('button');
+        addRowBtn.type = 'button';
+        addRowBtn.className = 'mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors';
+        const addRowIcon = document.createElement('i');
+        addRowIcon.className = 'fa-solid fa-plus-circle';
+        addRowBtn.appendChild(addRowIcon);
+        addRowBtn.appendChild(document.createTextNode(' Tambah Baris'));
+        addRowBtn.addEventListener('click', function () {
+            addRowToSection(sectionId);
+        });
+        sectionDiv.appendChild(addRowBtn);
         
         const rowsContainer = sectionDiv.querySelector('.rows-container');
         if (sectionData.rows && sectionData.rows.length > 0) {

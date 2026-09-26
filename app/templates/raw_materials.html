@@ -1312,6 +1312,49 @@ function escapeHtmlText(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Validasi URL dokumen (MSDS / spec sheet) sebelum dipasang ke <a href>.
+// Hanya izinkan http/https (dan URL relatif same-origin) supaya skema
+// berbahaya seperti "javascript:" / "data:" tidak bisa dieksekusi.
+function safeDocUrl(rawUrl) {
+    const url = String(rawUrl ?? '').trim();
+    if (!url) return '';
+    try {
+        const parsed = new URL(url, window.location.origin);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return url;
+    } catch (e) {
+        // URL tidak valid -> jangan dipakai
+    }
+    return '';
+}
+
+// Render catatan status upload MSDS / PDF spesifikasi tanpa innerHTML.
+// - Kalau `url` kosong: tampilkan teks biasa di dalam <span class="fallbackClass">.
+// - Kalau `url` ada: teks pembuka + link "lihat file" + teks penutup.
+function renderDocUploadNote(container, leadText, url, trailText, fallbackClass) {
+    if (!container) return;
+    container.textContent = '';
+
+    if (!url) {
+        const span = document.createElement('span');
+        span.className = fallbackClass || '';
+        span.textContent = leadText;
+        container.appendChild(span);
+        return;
+    }
+
+    container.appendChild(document.createTextNode(leadText));
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'text-indigo-600 underline';
+    link.textContent = 'lihat file';
+    container.appendChild(link);
+
+    container.appendChild(document.createTextNode(trailText || ''));
+}
+
 function componentsOfVariant(variantId) {
     const v = editingVariants.find(x => x.id === variantId);
     if (v) return v.raw_material_components || [];
@@ -1613,17 +1656,19 @@ function openEditModal(rm) {
         document.getElementById(`edit_spec_penyimpanan_${slug}`).value = specMap['Cara Penyimpanan'] || '';
 
         const msdsNote = document.getElementById(`msds_current_${slug}`);
-        if (doc.msds_file_url) {
-            msdsNote.innerHTML = `MSDS ${label} udah ke-upload: <a href="${doc.msds_file_url}" target="_blank" class="text-indigo-600 underline">lihat file</a>. Upload file baru buat ganti.`;
+        const msdsUrl = safeDocUrl(doc.msds_file_url);
+        if (msdsUrl) {
+            renderDocUploadNote(msdsNote, `MSDS ${label} udah ke-upload: `, msdsUrl, `. Upload file baru buat ganti.`, '');
         } else {
-            msdsNote.innerHTML = `<span class="text-amber-600">Belum ada MSDS buat ${label}.</span>`;
+            renderDocUploadNote(msdsNote, `Belum ada MSDS buat ${label}.`, '', '', 'text-amber-600');
         }
 
         const specSheetNote = document.getElementById(`spec_sheet_current_${slug}`);
-        if (doc.spec_sheet_file_url) {
-            specSheetNote.innerHTML = `PDF Spesifikasi Asli ${label} udah ke-upload: <a href="${doc.spec_sheet_file_url}" target="_blank" class="text-indigo-600 underline">lihat file</a>. Upload file baru buat ganti.`;
+        const specSheetUrl = safeDocUrl(doc.spec_sheet_file_url);
+        if (specSheetUrl) {
+            renderDocUploadNote(specSheetNote, `PDF Spesifikasi Asli ${label} udah ke-upload: `, specSheetUrl, `. Upload file baru buat ganti.`, '');
         } else {
-            specSheetNote.innerHTML = `<span class="text-gray-400">Belum ada PDF asli, bakal dipakai versi generate dari field di atas.</span>`;
+            renderDocUploadNote(specSheetNote, `Belum ada PDF asli, bakal dipakai versi generate dari field di atas.`, '', '', 'text-gray-400');
         }
     });
     // ============================================================================================
@@ -1790,18 +1835,36 @@ function openAddBatchModal(id, namaDagang, perusahaan) {
 
             const row = document.createElement('div');
             row.className = "flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-200 pb-2 last:border-b-0 last:pb-0";
-            row.innerHTML = `
-                <div class="w-full sm:w-1/2">
-                    <span class="block text-xs font-semibold text-gray-800">${spec.key}</span>
-                    <span class="block text-[11px] text-gray-500 italic">Standar: ${spec.value || '-'}</span>
-                </div>
-                <div class="w-full sm:w-1/2">
-                    <input type="text" 
-                           data-key="${spec.key}" 
-                           class="qc-actual-input block w-full rounded-md border border-gray-300 py-1 px-2 text-xs focus:outline-none focus:border-indigo-500 shadow-sm" 
-                           placeholder="Masukkan hasil aktual laboratorium...">
-                </div>
-            `;
+
+            // Label standar (spec.key / spec.value berasal dari DB) dipasang lewat
+            // textContent, dan data-key lewat setAttribute -> nilai apa pun aman.
+            const labelCol = document.createElement('div');
+            labelCol.className = 'w-full sm:w-1/2';
+
+            const keySpan = document.createElement('span');
+            keySpan.className = 'block text-xs font-semibold text-gray-800';
+            keySpan.textContent = spec.key;
+
+            const valueSpan = document.createElement('span');
+            valueSpan.className = 'block text-[11px] text-gray-500 italic';
+            valueSpan.textContent = 'Standar: ' + (spec.value || '-');
+
+            labelCol.appendChild(keySpan);
+            labelCol.appendChild(valueSpan);
+
+            const inputCol = document.createElement('div');
+            inputCol.className = 'w-full sm:w-1/2';
+
+            const actualInput = document.createElement('input');
+            actualInput.type = 'text';
+            actualInput.setAttribute('data-key', spec.key);
+            actualInput.className = 'qc-actual-input block w-full rounded-md border border-gray-300 py-1 px-2 text-xs focus:outline-none focus:border-indigo-500 shadow-sm';
+            actualInput.placeholder = 'Masukkan hasil aktual laboratorium...';
+
+            inputCol.appendChild(actualInput);
+
+            row.appendChild(labelCol);
+            row.appendChild(inputCol);
             container.appendChild(row);
         });
     }
