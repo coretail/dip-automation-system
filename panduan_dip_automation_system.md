@@ -1,6 +1,6 @@
 # Panduan Lengkap & Komprehensif: DIP Automation System
 
-**TL;DR:** DIP Automation System adalah aplikasi web untuk sentralisasi data bahan baku, manajemen formula, dan otomatisasi pembuatan Dokumen Informasi Produk (DIP) kosmetik sesuai pedoman BPOM dan ASEAN Cosmetic Directive (ACD). Mendukung dua entitas hukum (PT Erfi & PT Heka) dengan data terpisah per perusahaan, menerapkan RBAC (Admin/Staff), menyimpan berkas di Supabase Storage, dan menghasilkan output berupa PDF gabungan atau folder ZIP terstruktur untuk Bab II. Fitur penting: Formula Builder (total harus 100% w/w), manajemen batch & CoA, public permalink untuk verifikasi BPOM, audit trail (`activity_logs`), pembatasan unggah 10 MB per file, serta integrasi teknis dengan `xhtml2pdf`, `pypdf`, dan SheetJS.
+**TL;DR:** DIP Automation System adalah aplikasi web untuk sentralisasi data bahan baku, manajemen formula, dan otomatisasi pembuatan Dokumen Informasi Produk (DIP) kosmetik sesuai pedoman BPOM dan ASEAN Cosmetic Directive (ACD). Mendukung dua entitas hukum (PT Erfi & PT Heka) dengan data terpisah per perusahaan, menerapkan RBAC (Admin/Staff), menyimpan berkas di Supabase Storage, dan menghasilkan output berupa PDF gabungan atau folder ZIP terstruktur untuk Bab II. Fitur penting: Formula Builder (total harus 100% w/w), manajemen batch & CoA, input produksi (PO & batch produk), catatan kerja tim (Notes dengan @mention), laporan monitoring efek samping (NIES) per semester, public permalink untuk verifikasi BPOM, audit trail (`activity_logs`), pembatasan unggah 10 MB per file, serta integrasi teknis dengan `xhtml2pdf`, `pypdf`, dan `openpyxl`.
 
 ---
 
@@ -18,6 +18,8 @@ Dokumen ini merupakan panduan operasional dan dokumentasi teknis komprehensif un
 7. [FAQ & Troubleshooting](#7-faq--troubleshooting)
 8. [Panduan Pemeliharaan & Bantuan](#8-panduan-pemeliharaan--bantuan)
 
+> **Ringkasan isi Tahap 4 (section 4.x):** 4.1 Master Data Bahan Baku · 4.2 Manajemen Batch · 4.3 Brand · 4.4 Formula Builder · 4.5 Edit Produk Multi-Tab · 4.6 **Generasi & Ekspor Dokumen (PDF Gabungan vs ZIP)** · 4.7 Portal Public Link · 4.8 FSP · 4.9 **Input Produksi (PO & Batch)** · 4.10 **Notes Tim** · 4.11 **Monitoring Efek Samping (NIES)**
+
 ---
 
 ## 1. Pendahuluan & Konsep Dasar
@@ -28,6 +30,8 @@ Sebelum adanya DIP Automation System, penyusunan Dokumen Informasi Produk (DIP) 
 **DIP Automation System** dibangun sebagai solusi sentralisasi data dan otomatisasi pembuatan berkas DIP secara digital. Tujuan utama sistem ini adalah:
 - **Sentralisasi Master Data:** mengintegrasikan seluruh database bahan baku, komponen INCI, batch CoA, sertifikat halal, MSDS, serta data legalitas perusahaan.
 - **Otomatisasi Kompilasi Dokumen:** menggenerasi dokumen Bab I (Administrasi), Bab II (Mutu Bahan Baku), Bab III (Mutu Produk Jadi), dan Bab IV (Keamanan Produk) secara otomatis dalam bentuk PDF siap cetak atau arsip ZIP.
+- **Dukungan Operasional Harian:** mencatat penerimaan & produksi lewat Purchase Order dan batch produk, serta catatan kerja tim antar departemen lewat Notes ber-`@mention`.
+- **Cosmetovigilance:** menyusun laporan monitoring efek samping (NIES) per semester untuk setiap produk.
 - **Transparansi & Efisiensi Verifikasi:** menyediakan *Public Link Verification Hub* yang aman untuk peninjauan langsung oleh verifikator BPOM tanpa proses penyerahan berkas fisik berulang.
 - **Akurasi & Integritas Data:** menjamin perhitungan persentase formula (*Qualitative-Quantitative*) serta breakdown komponen bahan baku akurat 100%.
 
@@ -60,8 +64,11 @@ Sistem menerapkan mekanisme *Role-Based Access Control (RBAC)* dengan 2 tingkat 
 
 ### 2.2 Autentikasi Dual & HTTP-Only Cookie JWT
 - **Login Dual-Identifier:** pengguna dapat masuk menggunakan **Email** maupun **Username**.
-- **Sesi Keamanan JWT:** token autentikasi disimpan dalam cookie `HTTP-Only` (`access_token`, `SameSite=Lax`), melindungi dari pencurian token lewat *Cross-Site Scripting (XSS)*. Masa berlaku sesi adalah **4 jam**, setelah itu pengguna perlu login ulang.
+  - > ⚠️ **Catatan teknis:** input "username" sebenarnya dicocokkan ke kolom `profiles.full_name` — tidak ada kolom `username` terpisah. Bila identifier tidak mengandung `@` dan tidak ditemukan di `profiles`, sistem masih memakai fallback domain kantor yang hardcoded `@erfi.com`. Konsekuensinya: **user PT Heka yang belum terdaftar di `profiles` tidak bisa login lewat username** — gunakan email resmi sampai fallback ini diperbaiki.
+- **Sesi Keamanan JWT:** token autentikasi disimpan dalam cookie `HTTP-Only` (`access_token`, `SameSite=Lax`), melindungi dari pencurian token lewat *Cross-Site Scripting (XSS)*. Token JWT berlaku **4 jam**, setelah itu pengguna perlu login ulang. (Catatan: cookie `access_token` sendiri diberi masa simpan 24 jam, namun isinya tidak berlaku lagi setelah JWT kedaluwarsa.)
 - **Deteksi Sesi Expired:** jika sesi habis, sistem menampilkan peringatan (*session expired*) dan mengarahkan kembali ke halaman login secara otomatis.
+- **Proteksi Brute-Force:** endpoint `POST /login` dibatasi maksimal **5 percobaan per menit per IP** memakai `slowapi`, dengan alert + countdown timer di halaman login.
+- **Sapaan AI (opsional):** saat login, sistem membangkitkan satu kalimat sapaan melalui Google Gemini API dan menyimpannya di cookie `greeting_cache` (4 jam) supaya tidak dipanggil ulang tiap buka dashboard. Fitur ini **nonaktif otomatis** bila `GEMINI_API_KEY` tidak diisi.
 
 ### 2.3 Panel Admin User (`/admin/users`) & Audit Logging
 Melalui menu **Kelola User** (khusus role Admin), Admin dapat:
@@ -69,8 +76,14 @@ Melalui menu **Kelola User** (khusus role Admin), Admin dapat:
 2. **Reset Password** — mengubah password akun pengguna.
 3. **Ubah Role Pengguna** — mengalihkan role antara Staff dan Admin.
 4. **Hapus User** — menghapus akses akun dari database.
-5. **Monitor Online/Offline** — kolom Status di daftar user menampilkan apakah anggota sedang Online (heartbeat aktif) atau Offline beserta waktu last seen. Status di-refresh otomatis setiap 15 detik. Logout membuat user langsung Offline; menutup tab tanpa logout otomatis Offline setelah ~90 detik.
-6. **Activity Log Integration** — seluruh aktivitas penting (pembuatan/pengeditan/penghapusan bahan baku & produk) tercatat pada tabel `activity_logs` di Supabase, dan sekaligus ditampilkan di terminal server dengan format timestamp WIB (*Asia/Jakarta*) untuk pemantauan cepat.
+5. **Monitor Online/Idle/Offline** — kolom Status di daftar user menampilkan satu dari tiga status berikut, lengkap dengan badge warna, filter, dan counter:
+   - 🟢 **Online** — heartbeat kiriman dalam **≤ 90 detik**.
+   - 🟡 **Idle** — masih terhubung dan heartbeat masih segar, tetapi **tidak ada aktivitas pengguna ≤ 5 menit** (mis. tab ditinggal terbuka). Heartbeat tetap berjalan, jadi status Idle bukan berarti koneksi putus.
+   - ⚪ **Offline** — heartbeat berhenti; Logout membuat user langsung Offline, sedangkan menutup tab tanpa logout otomatis Offline setelah **± 90 detik**.
+   
+   Status di-refresh otomatis setiap 15 detik, dan refresh otomatis berhenti saat tab tidak terlihat.
+6. **Akun Terproteksi** — akun yang ditandai `is_protected` **tidak dapat** diubah role, di-reset password, maupun dihapus oleh admin lain. Tampilan halaman menampilkan peringatan bahwa akun tersebut terkunci.
+7. **Activity Log Integration** — seluruh aktivitas penting (pembuatan/pengeditan/penghapusan bahan baku, produk, PO, item PO, generate laporan) tercatat pada tabel `activity_logs` di Supabase, dan sekaligus ditampilkan di terminal server dengan format timestamp WIB (*Asia/Jakarta*) untuk pemantauan cepat.
 
 ---
 
@@ -80,7 +93,8 @@ Melalui menu **Kelola User** (khusus role Admin), Admin dapat:
 
 ```
 TAHAP 1 — SETUP MASTER DATA
-  • Input Bahan Baku (Nama Dagang, Kode, Tipe, Produsen, komponen INCI/CAS)
+  • Input Bahan Baku (Nama Dagang, Kode, Tipe, Produsen, komponen INCI/CAS,
+    varian komposisi bila tipe Komposit)
   • Upload Spesifikasi & MSDS per perusahaan (PT Erfi / PT Heka)
   • Input Brand & upload Hak/Lisensi Merk
         |
@@ -88,12 +102,18 @@ TAHAP 1 — SETUP MASTER DATA
 TAHAP 2 — MANAJEMEN BATCH BAHAN BAKU
   • Input Batch (No. Batch, tanggal terima/sampling/ED, per perusahaan)
   • Upload CoA, Sertifikat Halal, Catatan Pemeriksaan & hasil uji lab aktual
+  • Tandai batch: Dipakai (CONDOH) / Dimusnahkan
         |
         v
 TAHAP 3 — PEMBUATAN PRODUK & FORMULA
   • Tambah Produk (perusahaan, brand, customer, sediaan, netto)
   • Racik formula (Formula Builder) — total wajib 100.000%
   • Sistem otomatis breakdown komponen INCI dari formula
+        |
+        v
+TAHAP 3b — INPUT PRODUKSI (opsional, tim QC)
+  • Buat Purchase Order & batch produk jadi (Produksi)
+  • Catat item PO per batch: WIP, netto, qty, status BPOM, catatan produksi
         |
         v
 TAHAP 4 — DOKUMENTASI BAB I - IV (multi-tab dalam 1 halaman edit produk)
@@ -108,6 +128,11 @@ TAHAP 5 — GENERASI & EKSPOR DOKUMEN
   • Bab I, III, IV -> PDF gabungan
   • Bab II -> PDF gabungan ATAU folder ZIP per bahan baku
   • Formula -> Export Excel (Qual-Quan) & cetak PDF
+        |
+        v
+TAHAP 5b — MONITORING EFEK SAMPING (NIES, per semester)
+  • Dari Tab Bab 4, generate laporan cosmetovigilance
+  • Ditambahkan (append) ke PDF sebelumnya per produk
         |
         v
 TAHAP 6 — SHARING LINK PUBLIK VERIFIKATOR BPOM (opsional)
@@ -139,10 +164,11 @@ Sebelum membuat formula produk, seluruh data bahan baku wajib terdaftar di dalam
    - Tipe (*Single* atau *Komposit*).
    - Produsen (opsional).
 4. **Isi Komposisi Komponen INCI** (kalau tipe *Komposit*): Nama INCI, Nomor CAS, Fungsi, dan persentase internal komponen dalam bahan baku.
+   - **Varian Komposisi:** bahan baku Komposit bisa punya lebih dari satu varian komposisi, dan satu varian ditandai sebagai **default**. Baris formula dapat menunjuk varian tertentu lewat `variant_id`, sehingga INCI breakdown report dan Qual-Quan mengikuti varian yang dipilih. Tambah varian, set default, dan hapus varian dilakukan dari halaman bahan baku. Varian yang sudah dipakai di formula tidak bisa dihapus.
 5. **Isi Dokumen & Spesifikasi Per Perusahaan** — pilih tab **PT Erfi** atau **PT Heka**, lalu lengkapi:
    - Spesifikasi standar (pemerian, aroma, pH, viskositas, masa kedaluwarsa, cara penyimpanan, referensi).
    - Upload **MSDS** (PDF, maks 10 MB).
-   - Upload **PDF Spesifikasi Asli dari Supplier** (opsional — kalau ada, ini yang dipakai langsung saat generate ZIP Bab II, bukan versi hasil ketikan).
+   - Upload **PDF Spesifikasi Asli dari Supplier** (opsional di sisi data, tapi **wajib ada** kalau ingin section Spek muncul di PDF gabungan Bab II — lihat §4.6).
    - Boleh diisi salah satu perusahaan dulu, tab satunya bisa disusulkan belakangan.
 6. **Cek Matriks Kelengkapan Dokumen** — gunakan tab **Cek Kelengkapan Dokumen** pada halaman Bahan Baku untuk melihat status per perusahaan (lengkap dengan PDF, terisi teks saja, atau belum ada), sekaligus preview PDF langsung tanpa pindah halaman.
 
@@ -165,9 +191,9 @@ Setiap kedatangan bahan baku wajib dicatat sebagai batch, dan di-scope ke perusa
 
 - **Edit Batch Kedatangan:** Fitur Edit Batch (`raw_material_batches`) memungkinkan pembaruan No Lot, Tanggal ED, Produsen, Asal Negara, dan lampiran COA.
 - **Pengurutan Log:** Log kedatangan batch diurutkan berdasarkan `created_at DESC` (terbaru di baris paling atas).
-
-   - **Laporan Pemeriksaan Aktual** — opsional; kalau ada dokumen fisik/scan hasil pemeriksaan, upload di sini (PDF ini yang dipakai langsung di ZIP Bab II, mengganti versi hasil ketikan manual).
-5. **Input Parameter Uji Laboratorium Aktual** (kalau tidak upload laporan PDF di atas): hasil pemeriksaan fisik/kimia aktual, kesimpulan, serta nama yang memeriksa (QC) dan menyetujui (QA).
+- **Status Batch:** pada log batch tersedia aksi **"Dipakai"** (produk sudah digunakan/CONDOH) dan **"Dimusnahkan"**, lengkap dengan input tanggal serta alasan. Status ini terpisah dari `kesimpulan` kelulusan QC.
+   - **Laporan Pemeriksaan Aktual** — opsional; kalau ada dokumen fisik/scan hasil pemeriksaan, upload di sini. PDF ini dipakai sebagai sumber **Catatan Pemeriksaan di PDF gabungan maupun ZIP**; kalau tidak ada, PDF gabungan tetap menampilkannya dari data batch (§4.6).
+5. **Input Parameter Uji Laboratorium Aktual** (kalau tidak upload laporan PDF di atas): hasil pemeriksaan fisik/kimia aktual, kesimpulan, serta nama yang memeriksa (QC) dan menyetujui (QA). Data ini dipakai sebagai sumber Catatan Pemeriksaan di PDF gabungan, dan sebagai fallback di ZIP.
 
 ---
 
@@ -189,7 +215,7 @@ Setiap kedatangan bahan baku wajib dicatat sebagai batch, dan di-scope ke perusa
 2. Tambahkan bahan baku satu per satu (cari lewat kolom pencarian) beserta persentase penggunaan (% w/w).
 3. **Validasi Formula** — total persentase seluruh bahan wajib tepat **100.000%**; indikator total akan berwarna merah kalau belum pas, hijau kalau sudah tepat.
 4. Sistem otomatis breakdown komponen INCI & CAS Number dari seluruh bahan baku dalam formula.
-5. **Export Laporan Formula (Qual-Quan):** tombol *Export Excel* (`.xlsx`, via SheetJS di sisi klien) dan *Cetak PDF / Print* tersedia di halaman Qualitative-Quantitative.
+5. **Export Laporan Formula (Qual-Quan):** tombol *Export Excel* (`.xlsx`) dan *Cetak PDF / Print* tersedia di halaman Qualitative-Quantitative. File `.xlsx` **dibuat di server** dengan `openpyxl` (bukan di sisi browser), berisi 3 sheet: "Formula Nama Dagang", "Formula INCI Murni", dan "Text Design".
 
 ---
 
@@ -201,18 +227,17 @@ Halaman **Edit Informasi & Dokumen Produk** (`/products/{product_id}/edit`) meng
 
 **Tab Bab 1 (Kelengkapan Administrasi)** — NIB, Sertifikat CPKB, Surat Tidak Pidana, Surat Notifikasi BPOM. Hak & Lisensi Merk diambil otomatis dari data Brand. Tersedia tombol *Preview* dan *Download PDF*.
 
-**Tab Bab 2 (Mutu & Keamanan Bahan Kosmetika)** — susunan formula produk dan status kelengkapan dokumen tiap bahan baku, SOP CPKB penanganan bahan baku per perusahaan. Tersedia *Preview*, *Download PDF Gabungan*, dan *Download Folder ZIP*.
+**Tab Bab 2 (Mutu & Keamanan Bahan Kosmetika)** — susunan formula produk dan status kelengkapan dokumen tiap bahan baku, SOP CPKB penanganan bahan baku per perusahaan. Tersedia *Preview*, *Download PDF Gabungan*, dan *Download Folder ZIP*. Rincian isi dan urutan section PDF gabungan ada di [§4.6](#46-tahap-6--generasi--ekspor-dokumen-dip-pdf-gabungan-vs-folder-zip).
 
 **Tab Bab 3 (Mutu Produk Jadi)** — spesifikasi fisik/kimia produk jadi, metode pembuatan, sistem penomoran batch, hasil stabilitas. Tersedia *Preview* & *Download PDF*.
 
-
-- **Generator Ekspor Excel (OpenPyXL):** Dokumentasi standar formatting ekspor Excel (.xlsx) untuk dokumen Formula Kualitatif & Kuantitatif:
+- **Generator Ekspor Excel (OpenPyXL):** Standar formatting ekspor Excel (.xlsx) untuk dokumen Formula Kualitatif & Kuantitatif:
     * Header & Judul di-merge selebar tabel (A-E).
     * Border tipis (#D1D5DB) pada area tabel data tanpa mengenai blok tanda tangan.
     * Penataan khusus sheet "Formula INCI Murni": border terbatas kolom A-C dan tanda tangan 2 kolom (Kiri A: Registrasi, Kanan C: R&D).
     * Penataan sheet "Text Design": tanpa blok tanda tangan dan mengikuti aturan rendering kondisional (Peringatan & Penyimpanan).
 
-**Tab Bab 4 (Keamanan Produk)** — laporan *safety assessment*, CV *safety assessor*, data klaim, monitoring efek samping (NIES), desain kemasan primer/sekunder. Tersedia *Preview* & *Download PDF*.
+**Tab Bab 4 (Keamanan Produk)** — laporan *safety assessment*, CV *safety assessor*, data klaim, monitoring efek samping (NIES), desain kemasan primer/sekunder, dan rancangan teks kemasan. Tersedia *Preview* & *Download PDF*, serta **generate laporan Monitoring Efek Samping** (lihat [§4.11](#411-monitoring-efek-samping-nies)).
 
 > ⚠️ Setiap dokumen yang belum diunggah ditandai badge **"PDF belum terisi"**. Upload PDF dibatasi maksimal **10 MB per file**; validasi dilakukan di sisi browser (agar terasa cepat) *dan* di sisi server (sebagai jaring pengaman terakhir yang tidak bisa dilewati).
 
@@ -222,9 +247,39 @@ Halaman **Edit Informasi & Dokumen Produk** (`/products/{product_id}/edit`) meng
 
 Sistem menggunakan kombinasi **`xhtml2pdf`** (render HTML ke PDF) dan **`pypdf`** (menggabungkan/merge PDF) untuk merangkai dokumen DIP beserta lampirannya.
 
-**Format PDF Gabungan** (Bab I, III, IV, dan Bab II versi standar) — sistem menyusun halaman cover/checklist, lalu menggabungkan lampiran dari Supabase Storage menjadi **satu file PDF utuh**.
+**Bab I, III, dan IV** memakai satu teknik yang seragam: halaman cover/checklist di-render dari template Jinja2 menjadi PDF, lalu lampiran dari Supabase Storage **ditempel** (`add_page`) menjadi satu file PDF utuh.
 
-**Format Folder ZIP** (khusus Bab II) — karena Bab II sering punya banyak lampiran tebal (CoA, Halal, MSDS per bahan baku), tersedia opsi **Download ZIP** yang menghasilkan folder terorganisir *per bahan baku*, isinya 5 file terpisah:
+**Bab II berbeda** dan perlu dipahami dengan saksama, karena dampaknya ke dokumen yang dikirim ke BPOM:
+
+#### A. PDF Gabungan Bab II
+
+Urutannya:
+
+1. **Checklist Kelengkapan Data** — halaman pembuka.
+2. **Prosedur Tetap Pemeriksaan Bahan Baku (SOP CPKB)** perusahaan.
+3. **Satu halaman per bahan baku** — berisi nama bahan baku, Spek, dan Catatan Pemeriksaan. Ini memakai teknik **komposisi layout**, bukan sekadar menempel: halaman A4 dibuat, judul bahan baku + label section digambar, lalu dokumen sumber (PDF) diskalakan proporsional dan ditempel di dalam kotak yang tersedia. Konsekuensinya:
+   - Kalau **Spek dan Catatan Pemeriksaan sama-sama tersedia, keduanya tetap berada di SATU halaman yang sama** — bukan dua halaman terpisah.
+   - Kalau **hanya salah satu** yang tersedia, hanya itu yang ditampilkan. **Tidak ada halaman kosong atau placeholder** untuk dokumen yang tidak ada.
+   - Scaling bersifat proporsional dan **tidak memotong isi** dokumen sumber.
+4. **Section COA** — seluruh COA dikumpulkan di sini, **setelah semua bahan baku selesai**, bukan menempel di belakang bahan bakunya. Tiap COA diberi header nama bahan bakunya agar jelas COA tersebut milik bahan baku mana. Isi PDF COA asli tidak diubah.
+5. **Daftar bahan baku tanpa Spek & Catatan Pemeriksaan.**
+6. **Daftar bahan baku dengan COA belum terlampir.**
+
+Aturan penting:
+- **Spek bahan baku hanya diambil dari PDF** (`spec_sheet_file_url` di `raw_material_company_docs`). Parameter spesifikasi yang diketik manual (`spec_parameters`) **tidak dipakai sama sekali** di PDF gabungan. Kalau PDF Spek kosong atau gagal diambil, Spek dianggap tidak ada.
+- **Catatan Pemeriksaan** diambil dari PDF laporan pemeriksaan (`qc_report_file_url`). Kalau tidak ada, sistem **tetap menampilkannya dari data batch** (nomor batch, supplier, tanggal sampling/terima/ED, hasil uji, kesimpulan, penanda tangan QC & QA). Kalau tidak ada batch sama sekali, Catatan Pemeriksaan dianggap tidak ada.
+- Bahan baku yang **tidak** punya Spek **dan** tidak punya Catatan Pemeriksaan **tidak mendapat halaman kosong**; namanya masuk daftar nomor 5. Yang hanya kehilangan salah satu dokumen **tidak** masuk daftar itu.
+- Section daftar yang kosong **tidak pernah dicetak** — jadi tidak akan muncul halaman kosong di bagian akhir.
+- COA yang kosong, gagal diambil, atau file-nya rusak diperlakukan sama: tidak ada halaman kosong, dan namanya masuk daftar nomor 6.
+- Satu dokumen bermasalah tidak menggagalkan seluruh Bab II. Error dicatat di log server (bukan ditampilkan ke pengguna).
+
+> ⚠️ **Penting — Halal & MSDS:** PDF gabungan Bab II **saat ini tidak menyertakan Sertifikat Halal maupun MSDS**. Keduanya tidak di-*merge* ke PDF gabungan, dan tidak ikut dihitung sebagai dokumen yang kurang. Hanya versi ZIP yang memuat keduanya. Ini adalah perilaku desain saat ini, bukan aturan permanen — bila tim Regulasi memutuskan keduanya harus kembali ke PDF gabungan, penempatannya ada di satu fungsi dan tidak mengubah alur section lain.
+
+> ℹ️ **Preview:** tombol *Preview Bab 2* di Tab Bab 2 memakai **generator yang sama persis** dengan tombol download PDF; yang berbeda hanya header respons (`inline` agar tampil di tab baru, bukan `attachment`). Jadi apa yang terlihat saat preview sama persis dengan file yang terunduh.
+
+#### B. Folder ZIP Bab II
+
+Opsi **Download ZIP** menghasilkan folder terorganisir *per bahan baku*, isinya 5 file terpisah:
 1. `1_Spesifikasi_Bahan_Baku.pdf` — PDF asli dari supplier kalau ada, atau hasil generate dari data yang diketik.
 2. `2_Catatan_Pemeriksaan_Bahan_Baku.pdf` — PDF laporan pemeriksaan asli kalau ada, atau hasil generate dari data aktual.
 3. `3_CoA.pdf`
@@ -232,6 +287,19 @@ Sistem menggunakan kombinasi **`xhtml2pdf`** (render HTML ke PDF) dan **`pypdf`*
 5. `5_MSDS.pdf`
 
 Kalau salah satu dokumen belum tersedia, file `PERHATIAN.txt` otomatis disertakan di folder bahan baku itu, menandai dokumen apa yang masih kurang.
+
+#### C. Ringkasan Perbedaan
+
+| | PDF Gabungan | Folder ZIP |
+|---|---|---|
+| Spek | **Hanya** dari PDF; parameter manual tidak dipakai | PDF asli, jika tidak ada digenerate dari parameter manual |
+| Catatan Pemeriksaan | PDF laporan pemeriksaan, jika tidak ada dari data batch | PDF asli, jika tidak ada digenerate dari hasil uji batch |
+| Penempatan CoA | Satu section tersendiri setelah semua bahan baku | File terpisah per folder bahan baku |
+| Sertifikat Halal & MSDS | **Tidak dilampirkan** | Dilampirkan sebagai file terpisah |
+| Laporan dokumen kurang | Dua daftar ringkasan di bagian akhir PDF | File `PERHATIAN.txt` per folder bahan baku |
+| Checklist | Template khusus PDF gabungan (tidak mencantumkan Halal/MSDS sebagai terlampir) | Template checklist versi ZIP (mencantumkan Halal & MSDS) |
+
+> Catatan teknis: urutan bahan baku pada PDF mengikuti urutan baris formula yang dikembalikan database. Karena query tidak melakukan pengurutan eksplisit, urutan ini **belum dijamin identik** di setiap proses generate.
 
 ---
 
@@ -267,6 +335,58 @@ Modul khusus pengelolaan **Formulir Pengajuan Sample Produk (FSP)** (`/sample-su
 
 ---
 
+### 4.9 Input Produksi — Purchase Order & Batch Produk (QC)
+
+Modul di menu **Produksi** (`/purchase-orders`) untuk mencatat alur penerimaan & produksi. Alurnya berpusat pada satu nomor PO.
+
+1. **Buat Purchase Order** — isi **No. PO** (wajib, unik), **Tanggal PO**, dan **Qty (pcs)**. Bila No. PO sudah terdaftar, sistem menolak dan mengarahkan ke PO yang ada.
+2. **Buat Batch Produk Jadi** — pilih produk, isi **No. Batch** (wajib, unik per produk), **Tanggal Produksi** (default hari ini bila kosong), dan **Tanggal ED**.
+3. **Catat Item PO per Batch** — setiap baris item menempel ke satu batch produk jadi dan mencatat:
+   - **Tanggal Catatan Batch**
+   - **WIP** (Work In Process)
+   - **Netto**
+   - **Qty (kg)**, **Qty Belum SOP**, **Qty PO (kg)**
+   - **Status BPOM**, **Keterangan**
+   - **Catatan Produksi**, **Revisi Produksi**, **Temporary Reject**
+4. **Ubah & Hapus Item** — item yang sudah tersimpan dapat diedit atau dihapus. Nomor urut item (`urutan`) dibuat otomatis berurutan, dan sistem mencoba ulang bila terjadi benturan nomor urut.
+5. **Validasi** — bila batch yang dipilih bukan milik produk yang dipilih, sistem menolak. Input angka tidak valid (bukan angka) dan format tanggal salah akan ditolak dengan pesan yang jelas.
+
+Semua aktivitas pembuatan PO, batch produk, dan item PO tercatat di `activity_logs`.
+
+> ℹ️ Tabel terkait: `purchase_orders` (header PO), `purchase_order_items` (item per batch), `product_batches` (batch produk jadi). Nomor batch produk jadi juga dipakai sebagai lampiran di dokumen Bab III.
+
+---
+
+### 4.10 Notes Tim & @mention
+
+Modul **Notes** (`/notes`) untuk catatan kerja & koordinasi antar tim, menggantikan pesan berantai yang tersebar di aplikasi chat.
+
+1. **Tulis Note** — isi catatan, lalu rujuk rekan tim dengan **`@nama`**. Ketik `@` untuk memunculkan daftar anggota tim.
+2. **Token Referensi Cepat** — saat mengetik, referensi disimpan sebagai token berisi UUID dan nama tampilan, agar rujukan tetap valid meski nama produk/bahan/merk berubah:
+   - `#` → produk
+   - `/` → bahan baku
+   - `!` → merk
+3. **Notifikasi** — masing-masing mention tercatat di `team_note_mentions` dan memunculkan **badge merah pada navbar** untuk penerima mention yang belum membacanya.
+4. **Status Pengerjaan** — note dapat ditandai **selesai** atau **dibuka kembali**; halaman menyediakan tampilan "all" atau "pending".
+5. **Hapus** — hanya penulis note yang dapat menghapus note-nya sendiri.
+
+---
+
+### 4.11 Monitoring Efek Samping (NIES)
+
+Modul **cosmetovigilance** untuk pencatatan keluhan efek samping produk. Dijalankan dari **Tab Bab 4** di halaman Edit Produk.
+
+1. **Generate Laporan per Semester** — laporan dibuat untuk periode semester berjalan (`YYYY-H1` untuk Januari–Juni, `YYYY-H2` untuk Juli–Desember), dan periode terakhir disimpan di `products.last_efek_samping_period` agar tidak ganda.
+2. **Input Kasus** — bila ada kasus keluhan, isi data kasus: **Nama**, **Jenis Kelamin**, **Usia**, **Jenis Efek**, **Manifestasi**, dan **Tanggal**. Bila tidak ada kasus, cukup tandai "tidak ada kasus" tanpa mengisi detail.
+3. **Append, Bukan Timpa** — PDF baru **ditambahkan di belakang** PDF sebelumnya, sehingga produk memiliki satu dokumen riwayat yang utuh per semester. Bila PDF lama tidak terbaca, sistem tetap membuat blok baru saja dan mencatat kegagalan ke log.
+4. **Anti-Overwrite** — proses generate dikunci per produk (`asyncio.Lock`), jadi dua permintaan bersamaan untuk produk yang sama tidak akan saling menimpa.
+5. **Hapus Laporan** — aksi hapus tersedia bila laporan memang keliru dan perlu dibuat ulang dari awal.
+6. **Penyimpanan** — PDF disimpan di bucket `raw-material-docs` pada path `products/{id}/monitoring_efek_samping_{slug_produk}.pdf`, dan tautannya dipakai sebagai lampiran di dokumen Bab IV.
+
+> ⚠️ **Bedakan dari dokumen statis perusahaan:** di halaman `/admin/company-documents` ada dokumen bernama serupa, yaitu **"Monitoring Efek Samping"** yang merupakan dokumen/SOP perusahaan. Itu dokumen yang diunggah manual, **berbeda** dari laporan NIES yang di-generate per produk di sini. Keduanya dapat dipakai sebagai lampiran Bab IV, dan checklist Bab IV membaca keduanya.
+
+---
+
 ## 5. Matriks Validasi, Status & Logika Bisnis
 
 ### 5.1 Monitoring Otomatis Status Legalitas NA BPOM
@@ -278,14 +398,23 @@ Status Notifikasi BPOM (NA) dihitung otomatis dari `tanggal_aktif_na`:
 - ⚪ **Belum Terdaftar** — tanggal aktif NA belum diisi (status manual dipakai sebagai fallback).
 
 ### 5.2 Matriks Kelengkapan DIP & Indikator Progress
-Di Dashboard, tiap produk punya indikator kelengkapan (`progress_pct`) yang dihitung dari pemenuhan berkas wajib:
-- **Bab I** — dianggap lengkap kalau file Notifikasi BPOM sudah diunggah.
-- **Bab II** — dianggap lengkap kalau produk sudah punya formula (minimal 1 baris bahan baku).
-- **Bab III** — rasio dari 7 dokumen wajib (metode pembuatan, sistem penomoran batch, spek produk jadi, spek pengemas, laporan uji SIG, protokol stabilitas, hasil stabilitas).
-- **Bab IV** — rasio dari 5 dokumen wajib (laporan keamanan, monitoring efek samping, data klaim, desain primer, desain sekunder).
+Di Dashboard, tiap produk punya indikator kelengkapan (`progress_pct`) dihitung dari pemenuhan **17 item dasar**:
+
+| Bab | Item dasar | Kriteria "lengkap" |
+|---|---|---|
+| **Bab I** | 5 | NIB, Sertifikat CPKB, Hak & Lisensi Merk, Surat Tidak Pidana, Surat Notifikasi BPOM — semuanya harus terisi untuk perusahaan produk yang dipilih |
+| **Bab II** | 1 | Produk sudah punya formula (minimal 1 baris bahan baku) |
+| **Bab III** | 7 | Cara pembuatan, sistem penomoran batch, spek produk jadi, spek pengemas, laporan uji SIG, protokol stabilitas, hasil stabilitas |
+| **Bab IV** | 4 | Laporan keamanan, monitoring efek samping, desain primer, desain sekunder |
+
+Tambahan: **Data Pendukung Klaim** dihitung sebagai **nilai tambah di pembilang tanpa ditambah ke pembagi**, sehingga persentase dapat naik di atas 100% bila semua item dasar sudah lengkap. Pada tampilan dashboard, kondisi ini ditandai warna **amber** dan panjang bar dibatasi 100% supaya tidak melebihi layar.
+
+> ℹ️ **Perbedaan lapisan dokumen Bab IV:** checklist PDF Bab IV menampilkan lebih banyak baris daripada rasio dashboard, karena checklist juga memuat dokumen dari sumber lain — **CV / Kualifikasi Safety Assessor** dan **Monitoring Efek Samping** dari dokumen perusahaan (`company_sop_documents`), serta **Rancangan Teks Kemasan**. Angka rasio dashboard di atas mengacu pada dokumen produk, bukan seluruh baris checklist.
 
 ### 5.3 Aturan Proteksi Penghapusan Data
-- **Perlindungan Bahan Baku** — sistem **melarang** penghapusan bahan baku yang masih dipakai di formula produk aktif. Bahan baku harus dilepas dari formula dulu sebelum dihapus dari master data.
+- **Perlindungan Bahan Baku** — sistem **melarang** penghapusan bahan baku yang masih dipakai di formula produk aktif. Bahan baku harus dilepas dari formula dulu sebelum dihapus dari master data. Penghapusan bahan baku sekaligus ikut menghapus batch, dokumen per perusahaan, komponen, dan varian komposisinya.
+- **Perlindungan Produk (Soft Delete + Sampah)** — menghapus produk **tidak** langsung menghilangkan datanya. Produk ditandai terhapus (`products.is_deleted` + `deleted_at`) sehingga formula, dokumen, dan riwayatnya tetap utuh. Admin dapat membuka menu **Sampah** (`/admin/trash`) untuk melihat daftar produk terhapus dan **mengembalikannya**; aksi restore ini juga tercatat di `activity_logs`. Produk terhapus tidak muncul lagi di dashboard, daftar produk pada form lain, maupun saat memilih produk pada modul Produksi.
+- **Perlindungan Varian Komposisi** — varian komposisi yang sudah dipakai di suatu formula tidak bisa dihapus selama masih dirujuk oleh baris formula.
 - **Perlindungan Log Aktivitas** — nama produk/bahan baku yang dihapus tetap direkam di `activity_logs` sebelum baris datanya benar-benar hilang, supaya riwayat aktivitas tetap informatif walau data aslinya sudah tidak ada.
 
 ---
@@ -297,12 +426,22 @@ Di Dashboard, tiap produk punya indikator kelengkapan (`progress_pct`) yang dihi
 - Kalau file yang diunggah melebihi batas ini, sistem menangkap error HTTP 413 (*Content Too Large*) dan mengarahkan kembali pengguna ke halaman asal dengan pesan peringatan yang jelas — baik saat validasi gagal di sisi browser maupun kalau entah bagaimana lolos dan baru tertangkap di sisi server.
 
 ### 6.2 Integrasi Supabase Storage & PostgreSQL Database
-- **Database:** Supabase PostgreSQL, tabel-tabel utama meliputi `products`, `brands`, `raw_materials`, `raw_material_components`, `raw_material_batches`, `raw_material_company_docs`, `product_formula_lines`, `sample_submissions`, `profiles`, `activity_logs`, dan `public_link_audits`.
+- **Database:** Supabase PostgreSQL. Tabel yang dipakai aplikasi:
+  - **Master & Produk:** `profiles` (user, role, `is_protected`, data presence), `products`, `brands`, `producers`, `product_formula_lines`, `product_finished_specs`, `product_batches`.
+  - **Bahan Baku:** `raw_materials`, `raw_material_components`, `raw_material_composition_variants` (varian komposisi), `raw_material_batches`, `raw_material_company_docs` (dokumen per perusahaan).
+  - **Produksi:** `purchase_orders`, `purchase_order_items`.
+  - **Kolaborasi:** `team_notes`, `team_note_mentions`.
+  - **Form Pengajuan:** `sample_submissions`.
+  - **Audit:** `activity_logs`, `public_link_audits`.
+  - **Dokumen legal/statis per perusahaan:** `nib_documents`, `sertifikat_cpkb_documents`, `surat_tidak_pidana_documents`, `company_sop_documents`, `cpkb_raw_material`, `brand_legal_documents`.
+  - > Daftar di atas adalah tabel yang **dipanggil oleh kode**. Untuk rincian kolom dan relasi, rujuk ke skema/migrasi resmi di repository.
 - **Object Storage:** file PDF (MSDS, CoA, Halal, NIB, CPKB, dst) disimpan di Supabase Storage. Sebagian besar diakses lewat public URL; khusus di halaman Public Hub verifikator BPOM, tautan file bisa memakai *signed URL* sementara (kedaluwarsa otomatis) sebagai lapisan keamanan tambahan.
+  - Bucket yang dipakai: `legal-documents` (dokumen perusahaan), `raw-material-docs` (SOP CPKB, dokumen bahan baku, serta laporan Monitoring Efek Samping per produk), dan bucket unggahan dokumen produk.
 
 ### 6.3 Audit Trail System (`activity_logs`) & Server Logging
-- Setiap perubahan data (`create`, `update`, `delete`) pada bahan baku dan produk dicatat otomatis ke tabel `activity_logs`, lengkap dengan siapa pelakunya, jenis objek, ID target, dan detail field yang berubah (nilai lama vs baru untuk field teks; catatan "file diganti" untuk field dokumen).
+- Setiap aktivitas penting dicatat otomatis ke tabel `activity_logs` — termasuk `create`, `update`, `delete` pada bahan baku dan produk, pembuatan Purchase Order, batch produk, item PO, serta `generate` laporan Monitoring Efek Samping. Catatan mencakup siapa pelakunya, jenis objek, ID target, dan detail field yang berubah (nilai lama vs baru untuk field teks; catatan "file diganti" untuk field dokumen).
 - Terminal server (Uvicorn/Render) menampilkan log yang sama secara real-time dengan format timestamp **WIB (Asia/Jakarta)** — berguna untuk pengecekan cepat, tapi diingat log Render sendiri **cuma disimpan 7 hari**; untuk riwayat jangka panjang selalu rujuk ke tabel `activity_logs`.
+- Kesalahan pada proses generator dokumen (mis. lampiran gagal diambil atau file PDF rusak) **tidak** ditampilkan ke pengguna sebagai pesan teknis; kesalahan dicatat di log server agar bisa ditelusuri tanpa mengganggu alur kerja.
 
 ### 6.4 Manajemen Dokumen Perusahaan (`/admin/company-documents`)
 Sebelum September 2026, 8 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, Monitoring Efek Samping, serta **SOP CPKB Pemeriksaan Bahan Baku**) hanya bisa diubah lewat Supabase Dashboard langsung (atau dari halaman bahan baku untuk SOP CPKB). Kini tersedia halaman admin khusus (`/admin/company-documents`) yang memungkinkan admin mengunggah dan mengganti file-file tersebut langsung dari aplikasi.
@@ -315,6 +454,13 @@ Sebelum September 2026, 8 jenis dokumen statis per-perusahaan (NIB, Sertifikat C
 - **Audit Trail:** Setiap upload tercatat di `activity_logs` dengan detail jenis dokumen & perusahaan.
 - **Validasi:** File wajib PDF, maksimal 10 MB (konsisten dengan upload lain di aplikasi).
 
+### 6.5 Integrasi AI Opsional (Sapaan Login)
+
+- **Fungsi:** saat pengguna berhasil login, sistem membangkitkan satu kalimat sapaan singkat melalui **Google Gemini API**, lalu menyimpannya di cookie `greeting_cache` (masa berlaku 4 jam) supaya tidak dipanggil ulang setiap kali dashboard dibuka.
+- **Konfigurasi:** variabel lingkungan `GEMINI_API_KEY` di file `.env`. **Opsional** — bila kosong, fitur otomatis dimatikan dan aplikasi tetap berjalan normal (hanya kalimat sapaan statis per waktu yang tampil).
+- **Catatan privasi:** nama pengguna dikirim ke API Gemini untuk keperluan pembangkitan kalimat. Bila kebijakan perusahaan melarang aliran data ke layanan pihak ketiga, biarkan `GEMINI_API_KEY` kosong.
+- **Perilaku saat gagal:** bila panggilan API gagal atau lambat, sistem diam-diam memakai kalimat sapaan statis — fitur sapaan tidak boleh menggagalkan proses login.
+
 ---
 
 ## 7. FAQ & Troubleshooting
@@ -323,19 +469,31 @@ Sebelum September 2026, 8 jenis dokumen statis per-perusahaan (NIB, Sertifikat C
 PT Erfi dan PT Heka adalah dua badan hukum terpisah dengan sertifikat CPKB dan standar mutu masing-masing. Dokumen yang dilampirkan ke BPOM harus mencantumkan kop surat dan legalitas entitas yang tepat — data yang sama untuk keduanya bisa jadi bukan hal yang benar.
 
 **Q2: Kenapa lebih baik pakai Download Folder (ZIP) untuk Bab II dibanding PDF gabungan?**
-Kalau lampiran bahan baku sangat banyak/tebal (apalagi MSDS yang bisa puluhan halaman), ZIP lebih ringan diproses dan lebih mudah ditelusuri per bahan baku dibanding satu PDF raksasa.
+Alasannya berubah. **PDF gabungan Bab II saat ini tidak memuat Sertifikat Halal maupun MSDS** — keduanya hanya disertakan pada versi ZIP. Jadi pilih ZIP bila dokumen yang perlu dikirim/diarsipkan memang harus menyertakan Halal & MSDS, atau bila ingin lampiran terpisah per bahan baku agar mudah ditelusuri. Pilih PDF gabungan bila yang dibutuhkan adalah satu berkas ringkas dengan satu halaman per bahan baku, dan Halal/MSDS ditangani lewat berkas terpisah.
 
-**Q3: Bagaimana mengatasi pesan "Sesi Anda Telah Berakhir"?**
-Cookie sesi (JWT) sudah kedaluwarsa (masa berlaku 4 jam). Silakan login ulang.
+**Q3: Section Spek di PDF Bab II kosong, padahal data spesifikasi sudah saya isi. Kenapa?**
+Karena pada **PDF gabungan**, Spek bahan baku **hanya diambil dari PDF** (`PDF Spesifikasi Asli dari Supplier`). Parameter spesifikasi yang diketik manual sengaja tidak dipakai di PDF gabungan — jadi Spek baru muncul kalau PDF-nya sudah diunggah. (Data ketikan tetap dipakai di versi ZIP, jadi isian Anda tidak hilang.) Nama bahan baku itu juga akan muncul di daftar "belum memiliki Spek dan Catatan Pemeriksaan" di bagian akhir PDF.
 
-**Q4: Apakah link publik verifikator BPOM aman dari kebocoran data produk lain?**
+**Q4: Kenapa ada dua daftar dokumen kurang di bagian akhir PDF Bab II?**
+Satu untuk bahan baku yang tidak punya Spek **dan** Catatan Pemeriksaan, satu lagi untuk bahan baku yang COA-nya belum terlampir atau gagal diambil. Keduanya sengaja dipisah karena jenis dokumen yang hilang berbeda. Kalau salah satu daftar kosong, halamannya tidak dicetak sama sekali.
+
+**Q5: Bagaimana mengatasi pesan "Sesi Anda Telah Berakhir"?**
+Token sesi (JWT) sudah kedaluwarsa (masa berlaku 4 jam). Silakan login ulang.
+
+**Q6: Apakah link publik verifikator BPOM aman dari kebocoran data produk lain?**
 Aman — setiap link memakai kombinasi slug nama produk (kosmetik) dan UUID acak 36-karakter yang divalidasi di server (*unguessable*). Portal publik hanya menampilkan data 1 produk sesuai UUID pada URL tersebut, dan setiap akses tercatat di audit log.
 
-**Q5: Kenapa persentase di Formula Builder menunjukkan angka merah / tidak 100%?**
+**Q7: Kenapa persentase di Formula Builder menunjukkan angka merah / tidak 100%?**
 Standar BPOM mengharuskan total persentase formula kosmetik tepat 100.000% (w/w). Periksa kembali persentase bahan pelarut (misalnya *Aqua/Water*) agar akumulasi formula pas 100%.
 
-**Q6: Kenapa upload file ditolak padahal ukurannya kelihatan kecil?**
+**Q8: Kenapa upload file ditolak padahal ukurannya kelihatan kecil?**
 Kemungkinan file melebihi 10 MB (cek ulang ukuran filenya), atau formatnya bukan PDF — sistem cuma menerima PDF untuk semua jenis lampiran dokumen.
+
+**Q9: Login pakai username gagal padahal user saya terdaftar.**
+Input "username" dicocokkan ke kolom `full_name` di tabel `profiles`, dan bila tidak ditemukan sistem memakai fallback domain `@erfi.com`. Untuk user PT Heka, cara yang paling aman adalah login memakai **email resmi**. Username yang tidak ada di `profiles` juga tidak bisa login.
+
+**Q10: Kenapa status user saya di panel Admin muncul "Idle", bukan "Online"?**
+Idle berarti tab masih terbuka dan heartbeat masih berjalan, tetapi tidak ada aktivitas selama 5 menit terakhir. Itu status normal, bukan error — status kembali Online begitu ada interaksi.
 
 ---
 
