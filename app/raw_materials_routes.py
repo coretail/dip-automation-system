@@ -10,6 +10,18 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.database import supabase
 
 
+def _is_deleted_product(embedded):
+    """Cek apakah embed relasi produk sudah soft-delete.
+
+    supabase-py bisa mengembalikan embed many-to-one sebagai dict ATAU list,
+    jadi keduanya ditangani di sini. Embed yang kosong dianggap tidak terhapus
+    (produk tidak punya soft-delete, jadi kasus ini hanya jaga-jaga).
+    """
+    if isinstance(embedded, list):
+        embedded = embedded[0] if embedded else None
+    return bool((embedded or {}).get("is_deleted"))
+
+
 def register_raw_materials_routes(
     app,
     get_current_user,
@@ -188,12 +200,15 @@ def register_raw_materials_routes(
         # ===== HITUNG JUMLAH PRODUK PEMAKAI TIAP BAHAN BAKU (Badge Counter) =====
         try:
             usage_lines = supabase.table("product_formula_lines") \
-                .select("raw_material_id, product_id").execute()
+                .select("raw_material_id, product_id, products(is_deleted)").execute()
             usage_sets = {}
             for ln in (usage_lines.data or []):
                 rm_id_ln = ln.get("raw_material_id")
                 prod_id_ln = ln.get("product_id")
-                if rm_id_ln and prod_id_ln:
+                # Produk yang sudah soft-delete (is_deleted=true) tidak dihitung sebagai
+                # pemakaian aktif, supaya angka badge sama dengan isi modal
+                # "Dipakai di Produk".
+                if rm_id_ln and prod_id_ln and not _is_deleted_product(ln.get("products")):
                     # Satu bahan baku dihitung maksimal sekali per produk
                     usage_sets.setdefault(rm_id_ln, set()).add(prod_id_ln)
             for rm in rm_resp.data:
@@ -241,13 +256,18 @@ def register_raw_materials_routes(
                 )
 
             lines_resp = supabase.table("product_formula_lines") \
-                .select("percent_in_formula, products(id, nama_produk, perusahaan)") \
+                .select("percent_in_formula, products(id, nama_produk, perusahaan, is_deleted)") \
                 .eq("raw_material_id", rm_id).execute()
 
             products_map = {}
             for ln in (lines_resp.data or []):
                 product = ln.get("products")
+                if isinstance(product, list):
+                    product = product[0] if product else None
                 if not product or not product.get("id"):
+                    continue
+                # Produk yang sudah soft-delete tidak ditampilkan sebagai pemakaian aktif.
+                if product.get("is_deleted"):
                     continue
                 pid = product["id"]
                 if pid in products_map:
