@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+    body { font-family: Helvetica, sans-serif; font-size: 9pt; color: #1a1a1a; }
+    h3 { font-size: 9pt; margin: 0 0 4px; }
+    table { width: 100%; }
+    td, th { border: 1px solid #999; padding: 3px 5px; font-size: 8pt; text-align: left; vertical-align: top; }
+    th { background-color: #eeeeee; }
+    .label-col { width: 180px; font-weight: bold; background-color: #f5f5f5; }
+</style>
+</head>
+<body>
+    {# Blok Catatan Pemeriksaan untuk generator PDF Bab II. Berbeda dengan
+       bab2_qc_block.html (dipakai generator ZIP): tanpa judul bahan baku, tanpa
+       heading (label section sudah digambar di halaman komposisi), tanpa
+       empty-note, dan tanpa catatan "CoA/Halal/MSDS dilampirkan" yang tidak lagi
+       sesuai dengan isi PDF Bab II. #}
+    <table>
+        <tr><td class="label-col">No. Batch</td><td>{{ batch.get('no_batch') or '-' }}</td></tr>
+        <tr><td class="label-col">Supplier</td><td>{{ batch.get('supplier') or '-' }}</td></tr>
+        <tr><td class="label-col">Asal Negara</td><td>{{ batch.get('asal_negara') or '-' }}</td></tr>
+        <tr><td class="label-col">Nama Produsen</td><td>{{ batch.get('nama_produsen') or '-' }}</td></tr>
+        <tr><td class="label-col">Tanggal Sampling</td><td>{{ batch.get('tanggal_sampling') or '-' }}</td></tr>
+        <tr><td class="label-col">Tanggal Terima Sampel</td><td>{{ batch.get('tanggal_terima_sampel') or '-' }}</td></tr>
+        <tr><td class="label-col">Tanggal ED</td><td>{{ batch.get('tanggal_ed') or '-' }}</td></tr>
+
+        {% for qc in batch.get('qc_results') or [] %}
+        <tr>
+            <td class="label-col">Hasil {{ qc.get('key') if qc is mapping else qc }}</td>
+            <td>{{ qc.get('value') if qc is mapping else '' }}</td>
+        </tr>
+        {% endfor %}
+
+        <tr><td class="label-col">Kesimpulan</td>
+            <td>
+                {% if batch.get('kesimpulan') == 'diluluskan' %}
+                    <span style="color: #166534; font-weight: bold;">DILULUSKAN</span>
+                {% elif batch.get('kesimpulan') == 'ditolak' %}
+                    <span style="color: #991b1b; font-weight: bold;">DITOLAK</span>
+                {% elif batch.get('kesimpulan') == 'karantina' %}
+                    <span style="color: #854d0e; font-weight: bold;">KARANTINA</span>
+                {% else %}
+                    {{ batch.get('kesimpulan') or '-' }}
+                {% endif %}
+            </td></tr>
+        <tr><td class="label-col">Diperiksa Oleh (QC)</td><td>{{ batch.get('qc_signer') or '-' }}</td></tr>
+        <tr><td class="label-col">Disetujui Oleh (QA)</td><td>{{ batch.get('qa_signer') or '-' }}</td></tr>
+    </table>
+</body>
+</html>

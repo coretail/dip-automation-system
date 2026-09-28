@@ -73,3 +73,6 @@ skills-lock.json
 # Migration (local only, contains sensitive data)
 /migration/
 migration/
+
+# Test artifacts (local only)
+tests/

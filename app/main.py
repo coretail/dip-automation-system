@@ -6,6 +6,7 @@ from typing import List
 from app.database import supabase
 from app.config import settings
 from app.excel_generator import XLSX_MIME, build_formula_workbook
+from app import bab2_pdf
 from app.efek_samping import _efek_samping_meta, register_efek_samping_routes
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date, timedelta
@@ -32,6 +33,8 @@ from slugify import slugify
 
 from dotenv import load_dotenv
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 # Pastikan stdout/stderr selalu UTF-8 biar log emoji aman di semua terminal
 # (Windows console default cp1252 gak support emoji, terutama pas output di-redirect/pipe).
 try:
@@ -1835,8 +1838,10 @@ async def download_bab2_document(product_id: str, current_user: dict = Depends(g
         .execute()
     sop_url = sop_resp.data[0]["file_url"] if sop_resp.data else None
 
-    # 5. Render Checklist (halaman pembuka) jadi PDF sendiri
-    checklist_html = templates.env.get_template("bab2_checklist.html").render(
+    # 5. Render Checklist (halaman pembuka) jadi PDF sendiri.
+    # Template terpisah dari bab2_checklist.html karena generator ZIP masih melampirkan
+    # Halal & MSDS, sedangkan PDF Bab II ini tidak.
+    checklist_html = templates.env.get_template("bab2_checklist_pdf.html").render(
         product=product,
         company=company
         )
@@ -1847,74 +1852,129 @@ async def download_bab2_document(product_id: str, current_user: dict = Depends(g
     checklist_buffer.seek(0)
 
     # 6. Gabungin PDF sesuai urutan request BPOM:
-    # Checklist -> SOP CPKB -> per bahan baku: (Spesifikasi + Catatan -> CoA -> Halal -> MSDS)
+    # Checklist -> SOP CPKB -> 1 halaman per bahan baku (Spek + Catatan Pemeriksaan)
+    # -> section seluruh CoA -> daftar missing Spek/Catatan -> daftar missing CoA
+    # (Sertifikat Halal & MSDS TIDAK ikut di pipeline PDF ini -- hanya di generator ZIP)
     writer = PdfWriter()
 
     for page in PdfReader(checklist_buffer).pages:
         writer.add_page(page)
 
-    async def append_pdf_from_url(client: httpx.AsyncClient, url: str, label: str):
-        """Ambil PDF dari URL Supabase Storage dan tempelin ke writer. Gagal ambil 1 file gak boleh gagalin seluruh dokumen -> di-skip aja + di-print ke log."""
+    async def fetch_pdf_bytes(client: httpx.AsyncClient, url: str | None, label: str) -> bytes | None:
+        """Ambil PDF dari URL Supabase Storage. Return None kalau URL kosong, HTTP gagal,
+        atau file rusak -- satu dokumen bermasalah tidak boleh menggagalkan seluruh Bab II."""
         if not url:
-            return
+            return None
         try:
             resp = await client.get(url, timeout=30)
             resp.raise_for_status()
-            reader = PdfReader(io.BytesIO(resp.content))
-            for page in reader.pages:
-                writer.add_page(page)
+            return resp.content
         except Exception as e:
-            print(f"Gagal ambil {label}: {e}")
+            logger.warning("Gagal ambil %s: %s", label, e)
+            return None
+
+    async def append_pdf_from_bytes(pdf_bytes: bytes | None, label: str) -> None:
+        if not pdf_bytes:
+            return
+        pages = bab2_pdf.read_pdf_pages(pdf_bytes, label)
+        if not pages:
+            return
+        for page in pages:
+            writer.add_page(page)
+
+    def render_block_to_pdf(template_name: str, **context) -> bytes | None:
+        block_html = templates.env.get_template(template_name).render(**context)
+        return bab2_pdf.render_html_to_pdf(block_html)
+
+    # Accumulator dokumen yang belum tersedia (dipakai untuk section di bagian akhir PDF)
+    missing_material_documents: list[str] = []
+    missing_coa: list[str] = []
 
     async with httpx.AsyncClient() as client:
         # 6a. SOP CPKB (tetap di depan, setelah Checklist)
-        await append_pdf_from_url(client, sop_url, f"SOP CPKB ({perusahaan})")
+        await append_pdf_from_bytes(
+            await fetch_pdf_bytes(client, sop_url, f"SOP CPKB ({perusahaan})"),
+            f"SOP CPKB ({perusahaan})",
+        )
 
-        # 6b. Per bahan baku, jadi 1 paket berurutan:
-        # Spesifikasi + Catatan Pemeriksaan (di-generate) -> CoA -> Halal -> MSDS
+        # 6b. Per bahan baku: Spek + Catatan Pemeriksaan dikomposisi jadi MAKSIMAL 1 halaman.
+        # Spek: HANYA PDF spek sheet asli (spec_sheet_file_url) yang dianggap Spek valid.
+        # Spek manual (spec_parameters) sengaja TIDAK dipakai di pipeline PDF ini.
+        # Catatan Pemeriksaan: PDF laporan QC asli kalau ada, kalau tidak -> data batch.
         for idx, item in enumerate(materials_data, start=1):
             material = item["material"]
             batch = item["batch"]
-            nama_bahan = material.get("nama_dagang", "?")
+            nama_bahan = material.get("nama_dagang") or f"Bahan Baku {idx}"
 
-            # Render blok Spesifikasi (selalu di-generate dari text -- versi PDF gabungan
-            # sengaja gak pake logic PDF-priority biar layout dokumen tetap seragam)
-            spec_html = templates.env.get_template("bab2_spec_block.html").render(
-                item=item,
-                index=idx,
-                company=company
-            )
-            spec_buffer = io.BytesIO()
-            spec_status = pisa.CreatePDF(src=spec_html, dest=spec_buffer)
-            if spec_status.err:
-                print(f"Gagal generate blok Spesifikasi bahan baku {nama_bahan}")
+            documents: list[tuple[str, bytes]] = []
+
+            # --- Spek Bahan Baku (hanya dari PDF) ---
+            spec_bytes = await fetch_pdf_bytes(
+                client, material.get("spec_sheet_file_url"), f"PDF Spesifikasi {nama_bahan}")
+            if spec_bytes and bab2_pdf.read_pdf_pages(spec_bytes, f"Spek {nama_bahan}"):
+                documents.append(("SPEK BAHAN BAKU", spec_bytes))
             else:
-                spec_buffer.seek(0)
-                for page in PdfReader(spec_buffer).pages:
-                    writer.add_page(page)
+                logger.info("Spek bahan baku %s tidak tersedia (PDF spek sheet kosong/gagal diambil)", nama_bahan)
 
-            # Render blok Catatan Pemeriksaan Aktual (selalu di-generate dari data batch)
-            qc_html = templates.env.get_template("bab2_qc_block.html").render(
-                item=item,
-                index=idx,
-                company=company
-            )
-            qc_buffer = io.BytesIO()
-            qc_status = pisa.CreatePDF(src=qc_html, dest=qc_buffer)
-            if qc_status.err:
-                print(f"Gagal generate blok Catatan Pemeriksaan bahan baku {nama_bahan}")
+            # --- Catatan Pemeriksaan Bahan Baku ---
+            qc_bytes = await fetch_pdf_bytes(
+                client, batch.get("qc_report_file_url") if batch else None,
+                f"PDF Laporan Pemeriksaan {nama_bahan}")
+            if qc_bytes and bab2_pdf.read_pdf_pages(qc_bytes, f"Catatan Pemeriksaan {nama_bahan}"):
+                documents.append(("CATATAN PEMERIKSAAN", qc_bytes))
+            elif batch:
+                # Batch valid (hasil query existing) -> Catatan Pemeriksaan tetap ditampilkan
+                # dari data batch. Tidak ada empty-note kalau batch tidak ada.
+                manual_qc = render_block_to_pdf("bab2_qc_section.html", batch=batch)
+                if manual_qc:
+                    documents.append(("CATATAN PEMERIKSAAN", manual_qc))
             else:
-                qc_buffer.seek(0)
-                for page in PdfReader(qc_buffer).pages:
-                    writer.add_page(page)
+                logger.info("Catatan Pemeriksaan bahan baku %s tidak tersedia (tidak ada batch)", nama_bahan)
 
-            coa_url = batch.get("coa_file_url") if batch else None
-            halal_url = batch.get("halal_batch_file_url") if batch else None
-            msds_url = material.get("msds_file_url")
+            if not documents:
+                # Tanpa Spek & tanpa Catatan Pemeriksaan: jangan buat halaman kosong,
+                # cukup catat di daftar missing bagian akhir PDF.
+                missing_material_documents.append(nama_bahan)
+                continue
 
-            await append_pdf_from_url(client, coa_url, f"CoA bahan baku {nama_bahan}")
-            await append_pdf_from_url(client, halal_url, f"Sertifikat Halal bahan baku {nama_bahan}")
-            await append_pdf_from_url(client, msds_url, f"MSDS bahan baku {nama_bahan}")
+            composed = bab2_pdf.compose_material_page(nama_bahan, documents)
+            if not composed:
+                logger.warning("Gagal mengomposisi halaman bahan baku %s", nama_bahan)
+                continue
+            await append_pdf_from_bytes(composed, f"komposisi {nama_bahan}")
+
+        # 6c. Section COA: seluruh CoA dikumpulkan di sini, berurutan sesuai bahan baku,
+        # masing-masing dengan header nama bahan bakunya.
+        coa_entries: list[tuple[str, bytes]] = []
+        for idx, item in enumerate(materials_data, start=1):
+            batch = item["batch"]
+            nama_bahan = item["material"].get("nama_dagang") or f"Bahan Baku {idx}"
+            coa_bytes = await fetch_pdf_bytes(
+                client, batch.get("coa_file_url") if batch else None, f"CoA bahan baku {nama_bahan}")
+            if coa_bytes and bab2_pdf.read_pdf_pages(coa_bytes, f"CoA {nama_bahan}"):
+                coa_entries.append((nama_bahan, coa_bytes))
+            else:
+                missing_coa.append(nama_bahan)
+
+        coa_section = bab2_pdf.build_coa_section(coa_entries)
+        if coa_section:
+            await append_pdf_from_bytes(coa_section, "section CoA")
+
+        # 6d. Bagian akhir: daftar dokumen yang belum tersedia (section kosong tidak dibuat)
+        await append_pdf_from_bytes(
+            bab2_pdf.build_missing_list_page(
+                "Bahan baku yang belum memiliki Spek dan Catatan Pemeriksaan:",
+                missing_material_documents,
+            ),
+            "daftar missing Spek/Catatan Pemeriksaan",
+        )
+        await append_pdf_from_bytes(
+            bab2_pdf.build_missing_list_page(
+                "Bahan baku dengan COA belum terlampir:",
+                missing_coa,
+            ),
+            "daftar missing CoA",
+        )
 
     output_buffer = io.BytesIO()
     writer.write(output_buffer)
