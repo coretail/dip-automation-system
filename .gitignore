@@ -49,6 +49,7 @@ venv.bak/
 *.swo
 .project
 .pydevproject
+.kilo/
 
 # Operating System Files
 .DS_Store
