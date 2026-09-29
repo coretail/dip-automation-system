@@ -43,8 +43,6 @@ HEADER_HEIGHT = 58.0
 LABEL_HEIGHT = 18.0
 SECTION_GAP = 12.0
 
-_FONT_CACHE: dict[str, int] = {}
-
 
 def render_html_to_pdf(html: str) -> bytes | None:
     """Render HTML string jadi bytes PDF. Return ``None`` kalau xhtml2pdf error."""
@@ -97,18 +95,18 @@ def _add_indirect(page, obj):
 
 
 def _get_font_key(page, bold: bool) -> str:
-    font_name = "/F_bold" if bold else "/F_regular"
-    cache_key = f"{id(page.indirect_reference.get_object())}:{font_name}"
-    if cache_key in _FONT_CACHE:
-        return font_name
+    """Pastikan font terdaftar di /Resources /Font halaman ini, lalu kembalikan
+    nama resource-nya.
 
-    font = DictionaryObject({
-        NameObject("/Type"): NameObject("/Font"),
-        NameObject("/Subtype"): NameObject("/Type1"),
-        NameObject("/BaseFont"): NameObject("/Helvetica-Bold" if bold else "/Helvetica"),
-        NameObject("/Encoding"): NameObject("/WinAnsiEncoding"),
-    })
-    font_ref = _add_indirect(page, font)
+    Penting: pengecekan dilakukan per HALAMAN, bukan lewat cache global. Versi
+    sebelumnya memakai id(page) sebagai kunci cache, padahal id() adalah alamat
+    memori yang bisa dipakai ulang CPython untuk objek lain. Kalau halaman baru
+    mendapat alamat yang sama, cache "lupa" mendaftarkan fontnya, sementara
+    /Contents halaman itu tetap memanggil /F_regular atau /F_bold — membuat font
+    tidak ditemukan dan teks pada halaman tersebut tidak bisa diekstrak.
+    """
+    font_name = "/F_bold" if bold else "/F_regular"
+
     resources = page.get(NameObject("/Resources"))
     if resources is None:
         resources = DictionaryObject()
@@ -119,9 +117,16 @@ def _get_font_key(page, bold: bool) -> str:
         fonts = DictionaryObject()
         resources[NameObject("/Font")] = fonts
     fonts = fonts.get_object()
-    fonts[NameObject(font_name)] = font_ref
+    if NameObject(font_name) in fonts:
+        return font_name
 
-    _FONT_CACHE[cache_key] = font_name
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica-Bold" if bold else "/Helvetica"),
+        NameObject("/Encoding"): NameObject("/WinAnsiEncoding"),
+    })
+    fonts[NameObject(font_name)] = _add_indirect(page, font)
     return font_name
 
 
