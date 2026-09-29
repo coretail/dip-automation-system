@@ -56,9 +56,13 @@ COL_WIDTH_PADDING = 2.0        # padding ditambahkan ke panjang teks terpanjang
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-# Header tabel memakai warna tema Excel "Accent 1" (4F81BD) dengan tint 0.8,
-# sama seperti dokumen acuan. Nilainya ditulis sebagai RGB hasil resolusi tema.
-HEADER_FILL = PatternFill("solid", fgColor="DCE6F1")
+# Warna header tabel berbeda per perusahaan:
+#   - PT Erfi -> peach (#FFCC99)
+#   - PT Heka -> biru muda (#DCE6F1), hasil resolusi tema Excel "Accent 1"
+#     lighten 80% sesuai dokumen acuan. TIDAK diubah.
+HEADER_FILL_ERFI = PatternFill("solid", fgColor="FFCC99")
+HEADER_FILL_HEKA = PatternFill("solid", fgColor="DCE6F1")
+HEADER_FILL = HEADER_FILL_HEKA          # alias: dipakai kalau perusahaan tak terdeteksi
 TOTAL_FILL = PatternFill("solid", fgColor="DCE6F1")
 NOTE_FILL = PatternFill("solid", fgColor="FEF9C3")
 # Baris bahan aktif ditandai kuning (mengikuti dokumen acuan)
@@ -220,6 +224,28 @@ def _static_fs_path(uri: str) -> str | None:
     return None
 
 
+def _is_pt_heka(product: dict, company: dict) -> bool:
+    """True kalau produk ini milik PT Heka.
+
+    PENTING: nama resmi PT Heka adalah "PT. HARAKA ERFI KOSMETINDO ABADI" — kata
+    "ERFI" ikut TERHANTAM di dalamnya. Jadi deteksi "heka"/"haraka" WAJIB dicek
+    lebih dulu; kalau urutannya dibalik, PT Heka ikut dapat warna PT Erfi.
+    """
+    for src in (product or {}, company or {}):
+        if not isinstance(src, dict):
+            continue
+        for field in ("perusahaan", "nama", "logo", "kop"):
+            value = str(src.get(field) or "").lower()
+            if "heka" in value or "haraka" in value:
+                return True
+    return False
+
+
+def _header_fill_for(product: dict, company: dict) -> PatternFill:
+    """Warna header tabel sesuai perusahaan produk."""
+    return HEADER_FILL_HEKA if _is_pt_heka(product, company) else HEADER_FILL_ERFI
+
+
 def _kop_fs_path(company: dict) -> str | None:
     """Path gambar kop surat (kop_erfi / kop_heka)."""
     company = company or {}
@@ -292,13 +318,14 @@ def _info_block(ws, start_row: int, pairs, value_col: int = 3) -> int:
     return row
 
 
-def _table_header(ws, row: int, headers, first_col: int = 2):
-    """Baris header tabel: Arial 12 bold + fill biru muda + center + border tipis
-    (atas/kiri/kanan, tanpa bawah — mengikuti dokumen acuan)."""
+def _table_header(ws, row: int, headers, first_col: int = 2, fill: PatternFill = None):
+    """Baris header tabel: Arial 12 bold + fill sesuai perusahaan + center + border
+    tipis (atas/kiri/kanan, tanpa bawah — mengikuti dokumen acuan)."""
+    fill = fill or HEADER_FILL
     for offset, title in enumerate(headers):
         cell = ws.cell(row=row, column=first_col + offset, value=title)
         cell.font = FONT_TITLE
-        cell.fill = HEADER_FILL
+        cell.fill = fill
         cell.alignment = ALIGN_CENTER_WRAP
         cell.border = BORDER_HEADER
         ws.row_dimensions[row].height = LETTERHEAD_ROW_HEIGHT
@@ -396,7 +423,8 @@ def _sheet_formula_trade(wb: Workbook, product: dict, trade_breakdown: list, com
     _info_block(ws, REF_INFO_ROW, _formula_info_pairs(product), value_col=3)
 
     data_start = _table_header(ws, REF_HEADER_ROW,
-                               ["Nama Dagang", "Ingredients", "Function", "% w/w"])
+                               ["Nama Dagang", "Ingredients", "Function", "% w/w"],
+                               fill=_header_fill_for(product, company))
 
     row = data_start
     for group in trade_breakdown:
@@ -479,7 +507,8 @@ def _sheet_formula_pure(wb: Workbook, product: dict, pure_breakdown: list, compa
     _info_block(ws, REF_INFO_ROW, _formula_info_pairs(product), value_col=3)
 
     data_start = _table_header(ws, REF_HEADER_ROW,
-                               ["Ingredients", "Function", "% w/w"]) + 1  # +1 = 1 baris kosong
+                               ["Ingredients", "Function", "% w/w"],
+                               fill=_header_fill_for(product, company)) + 1  # +1 = 1 baris kosong
 
     row = data_start
     for comp in pure_breakdown:
