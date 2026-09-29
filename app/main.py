@@ -929,8 +929,9 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         title = "Dokumen Tidak Ditemukan" if exc.status_code == 404 else "Terjadi Kesalahan"
         message = exc.detail if isinstance(exc.detail, str) else "Silakan hubungi admin jika masalah berlanjut."
         return templates.TemplateResponse(
-            "public_error.html",
-            {"request": request, "title": title, "message": message},
+            request=request,
+            name="public_error.html",
+            context={"title": title, "message": message},
             status_code=exc.status_code
         )
 
