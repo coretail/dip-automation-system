@@ -6,7 +6,6 @@ from typing import List
 from app.database import supabase
 from app.config import settings
 from app.excel_generator import XLSX_MIME, build_formula_workbook
-from app import bab2_pdf
 from app.efek_samping import _efek_samping_meta, register_efek_samping_routes
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date, timedelta
@@ -20,16 +19,13 @@ import json
 import base64
 import sys
 import tempfile
-import zipfile
 import httpx
 import unicodedata
 import logging
 from xhtml2pdf import pisa
-from pypdf import PdfReader, PdfWriter
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from typing import Optional
-from slugify import slugify
 
 from dotenv import load_dotenv
 load_dotenv()
