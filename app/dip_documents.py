@@ -13,6 +13,7 @@ app/dip_public.py. Route finished-spec juga tetap di main.py.
 
 import io
 import logging
+import os
 import re
 import zipfile
 from decimal import Decimal
@@ -27,6 +28,53 @@ from app import bab2_pdf
 
 # Catatan: nama logger berubah dari "app.main" menjadi "app.dip_documents".
 logger = logging.getLogger(__name__)
+
+# Folder app/static — dipakai untuk resolve path absolut gambar kop surat.
+_STATIC_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+# Lebar area konten Bab III = A4 (595,28 pt) dikurangi margin 10 mm kiri/kanan.
+# Tabel formula memakai width:100% jadi lebarnya sama dengan nilai ini.
+BAB3_CONTENT_WIDTH_PT = 538.58
+# Kop surat dibuat 80% dari lebar tabel formula lalu dipusatkan.
+KOP_WIDTH_RATIO = 0.80
+# Rasio tinggi/lebar berkas kop aslinya, supaya gambar tidak gepeng.
+KOP_ASPECT = {"kop_erfi.png": 114 / 805, "kop_heka.png": 132 / 802}
+
+
+def _kop_image(company: dict, max_width_pt: float = BAB3_CONTENT_WIDTH_PT):
+    """Gambar kop surat perusahaan sebagai dict {src, width, height, name} untuk xhtml2pdf.
+
+    xhtml2pdf tidak bisa resolve URL "/static/images/kop_*.png" tanpa base_url, jadi
+    path filesystem absolut yang dipakai. Ukuran ditulis lewat CSS (style="width:...")
+    karena yang dihormati xhtml2pdf; atribut width=反而 diskala 0,75 dan
+    style="width:100%" di-collapse jadi 0.
+
+    Return None kalau file-nya tidak ada, supaya template bisa fallback ke kop teks.
+    """
+    company = company or {}
+    uri = (company.get("kop") or "").strip()
+    if not uri:
+        logo = (company.get("logo") or "").lower()
+        nama = (company.get("nama") or "").lower()
+        # "heka"/"haraka" dicek lebih dulu: nama resmi PT Heka mengandung kata "erfi".
+        if "heka" in logo or "haraka" in nama:
+            uri = "/static/images/kop_heka.png"
+        elif "erfi" in logo or "erfi" in nama:
+            uri = "/static/images/kop_erfi.png"
+    if not uri:
+        return None
+
+    relative = uri.split("/static/", 1)[-1] if "/static/" in uri else uri.lstrip("/")
+    path = os.path.join(_STATIC_ROOT, relative.replace("/", os.sep))
+    if not os.path.isfile(path):
+        logger.warning("Gambar kop surat tidak ditemukan: %s", path)
+        return None
+
+    width = round(float(max_width_pt) * KOP_WIDTH_RATIO, 1)
+    height = round(width * KOP_ASPECT.get(os.path.basename(path), 0.15), 1)
+    return {"src": path, "width": width, "height": height,
+            "name": os.path.basename(path)}
 
 
 def _safe_zip_name(name: str) -> str:
@@ -618,7 +666,8 @@ def register_dip_document_routes(
                     comp_list.append({
                         "ingredient": comp.get("inci_name") or "-",
                         "function": comp.get("function") or "-",
-                        "percent": calc_pct
+                        "percent": calc_pct,
+                        "is_bahan_aktif": bool(comp.get("is_bahan_aktif")),
                     })
                 processed_formula.append({
                     "nama_dagang": rm.get("nama_dagang") or "-",
@@ -634,7 +683,11 @@ def register_dip_document_routes(
                     "compositions": [{
                         "ingredient": rm.get("nama_dagang") or "-",
                         "function": "-",
-                        "percent": percent_total
+                        "percent": percent_total,
+                        # Bahan tanpa komponen tidak punya penanda bahan aktif di
+                        # DB (kolomnya hanya ada di raw_material_components) —
+                        # konsisten dengan Qual-Quan & export Excel.
+                        "is_bahan_aktif": False,
                     }]
                 })
 
@@ -671,6 +724,14 @@ def register_dip_document_routes(
             print(f"[WARNING] Gagal/belum ada data product_finished_specs: {e}")
 
         # 5. RENDER COVER & FORMULA VIA TEMPLATE HTML
+        # Total % w/w dihitung di sini (bukan di template) supaya angkanya pasti
+        # konsisten dengan penjumlahan baris tabel.
+        formula_total_percent = round(
+            sum(float(c.get("percent") or 0)
+                for item in processed_formula
+                for c in item.get("compositions") or []),
+            4,
+        )
         template = templates.get_template("bab3_checklist.html")
         rendered_html = template.render({
             "product": product,
@@ -679,6 +740,8 @@ def register_dip_document_routes(
             "company_sop": company_sop,
             "latest_batch": latest_batch,
             "processed_formula": processed_formula,
+            "formula_total_percent": formula_total_percent,
+            "kop_image": _kop_image(company),
             "finished_spec": finished_spec, # Pass finished_spec to template
         })
 

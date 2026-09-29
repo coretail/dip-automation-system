@@ -49,19 +49,27 @@
     <!-- ================= HALAMAN 2: FORMULA KUALITATIF & KUANTITATIF ================= -->
     <div class="page-break"></div>
 
-    <!-- KOP PERUSAHAAN -->
+    <!-- KOP SURAT: pakai gambar kop resmi perusahaan (kop_erfi.png / kop_heka.png) -->
+    {% if kop_image %}
+    <div style="text-align: center; margin-bottom: 14px;">
+        <img src="{{ kop_image.src }}" alt="Kop Surat {{ kop_image.name }}"
+             style="width: {{ kop_image.width }}pt; height: {{ kop_image.height }}pt;">
+    </div>
+    {% else %}
+    <!-- Fallback: kop teks kalau file gambar kop tidak tersedia -->
     <div style="border-bottom: 2.5px solid #f97316; padding-bottom: 6px; margin-bottom: 12px;">
-        <table style="width: 100%; border: none; margin: 0 0 0 15px; padding: 0; border-collapse: collapse;"><tr style="border: none;"><td style="border: none; width: {{ company.logo_width + 2 }}px; vertical-align: middle; padding: 0;"><img src="{{ company.logo }}" alt="Logo" style="height: 60px; width: auto;"></td><td style="border: none; vertical-align: middle; padding: 0 0 0 10px;">
+        <table style="width: 100%; border: none; margin: 0; padding: 0; border-collapse: collapse;"><tr style="border: none;"><td style="border: none; vertical-align: middle; padding: 0;">
         <div>
             <h2 style="margin: 0; font-size: 11pt; font-weight: bold; color: #111827; text-transform: uppercase;">
                 {% if product.perusahaan == 'PT Heka' %}PT. HARAKA ERFI KOSMETINDO ABADI{% else %}PT. ERFI KARYA ABADI{% endif %}
             </h2>
             <p style="margin: 2px 0 0 0; font-size: 7.5pt; color: #4b5563; line-height: 1.2;">
-                Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia<br>
-                Email: harakaerfi.pt@gmail.com &nbsp;|&nbsp; erfikaryaabadi@gmail.com
+                {{ company.alamat or 'Jl. Kampung Klapanunggal, Bogor, Indonesia' }}<br>
+                Email: {{ company.email or '-' }}
             </p>
         </div></td></tr></table>
     </div>
+    {% endif %}
 
     <!-- JUDUL DOKUMEN FORMULA -->
     <div style="text-align: center; margin-bottom: 12px;">
@@ -81,43 +89,71 @@
         <tr style="border: none;"><td style="border: none; font-weight: bold;">Tanggal Acc Sampel</td><td style="border: none;">: {{ product.acc_sampel or '-' }}</td></tr>
     </table>
 
-    <!-- TABEL FORMULA LENGKAP -->
+    <!-- TABEL FORMULA LENGKAP
+         Format mengikuti dokumen acuan excel-example/ (PT Erfi = header peach,
+         PT Heka = header biru muda): 4 kolom, header bold-center, baris bahan
+         aktif kuning, baris Total, dan blok tanda tangan. -->
+    {% set is_heka = 'heka' in (perusahaan or '')|lower %}
     {% if processed_formula %}
-    <table style="width: 100%; border-collapse: collapse; font-size: 8pt;">
+    <table style="width: 100%; border-collapse: collapse; font-size: 9pt; table-layout: fixed;">
+        <colgroup>
+            <col style="width: 24%;" />
+            <col style="width: 38%;" />
+            <col style="width: 20%;" />
+            <col style="width: 18%;" />
+        </colgroup>
         <thead>
-            <tr style="background-color: #fdebd0;">
-                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: left; width: 22%;">Nama Dagang</th>
-                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: left; width: 15%;">Kode</th>
-                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: left; width: 33%;">Ingredients</th>
-                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: left; width: 20%;">Function</th>
-                <th style="border: 1px solid #b3b3b3; padding: 5px; text-align: right; width: 10%;">% w/w</th>
+            <tr>
+                <th style="border: 1px solid #444; padding: 4px 6px; text-align: center; background-color: {{ '#DCE6F1' if is_heka else '#FFCC99' }};">Nama Dagang</th>
+                <th style="border: 1px solid #444; padding: 4px 6px; text-align: center; background-color: {{ '#DCE6F1' if is_heka else '#FFCC99' }};">Ingredients</th>
+                <th style="border: 1px solid #444; padding: 4px 6px; text-align: center; background-color: {{ '#DCE6F1' if is_heka else '#FFCC99' }};">Function</th>
+                <th style="border: 1px solid #444; padding: 4px 6px; text-align: center; background-color: {{ '#DCE6F1' if is_heka else '#FFCC99' }};">% w/w</th>
             </tr>
         </thead>
         <tbody>
             {% for item in processed_formula %}
                 {% for comp in item.compositions %}
+                {% set aktif = comp.is_bahan_aktif %}
                 <tr>
                     {% if loop.first %}
-                    <td rowspan="{{ item.row_span }}" style="border: 1px solid #b3b3b3; padding: 5px; font-weight: bold; vertical-align: top;">
-                        {{ item.nama_dagang }}
-                    </td>
-                    <td rowspan="{{ item.row_span }}" style="border: 1px solid #b3b3b3; padding: 5px; vertical-align: top; font-family: monospace;">
-                        {{ item.kode }}
-                    </td>
+                    <td rowspan="{{ item.row_span }}" style="border: 1px solid #444; padding: 4px 6px; vertical-align: top;{{ ' font-weight: bold;' if aktif }}">{{ item.nama_dagang }}</td>
                     {% endif %}
-                    <td style="border: 1px solid #b3b3b3; padding: 5px; vertical-align: top;">
-                        {{ comp.ingredient }}
-                    </td>
-                    <td style="border: 1px solid #b3b3b3; padding: 5px; vertical-align: top;">
-                        {{ comp.function }}
-                    </td>
-                    <td style="border: 1px solid #b3b3b3; padding: 5px; text-align: right; vertical-align: top;">
-                        {{ comp.percent }}
-                    </td>
+                    <td style="border: 1px solid #444; padding: 4px 6px; text-align: left; vertical-align: top;{{ ' background-color: #FFFF00; font-weight: bold;' if aktif }}">{{ comp.ingredient }}</td>
+                    <td style="border: 1px solid #444; padding: 4px 6px; text-align: center; vertical-align: top;{{ ' background-color: #FFFF00; font-weight: bold;' if aktif }}">{{ comp.function }}</td>
+                    <td style="border: 1px solid #444; padding: 4px 6px; text-align: right; vertical-align: top;{{ ' background-color: #FFFF00; font-weight: bold;' if aktif }}">{{ '%.4f'|format(comp.percent|float) }}</td>
                 </tr>
                 {% endfor %}
             {% endfor %}
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3" style="border: 1px solid #444; padding: 4px 6px; text-align: center; vertical-align: middle; background-color: #DCE6F1; font-weight: bold;">Total</td>
+                <td style="border: 1px solid #444; padding: 4px 6px; text-align: right; vertical-align: middle; background-color: #DCE6F1; font-weight: bold;">{{ '%.3f'|format(formula_total_percent|float) }}</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <!-- BLOK TANDA TANGAN -->
+    <table style="width: 100%; border: none; margin-top: 6px; font-size: 9pt;">
+        <tr style="border: none;">
+            <td style="border: none; width: 50%; text-align: left;">Disusun Oleh :</td>
+            <td style="border: none; width: 50%; text-align: right;">Diketahui Oleh :</td>
+        </tr>
+        <tr style="border: none; height: 26px;">
+            <td style="border: none;"></td><td style="border: none;"></td>
+        </tr>
+        <tr style="border: none;">
+            <td style="border: none; text-align: left;">
+                <table align="left" style="width: 120px; border: none;">
+                    <tr><td style="border: none; border-bottom: 1px solid #444;">Registration</td></tr>
+                </table>
+            </td>
+            <td style="border: none; text-align: right;">
+                <table align="right" style="width: 70px; border: none;">
+                    <tr><td style="border: none; border-bottom: 1px solid #444; text-align: right;">R&amp;D</td></tr>
+                </table>
+            </td>
+        </tr>
     </table>
     {% else %}
     <p style="font-style: italic; color: #777; text-align: center; padding: 15px 0;">
