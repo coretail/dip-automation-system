@@ -1,20 +1,38 @@
 """
 Generator file Excel (.xlsx) untuk dokumen Formula Kualitatif & Kuantitatif.
 
-Modul ini menggantikan export client-side berbasis SheetJS agar hasil .xlsx
-jauh lebih rapi, terstruktur, dan profesional:
-  - Kop surat: gambar kop penuh (`kop_erfi.png` / `kop_heka.png`)
-    di sheet Formula Nama Dagang & Formula INCI Murni.
-  - Sheet Text Design tanpa kop surat.
-  - Auto-fit lebar kolom dinamis (min 15, maks 50) dari isi teks terpanjang.
-  - Header tabel ber-fill oranye muda (#FABF8F) + bold.
-  - Border medium (#6B7280) di seluruh sel tabel data.
-  - Kolom angka (% w/w) align RIGHT dengan format desimal 0.0000.
-  - Baris TOTAL: bold, highlight, top border medium + bottom border ganda.
-  - Sheet Text Design: merge B-E + wrap_text untuk teks panjang.
-  - Blok tanda tangan: Sheet "Nama Dagang" 3 kolom (A-B Registrasi /
-    D-E R&D); Sheet "INCI Murni" ringkas dalam area A-C (kolom A & C);
-    Sheet "Text Design" tanpa blok tanda tangan.
+Modul ini menggantikan export client-side berbasis SheetJS. Format sheet formula
+diikuti dokumen acuan di `excel-example/` (pemetaan sheet):
+    sheet acuan "Formula"   -> sheet aplikasi "Formula INCI Murni"
+    sheet acuan "Formula 2" -> sheet aplikasi "Formula Nama Dagang"
+
+Gaya umum (kedua sheet formula):
+  - Kolom A dibiarkan sebagai margin kiri; seluruh tabel mulai di kolom B.
+  - Kop surat (gambar) di B1, judul di baris 7, blok info baris 9-15,
+    header tabel baris 18.
+  - Judul, blok info, baris Total, dan tanda tangan memakai Arial; isi tabel
+    memakai Trebuchet MS 11.
+  - Label info ditulis di kolom B dan diratakan dengan padding, nilai di kolom C
+    berawalan ": ".
+  - Header tabel: Arial 12 bold, fill biru muda (resolusi warna tema "Accent 1"
+    lighten 80%), center, border tipis atas/kiri/kanan tanpa bawah.
+  - Baris data: border tipis lengkap, kolom % berformat 0.0000 dan center.
+  - Bahan aktif ditandai kuning, mengikuti dokumen acuan.
+  - Baris Total memakai formula =SUM(...) (bukan angka statis) berformat 0.000.
+  - Tanda tangan: nama jabatan (Registration / R&D) diberi garis bawah tipis.
+
+Perbedaan antar sheet mengikuti dokumen acuan:
+  - "Formula INCI Murni" (3 kolom): ada 1 baris kosong setelah header, label
+    Total bernada "Total :", dan blok tanda tangan TANPA baris label
+    "Disusun Oleh / Diketahui Oleh".
+  - "Formula Nama Dagang" (4 kolom: Nama Dagang | Ingredients | Function |
+    % w/w): data langsung setelah header, label Total "Total", baris label
+    tanda tangan disertakan, serta subtotal =SUM() di kolom F untuk setiap nama
+    dagang yang punya lebih dari satu komponen.
+  - Lebar kolom mengikuti acuan, kecuali kolom INCI yang hanya boleh lebih
+    lebar (tidak pernah lebih sempit) agar nama INCI panjang tidak terpotong.
+
+Sheet "Text Design" tetap tanpa kop surat dan tanpa blok tanda tangan.
 
 Dipakai oleh route:
     GET /products/{product_id}/qualitative-quantitative/export-xlsx
@@ -29,41 +47,85 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 # ==================== KONSTANTA STYLING ====================
-PCT_NUMBER_FORMAT = "0.0000"   # format angka desimal rapi utk kolom % w/w
+# Format angka mengikuti dokumen acuan: data 4 desimal, baris Total 3 desimal.
+PCT_NUMBER_FORMAT = "0.0000"
+PCT_TOTAL_FORMAT = "0.000"
 COL_WIDTH_MIN = 15.0           # auto-fit: lebar minimum kolom
 COL_WIDTH_MAX = 50.0           # auto-fit: lebar maksimum kolom
 COL_WIDTH_PADDING = 2.0        # padding ditambahkan ke panjang teks terpanjang
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-HEADER_FILL = PatternFill("solid", fgColor="FABF8F")  # header tabel: oranye muda
-TOTAL_FILL = PatternFill("solid", fgColor="FEF3C7")   # baris Total: highlight kuning muda
-NOTE_FILL = PatternFill("solid", fgColor="FEF9C3")    # kotak keterangan tambahan
+# Header tabel memakai warna tema Excel "Accent 1" (4F81BD) dengan tint 0.8,
+# sama seperti dokumen acuan. Nilainya ditulis sebagai RGB hasil resolusi tema.
+HEADER_FILL = PatternFill("solid", fgColor="DCE6F1")
+TOTAL_FILL = PatternFill("solid", fgColor="DCE6F1")
+NOTE_FILL = PatternFill("solid", fgColor="FEF9C3")
+# Baris bahan aktif ditandai kuning (mengikuti dokumen acuan)
+ACTIVE_FILL = PatternFill("solid", fgColor="FFFF00")
 
-_SIDE_MED_GRAY = Side(style="medium", color="6B7280")
-BORDER_THIN = Border(left=_SIDE_MED_GRAY, right=_SIDE_MED_GRAY,
-                     top=_SIDE_MED_GRAY, bottom=_SIDE_MED_GRAY)
-# Baris TOTAL: top border medium abu-abu + bottom border ganda (double) hitam
-BORDER_TOTAL = Border(left=_SIDE_MED_GRAY, right=_SIDE_MED_GRAY,
-                      top=Side(style="medium", color="6B7280"),
-                      bottom=Side(style="double", color="000000"))
+# Border dokumen acuan memakai garis TIPIS hitam (bukan medium abu-abu).
+_SIDE_THIN = Side(style="thin", color="000000")
+BORDER_THIN = Border(left=_SIDE_THIN, right=_SIDE_THIN,
+                     top=_SIDE_THIN, bottom=_SIDE_THIN)
+# Baris header: atas + kiri + kanan, TANPA garis bawah (mengikuti acuan).
+BORDER_HEADER = Border(left=_SIDE_THIN, right=_SIDE_THIN, top=_SIDE_THIN)
+# Baris Total sheet "Formula INCI Murni": garis atas, tanpa bawah.
+BORDER_TOTAL_TOP = Border(left=_SIDE_THIN, right=_SIDE_THIN, top=_SIDE_THIN)
+# Baris Total sheet "Formula Nama Dagang": garis bawah, tanpa atas
+# (garis pemisah datang dari border bawah baris data terakhir).
+BORDER_TOTAL_BOTTOM = Border(left=_SIDE_THIN, right=_SIDE_THIN, bottom=_SIDE_THIN)
 
+# Font: judul, blok info, Total, dan tanda tangan memakai Arial;
+# isi tabel memakai Trebuchet MS (mengikuti dokumen acuan).
 FONT_NORMAL = Font(name="Trebuchet MS", size=11)
 FONT_BOLD = Font(name="Trebuchet MS", size=11, bold=True)
-FONT_TITLE = Font(name="Trebuchet MS", size=12, bold=True)
+FONT_TITLE = Font(name="Arial", size=12, bold=True)
+FONT_INFO = Font(name="Arial", size=12, bold=True)
+FONT_TOTAL = Font(name="Arial", size=12, bold=True)
+FONT_SIGN = Font(name="Arial", size=11)
 # Font khusus fallback letterhead (teks, tanpa gambar kop):
 _FONT_LETTERHEAD_FALLBACK = Font(name="Trebuchet MS", size=14, bold=True)
 
+ALIGN_LEFT_CENTER_WRAP = Alignment(horizontal="left", vertical="center", wrap_text=True)
+ALIGN_LEFT_CENTER = Alignment(horizontal="left", vertical="center")
 ALIGN_LEFT_TOP_WRAP = Alignment(horizontal="left", vertical="top", wrap_text=True)
 ALIGN_CENTER = Alignment(horizontal="center", vertical="center")
 ALIGN_CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
 ALIGN_CENTER_TOP_WRAP = Alignment(horizontal="center", vertical="top", wrap_text=True)
 ALIGN_RIGHT = Alignment(horizontal="right", vertical="top")
 
-# Lebar gambar kop (px) ≈ 5 kolom min-width 15 (Calibri ~7px/char).
-KOP_WIDTH_PX = 550
-LETTERHEAD_ROWS = 3
-LETTERHEAD_ROW_HEIGHT = 22  # fallback points kalau gambar kop tidak ada
+# ==================== KONSTANTA LAYOUT (mengikuti dokumen acuan) ====================
+# Kolom A sengaja dibiarkan sebagai margin kiri; seluruh tabel mulai di kolom B.
+REF_COL_A_WIDTH = 13.0
+REF_TITLE_ROW = 7
+REF_INFO_ROW = 9
+REF_HEADER_ROW = 18
+# Lebar kolom tetap sesuai dokumen acuan (kolom INCI diberi pengaman minimum).
+REF_WIDTHS_PURE = {2: 43.141, 3: 21.711, 4: 21.0}
+REF_WIDTHS_TRADE = {2: 26.0, 3: 43.711, 4: 21.855, 5: 16.57, 6: 15.711}
+REF_MIN_INCI_WIDTH = 30.0
+REF_ROW_HEIGHT_DATA_PURE = 15.75
+REF_ROW_HEIGHT_DATA_TRADE = 16.5
+REF_ZOOM = 90
+
+# Lebar gambar kop (px) dan jumlah baris yang dipakai untuk kop surat.
+KOP_WIDTH_PX = 470
+LETTERHEAD_ROWS = 6
+LETTERHEAD_ROW_HEIGHT = 16.5
+LETTERHEAD_MAX_PT = LETTERHEAD_ROWS * LETTERHEAD_ROW_HEIGHT
+
+# Baris info produk (label di B, "nilai" di C) - mengikuti dokumen acuan.
+REF_INFO_FIELDS = [
+    ("Nama Produk", "nama_produk"),
+    ("Warna", "warna"),
+    ("Sediaan", "sediaan"),
+    ("Kemasan", "kemasan"),
+    ("Netto", "netto"),
+    ("Nama Customer", "nama_customer"),
+    ("Tanggal Acc Sampel", "acc_sampel"),
+]
+
 
 
 # ==================== HELPER UTILITAS ====================
@@ -173,7 +235,7 @@ def _kop_fs_path(company: dict) -> str | None:
 
 
 def _letterhead(ws, company: dict, last_col: str = "E"):
-    """Kop surat: gambar kop penuh di A1, merentang last_col baris 1-3.
+    """Kop surat: gambar kop di B1, menempati baris 1 s/d LETTERHEAD_ROWS.
 
     Tidak menulis nama/alamat/email terpisah — sudah ada di file kop.
     Kalau file kop hilang, fallback ke teks (tanpa gambar).
@@ -186,10 +248,14 @@ def _letterhead(ws, company: dict, last_col: str = "E"):
             if orig_w and orig_h:
                 img.width = KOP_WIDTH_PX
                 img.height = max(1, round(orig_h * KOP_WIDTH_PX / orig_w))
-            img.anchor = "A1"
+                # Batasi tinggi supaya judul di baris REF_TITLE_ROW tidak terdorong.
+                max_px = LETTERHEAD_MAX_PT * 96 / 72
+                if img.height > max_px:
+                    img.width = max(1, round(img.width * max_px / img.height))
+                    img.height = round(max_px)
+            img.anchor = "B1"
             ws.add_image(img)
-            total_pt = (img.height or 80) * 72 / 96
-            per_row = max(LETTERHEAD_ROW_HEIGHT, total_pt / LETTERHEAD_ROWS)
+            per_row = LETTERHEAD_ROW_HEIGHT
             for r in range(1, LETTERHEAD_ROWS + 1):
                 ws.row_dimensions[r].height = per_row
             return
@@ -197,194 +263,267 @@ def _letterhead(ws, company: dict, last_col: str = "E"):
             print(f"[EXCEL] Gagal embed kop {path}: {e}")
 
     left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
-    _set_merged(ws, f"A1:{last_col}1", _dash(company.get("nama")),
+    _set_merged(ws, f"B1:{last_col}1", _dash(company.get("nama")),
                 font=_FONT_LETTERHEAD_FALLBACK, align=left_align)
-    _set_merged(ws, f"A2:{last_col}2", _dash(company.get("alamat")), align=left_align)
+    _set_merged(ws, f"B2:{last_col}2", _dash(company.get("alamat")), align=left_align)
     contact = f"Email: {_dash(company.get('email'))} | Website: {_dash(company.get('website'))}"
-    _set_merged(ws, f"A3:{last_col}3", contact, align=left_align)
-    for r in range(1, 4):
+    _set_merged(ws, f"B3:{last_col}3", contact, align=left_align)
+    for r in range(1, LETTERHEAD_ROWS + 1):
         ws.row_dimensions[r].height = LETTERHEAD_ROW_HEIGHT
 
 
-def _info_block(ws, start_row: int, pairs) -> int:
-    """Blok info produk: label BOLD di kolom A, value di kolom B.
+def _info_block(ws, start_row: int, pairs, value_col: int = 3) -> int:
+    """Blok info produk sesuai dokumen acuan: label di kolom B, "nilai" di kolom C.
 
-    Return nomor baris SETELAH blok selesai.
+    Label diratakan lebarnya dengan padding spasi agar titik dua (":") selalu
+    sejajar antarbaris. Return nomor baris SETELAH blok selesai.
     """
+    pad = max((len(label) for label, _ in pairs), default=0)
     row = start_row
     for label, value in pairs:
-        label_cell = ws.cell(row=row, column=1, value=label)
-        label_cell.font = FONT_BOLD
-        value_cell = ws.cell(row=row, column=2, value=_dash(value))
-        value_cell.alignment = ALIGN_LEFT_TOP_WRAP
+        label_cell = ws.cell(row=row, column=2, value=f"{label:<{pad}}")
+        label_cell.font = FONT_INFO
+        label_cell.alignment = ALIGN_LEFT_CENTER
+        value_cell = ws.cell(row=row, column=value_col, value=f": {_dash(value)}")
+        value_cell.font = FONT_INFO
+        value_cell.alignment = ALIGN_LEFT_CENTER_WRAP
+        ws.row_dimensions[row].height = LETTERHEAD_ROW_HEIGHT
         row += 1
     return row
 
 
-def _table_header(ws, row: int, headers):
-    """Baris header tabel: bold + fill abu-abu muda + center + border tipis."""
-    for col, title in enumerate(headers, start=1):
-        cell = ws.cell(row=row, column=col, value=title)
-        cell.font = FONT_BOLD
+def _table_header(ws, row: int, headers, first_col: int = 2):
+    """Baris header tabel: Arial 12 bold + fill biru muda + center + border tipis
+    (atas/kiri/kanan, tanpa bawah — mengikuti dokumen acuan)."""
+    for offset, title in enumerate(headers):
+        cell = ws.cell(row=row, column=first_col + offset, value=title)
+        cell.font = FONT_TITLE
         cell.fill = HEADER_FILL
         cell.alignment = ALIGN_CENTER_WRAP
-    _border_range(ws, row, row, 1, len(headers))
+        cell.border = BORDER_HEADER
+        ws.row_dimensions[row].height = LETTERHEAD_ROW_HEIGHT
+    return row + 1
 
 
-def _signature_block(ws, start_row: int, compact: bool = False):
-    """Blok tanda tangan sejajar di bagian bawah sheet (TANPA border).
+def _signature_block(ws, label_row: int, left_col: str, right_col: str,
+                     with_labels: bool):
+    """Blok tanda tangan sesuai dokumen acuan.
 
-    Mode normal   (compact=False): dipakai Sheet "Formula Nama Dagang".
-      Kolom Kiri  (A-B): "Disusun oleh," -> Registrasi
-      Kolom Kanan (D-E): "Diketahui Oleh," -> R&D
-    Mode ringkas  (compact=True): dipakai Sheet "Formula INCI Murni" agar
-      pas di dalam area tabel 3 kolom (A-C), tanpa merge ke D/E:
-      Kolom Kiri  (A saja): "Disusun oleh," -> Registrasi
-      Kolom Kanan (C saja): "Diketahui Oleh," -> R&D
-
-    Di antara label & nama/jabatan ada 4 baris jarak sebagai ruang tanda tangan.
+    - label_row: baris "Disusun Oleh :" / "Diketahui Oleh :"
+      (hanya dipakai sheet "Formula Nama Dagang"; sheet "Formula INCI Murni"
+       pada dokumen acuan tidak memakai baris label ini).
+    - label_row + 3: baris nama jabatan dengan garis bawah tipis.
     """
-    label_row = start_row
-    name_row = start_row + 4
-    if compact:
-        # Sel tunggal kolom A (kiri) & kolom C (kanan), tanpa merge apa pun.
-        for r, text, bold in ((label_row, "Disusun oleh,", False),
-                              (name_row, "Registrasi", True)):
-            cell_left = ws.cell(row=r, column=1, value=text)
-            cell_left.font = FONT_BOLD if bold else FONT_NORMAL
-            cell_left.alignment = ALIGN_CENTER
-        for r, text, bold in ((label_row, "Diketahui Oleh,", False),
-                              (name_row, "R&D", True)):
-            cell_right = ws.cell(row=r, column=3, value=text)
-            cell_right.font = FONT_BOLD if bold else FONT_NORMAL
-            cell_right.alignment = ALIGN_CENTER
-    else:
-        _set_merged(ws, f"A{label_row}:B{label_row}", "Disusun oleh,", align=ALIGN_CENTER)
-        _set_merged(ws, f"D{label_row}:E{label_row}", "Diketahui Oleh,", align=ALIGN_CENTER)
-        _set_merged(ws, f"A{name_row}:B{name_row}", "Registrasi", font=FONT_BOLD, align=ALIGN_CENTER)
-        _set_merged(ws, f"D{name_row}:E{name_row}", "R&D", font=FONT_BOLD, align=ALIGN_CENTER)
+    left = ws[f"{left_col}{label_row}"]
+    right = ws[f"{right_col}{label_row}"]
+    if with_labels:
+        left.value = "Disusun Oleh :"
+        right.value = "Diketahui Oleh :"
+        left.alignment = ALIGN_LEFT_CENTER
+        right.alignment = ALIGN_CENTER
+    left.font = FONT_SIGN
+    right.font = FONT_SIGN
+
+    name_row = label_row + 3
+    ws[f"{left_col}{name_row}"] = "Registration"
+    ws[f"{right_col}{name_row}"] = "R&D"
+    for coord, align in ((f"{left_col}{name_row}", ALIGN_LEFT_CENTER),
+                         (f"{right_col}{name_row}", ALIGN_CENTER)):
+        cell = ws[coord]
+        cell.font = FONT_SIGN
+        cell.alignment = align
+        cell.border = Border(bottom=_SIDE_THIN)
+    for r in (label_row, label_row + 1, label_row + 2, name_row):
+        ws.row_dimensions[r].height = LETTERHEAD_ROW_HEIGHT
+
+
+def _page_setup(ws, landscape: bool = False):
+    """Pengaturan cetak & tampilan sheet sesuai dokumen acuan."""
+    ws.page_setup.orientation = "landscape" if landscape else "portrait"
+    ws.page_setup.paperSize = 9  # A4
+    ws.page_margins.left = 0.7
+    ws.page_margins.right = 0.7
+    ws.page_margins.top = 0.75
+    ws.page_margins.bottom = 0.75
+    ws.page_margins.header = 0.3
+    ws.page_margins.footer = 0.3
+    ws.sheet_view.zoomScale = REF_ZOOM
+
+
+def _apply_widths(ws, widths: dict, inci_col: int, components: list):
+    """Terapkan lebar kolom tetap sesuai acuan.
+
+    Kolom INCI hanya boleh lebih LEBAR dari nilai acuan (bukan lebih sempit)
+    supaya nama INCI panjang tidak terpotong.
+    """
+    longest_inci = max((len(str(c.get("inci_name") or "")) for c in components), default=0)
+    inci_width = max(widths.get(inci_col, REF_MIN_INCI_WIDTH),
+                     longest_inci + COL_WIDTH_PADDING, REF_MIN_INCI_WIDTH)
+    for col, width in widths.items():
+        ws.column_dimensions[get_column_letter(col)].width = (
+            inci_width if col == inci_col else width
+        )
+    ws.column_dimensions["A"].width = REF_COL_A_WIDTH
+
 
 # ==================== SHEET BUILDERS ====================
+def _formula_info_pairs(product: dict):
+    """Pasangan (label, nilai) untuk blok info produk, sama di kedua sheet formula."""
+    pairs = []
+    for label, field in REF_INFO_FIELDS:
+        value = _fmt_date(product.get(field)) if field == "acc_sampel" else product.get(field)
+        pairs.append((label, value))
+    return pairs
+
+
 def _sheet_formula_trade(wb: Workbook, product: dict, trade_breakdown: list, company: dict):
-    """Sheet 1 'Formula Nama Dagang': Nama Dagang | Kode | Ingredients | Function | % w/w."""
+    """Sheet 1 'Formula Nama Dagang': Nama Dagang | Ingredients | Function | % w/w.
+
+    Mengikuti sheet "Formula 2" pada dokumen acuan: tabel mulai di kolom B,
+    baris Total memakai formula =SUM(), dan tiap nama dagang yang punya lebih
+    dari satu komponen mendapat subtotal di kolom F.
+    """
     ws = wb.active
     ws.title = "Formula Nama Dagang"
 
     _letterhead(ws, company, last_col="E")
-    _set_merged(ws, "A5:E5", "FORMULA KUALITATIF & KUANTITATIF",
+
+    # Judul di baris 7, tabel di baris 18 (mengikuti dokumen acuan)
+    _set_merged(ws, f"B{REF_TITLE_ROW}:E{REF_TITLE_ROW}", "FORMULA KUALITATIF & KUANTITATIF",
                 font=FONT_TITLE, align=ALIGN_CENTER)
+    ws.row_dimensions[REF_TITLE_ROW].height = LETTERHEAD_ROW_HEIGHT
 
-    next_row = _info_block(ws, 7, [
-        ("Nama Produk", product.get("nama_produk")),
-        ("Warna", product.get("warna")),
-        ("Sediaan", product.get("sediaan")),
-        ("Kemasan", product.get("kemasan")),
-        ("Netto", product.get("netto")),
-        ("Nama Customer", product.get("nama_customer")),
-        ("Tanggal Acc Sampel", _fmt_date(product.get("acc_sampel"))),
-    ])
+    _info_block(ws, REF_INFO_ROW, _formula_info_pairs(product), value_col=3)
 
-    header_row = next_row + 1
-    _table_header(ws, header_row, ["Nama Dagang", "Kode", "Ingredients", "Function", "% w/w"])
+    data_start = _table_header(ws, REF_HEADER_ROW,
+                               ["Nama Dagang", "Ingredients", "Function", "% w/w"])
 
-    row = header_row + 1
+    row = data_start
     for group in trade_breakdown:
         components = group.get("components") or []
         group_first_row = row
         for comp in components:
             inci_cell = ws.cell(row=row, column=3, value=_dash(comp.get("inci_name")))
-            inci_cell.font = FONT_BOLD if comp.get("is_bahan_aktif") else FONT_NORMAL
-            inci_cell.alignment = ALIGN_LEFT_TOP_WRAP
+            inci_cell.font = FONT_NORMAL
+            inci_cell.alignment = ALIGN_LEFT_CENTER_WRAP
 
             func_cell = ws.cell(row=row, column=4, value=_dash(comp.get("function")))
-            func_cell.alignment = ALIGN_CENTER_TOP_WRAP
+            func_cell.font = FONT_NORMAL
+            func_cell.alignment = ALIGN_CENTER
 
             pct_cell = ws.cell(row=row, column=5, value=float(comp.get("pct_ww") or 0))
+            pct_cell.font = FONT_NORMAL
             pct_cell.number_format = PCT_NUMBER_FORMAT
-            pct_cell.alignment = ALIGN_RIGHT
+            pct_cell.alignment = ALIGN_CENTER
 
+            # Bahan aktif ditandai kuning (mengikuti dokumen acuan)
+            if comp.get("is_bahan_aktif"):
+                for col in (3, 4, 5):
+                    ws.cell(row=row, column=col).fill = ACTIVE_FILL
+
+            ws.row_dimensions[row].height = REF_ROW_HEIGHT_DATA_TRADE
             row += 1
 
-        # Nama Dagang & Kode cukup sekali per grup (di-merge vertikal kalau >1 baris)
         group_last_row = max(group_first_row, row - 1)
         if group_last_row > group_first_row:
-            ws.merge_cells(start_row=group_first_row, end_row=group_last_row,
-                           start_column=1, end_column=1)
+            # Nama Dagang di-merge vertikal; subtotal komponen di kolom F
             ws.merge_cells(start_row=group_first_row, end_row=group_last_row,
                            start_column=2, end_column=2)
-        dagang_cell = ws.cell(row=group_first_row, column=1, value=_dash(group.get("nama_dagang")))
-        dagang_cell.font = FONT_BOLD
-        dagang_cell.alignment = ALIGN_LEFT_TOP_WRAP
-        kode_cell = ws.cell(row=group_first_row, column=2, value=_dash(group.get("kode_bahan_baku")))
-        kode_cell.alignment = ALIGN_CENTER_TOP_WRAP
+            subtotal = ws.cell(row=group_first_row, column=6,
+                               value=f"=SUM(E{group_first_row}:E{group_last_row})")
+            subtotal.number_format = PCT_TOTAL_FORMAT
+            subtotal.alignment = ALIGN_CENTER
+        dagang_cell = ws.cell(row=group_first_row, column=2, value=_dash(group.get("nama_dagang")))
+        dagang_cell.font = FONT_NORMAL
+        dagang_cell.alignment = ALIGN_LEFT_CENTER_WRAP
 
-    data_last_row = max(header_row + 1, row - 1)
-    _border_range(ws, header_row + 1, data_last_row, 1, 5)
+    data_last_row = max(data_start, row - 1)
+    _border_range(ws, data_start, data_last_row, 2, 5)
 
-    # ---- Baris TOTAL: bold, highlight, top border tipis + bottom border ganda ----
+    # ---- Baris Total: formula =SUM, bukan angka statis ----
     total_row = data_last_row + 1
-    _set_merged(ws, f"A{total_row}:D{total_row}", "Total",
-                font=FONT_BOLD, align=Alignment(horizontal="right", vertical="center"))
-    total_pct = ws.cell(row=total_row, column=5, value=float(100))
-    total_pct.number_format = PCT_NUMBER_FORMAT
-    total_pct.font = FONT_BOLD
-    total_pct.alignment = ALIGN_RIGHT
-    _border_range(ws, total_row, total_row, 1, 5, border=BORDER_TOTAL)
-    _fill_range(ws, total_row, 1, 5, TOTAL_FILL)
+    _set_merged(ws, f"B{total_row}:D{total_row}", "Total",
+                font=FONT_TOTAL, align=ALIGN_CENTER)
+    total_pct = ws.cell(row=total_row, column=5,
+                        value=f"=SUM(E{data_start}:E{data_last_row})")
+    total_pct.number_format = PCT_TOTAL_FORMAT
+    total_pct.font = FONT_TOTAL
+    total_pct.alignment = ALIGN_CENTER
+    _border_range(ws, total_row, total_row, 2, 5, border=BORDER_TOTAL_BOTTOM)
+    _fill_range(ws, total_row, 2, 5, TOTAL_FILL)
+    ws.row_dimensions[total_row].height = REF_ROW_HEIGHT_DATA_TRADE
 
-    _signature_block(ws, total_row + 2)
-    _auto_fit_columns(ws, 1, 5)
+    # ---- Tanda tangan: label di baris Total+1, nama jabatan 3 baris di bawah ----
+    _signature_block(ws, total_row + 1, "B", "E", with_labels=True)
+
+    flat_components = [c for g in trade_breakdown for c in (g.get("components") or [])]
+    _apply_widths(ws, REF_WIDTHS_TRADE, 3, flat_components)
+    _page_setup(ws)
 
 
 def _sheet_formula_pure(wb: Workbook, product: dict, pure_breakdown: list, company: dict):
-    """Sheet 2 'Formula INCI Murni': Ingredients | Function | % w/w."""
+    """Sheet 2 'Formula INCI Murni': Ingredients | Function | % w/w.
+
+    Mengikuti sheet "Formula" pada dokumen acuan: satu baris kosong di antara
+    header dan data, baris Total memakai formula =SUM(), dan blok tanda tangan
+    TANPA baris label "Disusun Oleh / Diketahui Oleh".
+    """
     ws = wb.create_sheet("Formula INCI Murni")
 
-    _letterhead(ws, company, last_col="E")
-    _set_merged(ws, "A5:E5", "FORMULA KUALITATIF & KUANTITATIF",
+    _letterhead(ws, company, last_col="D")
+
+    _set_merged(ws, f"B{REF_TITLE_ROW}:D{REF_TITLE_ROW}", "FORMULA KUALITATIF & KUANTITATIF",
                 font=FONT_TITLE, align=ALIGN_CENTER)
+    ws.row_dimensions[REF_TITLE_ROW].height = LETTERHEAD_ROW_HEIGHT
 
-    next_row = _info_block(ws, 7, [
-        ("Nama Produk", product.get("nama_produk")),
-        ("Warna", product.get("warna")),
-        ("Sediaan", product.get("sediaan")),
-    ])
+    _info_block(ws, REF_INFO_ROW, _formula_info_pairs(product), value_col=3)
 
-    header_row = next_row + 1
-    _table_header(ws, header_row, ["Ingredients", "Function", "% w/w"])
+    data_start = _table_header(ws, REF_HEADER_ROW,
+                               ["Ingredients", "Function", "% w/w"]) + 1  # +1 = 1 baris kosong
 
-    row = header_row + 1
+    row = data_start
     for comp in pure_breakdown:
-        inci_cell = ws.cell(row=row, column=1, value=_dash(comp.get("inci_name")))
-        inci_cell.font = FONT_BOLD if comp.get("is_bahan_aktif") else FONT_NORMAL
-        inci_cell.alignment = ALIGN_LEFT_TOP_WRAP
+        inci_cell = ws.cell(row=row, column=2, value=_dash(comp.get("inci_name")))
+        inci_cell.font = FONT_NORMAL
+        inci_cell.alignment = ALIGN_LEFT_CENTER_WRAP
 
-        func_cell = ws.cell(row=row, column=2, value=_dash(comp.get("function")))
-        func_cell.alignment = ALIGN_CENTER_TOP_WRAP
+        func_cell = ws.cell(row=row, column=3, value=_dash(comp.get("function")))
+        func_cell.font = FONT_NORMAL
+        func_cell.alignment = ALIGN_LEFT_CENTER_WRAP
 
-        pct_cell = ws.cell(row=row, column=3, value=float(comp.get("pct_ww") or 0))
+        pct_cell = ws.cell(row=row, column=4, value=float(comp.get("pct_ww") or 0))
+        pct_cell.font = FONT_NORMAL
         pct_cell.number_format = PCT_NUMBER_FORMAT
-        pct_cell.alignment = ALIGN_RIGHT
+        pct_cell.alignment = ALIGN_CENTER
+
+        if comp.get("is_bahan_aktif"):
+            for col in (2, 3, 4):
+                ws.cell(row=row, column=col).fill = ACTIVE_FILL
+
+        ws.row_dimensions[row].height = REF_ROW_HEIGHT_DATA_PURE
         row += 1
 
-    data_last_row = max(header_row + 1, row - 1)
-    _border_range(ws, header_row + 1, data_last_row, 1, 3)
+    data_last_row = max(data_start, row - 1)
+    _border_range(ws, data_start, data_last_row, 2, 4)
 
-    # ---- Baris TOTAL (sheet INCI murni) ----
+    # ---- Baris Total: label "Total :" (mengikuti sheet acuan "Formula") ----
     total_row = data_last_row + 1
-    _set_merged(ws, f"A{total_row}:B{total_row}", "Total",
-                font=FONT_BOLD, align=Alignment(horizontal="right", vertical="center"))
-    total_pct = ws.cell(row=total_row, column=3, value=float(100))
-    total_pct.number_format = PCT_NUMBER_FORMAT
-    total_pct.font = FONT_BOLD
-    total_pct.alignment = ALIGN_RIGHT
-    _border_range(ws, total_row, total_row, 1, 3, border=BORDER_TOTAL)
-    _fill_range(ws, total_row, 1, 3, TOTAL_FILL)
+    _set_merged(ws, f"B{total_row}:C{total_row}", "Total :",
+                font=FONT_SIGN, align=ALIGN_LEFT_CENTER)
+    total_pct = ws.cell(row=total_row, column=4,
+                        value=f"=SUM(D{data_start - 1}:D{data_last_row})")
+    total_pct.number_format = PCT_TOTAL_FORMAT
+    total_pct.font = FONT_SIGN
+    total_pct.alignment = ALIGN_CENTER
+    _border_range(ws, total_row, total_row, 2, 4, border=BORDER_TOTAL_TOP)
+    _fill_range(ws, total_row, 2, 4, TOTAL_FILL)
+    ws.row_dimensions[total_row].height = LETTERHEAD_ROW_HEIGHT
 
-    # Tanda tangan ringkas dalam area 3 kolom: kiri kolom A, kanan kolom C
-    # (tanpa merge ke kolom D/E).
-    _signature_block(ws, total_row + 2, compact=True)
-    _auto_fit_columns(ws, 1, 5)
+    # ---- Tanda tangan tanpa baris label (mengikuti sheet acuan "Formula") ----
+    _signature_block(ws, total_row + 1, "B", "D", with_labels=False)
+
+    _apply_widths(ws, REF_WIDTHS_PURE, 2, pure_breakdown)
+    _page_setup(ws)
 
 
 def _sheet_text_design(wb: Workbook, product: dict, pure_breakdown: list, company: dict):
