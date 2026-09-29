@@ -194,7 +194,7 @@ uvicorn app.main:app --reload
 ```
 dip-automation-system/
 ├── app/
-│   ├── main.py                 # Entrypoint FastAPI: routing inti, auth, generator Bab I–IV, dashboard
+│   ├── main.py                 # Entrypoint FastAPI: routing inti, auth, finished-spec, dashboard, pemanggil register_*
 │   ├── config.py               # Konfigurasi environment/settings aplikasi (pydantic-settings)
 │   ├── database.py             # Inisialisasi klien Supabase
 │   ├── excel_generator.py      # Pembuatan workbook .xlsx Qual-Quan (openpyxl)
@@ -203,6 +203,8 @@ dip-automation-system/
 │   ├── raw_materials_routes.py # Routing halaman & CRUD bahan baku, batch, varian komposisi
 │   ├── po_routes.py            # Routing modul Produksi: PO, batch produk, item PO
 │   ├── notes_routes.py         # Routing modul Notes tim & @mention
+│   ├── dip_documents.py        # Routing generator DIP Bab I–IV, ZIP Bab II, & preview (butuh login)
+│   ├── dip_public.py           # Routing portal publik /dip/{slug} untuk verifikator BPOM (tanpa login)
 │   ├── static/                 # Asset statis (logo perusahaan, gambar tanda tangan, dll.)
 │   └── templates/              # Jinja2 HTML Templates (dashboard, admin, form, checklist Bab I–IV, dll.)
 ├── requirements.txt            # Daftar dependensi Python
@@ -210,7 +212,7 @@ dip-automation-system/
 └── panduan_dip_automation_system.md  # Panduan operasional & teknis lengkap
 ```
 
-> Catatan arsitektur: `main.py` masih menangani routing inti (auth, produk, generator Bab I–IV, dashboard, portal publik). Fitur yang sudah cukup besar dipisah menjadi modul router terpisah dengan fungsi `register_*_routes(app, ...)` yang dipanggil dari `main.py`, agar `main.py` tidak terus membesar tanpa batas.
+> Catatan arsitektur: `main.py` menangani routing inti (auth, produk, dashboard, route finished-spec/Spesifikasi Produk Jadi), helper bersama (mis. kop perusahaan, format tanggal, penyelesaian varian komposisi), dan menjadi pemanggil semua `register_*_routes`. Fitur yang sudah cukup besar dipisah menjadi modul router terpisah dengan fungsi `register_*_routes(app, ...)`, agar `main.py` tidak terus membesar tanpa batas. Semua dependensi antar modul di-*inject* lewat parameter fungsi tersebut, sehingga tidak ada modul yang perlu meng-import `main.py` (circular import). Batas keamanan sengaja terlihat di struktur berkas: `dip_documents.py` berisi generator DIP yang **butuh login**, sedangkan `dip_public.py` berisi portal `/dip/{slug}` yang **tanpa login** dan dipakai verifikator BPOM lewat link permanen. Modul publik menerima fungsi generator dari `main.py` melalui parameter `bab_generators` dan `download_bab2_zip` — `register_dip_document_routes` mengembalikan fungsi generator tersebut supaya `dip_public.py` tetap tidak bergantung pada `main.py`.
 
 ### Tabel Utama Supabase
 * **Master & Produk:** `profiles` (user, role, `is_protected`, presence), `products`, `brands`, `producers`, `product_finished_specs`, `product_formula_lines`, `product_batches`.
