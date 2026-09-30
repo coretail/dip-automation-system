@@ -92,15 +92,52 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         s_msg = request.cookies.get("success_msg") or request.query_params.get("success")
         e_msg = request.cookies.get("error_msg") or request.query_params.get("error")
         pos = []
-        q1 = supabase.table("purchase_orders").select("id, no_po, tanggal_po, qty_pcs").order("tanggal_po", desc=True).limit(100)
-        if qq:
-            qs = _sanitize_ilike(qq)
-            if qs:
-                q1 = q1.ilike("no_po", f"%{qs}%")
-        try:
-            pos = (q1.execute().data or [])
-        except Exception as ex:
-            print(f"[PO] list gagal: {ex}")
+        qs = _sanitize_ilike(qq) if qq else ""
+        if not qs:
+            # Tanpa pencarian: 100 PO terbaru (perilaku lama, tidak berubah).
+            try:
+                q1 = supabase.table("purchase_orders").select("id, no_po, tanggal_po, qty_pcs").order("tanggal_po", desc=True).limit(100)
+                pos = (q1.execute().data or [])
+            except Exception as ex:
+                print(f"[PO] list gagal: {ex}")
+        else:
+            # Dengan pencarian: dua query terpisah (No. PO & nama produk), masing-masing
+            # try/except sendiri supaya yang satu gagal tidak menghilangkan yang lain.
+            # Dua-duanya digabung & dedup per id di bawah.
+            gabung = {}
+            try:
+                qa = supabase.table("purchase_orders") \
+                    .select("id, no_po, tanggal_po, qty_pcs") \
+                    .ilike("no_po", f"%{qs}%").limit(100).execute()
+                for row in (qa.data or []):
+                    if row.get("id"):
+                        gabung[row["id"]] = row
+            except Exception as ex:
+                print(f"[PO] cari No. PO gagal: {ex}")
+            try:
+                # "!inner" WAJIB; tanpa itu PostgREST tidak memfilter sama sekali —
+                # ia mengembalikan seluruh baris tanpa error, sehingga hasilnya
+                # diam-diam salah (bukan 0 hasil, tapi semua baris).
+                qb = supabase.table("purchase_order_items") \
+                    .select("purchase_orders(id, no_po, tanggal_po, qty_pcs), products!inner(nama_produk)") \
+                    .ilike("products.nama_produk", f"%{qs}%").limit(1000).execute()
+                for row in (qb.data or []):
+                    po = row.get("purchase_orders")
+                    if isinstance(po, list):
+                        po = po[0] if po else None
+                    if po and po.get("id") and po["id"] not in gabung:
+                        gabung[po["id"]] = po
+            except Exception as ex:
+                print(f"[PO] cari nama produk gagal: {ex}")
+            pos = sorted(
+                gabung.values(),
+                key=lambda r: (
+                    r.get("tanggal_po") is None,          # yang null paling bawah
+                    str(r.get("tanggal_po") or ""),       # tanggal terbaru dulu
+                    str(r.get("no_po") or ""),            # tie-break
+                ),
+                reverse=True,
+            )[:100]
         # Nama produk per PO untuk ditampilkan di daftar kiri. Satu query untuk
         # semua PO yang tampil (bukan per-PO), supaya tidak ada N+1 query.
         po_products = {}

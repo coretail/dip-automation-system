@@ -22,12 +22,13 @@
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col max-h-[60vh] lg:max-h-[calc(100vh-2rem)] lg:sticky lg:top-4">
         <form method="get" action="/purchase-orders" class="flex gap-2 mb-3 flex-none">
-            <input type="text" name="q" value="{{ q or '' }}" placeholder="Cari No. PO..." class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm">
+            <input type="text" name="q" value="{{ q or '' }}" placeholder="Cari No. PO atau nama produk..." class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm">
             <button class="rounded-md bg-gray-900 text-white px-3 text-sm cursor-pointer">Cari</button>
+            {% if q %}<a href="/purchase-orders" class="rounded-md border border-gray-300 text-gray-600 px-3 py-1.5 text-sm hover:bg-gray-50">Reset</a>{% endif %}
         </form>
         <div class="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-100">
             {% for po in pos %}
-            <a href="/purchase-orders?po_id={{ po.id }}{% if q %}&q={{ q }}{% endif %}" class="block px-3 py-2.5 rounded-lg transition {% if sel_po and sel_po.id == po.id %}bg-indigo-50 border border-indigo-200{% else %}hover:bg-indigo-50 border border-transparent{% endif %}">
+            <a href="/purchase-orders?po_id={{ po.id }}{% if q %}&q={{ q|urlencode }}{% endif %}" class="block px-3 py-2.5 rounded-lg transition {% if sel_po and sel_po.id == po.id %}bg-indigo-50 border border-indigo-200{% else %}hover:bg-indigo-50 border border-transparent{% endif %}">
                 <div class="flex items-center justify-between gap-2">
                     <span class="text-sm font-semibold text-gray-900 truncate">{{ po.no_po }}</span>
                     {% if sel_po and sel_po.id == po.id %}
@@ -40,7 +41,11 @@
                 <div class="mt-0.5 text-[11px] text-gray-500">{{ po.tanggal_po or '-' }}{% if po.qty_pcs is not none %} &middot; {{ po.qty_pcs }} pcs{% endif %}</div>
             </a>
             {% else %}
+            {% if q %}
+            <div class="text-sm text-gray-400 py-8 text-center">Tidak ada PO yang cocok dengan &quot;{{ q }}&quot;.</div>
+            {% else %}
             <div class="text-sm text-gray-400 py-8 text-center">Belum ada PO. Buat PO baru dulu.</div>
+            {% endif %}
             {% endfor %}
         </div>
     </div>
