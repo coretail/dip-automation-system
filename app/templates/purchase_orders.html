@@ -112,6 +112,7 @@
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <h2 class="text-sm font-bold text-gray-900 mb-1">Tambah Item — Urutan {{ next_urutan }}</h2>
             <p class="text-xs text-gray-500 mb-4">1 form = 1 item. Cari produk via No. NA (prioritas) / nama, lalu pilih batch. Kalau batch belum ada, buat via tombol Batch Baru.</p>
+            <p class="hidden text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 mb-4" id="bmOk"></p>
             <form method="post" action="/purchase-orders/{{ sel_po.id }}/items" class="space-y-4" id="addItemForm">
                 <input type="hidden" name="product_id" id="ai_product_id" required>
                 <input type="hidden" name="product_batch_id" id="ai_batch_id" required>
@@ -222,26 +223,28 @@
             <button type="button" onclick="toggleBatchModal(false)" class="text-gray-400 text-xl">×</button>
         </div>
         <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3" id="batchModalHint">Pilih produk dulu di form atas.</p>
-        <form method="post" action="/product-batches" class="space-y-3">
+        <form method="post" action="/product-batches" id="batchForm" class="space-y-3">
             <input type="hidden" name="product_id" id="bm_product_id">
             <input type="hidden" name="po_id" value="{{ sel_po.id if sel_po else '' }}">
             <div>
                 <label class="block text-xs font-semibold mb-1">No. Batch *</label>
-                <input type="text" name="no_batch" required class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono">
+                <input type="text" name="no_batch" id="bm_no_batch" required class="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono">
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs font-semibold mb-1">Tgl Produksi</label>
-                    <input type="date" name="tanggal_produksi" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+                    <input type="date" name="tanggal_produksi" id="bm_tgl_produksi" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold mb-1">Tgl ED</label>
-                    <input type="date" name="tanggal_ed" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+                    <input type="date" name="tanggal_ed" id="bm_tgl_ed" class="block w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm">
                 </div>
             </div>
+            <p class="hidden text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2" id="bmError"></p>
+            <button type="button" id="bmUseExisting" class="hidden w-full rounded-md border border-amber-300 bg-amber-50 text-amber-800 px-3 py-2 text-xs font-semibold hover:bg-amber-100">Pakai batch ini</button>
             <div class="flex justify-end gap-2">
-                <button type="button" onclick="toggleBatchModal(false)" class="px-4 py-2 text-sm text-gray-500">Batal</button>
-                <button class="rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white">Simpan Batch</button>
+                <button type="button" onclick="toggleBatchModal(false)" id="bmCancel" class="px-4 py-2 text-sm text-gray-500">Batal</button>
+                <button id="bmSubmit" class="rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white">Simpan Batch</button>
             </div>
         </form>
     </div>
@@ -388,7 +391,7 @@ function openEditModal(btn) {
             bq.disabled = true;
             bq.placeholder = 'Pilih produk dulu...';
         }
-        if (hint) hint.textContent = 'Pilih dari daftar.';
+        if (hint) hint.textContent = 'Produk direset karena diubah — pilih ulang dari daftar.';
         if (q.length < 2) { hide(pl); return; }
         t = setTimeout(function () {
             fetch('/api/po/products?q=' + encodeURIComponent(q))
@@ -487,6 +490,140 @@ function openEditModal(btn) {
             alert('Pilih Produk dan Batch dari daftar dulu.');
         }
     });
+
+    // ==================== SIMPAN BATCH BARU VIA FETCH ====================
+    // Tujuannya: halaman TIDAK pernah reload, sehingga isian form "Tambah Item"
+    // (produk, batch, WIP, netto, qty, keterangan, dll) tidak ikut hilang.
+    // Fallback tanpa JS tetap jalan karena <form> masih punya
+    // method="post" action="/product-batches" (lihat tanda kurung siku).
+    var bf = document.getElementById('batchForm');
+    if (bf) {
+        var bmSubmit = document.getElementById('bmSubmit');
+        var bmCancel = document.getElementById('bmCancel');
+        var bmError = document.getElementById('bmError');
+        var bmUseExisting = document.getElementById('bmUseExisting');
+        var bmOk = document.getElementById('bmOk');
+        var bmNoBatch = document.getElementById('bm_no_batch');
+        var bmTglProd = document.getElementById('bm_tgl_produksi');
+        var bmTglEd = document.getElementById('bm_tgl_ed');
+        // Ditampung di luar handler supaya tombol "Pakai batch ini" bisa membacanya.
+        var lastJson = null;
+
+        function showErr(msg) {
+            if (!bmError) return;
+            // WAJIB textContent: pesan server memuat nomor batch buatan user.
+            bmError.textContent = msg;
+            bmError.classList.remove('hidden');
+        }
+        function clearMsg() {
+            if (bmError) { bmError.textContent = ''; bmError.classList.add('hidden'); }
+            if (bmUseExisting) { bmUseExisting.textContent = 'Pakai batch ini'; bmUseExisting.classList.add('hidden'); }
+            if (bmOk) { bmOk.textContent = ''; bmOk.classList.add('hidden'); }
+        }
+        function showOk(msg) {
+            if (!bmOk) return;
+            bmOk.textContent = msg;
+            bmOk.classList.remove('hidden');
+        }
+        function resetModalFields() {
+            // Hanya 3 field modal. JANGAN form.reset() (ikut mengosongkan
+            // bm_product_id & po_id) dan jangan sentuh form "Tambah Item".
+            if (bmNoBatch) bmNoBatch.value = '';
+            if (bmTglProd) bmTglProd.value = '';
+            if (bmTglEd) bmTglEd.value = '';
+        }
+        function setButtons(on) {
+            if (bmSubmit) {
+                bmSubmit.disabled = !on;
+                bmSubmit.textContent = on ? 'Simpan Batch' : 'Menyimpan...';
+            }
+            if (bmCancel) bmCancel.disabled = !on;
+        }
+
+        bf.addEventListener('submit', function (e) {
+            e.preventDefault();
+            if (bmSubmit && bmSubmit.disabled) return;   // anti double-kirim
+            var typedNoBatch = bmNoBatch ? bmNoBatch.value.trim() : '';
+            clearMsg();
+            setButtons(false);
+
+            fetch(bf.action, {
+                method: 'POST',
+                body: new FormData(bf),
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin'
+            }).then(function (resp) {
+                // (1) Sesi habis HANYA kalau fetch mengikuti redirect 303 hasil
+                //     exception handler (main.py) -> /login?warning=session_expired,
+                //     sehingga body-nya HTML halaman login, bukan JSON.
+                if (resp.redirected) {
+                    return { sessionExpired: true };
+                }
+                // (2) Respons non-JSON lain (mis. proxy 502 / 500 teks biasa)
+                //     BUKAN sesi habis.
+                var ct = resp.headers.get('content-type') || '';
+                if (ct.indexOf('application/json') === -1) {
+                    return { notJson: true, status: resp.status };
+                }
+                // (3) baru parse JSON, dan tetap di dalam try/catch
+                return resp.json().then(function (j) {
+                    return { status: resp.status, ok: resp.ok, json: j };
+                }).catch(function () {
+                    return { notJson: true, status: resp.status };
+                });
+            }).then(function (out) {
+                if (out.sessionExpired) {
+                    // Jangan reset apa pun — form item & modal tetap utuh.
+                    showErr('Sesi berakhir. Buka tab baru, login ulang, lalu klik Simpan Batch lagi.');
+                    return;
+                }
+                if (out.notJson) {
+                    showErr('Server bermasalah (kode ' + out.status + '). Coba lagi.');
+                    return;
+                }
+                var j = out.json || {};
+                if (out.ok && j.ok) {
+                    // Sukses. Pilihkan batch baru di form "Tambah Item" tanpa
+                    // memicu event 'input' (handler-nya mengosongkan ai_batch_id).
+                    if (bid) bid.value = j.batch && j.batch.id ? j.batch.id : '';
+                    if (bq) {
+                        bq.value = (j.batch && j.batch.no_batch) ? j.batch.no_batch : typedNoBatch;
+                        bq.disabled = false;
+                    }
+                    resetModalFields();
+                    toggleBatchModal(false);
+                    showOk('Batch ' + bq.value + ' dibuat dan dipilih. Lanjutkan isi item lalu Simpan Item.');
+                    return;
+                }
+                // Gagal. Pesan: pakai json.error kalau ada; kalau tidak (mis. 422
+                // dari FastAPI yang bentuknya {"detail": [...]}) pakai pesan generik
+                // dan JANGAN tampilkan 'detail' mentah.
+                lastJson = j;
+                showErr(j.error ? String(j.error) : ('Data tidak valid (kode ' + out.status + ').'));
+                if (out.status === 409 && bmUseExisting && j.batch && j.batch.id) {
+                    // Batch modal TIDAK dikosongkan; user memilih sendiri.
+                    bmUseExisting.classList.remove('hidden');
+                }
+            }).catch(function () {
+                showErr('Gagal menyimpan. Coba lagi.');
+            }).then(function () {
+                setButtons(true);
+            });
+        });
+
+        if (bmUseExisting) {
+            bmUseExisting.addEventListener('click', function () {
+                if (!lastJson || !lastJson.batch || !lastJson.batch.id) return;
+                var typed = bmNoBatch ? bmNoBatch.value.trim() : '';
+                if (bid) bid.value = lastJson.batch.id;
+                if (bq) { bq.value = typed; bq.disabled = false; }
+                clearMsg();
+                toggleBatchModal(false);
+                showOk('Batch ' + typed + ' dipakai. Lanjutkan isi item lalu Simpan Item.');
+                lastJson = null;
+            });
+        }
+    }
 })();
 </script>
 {% endblock %}
