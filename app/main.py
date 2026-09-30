@@ -694,14 +694,29 @@ def log_activity(current_user: dict, action: str, entity_type: str, entity_id: s
     except Exception as e:
         print(f"Gagal catat activity log ke DB ({entity_type}/{action}/{entity_id}): {e}")
 
+# Lebar garis pemisah + nama field, disamakan dengan banner [LOGIN SUCCESS]
+# (main.py: "="*50, dan kolom nilai mulai di karakter ke-14).
+_LOG_RULE = "=" * 50
+
+
+def _log_field(label: str, value: str) -> str:
+    """Satu baris '   • Label : value' dengan label dipad ke lebar yang sama."""
+    return f"   • {label:<8}: {value}"
+
+
 def print_activity_terminal(current_user: dict, action: str, entity_type: str, entity_label: str, entity_id: str = None, changes: list = None):
     """
     Format dan cetak log aktivitas ke stdout/terminal Render.
+
+    Mengikuti format banner [LOGIN SUCCESS] supaya konsisten: garis pemisah 50
+    karakter, judul pada barisnya sendiri, lalu User ID / Email / Waktu sebagai
+    tiga baris terpisah.
     """
     now_str = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
     actor_name = current_user.get("full_name", "System") if current_user else "System"
     actor_email = current_user.get("email", "-") if current_user else "-"
-    
+    actor_id = (current_user.get("id") if current_user else None) or "-"
+
     # Mapping badge aksi biar gampang di-scan mata di log Render
     action_badges = {
         "create": "🟢 [CREATED]",
@@ -710,13 +725,17 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
     }
     badge = action_badges.get(action.lower(), f"🔵 [{action.upper()}]")
 
-    print("\n" + "="*60)
-    print(f"📝 {badge} ACTIVITY LOG | {now_str}")
-    print(f"   • Actor    : {actor_name} ({actor_email})")
-    print(f"   • Entity   : {entity_type.upper()} -> '{entity_label}'" + (f" (ID: {entity_id})" if entity_id else ""))
-    
+    print("\n" + _LOG_RULE)
+    print(f"📝 {badge} ACTIVITY LOG")
+    print(_log_field("User ID", actor_id))
+    print(_log_field("Email", actor_email))
+    print(_log_field("Waktu", now_str))
+    print(_log_field("Actor", actor_name))
+    print(_log_field("Entity", entity_type.upper() + f" -> '{entity_label}'"
+                      + (f" (ID: {entity_id})" if entity_id else "")))
+
     if changes:
-        print("   • Changes  :")
+        print(_log_field("Changes", ""))
         for c in changes:
             field = c.get("field", "Unknown Field")
             if "note" in c:
@@ -725,7 +744,7 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
                 old_val = c.get("old") if c.get("old") is not None else "-"
                 new_val = c.get("new") if c.get("new") is not None else "-"
                 print(f"     - {field}: '{old_val}'  ➔  '{new_val}'")
-    print("="*60 + "\n")
+    print(_LOG_RULE + "\n")
 
 
 def _build_diff_changes(old_row: dict, update_payload: dict, field_labels: dict, file_fields: set = None) -> list:
@@ -811,12 +830,12 @@ async def login_submit(
         # 💡 LOG SUCCESS LOGIN
         user_data = auth_response.user
         waktu_login = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
-        print("\n" + "="*50)
+        print("\n" + _LOG_RULE)
         print("🔑 [LOGIN SUCCESS]")
-        print(f"   • User ID : {user_data.id}")
-        print(f"   • Email   : {user_data.email}")
-        print(f"   • Waktu   : {waktu_login}")
-        print("="*50 + "\n")
+        print(_log_field("User ID", user_data.id))
+        print(_log_field("Email", user_data.email))
+        print(_log_field("Waktu", waktu_login))
+        print(_LOG_RULE + "\n")
 
         try:
             touch_user_presence(user_data.id, online=True)
@@ -876,11 +895,11 @@ async def logout(request: Request):
             touch_user_presence(uid, online=False)
     except Exception:
         email_log = "-"
-    print("\n" + "="*50)
+    print("\n" + _LOG_RULE)
     print("🚪 [LOGOUT]")
-    print(f"   • User  : {email_log}")
-    print(f"   • Waktu : {waktu_logout}")
-    print("="*50 + "\n")
+    print(_log_field("Email", email_log))
+    print(_log_field("Waktu", waktu_logout))
+    print(_LOG_RULE + "\n")
 
     return response
 
@@ -896,11 +915,11 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
             email_log = _extract_jwt_email(token_cookie.replace("Bearer ", "")) if token_cookie else "-"
         except Exception:
             email_log = "-"
-        print("\n" + "="*50)
+        print("\n" + _LOG_RULE)
         print(f"⏰ [SESSION EXPIRED] Path: {request.url.path}")
-        print(f"   • User  : {email_log}")
-        print(f"   • Waktu : {waktu_exp}")
-        print("="*50 + "\n")
+        print(_log_field("Email", email_log))
+        print(_log_field("Waktu", waktu_exp))
+        print(_LOG_RULE + "\n")
 
         return RedirectResponse(
             url="/login?warning=session_expired", 
@@ -3395,7 +3414,8 @@ register_raw_materials_routes(
 )
 
 from app.po_routes import register_po_routes
-register_po_routes(app, get_current_user, log_activity, templates, get_ed_notification_count)
+register_po_routes(app, get_current_user, log_activity, templates, get_ed_notification_count,
+                   _build_diff_changes)
 
 # Generator DIP Bab I-IV + preview + ZIP Bab II -> app/dip_documents.py.
 # Fungsi generator dikembalikan sebagai dict supaya bisa diteruskan ke

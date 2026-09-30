@@ -8,6 +8,24 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.database import supabase
 WIB = ZoneInfo("Asia/Jakarta")
 
+# Label field item PO untuk activity log (dipakai _build_diff_changes),
+# supaya pesan perubahan terbaca berbahasa manusia, bukan nama kolom mentah.
+PO_ITEM_FIELD_LABELS = {
+    "product_id": "Produk",
+    "product_batch_id": "Batch",
+    "tanggal_catatan_batch": "Tgl Catatan Batch",
+    "wip": "WIP",
+    "netto": "Netto",
+    "qty_kg": "Qty (kg)",
+    "keterangan": "Keterangan",
+    "qty_belum_sop": "Qty Belum SOP",
+    "qty_po_kg": "Qty PO (kg)",
+    "status_bpom": "Status BPOM",
+    "catatan_produksi": "Catatan Produksi",
+    "revisi_produksi": "Revisi Produksi",
+    "temporary_reject": "Temporary Reject",
+}
+
 def _sanitize_ilike(q: str) -> str:
     return re.sub(r"[%_,()\"'\\]", " ", q or "").strip()[:80]
 
@@ -58,7 +76,8 @@ def _redirect_po(po_id=None, ok=None, err=None):
         resp.set_cookie("error_msg", err)
     return resp
 
-def register_po_routes(app, get_current_user, log_activity, templates, get_ed_notification_count=None):
+def register_po_routes(app, get_current_user, log_activity, templates,
+                       get_ed_notification_count=None, build_diff_changes=None):
     async def _ed_count():
         try:
             if get_ed_notification_count is not None:
@@ -327,9 +346,15 @@ def register_po_routes(app, get_current_user, log_activity, templates, get_ed_no
         bid = (product_batch_id or "").strip()
         if not pid or not bid:
             return _redirect_po(po_id, err="Produk dan Batch wajib diisi.")
+        # Ambil baris SEBELUM update supaya selisih nilainya bisa dicatat di
+        # activity log (bukan cuma "ada yang berubah").
         currow = None
         try:
-            cur = supabase.table("purchase_order_items").select("id, purchase_order_id").eq("id", item_id).limit(1).execute()
+            cur = supabase.table("purchase_order_items").select(
+                "id, purchase_order_id, urutan, product_id, product_batch_id, "
+                "tanggal_catatan_batch, wip, netto, qty_kg, keterangan, qty_belum_sop, "
+                "qty_po_kg, status_bpom, catatan_produksi, revisi_produksi, temporary_reject"
+            ).eq("id", item_id).limit(1).execute()
             currow = (cur.data or [None])[0]
         except Exception:
             currow = None
@@ -362,7 +387,24 @@ def register_po_routes(app, get_current_user, log_activity, templates, get_ed_no
         except Exception as ex:
             print(f"[PO] update gagal: {ex}")
             return _redirect_po(po_id, err="Gagal menyimpan perubahan.")
-        log_activity(current_user, "update", "purchase_order_item", item_id, f"item {item_id[:8]}")
+        item_changes = []
+        if build_diff_changes is not None:
+            try:
+                item_changes = build_diff_changes(
+                    currow or {},
+                    upd,
+                    PO_ITEM_FIELD_LABELS,
+                )
+            except Exception as ex:
+                print(f"[PO] gagal susun diff item: {ex}")
+        log_activity(
+            current_user,
+            "update",
+            "purchase_order_item",
+            item_id,
+            f"item {item_id[:8]} (urutan {currow.get('urutan')})" if currow else f"item {item_id[:8]}",
+            item_changes,
+        )
         return _redirect_po(po_id, ok="Perubahan item tersimpan.")
 
     @app.post("/purchase-orders/{po_id}/items/{item_id}/delete")
