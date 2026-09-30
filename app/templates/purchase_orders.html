@@ -19,13 +19,13 @@
 <div class="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">{{ error_msg }}</div>
 {% endif %}
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <form method="get" action="/purchase-orders" class="flex gap-2 mb-3">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 h-full flex flex-col min-h-0">
+        <form method="get" action="/purchase-orders" class="flex gap-2 mb-3 flex-none">
             <input type="text" name="q" value="{{ q or '' }}" placeholder="Cari No. PO..." class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm">
             <button class="rounded-md bg-gray-900 text-white px-3 text-sm cursor-pointer">Cari</button>
         </form>
-        <div class="max-h-[480px] overflow-y-auto divide-y divide-gray-100">
+        <div class="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-100">
             {% for po in pos %}
             <a href="/purchase-orders?po_id={{ po.id }}{% if q %}&q={{ q }}{% endif %}" class="block px-3 py-2.5 rounded-lg transition {% if sel_po and sel_po.id == po.id %}bg-indigo-50 border border-indigo-200{% else %}hover:bg-indigo-50 border border-transparent{% endif %}">
                 <div class="flex items-center justify-between gap-2">
@@ -34,6 +34,9 @@
                     <span class="text-[10px] font-bold text-indigo-600 bg-indigo-100 rounded px-1.5 py-0.5">AKTIF</span>
                     {% endif %}
                 </div>
+                {% if po_products.get(po.id) %}
+                <div class="mt-0.5 text-[11px] text-gray-700 truncate">{{ po_products.get(po.id) }}</div>
+                {% endif %}
                 <div class="mt-0.5 text-[11px] text-gray-500">{{ po.tanggal_po or '-' }}{% if po.qty_pcs is not none %} &middot; {{ po.qty_pcs }} pcs{% endif %}</div>
             </a>
             {% else %}

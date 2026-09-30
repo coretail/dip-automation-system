@@ -101,6 +101,25 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             pos = (q1.execute().data or [])
         except Exception as ex:
             print(f"[PO] list gagal: {ex}")
+        # Nama produk per PO untuk ditampilkan di daftar kiri. Satu query untuk
+        # semua PO yang tampil (bukan per-PO), supaya tidak ada N+1 query.
+        po_products = {}
+        po_ids = [p["id"] for p in pos if p.get("id")]
+        if po_ids:
+            try:
+                pr = supabase.table("purchase_order_items") \
+                    .select("purchase_order_id, products(nama_produk)") \
+                    .in_("purchase_order_id", po_ids).execute()
+                for row in (pr.data or []):
+                    key = row.get("purchase_order_id")
+                    prod = row.get("products")
+                    if isinstance(prod, list):
+                        prod = prod[0] if prod else None
+                    name = (prod or {}).get("nama_produk") if isinstance(prod, dict) else None
+                    if key and name and key not in po_products:
+                        po_products[key] = name
+            except Exception as ex:
+                print(f"[PO] gagal ambil nama produk: {ex}")
         sel_po = None
         items = []
         next_urutan = 1
@@ -119,7 +138,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                         next_urutan = mx + 1
                 except Exception as ex:
                     print(f"[PO] items gagal: {ex}")
-        ctx = {"current_user": current_user, "pos": pos, "q": qq, "sel_po": sel_po, "items": items, "next_urutan": next_urutan, "success_msg": s_msg, "error_msg": e_msg, "ed_notification_count": await _ed_count()}
+        ctx = {"current_user": current_user, "pos": pos, "q": qq, "sel_po": sel_po, "items": items, "next_urutan": next_urutan, "success_msg": s_msg, "error_msg": e_msg, "po_products": po_products, "ed_notification_count": await _ed_count()}
         resp = templates.TemplateResponse(request=request, name="purchase_orders.html", context=ctx)
         if s_msg:
             resp.delete_cookie("success_msg")
