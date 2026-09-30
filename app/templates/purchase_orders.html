@@ -19,8 +19,8 @@
 <div class="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">{{ error_msg }}</div>
 {% endif %}
 
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 h-full flex flex-col min-h-0">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col max-h-[60vh] lg:max-h-[calc(100vh-2rem)] lg:sticky lg:top-4">
         <form method="get" action="/purchase-orders" class="flex gap-2 mb-3 flex-none">
             <input type="text" name="q" value="{{ q or '' }}" placeholder="Cari No. PO..." class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm">
             <button class="rounded-md bg-gray-900 text-white px-3 text-sm cursor-pointer">Cari</button>

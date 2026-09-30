@@ -109,7 +109,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             try:
                 pr = supabase.table("purchase_order_items") \
                     .select("purchase_order_id, products(nama_produk)") \
-                    .in_("purchase_order_id", po_ids).execute()
+                    .in_("purchase_order_id", po_ids).order("urutan").execute()
                 for row in (pr.data or []):
                     key = row.get("purchase_order_id")
                     prod = row.get("products")
