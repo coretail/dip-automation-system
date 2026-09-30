@@ -171,15 +171,18 @@ pip install -r requirements.txt
 
 ```
 SUPABASE_URL=https://your-supabase-project-id.supabase.co
-SUPABASE_KEY=your-supabase-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+
+# Opsional — tidak dipakai kode aplikasi (seluruh akses database lewat service role).
+# Boleh dihapus dari .env tanpa memengaruhi aplikasi.
+SUPABASE_KEY=your-supabase-anon-key
 
 # Opsional — hanya untuk fitur sapaan AI di halaman login.
 # Dikosongkan = fitur dimatikan, aplikasi tetap berjalan normal.
 GEMINI_API_KEY=your-google-gemini-api-key
 ```
 
-> Catatan: `SUPABASE_KEY` (anon/public) dipakai untuk interaksi harian, sedangkan `SUPABASE_SERVICE_ROLE_KEY` dipakai untuk operasi yang butuh hak admin — misalnya login dan pencarian username. Jangan pernah menaruh service role key di sisi browser.
+> Catatan: `SUPABASE_KEY` (anon/public) bersifat opsional dan **tidak dipakai kode aplikasi**; seluruh akses database memakai `SUPABASE_SERVICE_ROLE_KEY` (melewati RLS), termasuk login dan pencarian username. Service role key punya hak penuh — **jangan pernah** ditaruh di sisi browser atau di-commit ke repository.
 
 ### 4. Jalankan Aplikasi
 
