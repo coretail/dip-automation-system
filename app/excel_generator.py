@@ -555,63 +555,183 @@ def _sheet_formula_pure(wb: Workbook, product: dict, pure_breakdown: list, compa
     _page_setup(ws)
 
 
-def _sheet_text_design(wb: Workbook, product: dict, pure_breakdown: list, company: dict):
-    """Sheet 3 'Text Design': informasi label/kemasan (Komposisi, Cara Pakai, dll).
+# ==================== TEXT DESIGN ====================
+# Struktur sheet "Text Design" mengikuti dokumen acuan
+# excel-example/Text Design  Pherini Breast Serum 07032025.xlsx:
+#   label di kolom A:B, tanda titik dua di kolom C, nilai di kolom D:J.
+TD_LABEL_END_COL = 2      # label_merge A:B
+TD_COLON_COL = 3          # kolom C = ":"
+TD_VALUE_START_COL = 4    # nilai mulai kolom D
+TD_LAST_COL = 10          # kolom J
+TD_COL_WIDTHS = {3: 4.71, 4: 11.43, 5: 10.29, 6: 10.57,
+                 7: 12.0, 8: 12.86, 9: 18.29, 10: 22.86}
+TD_ROW_HEIGHT = 15.0
+# Kotak keterangan tambahan: kuning polos + bold + center (sama acuan).
+TD_NOTE_FILL = PatternFill("solid", fgColor="FFFF00")
 
-    Tanpa kop surat / logo — mulai langsung dari judul.
+FONT_TD = Font(name="Calibri", size=11)
+FONT_TD_BOLD = Font(name="Calibri", size=11, bold=True)
+FONT_TD_NA = Font(name="Arial", size=11, color="FF333333")
+
+ALIGN_TD_LABEL = Alignment(horizontal="left", vertical="center")
+ALIGN_TD_LABEL_WRAP = Alignment(horizontal="left", vertical="center", wrap_text=True)
+ALIGN_TD_GENERAL = Alignment(horizontal="left", vertical="center")
+ALIGN_TD_LEFT_WRAP = Alignment(horizontal="left", vertical="center", wrap_text=True)
+ALIGN_TD_JUSTIFY_WRAP = Alignment(horizontal="justify", vertical="center", wrap_text=True)
+ALIGN_TD_CENTER = Alignment(horizontal="center", vertical="center")
+ALIGN_TD_CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+
+def _td_address_lines(company: dict) -> list[str]:
+    """Baris nilai untuk blok "Diproduksi Oleh" (kondisional per perusahaan).
+
+    Sumbernya dict ``company`` = ``COMPANY_INFO[produk.perusahaan]`` dari main.py,
+    sehingga PT Erfi dan PT Heka otomatis memakai data masing-masing:
+
+      * ``nama``        -> baris nama perusahaan
+      * ``alamat_teks`` -> bila diisi, dipakai apa adanya; "\\n" memecah baris
+      * ``alamat``      -> fallback: awalan "Office :" dibuang, lalu dipecah 2 baris
+      * ``hp_alamat``   -> bila diisi, menambah baris "Hp. <nomor>" (ada di kop PT Heka)
+    """
+    company = company or {}
+    lines = [_dash(company.get("nama"))]
+
+    raw = str(company.get("alamat_teks") or "").strip()
+    if raw:
+        lines += [p.strip() for p in raw.split("\n") if p.strip()]
+    else:
+        alamat = str(company.get("alamat") or "").strip()
+        for prefix in ("Office :", "Office:", "Office"):
+            if alamat.lower().startswith(prefix.lower()):
+                alamat = alamat[len(prefix):].strip(" :")
+                break
+        parts = [p.strip() for p in alamat.split(",") if p.strip()]
+        if len(parts) <= 1:
+            lines += parts
+        else:
+            half = (len(parts) + 1) // 2
+            lines += [", ".join(parts[:half]), ", ".join(parts[half:])]
+
+    hp = str(company.get("hp_alamat") or "").strip()
+    if hp:
+        lines.append(f"Hp. {hp}")
+    return lines
+
+
+def _td_write_block(ws, row: int, label: str, value_lines, nrows: int,
+                    value_font=None, value_align=None) -> int:
+    """Tulis satu blok Text Design: label A:B, titik dua C, nilai D:J.
+
+    ``value_lines`` berisi >1 baris -> tiap baris dapat sel D:J sendiri (stacked,
+    dipakai untuk "Diproduksi Oleh"). Berisi 1 baris -> satu sel D:J di-merge
+    lintas ``nrows`` (dipakai untuk teks panjang). Return baris berikutnya.
+
+    Sesuai acuan: kolom label (A:B) dan titik dua (C) SELALU Calibri 11 reguler;
+    gaya khusus (mis. bold atau Arial) hanya berlaku pada kolom nilai (D:J).
+    """
+    value_lines = list(value_lines) or ["-"]
+    last_row = row + nrows - 1
+    value_font = value_font or FONT_TD
+    # value_align=None -> biarkan alignment default sel (sesuai acuan untuk
+    # kolom nilai 1 baris); blok multi-baris/teks panjang menetapkannya eksplisit.
+    # Label 1 baris -> align default; label multi-baris -> kiri + center + wrap.
+    label_align = ALIGN_TD_LABEL_WRAP if nrows > 1 else None
+    colon_align = ALIGN_TD_LABEL if nrows > 1 else None
+
+    _set_merged(ws, f"A{row}:B{last_row}", label, font=FONT_TD, align=label_align)
+    # Kolom C: di-merge hanya bila label-nya multi-baris. Pada blok 1 baris,
+    # acuan memakai sel biasa (tidak di-merge) -- ini yang membuat daftar merge
+    # hasil generate identik dengan berkas acuan.
+    if nrows > 1:
+        _set_merged(ws, f"C{row}:C{last_row}", ":", font=FONT_TD, align=colon_align)
+    else:
+        colon = ws.cell(row=row, column=TD_COLON_COL, value=":")
+        colon.font = FONT_TD
+
+    if len(value_lines) <= 1:
+        _set_merged(ws, f"D{row}:J{last_row}", value_lines[0],
+                    font=value_font, align=value_align)
+    else:
+        for offset, line in enumerate(value_lines):
+            _set_merged(ws, f"D{row + offset}:J{row + offset}", line,
+                        font=value_font, align=value_align)
+
+    _border_range(ws, row, last_row, 1, TD_LAST_COL)
+    for r in range(row, last_row + 1):
+        ws.row_dimensions[r].height = TD_ROW_HEIGHT
+    return last_row + 1
+
+
+def _sheet_text_design(wb: Workbook, product: dict, pure_breakdown: list, company: dict):
+    """Sheet 3 'Text Design': informasi label/kemasan (Komposisi, Teks, Cara Pakai).
+
+    Struktur & visual mengikuti dokumen acuan
+    "excel-example/Text Design  Pherini Breast Serum 07032025.xlsx":
+      - tanpa judul sheet; baris 1 = Tanggal (tanpa border)
+      - label di A:B, titik dua di C, nilai di D:J
+      - teks panjang satu sel D:J di-merge lintas beberapa baris + wrap
+      - "Diproduksi Oleh" memakai beberapa baris nilai terpisah (stacked)
+      - kotak keterangan tambahan kuning polos, bold, center
     """
     ws = wb.create_sheet("Text Design")
 
-    _set_merged(ws, "A1:E1", "TEXT DESIGN", font=FONT_TITLE, align=ALIGN_CENTER)
+    # Lebar kolom tetap (mengikuti acuan); A & B dibiarkan default.
+    for col, width in TD_COL_WIDTHS.items():
+        ws.column_dimensions[get_column_letter(col)].width = width
+
+    # --- Baris 1: Tanggal (tanpa border, sesuai acuan) ---
+    ws["A1"] = "Tanggal"
+    ws["A1"].font = FONT_TD
+    ws["A1"].alignment = ALIGN_TD_LABEL
+    ws.cell(row=1, column=TD_COLON_COL, value=f": {_fmt_date(product.get('tanggal_text_design'))}")
+    ws.cell(row=1, column=TD_COLON_COL).font = FONT_TD
 
     komposisi = ", ".join(str(c.get("inci_name")) for c in pure_breakdown if c.get("inci_name"))
     komposisi = (komposisi + ".") if komposisi else "-"
 
-    # (label, value, teks_panjang?) -- teks panjang di-merge B:E + wrap_text
-    rows_spec = [
-        ("Tanggal", _fmt_date(product.get("tanggal_text_design")), False),
-        ("Nama Produk", product.get("nama_produk"), False),
-        ("Netto", product.get("netto"), False),
-        ("No NA", product.get("no_na_produk"), False),
-        ("Diproduksi Oleh", f"{_dash(company.get('nama'))}\n{_dash(company.get('alamat'))}", True),
-        ("Komposisi", komposisi, True),
-        ("Teks", product.get("teks_marketing"), True),
-        ("Cara Pakai", product.get("cara_pakai"), True),
+    # Blok: (label, baris_nilai, jumlah_baris, font_nilai, align_nilai)
+    # Jumlah baris mengikuti acuan; blok teks panjang di-merge lintas baris.
+    blocks = [
+        ("Nama Produk", [_dash(product.get("nama_produk"))], 1,
+         FONT_TD_BOLD, None),
+        ("Netto", [_dash(product.get("netto"))], 1, FONT_TD, None),
+        ("No NA", [_dash(product.get("no_na_produk"))], 1,
+         FONT_TD_NA, None),
+        # Kondisional per perusahaan: jumlah baris mengikuti isi COMPANY_INFO
+        # (PT Erfi 3 baris, PT Heka 4 baris karena kopnya ada nomor Hp).
+        ("Diproduksi Oleh", _td_address_lines(company), 0, FONT_TD, ALIGN_TD_LEFT_WRAP),
+        ("Komposisi", [komposisi], 5, FONT_TD, ALIGN_TD_LEFT_WRAP),
+        ("Teks", [_dash(product.get("teks_marketing"))], 6, FONT_TD, ALIGN_TD_JUSTIFY_WRAP),
+        ("Cara Pakai", [_dash(product.get("cara_pakai"))], 3, FONT_TD, ALIGN_TD_JUSTIFY_WRAP),
     ]
     # Baris kondisional: Peringatan & Penyimpanan hanya ditulis bila datanya
-    # benar-benar diisi (bukan None / kosong / '-'), sehingga urutan baris,
-    # merge B:E, dan border tabel menyesuaikan secara dinamis.
+    # benar-benar diisi (bukan None / kosong / '-'), sehingga tinggi blok,
+    # merge D:J, dan border menyesuaikan secara dinamis.
     if _has_value(product.get("peringatan")):
-        rows_spec.append(("Peringatan", product.get("peringatan"), True))
+        blocks.append(("Peringatan", [_dash(product.get("peringatan"))], 3,
+                        FONT_TD, ALIGN_TD_JUSTIFY_WRAP))
     if _has_value(product.get("penyimpanan")):
-        rows_spec.append(("Penyimpanan", product.get("penyimpanan"), True))
+        blocks.append(("Penyimpanan", [_dash(product.get("penyimpanan"))], 3,
+                        FONT_TD, ALIGN_TD_JUSTIFY_WRAP))
 
     row = 3
-    for label, value, is_long in rows_spec:
-        label_cell = ws.cell(row=row, column=1, value=label)
-        label_cell.font = FONT_BOLD
-        label_cell.alignment = ALIGN_LEFT_TOP_WRAP
-        # Tulis value + border sebagai sel biasa DULU (style MergedCell yang
-        # dibuat sebelum styling tidak persisten saat file disimpan),
-        # baru kemudian di-merge B:E utk teks panjang.
-        value_cell = ws.cell(row=row, column=2, value=_dash(value))
-        value_cell.alignment = ALIGN_LEFT_TOP_WRAP
-        _border_range(ws, row, row, 1, 5)
-        if is_long:
-            # Merge kolom B s/d E + wrap text agar teks panjang rapi turun ke bawah
-            ws.merge_cells(start_row=row, end_row=row, start_column=2, end_column=5)
-        row += 1
+    for label, value_lines, nrows, value_font, value_align in blocks:
+        if nrows == 0:
+            nrows = max(1, len(value_lines))
+        row = _td_write_block(ws, row, label, value_lines, nrows,
+                              value_font=value_font, value_align=value_align)
 
-    # Kotak keterangan tambahan (senada bg-yellow-300 versi web)
+    # --- Kotak keterangan tambahan: A:J, kuning polos, bold, center ---
     note_row = row
-    _set_merged(ws, f"A{note_row}:E{note_row}",
-                "Keterangan tambahan: QR BPOM, No Batch dan Exp Date, Netto yg digunakan.",
-                font=FONT_BOLD, align=ALIGN_CENTER_WRAP)
-    _border_range(ws, note_row, note_row, 1, 5)
-    _fill_range(ws, note_row, 1, 5, NOTE_FILL)
+    _set_merged(ws, f"A{note_row}:J{note_row}",
+                "Keterangan tambahan QR BPOM, No Batch dan Exp Date, Netto yg digunakan.",
+                font=FONT_TD_BOLD, align=ALIGN_TD_CENTER_WRAP)
+    _border_range(ws, note_row, note_row, 1, TD_LAST_COL)
+    _fill_range(ws, note_row, 1, TD_LAST_COL, TD_NOTE_FILL)
+    ws.row_dimensions[note_row].height = TD_ROW_HEIGHT
 
     # Sheet "Text Design" TIDAK memakai blok tanda tangan.
-    _auto_fit_columns(ws, 1, 5)
+    _page_setup(ws, landscape=True)
 
 
 # ==================== ENTRY POINT ====================

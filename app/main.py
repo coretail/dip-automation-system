@@ -402,6 +402,9 @@ COMPANY_INFO = {
     "PT Heka": {
         "nama": "PT. HARAKA ERFI KOSMETINDO ABADI",          
         "alamat": "Office : Jl. Kampung Klapanunggal, RT 001/RW 01. Desa Klapanunggal Kec. Klapanunggal Bogor, Indonesia",
+        # Dipakai sheet "Text Design" untuk membedakan PT Erfi vs PT Heka: nomor HP
+        # yang tercetak pada kop surat PT Heka. PT Erfi tidak punya baris HP.
+        "hp_alamat": "081281938715",
         "email": "harakaerfi.pt@gmail.com",
         "website": "www.harakaerfi.com",
         "logo": "/static/images/logo_heka.png",
