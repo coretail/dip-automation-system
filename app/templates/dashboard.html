@@ -216,7 +216,7 @@
                             {% elif product.status_na == 'akan_expired' %}
                                 <span class="text-amber-600 font-medium" title="Masa berlaku NA akan habis dalam 6 bulan">⚠ {{ product.no_na_produk }} ({{ product.na_days_remaining }} hari lagi)</span>
                             {% elif product.status_na == 'expired' %}
-                                <span class="text-red-600 font-medium" title="Masa berlaku NA sudah habis">{{ product.no_na_produk }} (Expired — {{ -product.na_days_remaining }} hari yang lalu)</span>
+                                <span class="text-red-600 font-medium" title="Masa berlaku NA sudah habis">{{ product.no_na_produk }} (Expired {{ -product.na_days_remaining }} hari lalu)</span>
                             {% else %}
                                 Belum Terdaftar
                             {% endif %}
