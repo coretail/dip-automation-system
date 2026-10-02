@@ -123,6 +123,251 @@ def _apply_po_range(query, tahun, qtr, col="tanggal_po"):
         return query
     return query.gte(col, b[0]).lt(col, b[1])
 
+# ---------------------------------------------------------------------------
+# Agregasi untuk halaman /po-analytics (jumlah PO per kuartal, top produk, dll.)
+# Semua fungsi di blok ini murni (tidak menyentuh database) supaya bisa diuji
+# tanpa koneksi; route hanya mengumpulkan baris lalu memanggil _build_po_analytics.
+# ---------------------------------------------------------------------------
+PO_ANALYTICS_TABS = ("all", "erfi", "heka")
+PO_REWORK_TAG = "rework"
+_MONTH_TO_Q = {1: 1, 2: 1, 3: 1, 4: 2, 5: 2, 6: 2, 7: 3, 8: 3, 9: 3, 10: 4, 11: 4, 12: 4}
+# Cache deteksi kolom: None = belum dicek. Kolom ditambahkan lewat migration
+# 002_add_jenis_po.sql yang dijalankan manual, jadi kemunculannya bisa berubah
+# setelah server hidup — karena itu dicek sekali lalu disimpan.
+_JENIS_PO_AVAILABLE = None
+
+
+def _jenis_po_available():
+    """True kalau purchase_orders.jenis_po sudah ada di database.
+
+    Kalau kolom belum ada, PostgREST akan menolak SELURUH query yang
+    menyebut kolom itu, jadi kolom harus dicek terpisah sebelum dipakai.
+    """
+    global _JENIS_PO_AVAILABLE
+    if _JENIS_PO_AVAILABLE is None:
+        try:
+            supabase.table("purchase_orders").select("id, jenis_po").limit(1).execute()
+            _JENIS_PO_AVAILABLE = True
+        except Exception as ex:
+            print(f"[PO] kolom jenis_po belum ada, filter Rework nonaktif: {str(ex)[:140]}")
+            _JENIS_PO_AVAILABLE = False
+    return _JENIS_PO_AVAILABLE
+
+
+def _is_rework(po):
+    """True untuk PO bertag Rework. Perbandingan dinormalisasi karena nilai
+    di database bisa 'Rework'/'rework'/ber-spasi (lihat migration/tag_rework_po.py)."""
+    return str((po or {}).get("jenis_po") or "").strip().lower() == PO_REWORK_TAG
+
+
+def _company_bucket(v):
+    """'PT Erfi' / 'Erfi' / 'erfi' -> 'PT Erfi'. Nilai lain -> 'Lainnya'.
+
+    Normalisasi wajib: products.perusahaan memakai 'PT Erfi'/'PT Heka',
+    sedangkan tabel lain (mis. sample_submissions.company) memakai 'Erfi'/'Heka'.
+    """
+    s = re.sub(r"(?i)^PT\s+", "", str(v or "")).strip().lower()
+    if s == "erfi":
+        return "PT Erfi"
+    if s == "heka":
+        return "PT Heka"
+    return "Lainnya"
+
+
+def _tab_of(company):
+    """Bucket perusahaan -> tab navigasi. 'Lainnya' hanya muncul di tab 'all'."""
+    if company == "PT Erfi":
+        return "erfi"
+    if company == "PT Heka":
+        return "heka"
+    return "all"
+
+
+def _year_of(d):
+    s = str(d or "")[:4]
+    return int(s) if len(s) == 4 and s.isdigit() else None
+
+
+def _quarter_of(d):
+    """'2026-07-09' -> 3. Nilai NULL/aneh -> None."""
+    s = str(d or "")[:7]
+    if len(s) < 7 or s[4] != "-":
+        return None
+    try:
+        month = int(s[5:7])
+    except ValueError:
+        return None
+    return _MONTH_TO_Q.get(month)
+
+
+def _num(v):
+    """NUMERIC dari PostgREST bisa int/float/str; yang tidak valid dianggap 0."""
+    if v is None:
+        return 0.0
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort="pcs", top_n=5):
+    """Susun seluruh angka halaman /po-analytics dari baris mentah.
+
+    pos_rows      : {id, no_po, tanggal_po, qty_pcs, jenis_po?}
+    item_rows     : {purchase_order_id, product_id}
+    product_rows  : {id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url}
+    tahun         : hanya PO & item tahun ini yang dihitung. Route sudah memfilter
+                    lewat rentang tanggal di SQL, jadi ini jaring pengaman kedua:
+                    kalau tahun=None TIDAK ada yang dihitung, bukan "semua tahun".
+    qtr           : 1..4 untuk membatasi daftar produk ke satu kuartal. KPI, chart
+                    per kuartal, dan per perusahaan TETAP memakai seluruh tahun
+                    supaya konteksnya tidak hilang.
+    sort          : "pcs" (default) atau "po" -> dasar pengurutan daftar top.
+
+    Aturan hitung:
+      - jumlah PO & pcs per kuartal hanya untuk PO yang tanggalnya valid
+      - PO bertag Rework: TETAP dihitung sebagai jumlah PO, tapi qty_pcs-nya
+        tidak ikut dijumlahkan (keputusan user)
+      - qty_pcs per produk dijumlahkan per PO UNIK, supaya satu PO tidak
+        terhitung berkali-kali kalau produknya muncul di beberapa baris item
+    """
+    po_by_id = {}
+    for p in pos_rows or []:
+        if p.get("id") and _year_of(p.get("tanggal_po")) == tahun:
+            po_by_id[p["id"]] = p
+    year_ids = set(po_by_id)
+    # Route sudah menyaring lewat _clean_qtr(), tapi helper ikut menormalisasi
+    # supaya aman kalau dipanggil dari tempat lain dengan nilai mentah.
+    qtr = qtr if qtr in (1, 2, 3, 4) else None
+    sort = "po" if sort == "po" else "pcs"
+
+    prod_meta = {}
+    for r in product_rows or []:
+        if r.get("id"):
+            prod_meta[r["id"]] = {
+                "nama": _clean_text(r.get("nama_produk"), 200) or "Tanpa nama",
+                "company": _company_bucket(r.get("perusahaan")),
+                "active": not r.get("is_deleted"),
+                "sig": bool(r.get("laporan_uji_sig_file_url")),
+            }
+
+    # --- KPI & per kuartal -------------------------------------------------
+    q_po = {1: 0, 2: 0, 3: 0, 4: 0}
+    q_pcs = {1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0}
+    total_po = 0
+    total_pcs = 0.0
+    rework_po = 0
+    rework_pcs = 0.0
+    for p in po_by_id.values():
+        q = _quarter_of(p.get("tanggal_po"))
+        if not q:
+            continue
+        pcs = _num(p.get("qty_pcs"))
+        total_po += 1
+        q_po[q] += 1
+        if _is_rework(p):
+            rework_po += 1
+            rework_pcs += pcs
+        else:
+            total_pcs += pcs
+            q_pcs[q] += pcs
+
+    # --- produk per PO (dari item) ----------------------------------------
+    # prod_po_ids dipakai untuk daftar top -> dibatasi ke qtr bila dipilih.
+    # comp_q_po dipakai untuk chart per perusahaan -> tetap seluruh tahun.
+    prod_po_ids = {}
+    comp_q_po = {}
+    for it in item_rows or []:
+        poid = it.get("purchase_order_id")
+        pid = it.get("product_id")
+        if poid not in year_ids:
+            continue  # jaring pengaman: item dari luar tahun terpilih
+        meta = prod_meta.get(pid)
+        if not meta:
+            continue  # produk tidak ada di master
+        q = _quarter_of(po_by_id[poid].get("tanggal_po"))
+        # Grafik per perusahaan SELALU per tahun, jadi dicatat lebih dulu --
+        # sebelum penyaringan kuartal untuk daftar top.
+        if q:
+            comp_q_po.setdefault(meta["company"], {}).setdefault(q, set()).add(poid)
+        if qtr and q != qtr:
+            continue  # daftar top difilter ke satu kuartal
+        prod_po_ids.setdefault(pid, set()).add(poid)
+
+    def _row(pid):
+        meta = prod_meta[pid]
+        po_ids = prod_po_ids.get(pid) or set()
+        pcs = 0.0
+        rw = 0
+        for poid in po_ids:
+            po = po_by_id[poid]
+            if _is_rework(po):
+                rw += 1
+            else:
+                pcs += _num(po.get("qty_pcs"))
+        return {
+            "id": pid, "nama": meta["nama"], "company": meta["company"],
+            "po_count": len(po_ids), "rework_po": rw, "pcs": pcs, "sig": meta["sig"],
+        }
+
+    active_ids = [pid for pid, m in prod_meta.items() if m["active"]]
+    produced = {pid: _row(pid) for pid in active_ids if pid in prod_po_ids}
+
+    # "po" = urutkan berdasarkan jumlah PO; "pcs" = berdasarkan total qty.
+    def _rank(rows):
+        if sort == "po":
+            return sorted(rows, key=lambda r: (-r["po_count"], -r["pcs"], r["nama"]))
+        return sorted(rows, key=lambda r: (-r["pcs"], -r["po_count"], r["nama"]))
+
+    top, missing = {}, {}
+    for t in PO_ANALYTICS_TABS:
+        pool_top = [r for r in produced.values() if t == "all" or _tab_of(r["company"]) == t]
+        top[t] = _rank(pool_top)[:top_n]
+        # Daftar "belum punya laporan uji" diambil dari SEMUA produk aktif
+        # (bukan cuma yang punya PO), lalu diurutkan pcs tahun terpilih.
+        pool_missing = [
+            _row(pid) for pid in active_ids
+            if not prod_meta[pid]["sig"] and (t == "all" or _tab_of(prod_meta[pid]["company"]) == t)
+        ]
+        missing[t] = _rank(pool_missing)[:top_n]
+
+    # Daftar perusahaan SELALU per tahun, jadi grafik per perusahaan dan donat
+    # proporsi tidak ikut berubah hanya karena pengguna berganti kuartal.
+    companies = [c for c in ("PT Erfi", "PT Heka", "Lainnya") if c in comp_q_po]
+    per_company = {}
+    for c in companies:
+        qs = comp_q_po[c]
+        per_company[c] = {
+            "q_po": [len(qs.get(q, ())) for q in (1, 2, 3, 4)],
+            "q_pcs": [
+                sum(_num(po_by_id[p].get("qty_pcs")) for p in qs.get(q, ()) if not _is_rework(po_by_id[p]))
+                for q in (1, 2, 3, 4)
+            ],
+            "po": sum(len(v) for v in qs.values()),
+        }
+    per_company.setdefault("Lainnya", {"q_po": [0, 0, 0, 0], "q_pcs": [0.0] * 4, "po": 0})
+    per_company.setdefault("PT Erfi", {"q_po": [0, 0, 0, 0], "q_pcs": [0.0] * 4, "po": 0})
+    per_company.setdefault("PT Heka", {"q_po": [0, 0, 0, 0], "q_pcs": [0.0] * 4, "po": 0})
+
+    return {
+        "total_po": total_po,
+        "total_pcs": total_pcs,
+        "rework_po": rework_po,
+        "rework_pcs": rework_pcs,
+        "q_po": [q_po[q] for q in (1, 2, 3, 4)],
+        "q_pcs": [q_pcs[q] for q in (1, 2, 3, 4)],
+        "companies": [c for c in ("PT Erfi", "PT Heka")],
+        "per_company": per_company,
+        "produk_aktif": len(active_ids),
+        "produk_diproduksi": len(produced),
+        "top": top,
+        "missing": missing,
+        "missing_total": sum(1 for pid in active_ids if not prod_meta[pid]["sig"]),
+        "qtr": qtr,
+        "sort": sort,
+        "truncated": len(po_by_id) >= _PO_STATS_LIMIT,
+    }
+
 def _redirect_po(po_id=None, ok=None, err=None):
     base = "/purchase-orders"
     if po_id:
@@ -279,10 +524,9 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                     y = _year_of(r.get("tanggal_po"))
                     if y != tahun:
                         continue
-                    d = str(r.get("tanggal_po") or "")[:10]
-                    m = d[5:7]
-                    if m.isdigit() and 1 <= int(m) <= 12:
-                        q_counts[((int(m) - 1) // 3) + 1] += 1
+                    q = _quarter_of(r.get("tanggal_po"))
+                    if q:
+                        q_counts[q] += 1
                 q_year_total = sum(q_counts.values())
             else:
                 # Terlalu banyak baris untuk satu tangan -> query khusus 1 tahun.
@@ -294,10 +538,9 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                     if qs:
                         cq = cq.ilike("no_po", f"%{qs}%")
                     for r in (cq.execute().data or []):
-                        d = str(r.get("tanggal_po") or "")[:10]
-                        m = d[5:7]
-                        if m.isdigit() and 1 <= int(m) <= 12:
-                            q_counts[((int(m) - 1) // 3) + 1] += 1
+                        q = _quarter_of(r.get("tanggal_po"))
+                        if q:
+                            q_counts[q] += 1
                     q_year_total = sum(q_counts.values())
                 except Exception as ex:
                     print(f"[PO] gagal hitung kuartal: {ex}")
@@ -362,6 +605,116 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         if e_msg:
             resp.delete_cookie("error_msg")
         return resp
+
+    # ======================================================================
+    # /po-analytics — rekap jumlah PO per kuartal + top produk
+    # Sengaja TIDAK di bawah /purchase-orders/... supaya tidak ikut menyalakan
+    # menu "Produksi" di sidebar (nav_active cocok by prefix URL).
+    # ======================================================================
+    @app.get("/po-analytics", response_class=HTMLResponse)
+    async def po_analytics_page(request: Request, current_user: dict = Depends(get_current_user)):
+        raw_tahun = request.query_params.get("tahun")
+        tab = (request.query_params.get("tab") or "all").strip().lower()
+        if tab not in PO_ANALYTICS_TABS:
+            tab = "all"
+        # Kuartal opsional untuk membatasi DUA daftar top. KPI & chart per kuartal
+        # tetap memakai seluruh tahun supaya konteksnya tidak hilang.
+        qtr = _clean_qtr(request.query_params.get("qtr"))
+        sort = (request.query_params.get("sort") or "pcs").strip().lower()
+        if sort not in ("pcs", "po"):
+            sort = "pcs"
+
+        # Kolom jenis_po ditambahkan lewat migration manual, jadi dicek sekali
+        # lebih dulu: kalau belum ada, PostgREST akan menolak query yang
+        # menyebutnya dan seluruh halaman ikut gagal.
+        jenis_ok = _jenis_po_available()
+        po_cols = "id, no_po, tanggal_po, qty_pcs" + (", jenis_po" if jenis_ok else "")
+
+        pos, item_rows, prod_rows = [], [], []
+        years = []
+        warnings = []
+
+        # Tahun yang punya data, untuk mengisi dropdown.
+        try:
+            yr = supabase.table("purchase_orders").select("tanggal_po") \
+                .order("tanggal_po", desc=True).limit(_PO_STATS_LIMIT).execute().data or []
+            per_year = {}
+            for r in yr:
+                y = _year_of(r.get("tanggal_po"))
+                if y:
+                    per_year[y] = per_year.get(y, 0) + 1
+            years = sorted(per_year.items(), key=lambda kv: kv[0], reverse=True)
+        except Exception as ex:
+            print(f"[PO] gagal ambil daftar tahun: {ex}")
+            warnings.append("Gagal memuat daftar tahun PO.")
+
+        tahun = _clean_tahun(raw_tahun)
+        if tahun is None and years:
+            tahun = years[0][0]
+
+        if tahun is not None:
+            try:
+                pos = _apply_po_range(
+                    supabase.table("purchase_orders").select(po_cols)
+                    .order("tanggal_po", desc=True).limit(_PO_STATS_LIMIT),
+                    tahun, None).execute().data or []
+            except Exception as ex:
+                print(f"[PO] analytics list gagal: {ex}")
+                warnings.append("Gagal memuat daftar PO.")
+            try:
+                # "!inner" wajib: tanpa itu, filter tanggal hanya membatasi
+                # resource yang di-embed dan item dari PO tahun lain ikut masuk.
+                item_rows = supabase.table("purchase_order_items") \
+                    .select("purchase_order_id, product_id, purchase_orders!inner(id)") \
+                    .gte("purchase_orders.tanggal_po", f"{tahun:04d}-01-01") \
+                    .lt("purchase_orders.tanggal_po", f"{tahun + 1:04d}-01-01") \
+                    .limit(_PO_STATS_LIMIT).execute().data or []
+            except Exception as ex:
+                print(f"[PO] analytics item gagal: {ex}")
+                warnings.append("Gagal memuat item PO per produk.")
+            try:
+                prod_rows = supabase.table("products").select(
+                    "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url"
+                ).limit(_PO_STATS_LIMIT).execute().data or []
+            except Exception as ex:
+                print(f"[PO] analytics produk gagal: {ex}")
+                warnings.append("Gagal memuat master produk.")
+
+        ana = _build_po_analytics(pos, item_rows, prod_rows, tahun, qtr=qtr, sort=sort)
+
+        ctx = {
+            "current_user": current_user,
+            "tahun": tahun,
+            "years": years,
+            "tab": tab,
+            "tabs": PO_ANALYTICS_TABS,
+            "qtr": qtr,
+            "sort": sort,
+            "jenis_po_aktif": jenis_ok,
+            "ana": ana,
+            "warnings": warnings,
+            # Payload ringkas khusus chart. Diseric ke template sebagai dict lalu
+            # di-escape oleh filter tojson, jadi tidak pernah jadi HTML mentah.
+            "ana_charts": {
+                "qLabels": ["Q1", "Q2", "Q3", "Q4"],
+                "qPo": ana["q_po"],
+                "qPcs": [int(v) for v in ana["q_pcs"]],
+                "qtr": ana["qtr"],
+                "sort": ana["sort"],
+                "companies": ana["companies"],
+                "companyPo": {c: ana["per_company"][c]["q_po"] for c in ana["companies"]},
+                "companyTotals": {c: ana["per_company"][c]["po"] for c in ana["companies"]},
+                "companyZero": [c for c in ana["companies"] if not ana["per_company"][c]["po"]],
+                "topLabels": [r["nama"] for r in ana["top"].get(tab, [])],
+                "topValues": [int(r["pcs"]) for r in ana["top"].get(tab, [])],
+                "topPo": [r["po_count"] for r in ana["top"].get(tab, [])],
+                "missingLabels": [r["nama"] for r in ana["missing"].get(tab, [])],
+                "missingValues": [int(r["pcs"]) for r in ana["missing"].get(tab, [])],
+                "missingPo": [r["po_count"] for r in ana["missing"].get(tab, [])],
+            },
+            "ed_notification_count": await _ed_count(),
+        }
+        return templates.TemplateResponse(request=request, name="po_analytics.html", context=ctx)
 
     @app.get("/api/po/search")
     async def api_po_search(q: str = "", current_user: dict = Depends(get_current_user)):

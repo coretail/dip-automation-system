@@ -1,0 +1,265 @@
+{% extends 'base.html' %}
+{% block title %}Analisis PO - H&amp;EKA{% endblock %}
+
+{% block content %}
+{% set a = ana %}
+{% set _has_data = a.total_po > 0 %}
+{% set _q_lbl = ['Q1 (Jan-Mar)', 'Q2 (Apr-Jun)', 'Q3 (Jul-Sep)', 'Q4 (Okt-Des)'] %}
+{# Label cakupan yang sedang aktif, dipakai di judul section & tabel #}
+{% set _scope = (tahun|string) ~ (' Q' ~ qtr if qtr else '') %}
+{% set _sort_label = 'jumlah PO' if sort == 'po' else 'total qty (pcs)' %}
+
+{# Chip filter. Satu macro dipakai untuk DUA kontrol (kuartal & urutan),
+   jadi macro wajib tahu parameter mana yang dikendalikan lewat `param`:
+   - param='qtr'  -> key ditulis ke &qtr=
+   - param='sort' -> key ditulis ke &sort=
+   Parameter lain (tahun, tab, dan dimensi yang lain) sengaja dipertahankan
+   supaya mengganti kuartal tidak menghapus tab perusahaan, atau sebaliknya.
+   Nilai untuk parameter yang dikontrol SELALU ditulis ulang, jadi klik
+   "Semua" benar-benar mengosongkan-nya (tidak menyisakan nilai lama). #}
+{% macro chip_list(items, active, param) %}
+<div class="flex flex-wrap gap-1">
+    {% for key, label in items %}
+    {% if param == 'qtr' %}
+        {% set href = '/po-analytics?tahun=' ~ tahun
+                     ~ ('&sort=' ~ sort if sort != 'pcs' else '')
+                     ~ ('&tab=' ~ tab if tab and tab != 'all' else '')
+                     ~ ('&qtr=' ~ key if key else '') %}
+    {% else %}
+        {% set href = '/po-analytics?tahun=' ~ tahun
+                     ~ ('&qtr=' ~ qtr if qtr else '')
+                     ~ ('&tab=' ~ tab if tab and tab != 'all' else '')
+                     ~ ('&sort=' ~ key if key and key != 'pcs' else '') %}
+    {% endif %}
+    {# & di dalam href cukup apa adanya -- autoescape Jinja yang mengubahnya
+       jadi &amp; tepat satu kali. Jangan pakai replace('&', ...) di sini,
+       itu meng-escape dua kali (&amp;amp;). #}
+    <a href="{{ href }}"
+       class="px-2.5 py-1 rounded-md text-xs font-semibold border cursor-pointer {% if active == key %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-600 border-gray-300 hover:bg-gray-50{% endif %}"
+       {% if active == key %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-950">Analisis PO</h1>
+        <p class="mt-1 text-sm text-gray-500">Jumlah PO per kuartal &amp; produk dengan volume produksi tertinggi.</p>
+    </div>
+    <div class="flex items-center gap-2">
+        <label for="poYear" class="text-xs font-semibold text-gray-600">Tahun</label>
+        <form method="get" action="/po-analytics" class="flex items-center gap-2" id="poYearForm">
+            {% if qtr %}<input type="hidden" name="qtr" value="{{ qtr }}">{% endif %}
+            {% if sort != 'pcs' %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <select id="poYear" name="tahun"
+                    class="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none">
+                {% for y, n in years %}
+                <option value="{{ y }}" {% if tahun == y %}selected{% endif %}>{{ y }} ({{ n }} PO)</option>
+                {% endfor %}
+                {% if not years %}
+                <option value="{{ tahun or '' }}" selected>{% if tahun %}{{ tahun }}{% else %}Tidak ada data{% endif %}</option>
+                {% endif %}
+            </select>
+            <noscript><button class="rounded-md bg-gray-900 text-white px-3 py-1.5 text-sm">Terapkan</button></noscript>
+        </form>
+    </div>
+</div>
+
+{# --- Filter kuartal (mengatur kedua daftar top) --- #}
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold text-gray-600">Kuartal</span>
+        {{ chip_list([(None, 'Semua'), (1, 'Q1'), (2, 'Q2'), (3, 'Q3'), (4, 'Q4')], qtr, 'qtr') }}
+    </div>
+    <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold text-gray-600">Urutkan</span>
+        {{ chip_list([('pcs', 'Total qty (pcs)'), ('po', 'Jumlah PO')], sort, 'sort') }}
+    </div>
+</div>
+
+{% for w in warnings %}
+<div class="mb-3 rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800" role="alert">
+    <i class="fa-solid fa-triangle-exclamation mr-1"></i> {{ w }}
+</div>
+{% endfor %}
+
+{% if not jenis_po_aktif %}
+<div class="mb-4 rounded-md bg-indigo-50 border border-indigo-200 px-4 py-3 text-sm text-indigo-800" role="status">
+    <i class="fa-solid fa-circle-info mr-1"></i>
+    Filter <b>PO Rework belum aktif</b> &mdash; kolom <code class="font-mono">purchase_orders.jenis_po</code> belum ada di database.
+    Jalankan <code class="font-mono">migration\002_add_jenis_po.sql</code> di Supabase SQL Editor, lalu
+    <code class="font-mono">python migration\tag_rework_po.py --execute --yes</code>.
+</div>
+{% endif %}
+
+{% if not _has_data %}
+<div class="bg-white rounded-lg shadow-xs border border-gray-200 p-10 text-center text-sm text-gray-400">
+    {% if tahun and years %}
+    Belum ada PO di tahun {{ tahun }}. Pilih tahun lain.
+    {% else %}
+    Belum ada data PO sama sekali.
+    {% endif %}
+</div>
+{% else %}
+
+<!-- ===== KPI (selalu per tahun; kuartal terpilih disorot) ===== -->
+<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 mb-3">
+    <div class="rounded-lg border p-4 bg-white border-gray-200 shadow-xs">
+        <p class="text-xs font-medium text-gray-500">Total PO {{ tahun }}</p>
+        <p class="text-2xl font-semibold text-gray-900">{{ '{:,}'.format(a.total_po) }}</p>
+        <p class="text-[11px] text-gray-400">seluruh {{ tahun }}</p>
+    </div>
+    {% for i in range(4) %}
+    {% set _sel = qtr == i + 1 %}
+    <div class="rounded-lg border p-4 shadow-xs {% if _sel %}bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200{% else %}bg-white border-gray-200{% endif %}">
+        <p class="text-xs font-medium {% if _sel %}text-indigo-700{% else %}text-gray-500{% endif %}">
+            {{ _q_lbl[i] }}{% if _sel %} <span class="font-bold">(dipilih)</span>{% endif %}
+        </p>
+        <p class="text-2xl font-semibold {% if _sel %}text-indigo-900{% else %}text-gray-900{% endif %}">{{ '{:,}'.format(a.q_po[i]) }}</p>
+        <p class="text-[11px] text-gray-400">{{ '{:,}'.format(a.q_pcs[i] | int) }} pcs</p>
+    </div>
+    {% endfor %}
+</div>
+
+<p class="text-xs text-gray-500 mb-6">
+    Total qty <b class="text-gray-700">{{ '{:,}'.format(a.total_pcs | int) }} pcs</b> (tahun {{ tahun }}, tidak termasuk PO Rework)
+    &middot;
+    {% if qtr %}
+    <b class="text-gray-700">{{ a.produk_diproduksi }} produk</b> diproduksi di Q{{ qtr }} {{ tahun }} dari {{ a.produk_aktif }} produk aktif
+    {% else %}
+    <b class="text-gray-700">{{ a.produk_diproduksi }} produk</b> diproduksi dari {{ a.produk_aktif }} produk aktif
+    {% endif %}
+    {%- if a.rework_po %} &middot; {{ a.rework_po }} PO Rework ({{ '{:,}'.format(a.rework_pcs | int) }} pcs) tidak dihitung{% endif %}
+</p>
+
+{% if a.truncated %}
+<p class="mb-4 rounded-md bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">
+    Data tahun {{ tahun }} melebihi 5.000 PO sehingga angka di halaman ini belum tentu lengkap.
+</p>
+{% endif %}
+
+<!-- ===== Chart utama ===== -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4 lg:col-span-2">
+        <h2 class="text-sm font-bold text-gray-900 mb-3">Jumlah PO per kuartal &mdash; {{ tahun }}</h2>
+        <div class="h-64"><canvas id="chartQuarter" aria-label="Grafik batang jumlah PO per kuartal" role="img"></canvas></div>
+    </div>
+    <div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4">
+        <h2 class="text-sm font-bold text-gray-900 mb-3">Proporsi PO per perusahaan</h2>
+        <div class="h-64"><canvas id="chartCompany" aria-label="Grafik donat proporsi PO per perusahaan" role="img"></canvas></div>
+        {# Satu perusahaan bisa 0 PO di tahun ini. Sampaikan eksplisit supaya
+           angka 0 tidak salah dibaca sebagai chart yang gagal render. #}
+        {% set _zero = ana.per_company['PT Erfi']['po'] == 0 and ana.per_company['PT Heka']['po'] == 0 %}
+        <p class="mt-2 text-[11px] text-gray-400">
+            {%- if _zero -%}
+                Tidak ada PO pada tahun {{ tahun }} untuk PT Erfi maupun PT Heka.
+            {%- elif ana.per_company['PT Heka']['po'] == 0 -%}
+                PT Heka belum punya PO pada tahun {{ tahun }} (0 PO).
+            {%- elif ana.per_company['PT Erfi']['po'] == 0 -%}
+                PT Erfi belum punya PO pada tahun {{ tahun }} (0 PO).
+            {%- else -%}
+                PT Erfi {{ ana.per_company['PT Erfi']['po'] }} PO &middot; PT Heka {{ ana.per_company['PT Heka']['po'] }} PO.
+            {%- endif -%}
+        </p>
+    </div>
+</div>
+
+<div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4 mb-6">
+        <h2 class="text-sm font-bold text-gray-900 mb-3">Jumlah PO per kuartal &mdash; per perusahaan</h2>
+        <div class="h-64"><canvas id="chartQuarterCompany" aria-label="Grafik batang jumlah PO per kuartal untuk PT Erfi dan PT Heka" role="img"></canvas></div>
+        <p class="mt-2 text-[11px] text-gray-400">Satu PO yang memuat produk kedua PT dihitung di keduanya.</p>
+</div>
+
+{# ===== Daftar top 5 (tab per perusahaan) ===== #}
+{# Tab per perusahaan. Menyertakan qtr & sort supaya ganti tab tidak
+   menghapus-quarter/urutan yang sedang aktif. #}
+{% macro qtr_tabs(active) %}
+<div class="flex flex-wrap gap-1" role="tablist" aria-label="Pisahkan per perusahaan">
+    {% for key, label in [('all', 'Semua'), ('erfi', 'PT Erfi'), ('heka', 'PT Heka')] %}
+    {% set href = '/po-analytics?tahun=' ~ tahun
+                 ~ ('&qtr=' ~ qtr if qtr else '')
+                 ~ ('&sort=' ~ sort if sort != 'pcs' else '')
+                 ~ '&tab=' ~ key %}
+    <a href="{{ href }}"
+       class="px-2.5 py-1 rounded-md text-xs font-semibold border cursor-pointer {% if active == key %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-600 border-gray-300 hover:bg-gray-50{% endif %}"
+       {% if active == key %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro rank_table(rows, empty_text) %}
+<div class="mt-3 overflow-x-auto">
+    <table class="min-w-full text-xs">
+        <thead class="text-[10px] uppercase text-gray-500 bg-gray-50">
+            <tr>
+                <th class="px-2 py-2 text-left">#</th>
+                <th class="px-2 py-2 text-left">Produk</th>
+                <th class="px-2 py-2 text-left">Perusahaan</th>
+                <th class="px-2 py-2 text-right {% if sort == 'po' %}text-indigo-700{% endif %}">Jumlah PO</th>
+                <th class="px-2 py-2 text-right {% if sort != 'po' %}text-indigo-700{% endif %}">Qty (pcs)</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for r in rows %}
+            <tr>
+                <td class="px-2 py-1.5 text-gray-400">{{ loop.index }}</td>
+                <td class="px-2 py-1.5 text-gray-900 font-medium">
+                    <a href="/products/{{ r.id }}/edit" class="hover:text-indigo-600 hover:underline">{{ r.nama }}</a>
+                </td>
+                <td class="px-2 py-1.5 text-gray-600">{{ r.company }}</td>
+                <td class="px-2 py-1.5 text-right text-gray-700">{{ r.po_count }}</td>
+                <td class="px-2 py-1.5 text-right font-semibold text-gray-900">{{ '{:,}'.format(r.pcs | int) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="px-2 py-6 text-center text-gray-400">{{ empty_text }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endmacro %}
+
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 class="text-sm font-bold text-gray-900">Top 5 produk dengan PO terbanyak &mdash; {{ _scope }}</h2>
+            {{ qtr_tabs(tab) }}
+        </div>
+        <p class="text-[11px] text-gray-400 mb-2">
+            Diurutkan dari <b class="text-gray-600">{{ _sort_label }}</b>{% if qtr %} pada Q{{ qtr }} {{ tahun }}{% else %} tahun {{ tahun }}{% endif %}. PO Rework tidak dihitung di qty.
+        </p>
+        <div class="h-64"><canvas id="chartTop" aria-label="Grafik batang horizontal top 5 produk" role="img"></canvas></div>
+        {{ rank_table(a.top[tab], 'Belum ada produk dengan PO pada cakupan ini.') }}
+    </div>
+
+    <div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 class="text-sm font-bold text-gray-900">Top 5 produk belum punya Laporan Uji SIG &mdash; {{ _scope }}</h2>
+            {{ qtr_tabs(tab) }}
+        </div>
+        <p class="text-[11px] text-gray-400 mb-2">
+            <i class="fa-solid fa-file-circle-question mr-1"></i>
+            Laporan Hasil Uji Lab Eksternal (SIG) belum diunggah. Dari {{ a.missing_total }} produk aktif.
+        </p>
+        <div class="h-64"><canvas id="chartMissing" aria-label="Grafik batang horizontal produk tanpa laporan uji SIG" role="img"></canvas></div>
+        {{ rank_table(a.missing[tab], 'Semua produk aktif sudah punya Laporan Uji SIG.') }}
+    </div>
+</div>
+{% endif %}
+
+{# Data chart dikirim sebagai JSON yang di-escape oleh filter tojson Jinja
+   (karakter < > & ' jadi \uXXXX), jadi aman di dalam <script> tanpa |safe.
+   Nama produk tidak pernah dirakit sebagai HTML di JS. #}
+<script id="poAnalyticsData" type="application/json">{{ ana_charts | tojson }}</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="/static/po-analytics.js"></script>
+<script>
+    // Ganti tahun -> submit form (menggantikan select-onchange tanpa noscript)
+    (function () {
+        var f = document.getElementById('poYearForm');
+        var s = document.getElementById('poYear');
+        if (!f || !s) return;
+        s.addEventListener('change', function () { f.submit(); });
+    })();
+</script>
+{% endblock %}
