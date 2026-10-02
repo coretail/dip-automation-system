@@ -29,7 +29,23 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/darkmode.css">
+    <link rel="stylesheet" href="/static/sidebar.css">
     <link rel="icon" type="image/png" href="/static/images/favicon.png">
+    <script>
+      // Restore state sidebar sebelum render supaya tidak ada "flash" layout.
+      (function () {
+        try {
+          var root = document.documentElement;
+          var stored = null;
+          try { stored = localStorage.getItem('sidebarCollapsed'); } catch (e) {}
+          if (window.matchMedia('(max-width: 767px)').matches) return;
+          if (stored === 'true' ||
+              (stored === null && window.matchMedia('(min-width: 768px) and (max-width: 1023px)').matches)) {
+            root.classList.add('sidebar-collapsed');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <style>
         @keyframes fadeInUp {
             from { opacity: 0; transform: translateY(6px); }
@@ -39,45 +55,38 @@
             animation: fadeInUp 0.5s ease-out both;
         }
     </style>
+    {% block head_extra %}{% endblock %}
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans antialiased">
 
+    {% set _nav_user = current_user if current_user is defined else (user if user is defined else none) %}
+    {% set _nav_initial = ((_nav_user.full_name if _nav_user and _nav_user.full_name else 'U') | string)[0] | upper %}
+
     <!-- Navbar -->
-    <nav class="bg-indigo-600 text-white shadow-md no-print">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <nav class="top-navbar bg-indigo-600 text-white shadow-md no-print" aria-label="Navigasi atas">
+        <div class="app-container px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
-                <div class="flex items-center space-x-3">
-                    <img src="/static/images/favicon.png" alt="Logo" class="h-7 w-7 object-contain brightness-0 invert">
-                    <span class="text-xl font-bold tracking-tight">H&EKA WORKSPACE</span>
+                <div class="flex items-center gap-2 min-w-0">
+                    <button type="button" id="sidebar-toggle"
+                            class="p-2 rounded-md hover:bg-indigo-700 transition"
+                            aria-label="Ciutkan sidebar navigasi" aria-expanded="true" aria-controls="app-sidebar"
+                            title="Ciutkan sidebar navigasi">
+                        <i class="fa-solid fa-bars text-lg"></i>
+                    </button>
+                    <a href="/" class="flex items-center gap-3 min-w-0">
+                        <img src="/static/images/favicon.png" alt="" class="h-7 w-7 object-contain brightness-0 invert">
+                        <span class="text-lg sm:text-xl font-bold tracking-tight truncate">H&amp;EKA WORKSPACE</span>
+                    </a>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <a href="/" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition"><i class="fa-solid fa-chart-pie mr-1"></i> Dashboard</a>
-                    <a href="/raw-materials" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition"><i class="fa-solid fa-boxes-stacked mr-1"></i> Bahan Baku</a>
-                    <a href="/purchase-orders" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition"><i class="fa-solid fa-clipboard-list mr-1"></i> Produksi</a>
-                    <a href="/sample-submissions" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
-                        <i class="fa-solid fa-flask mr-1"></i> Pengajuan Sample
-                    </a>
-                    <a href="/brands" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
-                        <i class="fa-solid fa-copyright mr-1"></i> Kelola Merk
-                    </a>
-                    <a href="/notes" id="notes-nav-link" class="relative px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
-                        <i class="fa-solid fa-note-sticky mr-1"></i> Notes
-                        <span id="notes-mention-badge" class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center hidden">0</span>
-                    </a>
-                    {% if current_user.role == 'admin' %}
-                    <a href="/admin/trash" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 transition">
-                        <i class="fa-solid fa-trash mr-1"></i> Sampah
-                    </a>
-                    {% endif %}
-                    
+                <div class="flex items-center gap-1 sm:gap-3">
                     <!-- Notification Bell for ED Alerts -->
                     <div class="relative" id="ed-notification-wrapper">
-                        <button id="ed-notification-btn" class="relative p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Peringatan Expired & Notifikasi" title="Peringatan Expired & Notifikasi">
+                        <button id="ed-notification-btn" class="relative p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Peringatan Expired & Notifikasi" title="Peringatan Expired & Notifikasi" aria-expanded="false" aria-controls="ed-notification-dropdown">
                             <i class="fa-solid fa-bell text-lg"></i>
                             <span id="ed-notification-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
                         </button>
                         <!-- Dropdown -->
-                        <div id="ed-notification-dropdown" class="hidden absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                        <div id="ed-notification-dropdown" class="hidden absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl border border-gray-200 z-50">
                             <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                                 <h4 class="font-semibold text-gray-900">Peringatan Expired & Notifikasi</h4>
                                 <a href="/raw-materials?tab=ed-tab" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Lihat Semua <i class="fa-solid fa-arrow-right ml-1"></i></a>
@@ -94,13 +103,38 @@
                     <button type="button" id="theme-toggle" class="p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Ganti tema" title="Ganti tema">
                         <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
                     </button>
+
+                    <!-- Menu user -->
+                    <div class="relative" id="user-menu-wrapper">
+                        <button type="button" id="user-menu-btn"
+                                class="flex items-center gap-2 p-1 sm:pr-2 rounded-full hover:bg-indigo-700 transition"
+                                aria-label="Menu akun" title="Menu akun"
+                                aria-haspopup="true" aria-expanded="false" aria-controls="user-menu-dropdown">
+                            <span class="w-8 h-8 rounded-full bg-indigo-500 text-white text-xs font-bold flex items-center justify-center shrink-0">{{ _nav_initial }}</span>
+                            <span class="hidden sm:inline max-w-[9rem] truncate text-sm font-medium">{{ _nav_user.full_name if _nav_user else 'Akun' }}</span>
+                            <i class="fa-solid fa-chevron-down text-xs opacity-80" aria-hidden="true"></i>
+                        </button>
+                        <div id="user-menu-dropdown"
+                             class="hidden absolute right-0 mt-2 w-60 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                            <div class="px-4 py-3 border-b border-gray-200">
+                                <p class="text-sm font-semibold text-gray-900 truncate">{{ _nav_user.full_name if _nav_user else '-' }}</p>
+                                <p class="text-xs text-gray-500 capitalize">{{ _nav_user.role if _nav_user else '-' }}</p>
+                            </div>
+                            <a href="/logout" data-logout
+                               class="flex items-center gap-2 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 transition">
+                                <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Logout
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </nav>
 
+    {% include '_sidebar.html' %}
+
     <!-- Main Content Block -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="app-container px-4 sm:px-6 lg:px-8 py-8">
 
         {% set _error_msg = error_msg if error_msg is defined and error_msg else request.cookies.get('error_msg') %}
         {% set _success_msg = success_msg if success_msg is defined and success_msg else request.cookies.get('success_msg') %}
@@ -130,6 +164,7 @@
 
         {% block content %}{% endblock %}
     </main>
+    </div><!-- /.main-content -->
 
     <!-- ED Notification Bell JavaScript -->
     <script>
@@ -153,6 +188,7 @@
                 e.preventDefault();
                 e.stopPropagation();
                 dropdown.classList.toggle('hidden');
+                bellBtn.setAttribute('aria-expanded', dropdown.classList.contains('hidden') ? 'false' : 'true');
                 if (!dropdown.classList.contains('hidden')) {
                     fetchEDNotifications();
                 }
@@ -161,6 +197,7 @@
             document.addEventListener('click', function(e) {
                 if (!dropdown.contains(e.target) && !bellBtn.contains(e.target)) {
                     dropdown.classList.add('hidden');
+                    bellBtn.setAttribute('aria-expanded', 'false');
                 }
             });
 
@@ -291,6 +328,7 @@
     </script>
     <script src="/static/presence.js"></script>
     <script src="/static/darkmode.js"></script>
+    <script src="/static/sidebar.js"></script>
 
     <!-- Floating Jump-to-Top Button -->
     <button id="jumpToTopBtn" class="fixed bottom-6 right-6 hidden bg-indigo-600 text-white p-3 rounded-full shadow-lg hover:bg-indigo-700 transition z-50" aria-label="Kembali ke atas">

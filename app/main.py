@@ -3033,6 +3033,7 @@ async def manage_users_page(request: Request, current_user: dict = Depends(get_c
         context={
             "request": request,
             "user": current_user,
+            "current_user": current_user,
             "users": users_list,
             "online_count": online_count,
             "idle_count": idle_count,

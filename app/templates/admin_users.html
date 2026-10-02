@@ -1,22 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DIP ERFI APP - User Management</title>
-    <script>
-      (function () {
-        try {
-          var t = localStorage.getItem('heka-theme');
-          if (t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-          }
-        } catch (e) {}
-      })();
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/darkmode.css">
+{% extends 'base.html' %}
+
+{% block title %}Control Panel Admin - User Management{% endblock %}
+
+{% block head_extra %}
     <style>
         @keyframes presence-pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
@@ -26,24 +12,15 @@
             animation: presence-pulse 1.8s ease-out infinite;
         }
     </style>
-</head>
-<body class="bg-gray-50 text-gray-800 font-sans antialiased">
+{% endblock %}
 
-    <!-- Top Navigation / Header -->
-    <header class="bg-white border-b border-gray-200 sticky top-0 z-50 px-6 py-4 flex justify-between items-center shadow-xs">
-        <div class="flex items-center gap-3">
-            <a href="/" class="text-gray-500 hover:text-indigo-600 transition-colors"><i class="fa-solid fa-arrow-left text-lg"></i></a>
-            <h1 class="text-lg font-bold tracking-tight text-gray-900">Control Panel Admin</h1>
-        </div>
-        <div class="flex items-center gap-3 text-sm text-gray-600">
-            <button type="button" id="theme-toggle" class="p-2 rounded-full hover:bg-gray-100 transition text-gray-600" aria-label="Ganti tema" title="Ganti tema">
-                <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
-            </button>
-            <span>Login sebagai: <span class="font-bold text-indigo-600 uppercase">{{ user.full_name }} ({{ user.role }})</span></span>
-        </div>
-    </header>
+{% block content %}
+<div class="space-y-4">
 
-    <main class="max-w-7xl mx-auto p-6 space-y-4">
+    <div class="flex items-center gap-3">
+        <a href="/" class="text-gray-500 hover:text-indigo-600 transition-colors" aria-label="Kembali ke Dashboard"><i class="fa-solid fa-arrow-left text-lg"></i></a>
+        <h1 class="text-lg font-bold tracking-tight text-gray-900">Control Panel Admin</h1>
+    </div>
         
         <!-- ALERT STATUS / ERROR -->
         {% if request.query_params.get('status') == 'reset_success' %}
@@ -388,7 +365,6 @@
             });
         })();
     </script>
-    <script src="/static/presence.js"></script>
-    <script src="/static/darkmode.js"></script>
-</body>
-</html>
+
+</div>
+{% endblock %}

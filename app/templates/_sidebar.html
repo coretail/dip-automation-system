@@ -1,0 +1,121 @@
+{# Sidebar navigasi reusable. Di-include oleh base.html sehingga semua halaman
+   yang extends base.html otomatis memakai sidebar yang sama.
+   Hanya data kontekstual (nama/role user) yang dirender di sini. #}
+{% set _nav_user = current_user if current_user is defined else (user if user is defined else none) %}
+{% set _is_admin = _nav_user is not none and _nav_user.role == 'admin' %}
+{% set _path = request.url.path %}
+
+{# Menandai menu aktif berdasarkan prefix URL yang sudah ada di aplikasi.
+   `path` diteruskan eksplisit supaya macro tidak bergantung pada scope template. #}
+{% macro nav_active(prefix, path) -%}
+  {%- if path == prefix or path.startswith(prefix ~ '/') %} sidebar-item-active{% endif -%}
+{%- endmacro %}
+
+{% macro nav_current(prefix, path) -%}
+  {%- if path == prefix or path.startswith(prefix ~ '/') %} aria-current="page"{% endif -%}
+{%- endmacro %}
+
+{# Halaman produk (/products/...) adalah turunan dari Dashboard. #}
+{% set _dash_active = _path == '/' or _path.startswith('/products') %}
+
+<div class="app-layout">
+
+  <aside id="app-sidebar" class="sidebar no-print" aria-label="Navigasi utama">
+
+    <div class="sidebar-brand">
+      <span class="text-sm font-semibold text-white truncate">H&amp;EKA WORKSPACE</span>
+      <button type="button" id="sidebar-drawer-close" class="sidebar-drawer-close" aria-label="Tutup sidebar navigasi" title="Tutup sidebar navigasi">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Menu utama">
+
+      <a href="/" class="sidebar-item{% if _dash_active %} sidebar-item-active{% endif %}"
+         data-label="Dashboard" title="Dashboard"{% if _dash_active %} aria-current="page"{% endif %}>
+        <i class="fa-solid fa-chart-pie sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Dashboard</span>
+      </a>
+
+      <a href="/raw-materials" class="sidebar-item{{ nav_active('/raw-materials', _path) }}"
+         data-label="Bahan Baku" title="Bahan Baku"{{ nav_current('/raw-materials', _path) }}>
+        <i class="fa-solid fa-boxes-stacked sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Bahan Baku</span>
+      </a>
+
+      <a href="/purchase-orders" class="sidebar-item{{ nav_active('/purchase-orders', _path) }}"
+         data-label="Produksi" title="Produksi"{{ nav_current('/purchase-orders', _path) }}>
+        <i class="fa-solid fa-clipboard-list sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Produksi</span>
+      </a>
+
+      <a href="/sample-submissions" class="sidebar-item{{ nav_active('/sample-submissions', _path) }}"
+         data-label="Pengajuan Sample" title="Pengajuan Sample"{{ nav_current('/sample-submissions', _path) }}>
+        <i class="fa-solid fa-flask sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Pengajuan Sample</span>
+      </a>
+
+      <a href="/brands" class="sidebar-item{{ nav_active('/brands', _path) }}"
+         data-label="Kelola Merk" title="Kelola Merk"{{ nav_current('/brands', _path) }}>
+        <i class="fa-solid fa-copyright sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Kelola Merk</span>
+      </a>
+
+      <a href="/notes" id="notes-nav-link" class="sidebar-item{{ nav_active('/notes', _path) }}"
+         data-label="Notes" title="Notes"{{ nav_current('/notes', _path) }}>
+        <i class="fa-solid fa-note-sticky sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Notes</span>
+        <span id="notes-mention-badge" class="sidebar-badge hidden">0</span>
+      </a>
+
+      {% if _is_admin %}
+      <a href="/admin/trash" class="sidebar-item{{ nav_active('/admin/trash', _path) }}"
+         data-label="Sampah" title="Sampah"{{ nav_current('/admin/trash', _path) }}>
+        <i class="fa-solid fa-trash sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Sampah</span>
+      </a>
+
+      <div class="sidebar-separator" role="separator" aria-orientation="horizontal"></div>
+
+      <button type="button" id="sidebar-admin-toggle" class="sidebar-item sidebar-section-toggle"
+              data-label="Administration" title="Administration"
+              aria-expanded="true" aria-controls="sidebar-admin-submenu">
+        <i class="fa-solid fa-gear sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Administration</span>
+        <i id="sidebar-admin-caret" class="fa-solid fa-chevron-down sidebar-section-caret sidebar-section-caret-open" aria-hidden="true"></i>
+      </button>
+
+      <ul id="sidebar-admin-submenu" class="sidebar-submenu">
+        <li>
+          <a href="/admin/users" class="sidebar-item{{ nav_active('/admin/users', _path) }}"
+             data-label="Manage Users" title="Manage Users"{{ nav_current('/admin/users', _path) }}>
+            <i class="fa-solid fa-users sidebar-icon" aria-hidden="true"></i>
+            <span class="sidebar-label">Manage Users</span>
+          </a>
+        </li>
+        <li>
+          <a href="/admin/company-documents" class="sidebar-item{{ nav_active('/admin/company-documents', _path) }}"
+             data-label="Dokumen Perusahaan" title="Dokumen Perusahaan"{{ nav_current('/admin/company-documents', _path) }}>
+            <i class="fa-solid fa-building-columns sidebar-icon" aria-hidden="true"></i>
+            <span class="sidebar-label">Dokumen Perusahaan</span>
+          </a>
+        </li>
+      </ul>
+      {% endif %}
+
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="/logout" data-logout class="sidebar-item sidebar-item-danger" data-label="Logout" title="Logout">
+        <i class="fa-solid fa-right-from-bracket sidebar-icon" aria-hidden="true"></i>
+        <span class="sidebar-label">Logout</span>
+      </a>
+    </div>
+
+  </aside>
+
+  <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+  <div id="sidebar-tooltip" class="sidebar-tooltip" role="tooltip" hidden></div>
+
+  <div class="main-content">

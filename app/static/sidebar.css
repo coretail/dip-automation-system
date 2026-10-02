@@ -1,0 +1,363 @@
+/* Collapsible sidebar navigasi.
+   Semua selector di file iniScoped ke .app-layout / .sidebar supaya tidak
+   menyentuh form, tabel, modal, atau dropdown yang sudah ada. */
+
+:root {
+  --sidebar-width: 16rem;            /* 256px - expanded */
+  --sidebar-width-collapsed: 4.25rem; /* 68px - collapsed, icon only */
+  --sidebar-bg: #4338ca;             /* indigo-700, satu keluarga dengan navbar indigo-600 */
+  --sidebar-fg: rgba(255, 255, 255, 0.88);
+  --sidebar-fg-muted: rgba(255, 255, 255, 0.62);
+  --sidebar-hover: rgba(255, 255, 255, 0.10);
+  --sidebar-active: rgba(255, 255, 255, 0.18);
+  --sidebar-border: rgba(255, 255, 255, 0.14);
+  --content-max: 120rem;              /* 1920px - satu-satunya knob lebar konten */
+  --navbar-h: 4rem;                   /* 64px - tinggi navbar atas yang dikunci */
+
+  /* Logout: mengikuti tema sidebar (light = indigo-700, dark = slate-800) */
+  --sidebar-danger-fg: #fee2e2;             /* red-200, kontras di atas indigo-700 */
+  --sidebar-danger-fg-hover: #ffffff;
+  --sidebar-danger-bg-hover: rgba(248, 113, 113, 0.22);
+  --sidebar-danger-icon: #fca5a5;
+}
+
+/* Dark mode: seluruh warna sidebar (termasuk strip Logout) diturunkan dari
+   sini supaya tidak ada elemen yang tertinggal warna light mode. */
+html.dark {
+  --sidebar-bg: #1e293b;             /* slate-800, sama dengan navbar dark */
+  --sidebar-fg: #e2e8f0;
+  --sidebar-fg-muted: #94a3b8;
+  --sidebar-hover: rgba(255, 255, 255, 0.08);
+  --sidebar-active: rgba(255, 255, 255, 0.14);
+  --sidebar-border: rgba(148, 163, 184, 0.22);
+
+  --sidebar-danger-fg: #fca5a5;       /* red-400, kontras di atas slate-800 */
+  --sidebar-danger-fg-hover: #fecaca;
+  --sidebar-danger-bg-hover: rgba(248, 113, 113, 0.18);
+  --sidebar-danger-icon: #f87171;
+}
+
+html.sidebar-collapsed {
+  --sidebar-width: var(--sidebar-width-collapsed);
+}
+
+/* --- Layout shell ------------------------------------------------------- */
+.app-layout {
+  display: flex;
+  align-items: flex-start;
+}
+
+/* Navbar atas dikunci (sticky) supaya tidak ikut ter-scroll keluar layar.
+   z-index 40: di atas sidebar (30), di bawah modal/dropdown (50). */
+.top-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+/* Wadah konten: mengisi lebar yang tersedia, dibatasi --content-max supaya
+   monitor besar tidak lagi menyisakan ruang kosong di kiri dan kanan.
+   Didefinisikan sebagai CSS biasa (bukan utility Tailwind CDN) supaya kelasnya
+   selalu ada walau Tailwind CDN gagal men-generate utility. */
+.app-container {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+}
+
+.main-content {
+  flex: 1 1 auto;
+  min-width: 0; /* mencegah tabel lebar memaksa horizontal overflow */
+}
+
+/* --- Sidebar ------------------------------------------------------------ */
+.sidebar {
+  position: sticky;
+  top: var(--navbar-h); /* mulai di bawah navbar yang dikunci */
+  z-index: 30;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  height: calc(100vh - var(--navbar-h));
+  height: calc(100dvh - var(--navbar-h));
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: var(--sidebar-bg);
+  color: var(--sidebar-fg);
+  scrollbar-width: thin;
+  transition: width 220ms ease, transform 220ms ease;
+}
+
+.sidebar-nav {
+  flex: 1 1 auto;
+  padding: 0.75rem 0.5rem 1rem;
+}
+
+.sidebar-brand {
+  display: none; /* hanya dipakai di mode drawer */
+}
+
+.sidebar-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.125rem;
+  border-radius: 0.5rem;
+  color: var(--sidebar-fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.sidebar-item:hover {
+  background-color: var(--sidebar-hover);
+  color: #fff;
+}
+
+.sidebar-item:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+.sidebar-icon {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
+.sidebar-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-item-active {
+  background-color: var(--sidebar-active);
+  color: #fff;
+  font-weight: 600;
+}
+
+.sidebar-item-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background-color: #fff;
+}
+
+.sidebar-separator {
+  height: 1px;
+  margin: 0.75rem 0.75rem;
+  background-color: var(--sidebar-border);
+}
+
+.sidebar-section-toggle {
+  text-transform: none;
+}
+
+.sidebar-section-caret {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  transform: rotate(-90deg); /* tertutup -> mengarah ke kanan */
+  transition: transform 200ms ease;
+}
+
+.sidebar-section-caret-open {
+  transform: rotate(0deg); /* terbuka -> mengarah ke bawah */
+}
+
+.sidebar-submenu {
+  margin: 0.125rem 0 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--sidebar-border);
+}
+
+.sidebar-submenu .sidebar-item {
+  font-size: 0.8125rem;
+  padding-left: 0.75rem;
+}
+
+.sidebar-submenu-hidden {
+  display: none;
+}
+
+.sidebar-badge {
+  margin-left: auto;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: #ef4444;
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+/* Strip logout di pojok kiri bawah dan selalu terlihat: menempel di dalam
+   sidebar (yang jadi scroll container), jadi tidak ikut hilang saat halaman
+   maupun daftar menu sidebar di-scroll. */
+.sidebar-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  flex: 0 0 auto;
+  padding: 0.5rem;
+  border-top: 1px solid var(--sidebar-border);
+  background-color: var(--sidebar-bg);
+}
+
+/* Logout: warna teks & ikon mengikuti light/dark mode lewat CSS variable. */
+.sidebar-item-danger {
+  color: var(--sidebar-danger-fg);
+}
+
+.sidebar-item-danger .sidebar-icon {
+  color: var(--sidebar-danger-icon);
+}
+
+.sidebar-item-danger:hover,
+.sidebar-item-danger:focus-visible {
+  background-color: var(--sidebar-danger-bg-hover);
+  color: var(--sidebar-danger-fg-hover);
+}
+
+.sidebar-item-danger:hover .sidebar-icon,
+.sidebar-item-danger:focus-visible .sidebar-icon {
+  color: var(--sidebar-danger-fg-hover);
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+/* --- Collapsed (desktop & tablet): icon only + tooltip ------------------- */
+@media (min-width: 768px) {
+  html.sidebar-collapsed .sidebar-label {
+    display: none;
+  }
+
+  html.sidebar-collapsed .sidebar-item {
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  html.sidebar-collapsed .sidebar-section-caret {
+    display: none;
+  }
+
+  html.sidebar-collapsed .sidebar-submenu {
+    padding-left: 0;
+    border-left: none;
+  }
+
+  html.sidebar-collapsed .sidebar-badge {
+    position: absolute;
+    left: auto;
+    right: 0.3rem;
+    top: 0.2rem;
+    margin-left: 0;
+  }
+}
+
+/* Tooltip icon-only. Diposisikan lewat JS (position: fixed) supaya tidak ikut
+   terpotong oleh overflow-y:auto pada sidebar. */
+.sidebar-tooltip {
+  position: fixed;
+  z-index: 60;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  background-color: #0f172a;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+}
+
+.sidebar-tooltip[hidden] {
+  display: none;
+}
+
+/* --- Mobile / narrow: off-canvas drawer -------------------------------- */
+@media (max-width: 767px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 16rem;
+    height: 100dvh;
+    z-index: 45;
+    transform: translateX(-100%);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.35);
+  }
+
+  html.sidebar-drawer-open .sidebar {
+    transform: translateX(0);
+  }
+
+  html.sidebar-drawer-open .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 44;
+    background-color: rgba(15, 23, 42, 0.5);
+  }
+
+  .sidebar-brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .sidebar-drawer-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    color: #fff;
+    background-color: var(--sidebar-hover);
+  }
+
+  .sidebar-drawer-close:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+}
+
+@media (min-width: 768px) {
+  .sidebar-drawer-close {
+    display: none;
+  }
+}
+
+/* --- Print -------------------------------------------------------------- */
+@media print {
+  .sidebar,
+  .sidebar-overlay {
+    display: none !important;
+  }
+}
