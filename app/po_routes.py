@@ -60,6 +60,69 @@ def _parse_opt_date(v):
     except ValueError:
         return "INVALID"
 
+# ---------------------------------------------------------------------------
+# Filter tahun & kuartal untuk halaman /purchase-orders
+#
+# PO disimpan per tanggal_po (ISO "YYYY-MM-DD"), jadi tahun/kuartal idealnya
+# difilter di database lewat rentang [start, end) — bukan dengan menyaring
+# 100 PO terbaru di Python (itu membuat Q1/Q2 tidak akurat).
+# ---------------------------------------------------------------------------
+PO_FILTER_COOKIE = "po_filter"
+PO_ALL_YEARS = "all"
+_PO_YEAR_MIN, _PO_YEAR_MAX = 2000, 2100
+_PO_LIST_LIMIT = 100
+# Batas baris untuk menghitung daftar tahun + jumlah per kuartal. Hanya satu
+# kolom (tanggal_po) jadi murah; kalau tabel lewat batas ini, dropdown tahun
+# bisa saja tidak menampilkan tahun yang paling lama.
+_PO_STATS_LIMIT = 5000
+
+
+def _clean_tahun(v):
+    """'2026' -> 2026. Nilai lain (termasuk None/kosong) -> None."""
+    s = str(v or "").strip()
+    if len(s) == 4 and s.isdigit() and _PO_YEAR_MIN <= int(s) <= _PO_YEAR_MAX:
+        return int(s)
+    return None
+
+
+def _clean_qtr(v):
+    """'1'..'4' -> int. Nilai lain -> None."""
+    s = str(v or "").strip()
+    return int(s) if s in ("1", "2", "3", "4") else None
+
+
+def _quarter_bounds(tahun, qtr):
+    """Rentang [start, end) tanggal_po. None = tanpa batas tahun."""
+    if tahun is None:
+        return None
+    if not qtr:
+        return f"{tahun:04d}-01-01", f"{tahun + 1:04d}-01-01"
+    m0 = (qtr - 1) * 3 + 1
+    start = f"{tahun:04d}-{m0:02d}-01"
+    end = f"{tahun + 1:04d}-01-01" if m0 + 3 > 12 else f"{tahun:04d}-{m0 + 3:02d}-01"
+    return start, end
+
+
+def _in_po_range(d, tahun, qtr):
+    """Versi Python dari _quarter_bounds untuk data yang sudah di-fetch.
+
+    Dipakai sebagai jaring pengaman: kalau filter rentang di DB gagal (atau
+    tidak dipakai di salah satu cabang query), hasil akhir tetap benar.
+    """
+    b = _quarter_bounds(tahun, qtr)
+    if not b or not d:
+        return True
+    s = str(d)[:10]
+    return b[0] <= s < b[1]
+
+
+def _apply_po_range(query, tahun, qtr, col="tanggal_po"):
+    """Tambahkan filter rentang tanggal_po ke query builder Supabase."""
+    b = _quarter_bounds(tahun, qtr)
+    if not b:
+        return query
+    return query.gte(col, b[0]).lt(col, b[1])
+
 def _redirect_po(po_id=None, ok=None, err=None):
     base = "/purchase-orders"
     if po_id:
@@ -91,12 +154,36 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         sel_id = (request.query_params.get("po_id") or "").strip() or None
         s_msg = request.cookies.get("success_msg") or request.query_params.get("success")
         e_msg = request.cookies.get("error_msg") or request.query_params.get("error")
+
+        # --- Filter tahun & kuartal --------------------------------------
+        # Prioritas: query param -> cookie (dari render sebelumnya) -> default
+        # (tahun terbaru yang punya data). Cookie dipakai supaya filter tetap
+        # aktif setelah redirect 303 hasil simpan/hapus item, tanpa harus
+        # menyalin parameter filter ke setiap _redirect_po().
+        cookie_val = request.cookies.get(PO_FILTER_COOKIE) or ""
+        c_tahun, _, c_qtr = cookie_val.partition(":")
+        raw_tahun = request.query_params.get("tahun")
+        all_years = str(raw_tahun or "").strip().lower() == PO_ALL_YEARS or (
+            raw_tahun is None and c_tahun == PO_ALL_YEARS)
+        tahun = _clean_tahun(raw_tahun)
+        if tahun is None:
+            tahun = _clean_tahun(c_tahun)
+        if all_years:
+            tahun = None
+        qtr = _clean_qtr(request.query_params.get("qtr") or c_qtr)
+        if tahun is None:
+            qtr = None  # kuartal tanpa tahun tidak bisa difilter
+
         pos = []
         qs = _sanitize_ilike(qq) if qq else ""
         if not qs:
-            # Tanpa pencarian: 100 PO terbaru (perilaku lama, tidak berubah).
+            # Tanpa pencarian: PO terbaru (dibatasi tahun/kuartal bila aktif).
             try:
-                q1 = supabase.table("purchase_orders").select("id, no_po, tanggal_po, qty_pcs").order("tanggal_po", desc=True).limit(100)
+                q1 = _apply_po_range(
+                    supabase.table("purchase_orders")
+                    .select("id, no_po, tanggal_po, qty_pcs")
+                    .order("tanggal_po", desc=True).limit(_PO_LIST_LIMIT),
+                    tahun, qtr)
                 pos = (q1.execute().data or [])
             except Exception as ex:
                 print(f"[PO] list gagal: {ex}")
@@ -106,10 +193,12 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             # Dua-duanya digabung & dedup per id di bawah.
             gabung = {}
             try:
-                qa = supabase.table("purchase_orders") \
-                    .select("id, no_po, tanggal_po, qty_pcs") \
-                    .ilike("no_po", f"%{qs}%").limit(100).execute()
-                for row in (qa.data or []):
+                qa = _apply_po_range(
+                    supabase.table("purchase_orders")
+                    .select("id, no_po, tanggal_po, qty_pcs")
+                    .ilike("no_po", f"%{qs}%").limit(_PO_LIST_LIMIT),
+                    tahun, qtr)
+                for row in (qa.execute().data or []):
                     if row.get("id"):
                         gabung[row["id"]] = row
             except Exception as ex:
@@ -120,8 +209,10 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                 # diam-diam salah (bukan 0 hasil, tapi semua baris).
                 qb = supabase.table("purchase_order_items") \
                     .select("purchase_orders(id, no_po, tanggal_po, qty_pcs), products!inner(nama_produk)") \
-                    .ilike("products.nama_produk", f"%{qs}%").limit(1000).execute()
-                for row in (qb.data or []):
+                    .ilike("products.nama_produk", f"%{qs}%").limit(1000)
+                # Kolom embedded di-filter dengan prefix "purchase_orders.".
+                qb = _apply_po_range(qb, tahun, qtr, col="purchase_orders.tanggal_po")
+                for row in (qb.execute().data or []):
                     po = row.get("purchase_orders")
                     if isinstance(po, list):
                         po = po[0] if po else None
@@ -138,6 +229,78 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                 ),
                 reverse=True,
             )[:100]
+        # Jaring pengaman: pastikan hanya tanggal dalam rentang yang tampil,
+        # walau filter DB di salah satu cabang di atas tidak berlaku.
+        pos = [p for p in pos if _in_po_range(p.get("tanggal_po"), tahun, qtr)]
+
+        # --- Tahun yang tersedia + jumlah PO per kuartal (akurat) ----------
+        # Satu query ringan (hanya kolom tanggal_po). Dipakai untuk mengisi
+        # dropdown tahun dan — kalau datanya lengkap — jumlah per kuartal.
+        # Jumlah ini dihitung dari SELURUH baris tahun tersebut, bukan dari
+        # 100 PO yang sedang ditampilkan, jadi angkanya tidak mengada-ada.
+        years = []                 # [(tahun, jumlah_po), ...] terbaru dulu
+        q_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+        q_year_total = 0
+        q_no_date = 0
+        stat_rows = []
+        try:
+            dq = supabase.table("purchase_orders").select("tanggal_po") \
+                .order("tanggal_po", desc=True).limit(_PO_STATS_LIMIT)
+            if qs:
+                dq = dq.ilike("no_po", f"%{qs}%")
+            stat_rows = dq.execute().data or []
+        except Exception as ex:
+            print(f"[PO] gagal Ambil statistik PO: {ex}")
+
+        def _year_of(d):
+            s = str(d or "")[:4]
+            return int(s) if len(s) == 4 and s.isdigit() else None
+
+        stat_complete = len(stat_rows) < _PO_STATS_LIMIT
+        per_year = {}
+        for r in stat_rows:
+            y = _year_of(r.get("tanggal_po"))
+            if not y:
+                q_no_date += 1
+            else:
+                per_year[y] = per_year.get(y, 0) + 1
+        years = sorted(per_year.items(), key=lambda kv: kv[0], reverse=True)
+
+        # Default: tahun terbaru yang punya data (bukan "semua"), supaya daftar
+        # tidak pernah memuat semua tahun sekaligus.
+        if tahun is None and not all_years and years:
+            tahun = years[0][0]
+            qtr = None  # kuartal tidak otomatis ikut; user yang memilih
+
+        if tahun is not None:
+            if stat_complete:
+                # Data sudah lengkap di tangan -> hitung per kuartal tanpa query lagi.
+                for r in stat_rows:
+                    y = _year_of(r.get("tanggal_po"))
+                    if y != tahun:
+                        continue
+                    d = str(r.get("tanggal_po") or "")[:10]
+                    m = d[5:7]
+                    if m.isdigit() and 1 <= int(m) <= 12:
+                        q_counts[((int(m) - 1) // 3) + 1] += 1
+                q_year_total = sum(q_counts.values())
+            else:
+                # Terlalu banyak baris untuk satu tangan -> query khusus 1 tahun.
+                try:
+                    cq = supabase.table("purchase_orders").select("tanggal_po") \
+                        .gte("tanggal_po", f"{tahun:04d}-01-01") \
+                        .lt("tanggal_po", f"{tahun + 1:04d}-01-01") \
+                        .limit(_PO_STATS_LIMIT)
+                    if qs:
+                        cq = cq.ilike("no_po", f"%{qs}%")
+                    for r in (cq.execute().data or []):
+                        d = str(r.get("tanggal_po") or "")[:10]
+                        m = d[5:7]
+                        if m.isdigit() and 1 <= int(m) <= 12:
+                            q_counts[((int(m) - 1) // 3) + 1] += 1
+                    q_year_total = sum(q_counts.values())
+                except Exception as ex:
+                    print(f"[PO] gagal hitung kuartal: {ex}")
         # Nama produk per PO untuk ditampilkan di daftar kiri. Satu query untuk
         # semua PO yang tampil (bukan per-PO), supaya tidak ada N+1 query.
         po_products = {}
@@ -175,8 +338,25 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                         next_urutan = mx + 1
                 except Exception as ex:
                     print(f"[PO] items gagal: {ex}")
-        ctx = {"current_user": current_user, "pos": pos, "q": qq, "sel_po": sel_po, "items": items, "next_urutan": next_urutan, "success_msg": s_msg, "error_msg": e_msg, "po_products": po_products, "ed_notification_count": await _ed_count()}
+        ctx = {
+            "current_user": current_user, "pos": pos, "q": qq, "sel_po": sel_po,
+            "items": items, "next_urutan": next_urutan, "success_msg": s_msg,
+            "error_msg": e_msg, "po_products": po_products,
+            "ed_notification_count": await _ed_count(),
+            # Filter tahun/kuartal + statistiknya
+            "tahun": tahun, "qtr": qtr, "all_years": all_years,
+            "years": years, "q_counts": q_counts, "q_year_total": q_year_total,
+            "q_no_date": q_no_date, "shown": len(pos), "list_limit": _PO_LIST_LIMIT,
+            "total_all": sum(per_year.values()),
+        }
         resp = templates.TemplateResponse(request=request, name="purchase_orders.html", context=ctx)
+        # Simpan filter aktif di cookie supaya redirect 303 setelah simpan/hapus
+        # item tidak menghapus pilihan tahun/kuartal user.
+        resp.set_cookie(
+            PO_FILTER_COOKIE,
+            f"{PO_ALL_YEARS if tahun is None else tahun}:{qtr or ''}",
+            max_age=60 * 60 * 24 * 180, httponly=False, samesite="lax", path="/",
+        )
         if s_msg:
             resp.delete_cookie("success_msg")
         if e_msg:
