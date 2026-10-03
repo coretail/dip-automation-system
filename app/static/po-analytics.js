@@ -1,4 +1,4 @@
-/* Chart.js untuk halaman /po-analytics.
+﻿/* Chart.js untuk halaman /po-analytics.
    Prinsip:
    - Data dibaca dari <script type="application/json"> via JSON.parse(textContent).
      Tidak ada innerHTML, tidak ada eval, tidak ada string HTML dari server.
@@ -26,15 +26,42 @@
     return (v && v.trim()) || fallback;
   }
 
+  // Palet per tema. Warna diambil dari token theme.css supaya chart selalu
+  // ikut tema yang aktif (lihat .kilo/plans/terra-theme.md Â§2.6).
+  function themeName() {
+    return document.documentElement.getAttribute('data-theme') || 'light';
+  }
+
+  var PALETTES = {
+    light: {
+      text: '#1f2937', muted: '#6b7280', grid: 'rgba(107,114,128,0.16)',
+      series: ['#4f46e5', '#059669', '#d97706', '#db2777'],
+      tipBg: '#111827', listBg: 'rgba(79,70,229,0.8)',
+    },
+    dark: {
+      text: '#e2e8f0', muted: '#94a3b8', grid: 'rgba(148,163,184,0.18)',
+      series: ['#818cf8', '#34d399', '#fbbf24', '#f472b6'],
+      tipBg: '#0f172a', listBg: 'rgba(129,140,248,0.75)',
+    },
+    terra: {
+      text: '#241A16', muted: '#6E5F55', grid: 'rgba(181,118,106,0.22)',
+      series: ['#A14646', '#EB895B', '#FDB773', '#6E5F55'],
+      tipBg: '#241A16', listBg: 'rgba(235,137,91,0.75)',
+    },
+  };
+
   function buildPalette() {
-    var dark = document.documentElement.classList.contains('dark');
-    var text = dark ? '#e2e8f0' : '#1f2937';
-    var muted = dark ? '#94a3b8' : '#6b7280';
-    var grid = dark ? 'rgba(148,163,184,0.18)' : 'rgba(107,114,128,0.16)';
-    var series = dark
-      ? ['#818cf8', '#34d399', '#fbbf24', '#f472b6']
-      : ['#4f46e5', '#059669', '#d97706', '#db2777'];
-    return { dark: dark, text: text, muted: muted, grid: grid, series: series };
+    var name = themeName();
+    var base = PALETTES[name] || PALETTES.light;
+    return {
+      name: name,
+      text: base.text,
+      muted: base.muted,
+      grid: base.grid,
+      series: base.series,
+      tipBg: base.tipBg,
+      listBg: base.listBg,
+    };
   }
 
   function destroyAll() {
@@ -50,7 +77,7 @@
       plugins: {
         legend: { labels: { color: p.text, boxWidth: 12, font: { size: 11 } } },
         tooltip: {
-          backgroundColor: p.dark ? '#0f172a' : '#111827',
+          backgroundColor: p.tipBg,
           titleColor: '#fff', bodyColor: '#fff', padding: 8, cornerRadius: 6,
         },
       },
@@ -154,7 +181,7 @@
         plugins: {
           legend: { position: 'bottom', labels: { color: p.text, boxWidth: 12, font: { size: 11 } } },
           tooltip: {
-            backgroundColor: p.dark ? '#0f172a' : '#111827',
+            backgroundColor: p.tipBg,
             titleColor: '#fff', bodyColor: '#fff', padding: 8, cornerRadius: 6,
             callbacks: {
               label: function (c) {
@@ -194,7 +221,7 @@
         labels: labels,
         datasets: [{
           label: axisLabel || '', data: values,
-          backgroundColor: p.dark ? 'rgba(129,140,248,0.75)' : 'rgba(79,70,229,0.8)',
+          backgroundColor: p.listBg,
           borderRadius: 4,
         }],
       },
@@ -232,12 +259,14 @@
       showFallback('render gagal');
       return;
     }
-    // Render ulang saat tema berubah (darkmode.js hanya men-toggle class).
+    // Render ulang saat tema berubah. Observer HARUS memantau data-theme;
+    // kalau memantau class, perubahan tema tidak memicu render ulang dan
+    // chart akan menampilkan warna tema sebelumnya.
     var root = document.documentElement;
     if (window.MutationObserver) {
       new MutationObserver(function () {
-        if (palette && palette.dark !== document.documentElement.classList.contains('dark')) render();
-      }).observe(root, { attributes: true, attributeFilter: ['class'] });
+        if (palette && palette.name !== themeName()) render();
+      }).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
     }
   });
 })();

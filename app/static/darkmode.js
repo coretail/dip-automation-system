@@ -1,62 +1,169 @@
-/* Theme toggle: class "dark" on <html>, persisted in localStorage. */
+/* Theme switcher: atribut data-theme pada <html> (light | terra | dark),
+   disimpan di localStorage. Token & mapping ada di app/static/theme.css.
+
+   UX: tombol di navbar membuka menu horizontal berisi 3 tema (bukan lagi
+   siklus sekali klik). Menu ditutup dengan Escape, klik di luar, atau ArrowUp. */
 (function () {
   var KEY = "heka-theme";
+  var THEMES = ["light", "terra", "dark"];
   var root = document.documentElement;
   if (root.classList.contains("force-light")) return;
 
-  function isDark() {
-    return root.classList.contains("dark");
+  function isValid(t) {
+    return THEMES.indexOf(t) !== -1;
   }
 
-  function syncIcon() {
-    var icon = document.getElementById("theme-toggle-icon");
-    var btn = document.getElementById("theme-toggle");
-    if (!icon) return;
-    if (isDark()) {
-      icon.classList.remove("fa-moon");
-      icon.classList.add("fa-sun");
-      if (btn) {
-        btn.title = "Mode terang";
-        btn.setAttribute("aria-label", "Aktifkan mode terang");
-      }
-    } else {
-      icon.classList.remove("fa-sun");
-      icon.classList.add("fa-moon");
-      if (btn) {
-        btn.title = "Mode gelap";
-        btn.setAttribute("aria-label", "Aktifkan mode gelap");
-      }
+  function current() {
+    var t = root.getAttribute("data-theme");
+    if (isValid(t)) return t;
+    // Tanpa atribut (mis. halaman cached): pakai localStorage, lalu sistem.
+    try {
+      var saved = localStorage.getItem(KEY);
+      if (isValid(saved)) return saved;
+    } catch (e) {}
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  // Ikon pada tombol pemicu menunjukkan tema yang AKTIF.
+  var META = {
+    light: { icon: "fa-sun", name: "Terah" },
+    terra: { icon: "fa-fire", name: "Terra" },
+    dark: { icon: "fa-moon", name: "Gelap" }
+  };
+
+  var els = {};
+
+  function syncUI() {
+    var now = current();
+    var meta = META[now];
+
+    if (els.icon) {
+      els.icon.classList.remove("fa-sun", "fa-fire", "fa-moon");
+      els.icon.classList.add(meta.icon);
     }
+    if (els.trigger) {
+      els.trigger.title = "Tema " + meta.name + " aktif. Klik untuk mengubah tema.";
+      els.trigger.setAttribute("aria-label", "Pilih tema. Saat ini " + meta.name);
+    }
+    // Tandai opsi mana yang aktif (aria-checked), bukan hanya gaya.
+    Array.prototype.forEach.call(els.opts, function (btn) {
+      var on = btn.getAttribute("data-theme-opt") === now;
+      btn.setAttribute("aria-checked", on ? "true" : "false");
+    });
   }
 
   function apply(theme, persist) {
-    if (theme === "dark") root.classList.add("dark");
-    else root.classList.remove("dark");
+    if (!isValid(theme)) theme = "light";
+    root.setAttribute("data-theme", theme);
     if (persist) {
-      try { localStorage.setItem(KEY, theme); } catch (e) {}
+      try {
+        localStorage.setItem(KEY, theme);
+      } catch (e) {}
     }
-    syncIcon();
+    syncUI();
+  }
+
+  function isOpen() {
+    return !!(els.menu && els.menu.classList.contains("is-open"));
+  }
+
+  function openMenu() {
+    if (!els.menu || !els.trigger || isOpen()) return;
+    els.menu.classList.add("is-open");
+    els.trigger.setAttribute("aria-expanded", "true");
+  }
+
+  function closeMenu(refocus) {
+    if (!els.menu || !els.trigger || !isOpen()) return;
+    els.menu.classList.remove("is-open");
+    els.trigger.setAttribute("aria-expanded", "false");
+    if (refocus) els.trigger.focus();
+  }
+
+  function focusOpt(index) {
+    if (!els.opts.length) return;
+    var i = (index + els.opts.length) % els.opts.length;
+    els.opts[i].focus();
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    var btn = document.getElementById("theme-toggle");
-    if (btn) {
-      btn.addEventListener("click", function () {
-        apply(isDark() ? "light" : "dark", true);
-      });
-    }
-    syncIcon();
+    els.trigger = document.getElementById("theme-toggle");
+    els.menu = document.getElementById("themeMenu");
+    if (!els.trigger || !els.menu) return;
+    els.icon = document.getElementById("theme-toggle-icon");
+    els.opts = Array.prototype.slice.call(
+      els.menu.querySelectorAll("[data-theme-opt]")
+    );
+
+    // Skrip pra-render di base.html sudah menulis data-theme. Terapkan ulang
+    // supaya atribut selalu ada walau skrip itu gagal (mis. localStorage diblokir).
+    apply(current(), false);
+
+    els.trigger.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (isOpen()) closeMenu(false);
+      else openMenu();
+    });
+
+    // delegated click pada menu: aman walau markup berubah
+    els.menu.addEventListener("click", function (e) {
+      var btn = e.target.closest ? e.target.closest("[data-theme-opt]") : null;
+      if (!btn) return;
+      e.stopPropagation();
+      apply(btn.getAttribute("data-theme-opt"), true);
+      closeMenu(true);
+    });
+
+    // Klik di luar → tutup
+    document.addEventListener("click", function (e) {
+      if (!isOpen()) return;
+      if (!els.menu.contains(e.target) && !els.trigger.contains(e.target)) {
+        closeMenu(false);
+      }
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (!isOpen()) return;
+      var active = document.activeElement;
+      var i = els.opts.indexOf(active);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMenu(true);
+      } else if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+        e.preventDefault();
+        focusOpt(i + 1);
+      } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        focusOpt(i - 1);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        focusOpt(0);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        focusOpt(els.opts.length - 1);
+      } else if (e.key === "Tab") {
+        // Biarkan Tab bergerak seperti biasa, menu menutup saat fokus keluar.
+        closeMenu(false);
+      }
+    });
+
+    // Menu mengikuti tema aktif walau berubah dari tab lain.
+    window.addEventListener("storage", function (e) {
+      if (e.key === KEY) syncUI();
+    });
   });
 
+  // Saat print, paksa tema terang supaya PDF tidak gelap.
   window.addEventListener("beforeprint", function () {
-    if (isDark()) {
-      root.setAttribute("data-theme-before-print", "dark");
-      root.classList.remove("dark");
+    if (current() !== "light") {
+      root.setAttribute("data-theme-before-print", current());
+      root.setAttribute("data-theme", "light");
     }
   });
   window.addEventListener("afterprint", function () {
-    if (root.getAttribute("data-theme-before-print") === "dark") {
-      root.classList.add("dark");
+    var before = root.getAttribute("data-theme-before-print");
+    if (before) {
+      root.setAttribute("data-theme", before);
       root.removeAttribute("data-theme-before-print");
     }
   });

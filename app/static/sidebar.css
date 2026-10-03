@@ -21,9 +21,9 @@
   --sidebar-danger-icon: #fca5a5;
 }
 
-/* Dark mode: seluruh warna sidebar (termasuk strip Logout) diturunkan dari
-   sini supaya tidak ada elemen yang tertinggal warna light mode. */
-html.dark {
+/* Sidebar mengikuti tema lewat data-theme (lihat app/static/theme.css).
+   Light memakai nilai di :root, jadi tidak perlu blok tambahan. */
+[data-theme="dark"] {
   --sidebar-bg: #1e293b;             /* slate-800, sama dengan navbar dark */
   --sidebar-fg: #e2e8f0;
   --sidebar-fg-muted: #94a3b8;
@@ -35,6 +35,22 @@ html.dark {
   --sidebar-danger-fg-hover: #fecaca;
   --sidebar-danger-bg-hover: rgba(248, 113, 113, 0.18);
   --sidebar-danger-icon: #f87171;
+}
+
+/* Terra: sidebar memakai brick tua agar teks putih di atasnya mencapai 10.80:1,
+   dan menyatu dengan navbar + tombol CTA karena warnanya sama. */
+[data-theme="terra"] {
+  --sidebar-bg: #6B2727;             /* brick tua solid */
+  --sidebar-fg: #FFFFFF;
+  --sidebar-fg-muted: rgba(255, 255, 255, 0.78);
+  --sidebar-hover: rgba(255, 255, 255, 0.12);
+  --sidebar-active: rgba(255, 255, 255, 0.20);
+  --sidebar-border: rgba(255, 255, 255, 0.24);
+
+  --sidebar-danger-fg: #FFE3E0;
+  --sidebar-danger-fg-hover: #FFFFFF;
+  --sidebar-danger-bg-hover: rgba(255, 255, 255, 0.22);
+  --sidebar-danger-icon: #FFD5D0;
 }
 
 html.sidebar-collapsed {

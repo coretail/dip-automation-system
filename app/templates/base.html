@@ -4,19 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}DIP Kosmetik Automation{% endblock %}</title>
-    <script>
+<script>
+      // Tema: light | terra | dark (lihat app/static/theme.css).
+      // Ditulis SEBELUM render supaya tidak ada kedipan tema lama.
       (function () {
         try {
-          if (document.documentElement.classList.contains('force-light')) return;
-          var t = localStorage.getItem('heka-theme');
-          if (t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
+          var root = document.documentElement;
+          if (root.classList.contains('force-light')) {
+            root.setAttribute('data-theme', 'light');
+            return;
           }
-        } catch (e) {}
+          var t = localStorage.getItem('heka-theme');
+          if (t !== 'light' && t !== 'terra' && t !== 'dark') {
+            t = (window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+          }
+          root.setAttribute('data-theme', t);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
       })();
-      
+
       // Helper untuk menangani session expired
-      window.handleSessionRedirect = function(response, onRedirectCallback) {
+      window.handleSessionRedirect = function (response, onRedirectCallback) {
         if (response.redirected && response.url.includes("/login")) {
           if (onRedirectCallback) onRedirectCallback();
           window.location.href = response.url;
@@ -28,7 +37,7 @@
     <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/darkmode.css">
+    <link rel="stylesheet" href="/static/theme.css">
     <link rel="stylesheet" href="/static/sidebar.css">
     <link rel="icon" type="image/png" href="/static/images/favicon.png">
     <script>
@@ -100,9 +109,31 @@
                             </div>
                         </div>
                     </div>
-                    <button type="button" id="theme-toggle" class="p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Ganti tema" title="Ganti tema">
-                        <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
-                    </button>
+                    <!-- Theme switcher: tombol pemicu + menu horizontal 3 tema -->
+                        <div class="relative" id="themeSwitcher">
+                            <button type="button" id="theme-toggle"
+                                    class="p-2 rounded-full hover:bg-indigo-700 transition"
+                                    aria-label="Pilih tema" title="Pilih tema"
+                                    aria-haspopup="true" aria-expanded="false" aria-controls="themeMenu">
+                                <i id="theme-toggle-icon" class="fa-solid fa-moon"></i>
+                                <i class="fa-solid fa-chevron-down text-[10px] ml-0.5 opacity-80" aria-hidden="true"></i>
+                            </button>
+                            <div id="themeMenu" role="menu" aria-labelledby="theme-toggle"
+                                 class="theme-menu absolute right-0 mt-2 flex items-stretch gap-1 p-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                                <button type="button" role="menuitemradio" aria-checked="true" data-theme-opt="light"
+                                        class="theme-opt flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer">
+                                    <i class="fa-solid fa-sun" aria-hidden="true"></i><span>Light</span>
+                                </button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-opt="terra"
+                                        class="theme-opt flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer">
+                                    <i class="fa-solid fa-fire" aria-hidden="true"></i><span>Terra</span>
+                                </button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-opt="dark"
+                                        class="theme-opt flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer">
+                                    <i class="fa-solid fa-moon" aria-hidden="true"></i><span>Dark</span>
+                                </button>
+                            </div>
+                        </div>
 
                     <!-- Menu user -->
                     <div class="relative" id="user-menu-wrapper">

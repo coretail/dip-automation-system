@@ -1,0 +1,941 @@
+﻿/* ==========================================================================
+   SISTEM TEMA - H&EKA
+   --------------------------------------------------------------------------
+   Dua lapis:
+     1. TOKEN  - satu blok per tema. Menambah tema = menambah satu blok.
+     2. MAPPING- setiap utility class Tailwind dipetakan ke token, ditulis
+                 SATU KALI di bawah. Tidak ada warna literal di lapis ini.
+
+   Aktivasi: atribut `data-theme` pada <html> berisi light | terra | dark.
+   Skrip pra-render di base.html selalu menuliskannya sebelum halaman digambar.
+
+   PENTING:
+   - Nilai light di :root WAJIB sama persis dengan nilai stock Tailwind,
+     sehingga tema light tidak berubah visual sama sekali.
+   - `!important` wajib di semua aturan mapping: inilah yang membuatnya menang atas
+     utility Tailwind CDN tanpa bergantung urutan @layer.
+   - Pengecualian untuk kontrol form native: aturannya hanya untuk dark & terra,
+     supaya light tetap persis seperti sebelumnya.
+   ========================================================================== */
+
+/* ==========================================================================
+   LAPIS 1 - TOKEN
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   LIGHT = nilai stock Tailwind v4, DITARIK dari browser (bukan hex v3).
+   Tailwind v4 memakai oklch/oklab, dan beberapa warna BERBEDA dari hex v3
+   yang biasa dipakai - misalnya indigo-600 v4 = oklch(.511 .262 276.966)
+   yang jadi rgb(79,57,246), bukan #4f46e5. Karena token memakai nilai yang
+   sama persis, hasil render light identik.
+   Diambil dengan probe: div per class -> getComputedStyle.
+   -------------------------------------------------------------------------- */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Permukaan & latar */
+  --t-page: oklch(0.985 0.002 247.839);                     /* gray-50 */
+  --t-page-a50: oklab(0.985 -0.00075442 -0.00185226 / 0.5);   /* gray-50/50 */
+  --t-page-a70: oklab(0.985 -0.00075442 -0.00185226 / 0.7);   /* gray-50/70 */
+  --t-surface: #ffffff;
+  --t-surface-2: oklch(0.967 0.003 264.542);                  /* gray-100 */
+  --t-surface-3: oklch(0.928 0.006 264.531);                  /* gray-200 */
+  --t-surface-4: oklch(0.872 0.01 258.338);                   /* gray-300 */
+  --t-surface-5: oklch(0.707 0.022 261.325);                  /* gray-400 */
+
+  /* Hover */
+  --t-hover-1: oklch(0.985 0.002 247.839);
+  --t-hover-1-a50: oklab(0.985 -0.00075442 -0.00185226 / 0.5);
+  --t-hover-2: oklch(0.967 0.003 264.542);
+  --t-hover-3: oklch(0.928 0.006 264.531);
+
+  /* Teks */
+  --t-text-950: oklch(0.13 0.028 261.692);                  /* gray-950 */
+  --t-text: oklch(0.21 0.034 264.665);                       /* gray-900 */
+  --t-text-2: oklch(0.278 0.033 256.848);                     /* gray-800 */
+  --t-text-3: oklch(0.373 0.034 259.733);                     /* gray-700 */
+  --t-text-4: oklch(0.446 0.03 256.802);                      /* gray-600 */
+  --t-muted: oklch(0.551 0.027 264.364);                      /* gray-500 */
+  --t-muted-2: oklch(0.707 0.022 261.325);                    /* gray-400 */
+  --t-muted-3: oklch(0.872 0.01 258.338);                     /* gray-300 */
+  --t-placeholder: oklch(0.707 0.022 261.325);                /* gray-400 */
+
+  /* Border & divider */
+  --t-border-0: oklch(0.985 0.002 247.839);                   /* gray-50 */
+  --t-divider: oklch(0.967 0.003 264.542);                    /* gray-100 */
+  --t-border: oklch(0.928 0.006 264.531);                     /* gray-200 */
+  --t-border-2: oklch(0.872 0.01 258.338);                    /* gray-300 */
+  --t-border-3: oklch(0.373 0.034 259.733);                    /* gray-700 */
+
+  /* Brand (indigo v4) */
+  --t-brand-text-3: oklch(0.257 0.09 281.288);               /* indigo-950 */
+  --t-brand-text-2: oklch(0.398 0.195 277.366);               /* indigo-800 */
+  --t-brand-text: oklch(0.457 0.24 277.023);                  /* indigo-700 */
+  --t-link: oklch(0.511 0.262 276.966);                       /* indigo-600 */
+  --t-brand-soft-1: oklch(0.962 0.018 272.314);               /* indigo-50 */
+  --t-brand-soft-2: oklab(0.962 0.000726771 -0.0179853 / 0.5);/* indigo-50/50 */
+  --t-brand-soft-3: oklab(0.962 0.000726771 -0.0179853 / 0.3);/* indigo-50/30 */
+  --t-brand-soft-4: oklch(0.93 0.034 272.788);                /* indigo-100 */
+  --t-brand-hover-soft: oklch(0.962 0.018 272.314);
+  --t-brand-hover-soft-2: oklch(0.93 0.034 272.788);
+  --t-brand-border-1: oklch(0.93 0.034 272.788);              /* indigo-100 */
+  --t-brand-border-2: oklch(0.87 0.065 274.039);              /* indigo-200 */
+  --t-brand: oklch(0.585 0.233 277.117);                       /* indigo-500 */
+  --t-brand-strong: oklch(0.511 0.262 276.966);               /* indigo-600 */
+  --t-ring: oklch(0.87 0.065 274.039);                        /* indigo-200 */
+  --t-ring-hover: oklch(78.5% 0.115 274.713);                 /* indigo-300 */
+  --t-ring-focus: oklch(0.511 0.262 276.966 / 0.45);            /* indigo-600/45 */
+  --t-focus: oklch(0.511 0.262 276.966);                       /* indigo-600 */
+  /* Tombol solid - nilai stock, agar light/dark tidak berubah. */
+  --t-btn: oklch(0.511 0.262 276.966);                           /* indigo-600 */
+  --t-btn-alt: oklch(0.585 0.233 277.117);                      /* indigo-500 */
+  --t-btn-deep: oklch(0.457 0.24 277.023);                       /* indigo-700 */
+  --t-grad-from: oklch(0.511 0.262 276.966);                    /* indigo-600 */
+  --t-grad-from-alt: oklch(0.585 0.233 277.117);                 /* indigo-500 */
+  --t-grad-to: oklch(0.627 0.265 303.9);                        /* purple-500 */
+  --t-nav-bg: oklch(0.511 0.262 276.966);                     /* indigo-600 */
+  --t-nav-hover: oklch(0.457 0.24 277.023);                    /* indigo-700 */
+
+  /* Status — light = nilai stock Tailwind v4 */
+  --t-green-text-500: oklch(0.723 0.219 149.579);
+  --t-green-text-600: oklch(0.627 0.194 149.214);
+  --t-green-text-700: oklch(0.527 0.154 150.069);
+  --t-green-text-800: oklch(0.448 0.119 151.328);
+  --t-green-hover-800: oklch(0.448 0.119 151.328);
+  --t-green-hover-900: oklch(0.393 0.095 152.535);
+  --t-green-bg-50: oklch(0.982 0.018 155.826);
+  --t-green-bg-100: oklch(0.962 0.044 156.743);
+  --t-green-hover-100: oklch(0.962 0.044 156.743);
+  --t-green-border-200: oklch(0.925 0.084 155.995);
+
+  --t-emerald-text-400: oklch(0.765 0.177 163.223);
+  --t-emerald-text-500: oklch(0.696 0.17 162.48);
+  --t-emerald-text-600: oklch(0.596 0.145 163.225);
+  --t-emerald-text-700: oklch(0.508 0.118 165.612);
+  --t-emerald-text-800: oklch(0.432 0.095 166.913);
+  --t-emerald-hover-600: oklch(0.596 0.145 163.225);
+  --t-emerald-hover-700: oklch(0.508 0.118 165.612);
+  --t-emerald-hover-800: oklch(0.432 0.095 166.913);
+  --t-emerald-bg-50: oklch(0.979 0.021 166.113);
+  --t-emerald-bg-100: oklch(0.95 0.052 163.051);
+  --t-emerald-hover-50: oklch(0.979 0.021 166.113);
+  --t-emerald-hover-100: oklch(0.95 0.052 163.051);
+  --t-emerald-border-200: oklch(0.905 0.093 164.15);
+  --t-emerald-border-strong: oklch(0.696 0.17 162.48);        /* emerald-500 */
+  --t-emerald-ring: oklch(0.696 0.17 162.48 / 0.45);
+
+  --t-red-text-500: oklch(0.637 0.237 25.331);
+  --t-red-text-600: oklch(0.577 0.245 27.325);
+  --t-red-text-700: oklch(0.505 0.213 27.518);
+  --t-red-text-800: oklch(0.444 0.177 26.899);
+  --t-red-hover-600: oklch(0.577 0.245 27.325);
+  --t-red-hover-700: oklch(0.505 0.213 27.518);
+  --t-red-hover-900: oklch(0.396 0.141 25.723);
+  --t-red-bg-50: oklch(0.971 0.013 17.38);
+  --t-red-bg-100: oklch(0.936 0.032 17.717);
+  --t-red-hover-100: oklch(0.936 0.032 17.717);
+  --t-red-border-200: oklch(0.885 0.062 18.334);
+
+  --t-rose-text-500: oklch(0.645 0.246 16.439);
+  --t-rose-text-600: oklch(0.586 0.253 17.585);
+  --t-rose-text-700: oklch(0.514 0.222 16.935);
+  --t-rose-text-800: oklch(0.455 0.188 13.697);
+  --t-rose-hover-500: oklch(0.645 0.246 16.439);
+  --t-rose-hover-700: oklch(0.514 0.222 16.935);
+  --t-rose-bg-50: oklch(0.969 0.015 12.422);
+  --t-rose-hover-50: oklch(0.969 0.015 12.422);
+  --t-rose-hover-100: oklch(0.941 0.03 12.58);
+  --t-rose-border-200: oklch(0.892 0.058 10.001);
+  --t-rose-border-300: oklch(0.81 0.117 11.638);
+
+  --t-amber-text-500: oklch(0.769 0.188 70.08);
+  --t-amber-text-600: oklch(0.666 0.179 58.318);
+  --t-amber-text-700: oklch(0.555 0.163 48.998);
+  --t-amber-text-800: oklch(0.473 0.137 46.201);
+  --t-amber-text-900: oklch(0.414 0.112 45.904);
+  --t-amber-hover-600: oklch(0.666 0.179 58.318);
+  --t-amber-hover-700: oklch(0.555 0.163 48.998);
+  --t-amber-bg-50: oklch(0.987 0.022 95.277);
+  --t-amber-bg-100: oklch(0.962 0.059 95.617);
+  --t-amber-hover-50: oklch(0.962 0.059 95.617);
+  --t-amber-hover-100: oklch(0.962 0.059 95.617);
+  --t-amber-border-200: oklch(0.924 0.12 95.746);
+  --t-amber-ring: oklch(0.769 0.188 70.08);                   /* amber-500 */
+
+  --t-yellow-text-600: oklch(0.681 0.162 75.834);
+  --t-yellow-text-700: oklch(0.554 0.135 66.442);
+  --t-yellow-text-800: oklch(0.476 0.114 61.907);
+  --t-yellow-bg-50: oklch(0.987 0.026 102.212);
+  --t-yellow-bg-100: oklch(0.973 0.071 103.193);
+
+  --t-orange-text-500: oklch(0.705 0.213 47.604);
+  --t-orange-border-500: oklch(0.705 0.213 47.604);
+  --t-orange-bg-100: oklch(0.954 0.038 75.164);
+
+  --t-sky-text-500: oklch(0.685 0.169 237.323);
+  --t-sky-text-700: oklch(0.5 0.134 242.749);
+  --t-sky-bg-50: oklch(0.977 0.013 236.62);
+  --t-sky-bg-100: oklch(0.951 0.026 236.824);
+
+  --t-blue-text-500: oklch(0.623 0.214 259.815);
+  --t-blue-text-600: oklch(0.546 0.245 262.881);
+  --t-blue-text-700: oklch(0.488 0.243 264.376);
+  --t-blue-text-800: oklch(0.424 0.199 265.638);
+  --t-blue-bg-50: oklch(0.97 0.014 254.604);
+  --t-blue-bg-100: oklch(0.932 0.032 255.585);
+  --t-blue-hover-100: oklch(0.932 0.032 255.585);
+  --t-blue-border-100: oklch(0.932 0.032 255.585);
+  --t-blue-border-200: oklch(0.882 0.059 254.128);
+
+  --t-violet-text-500: oklch(0.606 0.25 292.717);
+  --t-violet-text-700: oklch(0.491 0.27 292.581);
+  --t-violet-text-800: oklch(0.432 0.232 292.759);
+  --t-violet-bg-50: oklch(0.969 0.016 293.756);
+  --t-violet-bg-100: oklch(0.943 0.029 294.588);
+  --t-violet-hover-50: oklch(0.943 0.029 294.588);
+  --t-violet-hover-100: oklch(0.943 0.029 294.588);
+  --t-violet-border-200: oklch(0.894 0.057 293.283);
+  --t-violet-ring: oklch(0.606 0.25 292.717);                 /* violet-500 */
+
+  --t-purple-text-700: oklch(0.496 0.265 301.924);
+  --t-purple-text-800: oklch(0.438 0.218 303.724);
+  --t-purple-bg-100: oklch(0.946 0.033 307.174);
+
+  --t-fuchsia-text-700: oklch(0.518 0.253 323.949);
+  --t-fuchsia-bg-50: oklch(0.977 0.017 320.058);
+  --t-fuchsia-bg-100: oklch(0.952 0.037 318.852);
+
+  /* Form & misc - light tidak memaksa warna kontrol form (lihat catatan di
+     bawah mapping), jadi nilainya hanya dipakai bila dipaksa. */
+  --t-field-bg: transparent;
+  --t-field-fg: oklch(0.21 0.034 264.665);
+  --t-field-border: oklch(0.872 0.01 258.338);
+  --t-selection-bg: oklch(0.511 0.262 276.966);
+  --t-selection-fg: #ffffff;
+  --t-scrollbar-thumb: oklch(0.872 0.01 258.338);
+  --t-scrollbar-track: oklch(0.985 0.002 247.839);
+}
+
+[data-theme="terra"] {
+  color-scheme: light;
+
+  /* Permukaan & latar - krem hangat, turunan ramp brand (bukan warna brand
+     mentah: keempatnya terlalu jenuh untuk jadi kanvas layar penuh). */
+  --t-page: #FDF4EC;
+  --t-page-a50: rgb(253 244 236 / 0.5);
+  --t-page-a70: rgb(253 244 236 / 0.7);
+  --t-surface: #FFFFFF;
+  --t-surface-2: #FCF3EA;
+  --t-surface-3: #F6E8DC;
+  --t-surface-4: #E8D5C8;
+  --t-surface-5: #B5766A;
+
+  --t-hover-1: #FBEADC;
+  --t-hover-1-a50: rgb(251 234 220 / 0.5);
+  --t-hover-2: #F6E8DC;
+  --t-hover-3: #E8D5C8;
+
+  /* Teks */
+  --t-text-950: #150E0B;
+  --t-text: #241A16;
+  --t-text-2: #4A3A33;
+  --t-text-3: #5E4C43;
+  --t-text-4: #6E5F55;
+  --t-muted: #6E5F55;
+  --t-muted-2: #8A7B71;
+  --t-muted-3: #BFAFA4;
+  --t-placeholder: #7A6A60;                 /* 5.17:1 di atas kartu */
+
+  /* Border & divider */
+  --t-border-0: #F6E8DC;
+  --t-divider: #E8D5C8;
+  --t-border: #E8D5C8;
+  --t-border-2: #B5766A;   /* 3.64:1 - WAJIB untuk border input (WCAG 1.4.11) */
+  --t-border-3: #8A6A5D;
+
+  /* Brand - ramp terascu */
+  --t-brand-text-3: #6B2727;
+  --t-brand-text-2: #8A3B3B;
+  --t-brand-text: #A14646;
+  --t-link: #A14646;                              /* 5.55:1 di atas krem */
+  --t-brand-soft-1: #FDE4D8;                    /* tint EB895B */
+  --t-brand-soft-2: rgb(253 228 216 / 0.5);
+  --t-brand-soft-3: rgb(253 228 216 / 0.3);
+  --t-brand-soft-4: #FBD9C4;
+  --t-brand-hover-soft: #FBEADC;
+  --t-brand-hover-soft-2: #FBD9C4;
+  --t-brand-border-1: #F3C6AC;
+  --t-brand-border-2: #E8B393;
+  --t-brand: #DA6556;                            /* aksen non-teks 3.51:1 */
+  --t-brand-strong: #A14646;                      /* CTA + teks putih 6.03:1 */
+  --t-ring: #DA6556;
+  --t-ring-hover: #EB895B;
+  --t-ring-focus: rgb(161 70 70 / 0.45);
+  --t-focus: #6B2727;
+  /* Tombol solid: brick tua + teks putih = 10.80:1.
+     --t-btn-deep sengaja lebih gelap lagi dari --t-btn supaya hover
+     `hover:bg-indigo-700` (25 pemakaian) benar-benar kelihatan. */
+  --t-btn: #6B2727;
+  --t-btn-alt: #7A2E2E;
+  --t-btn-deep: #4A1A1A;
+  --t-grad-from: #6B2727;
+  --t-grad-from-alt: #8A3B3B;
+  --t-grad-to: #EB895B;
+  --t-nav-bg: #6B2727;
+  --t-nav-hover: #4A1A1A;
+
+  /* Status: TIDAK diubah dari light (sudah benar di tema terang). */
+  --t-green-text-500: oklch(0.723 0.219 149.579);
+  --t-green-text-600: oklch(0.627 0.194 149.214);
+  --t-green-text-700: oklch(0.527 0.154 150.069);
+  --t-green-text-800: oklch(0.448 0.119 151.328);
+  --t-green-hover-800: oklch(0.448 0.119 151.328);
+  --t-green-hover-900: oklch(0.393 0.095 152.535);
+  --t-green-bg-50: oklch(0.982 0.018 155.826);
+  --t-green-bg-100: oklch(0.962 0.044 156.743);
+  --t-green-hover-100: oklch(0.962 0.044 156.743);
+  --t-green-border-200: oklch(0.925 0.084 155.995);
+
+  --t-emerald-text-400: oklch(0.765 0.177 163.223);
+  --t-emerald-text-500: oklch(0.696 0.17 162.48);
+  --t-emerald-text-600: oklch(0.596 0.145 163.225);
+  --t-emerald-text-700: oklch(0.508 0.118 165.612);
+  --t-emerald-text-800: oklch(0.432 0.095 166.913);
+  --t-emerald-hover-600: oklch(0.596 0.145 163.225);
+  --t-emerald-hover-700: oklch(0.508 0.118 165.612);
+  --t-emerald-hover-800: oklch(0.432 0.095 166.913);
+  --t-emerald-bg-50: oklch(0.979 0.021 166.113);
+  --t-emerald-bg-100: oklch(0.95 0.052 163.051);
+  --t-emerald-hover-50: oklch(0.979 0.021 166.113);
+  --t-emerald-hover-100: oklch(0.95 0.052 163.051);
+  --t-emerald-border-200: oklch(0.905 0.093 164.15);
+  --t-emerald-border-strong: oklch(0.696 0.17 162.48);
+  --t-emerald-ring: oklch(0.696 0.17 162.48 / 0.45);
+
+  --t-red-text-500: oklch(0.637 0.237 25.331);
+  --t-red-text-600: oklch(0.577 0.245 27.325);
+  --t-red-text-700: oklch(0.505 0.213 27.518);
+  --t-red-text-800: oklch(0.444 0.177 26.899);
+  --t-red-hover-600: oklch(0.577 0.245 27.325);
+  --t-red-hover-700: oklch(0.505 0.213 27.518);
+  --t-red-hover-900: oklch(0.396 0.141 25.723);
+  --t-red-bg-50: oklch(0.971 0.013 17.38);
+  --t-red-bg-100: oklch(0.936 0.032 17.717);
+  --t-red-hover-100: oklch(0.936 0.032 17.717);
+  --t-red-border-200: oklch(0.885 0.062 18.334);
+
+  --t-rose-text-500: oklch(0.645 0.246 16.439);
+  --t-rose-text-600: oklch(0.586 0.253 17.585);
+  --t-rose-text-700: oklch(0.514 0.222 16.935);
+  --t-rose-text-800: oklch(0.455 0.188 13.697);
+  --t-rose-hover-500: oklch(0.645 0.246 16.439);
+  --t-rose-hover-700: oklch(0.514 0.222 16.935);
+  --t-rose-bg-50: oklch(0.969 0.015 12.422);
+  --t-rose-hover-50: oklch(0.969 0.015 12.422);
+  --t-rose-hover-100: oklch(0.941 0.03 12.58);
+  --t-rose-border-200: oklch(0.892 0.058 10.001);
+  --t-rose-border-300: oklch(0.81 0.117 11.638);
+
+  --t-amber-text-500: oklch(0.769 0.188 70.08);
+  --t-amber-text-600: oklch(0.666 0.179 58.318);
+  --t-amber-text-700: oklch(0.555 0.163 48.998);
+  --t-amber-text-800: oklch(0.473 0.137 46.201);
+  --t-amber-text-900: oklch(0.414 0.112 45.904);
+  --t-amber-hover-600: oklch(0.666 0.179 58.318);
+  --t-amber-hover-700: oklch(0.555 0.163 48.998);
+  --t-amber-bg-50: oklch(0.987 0.022 95.277);
+  --t-amber-bg-100: oklch(0.962 0.059 95.617);
+  --t-amber-hover-50: oklch(0.962 0.059 95.617);
+  --t-amber-hover-100: oklch(0.962 0.059 95.617);
+  --t-amber-border-200: oklch(0.924 0.12 95.746);
+  --t-amber-ring: oklch(0.769 0.188 70.08);
+
+  --t-yellow-text-600: oklch(0.681 0.162 75.834);
+  --t-yellow-text-700: oklch(0.554 0.135 66.442);
+  --t-yellow-text-800: oklch(0.476 0.114 61.907);
+  --t-yellow-bg-50: oklch(0.987 0.026 102.212);
+  --t-yellow-bg-100: oklch(0.973 0.071 103.193);
+
+  --t-orange-text-500: oklch(0.705 0.213 47.604);
+  --t-orange-border-500: oklch(0.705 0.213 47.604);
+  --t-orange-bg-100: oklch(0.954 0.038 75.164);
+
+  --t-sky-text-500: oklch(0.685 0.169 237.323);
+  --t-sky-text-700: oklch(0.5 0.134 242.749);
+  --t-sky-bg-50: oklch(0.977 0.013 236.62);
+  --t-sky-bg-100: oklch(0.951 0.026 236.824);
+
+  --t-blue-text-500: oklch(0.623 0.214 259.815);
+  --t-blue-text-600: oklch(0.546 0.245 262.881);
+  --t-blue-text-700: oklch(0.488 0.243 264.376);
+  --t-blue-text-800: oklch(0.424 0.199 265.638);
+  --t-blue-bg-50: oklch(0.97 0.014 254.604);
+  --t-blue-bg-100: oklch(0.932 0.032 255.585);
+  --t-blue-hover-100: oklch(0.932 0.032 255.585);
+  --t-blue-border-100: oklch(0.932 0.032 255.585);
+  --t-blue-border-200: oklch(0.882 0.059 254.128);
+
+  --t-violet-text-500: oklch(0.606 0.25 292.717);
+  --t-violet-text-700: oklch(0.491 0.27 292.581);
+  --t-violet-text-800: oklch(0.432 0.232 292.759);
+  --t-violet-bg-50: oklch(0.969 0.016 293.756);
+  --t-violet-bg-100: oklch(0.943 0.029 294.588);
+  --t-violet-hover-50: oklch(0.943 0.029 294.588);
+  --t-violet-hover-100: oklch(0.943 0.029 294.588);
+  --t-violet-border-200: oklch(0.894 0.057 293.283);
+  --t-violet-ring: oklch(0.606 0.25 292.717);
+
+  --t-purple-text-700: oklch(0.496 0.265 301.924);
+  --t-purple-text-800: oklch(0.438 0.218 303.724);
+  --t-purple-bg-100: oklch(0.946 0.033 307.174);
+
+  --t-fuchsia-text-700: oklch(0.518 0.253 323.949);
+  --t-fuchsia-bg-50: oklch(0.977 0.017 320.058);
+  --t-fuchsia-bg-100: oklch(0.952 0.037 318.852);
+
+  /* Form & misc */
+  --t-field-bg: #FFFFFF;
+  --t-field-fg: #241A16;
+  --t-field-border: #B5766A;      /* 3.64:1 */
+  --t-selection-bg: #A14646;
+  --t-selection-fg: #FFFFFF;
+  --t-scrollbar-thumb: #B5766A;
+  --t-scrollbar-track: #FDF4EC;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --t-page: #0f172a;
+  --t-page-a50: rgb(15 23 42 / 0.5);
+  --t-page-a70: rgb(15 23 42 / 0.7);
+  --t-surface: #1e293b;
+  --t-surface-2: #1e293b;
+  --t-surface-3: #334155;
+  --t-surface-4: #475569;
+  --t-surface-5: #64748b;
+
+  --t-hover-1: #334155;
+  --t-hover-1-a50: rgb(51 65 85 / 0.5);
+  --t-hover-2: #334155;
+  --t-hover-3: #475569;
+
+  --t-text-950: #f8fafc;
+  --t-text: #f8fafc;
+  --t-text-2: #e2e8f0;
+  --t-text-3: #cbd5e1;
+  --t-text-4: #cbd5e1;
+  --t-muted: #94a3b8;
+  --t-muted-2: #64748b;
+  --t-muted-3: #64748b;
+  --t-placeholder: #94a3b8;
+
+  --t-border-0: #1e293b;
+  --t-divider: #334155;
+  --t-border: #334155;
+  --t-border-2: #475569;
+  --t-border-3: #64748b;
+
+  --t-brand-text-3: #e0e7ff;
+  --t-brand-text-2: #c7d2fe;
+  --t-brand-text: #a5b4fc;
+  --t-link: #818cf8;
+  --t-brand-soft-1: rgb(49 46 129 / 0.45);
+  --t-brand-soft-2: rgb(49 46 129 / 0.35);
+  --t-brand-soft-3: rgb(49 46 129 / 0.25);
+  --t-brand-soft-4: rgb(67 56 202 / 0.4);
+  --t-brand-hover-soft: rgb(67 56 202 / 0.35);
+  --t-brand-hover-soft-2: rgb(67 56 202 / 0.5);
+  --t-brand-border-1: #3730a3;
+  --t-brand-border-2: #4338ca;
+  --t-brand: #818cf8;
+  --t-brand-strong: #6366f1;
+  --t-ring: #4338ca;
+  --t-ring-hover: #818cf8;
+  --t-ring-focus: rgb(129 140 248 / 0.45);
+  --t-focus: #818cf8;
+  /* Tombol solid TETAP nilai stock (darkmode.css lama tidak meng-override
+     bg-indigo-600 sama sekali), jadi sama persis dengan light. */
+  --t-btn: oklch(0.511 0.262 276.966);
+  --t-btn-alt: oklch(0.585 0.233 277.117);
+  --t-btn-deep: oklch(0.457 0.24 277.023);
+  --t-grad-from: oklch(0.511 0.262 276.966);
+  --t-grad-from-alt: oklch(0.585 0.233 277.117);
+  --t-grad-to: oklch(0.627 0.265 303.9);
+  --t-nav-bg: #1e293b;
+  --t-nav-hover: #334155;
+
+  --t-green-text-500: #4ade80;
+  --t-green-text-600: #4ade80;
+  --t-green-text-700: #86efac;
+  --t-green-text-800: #bbf7d0;
+  --t-green-hover-800: #bbf7d0;
+  --t-green-hover-900: #dcfce7;
+  --t-green-bg-50: rgb(20 83 45 / 0.45);
+  --t-green-bg-100: rgb(22 101 52 / 0.45);
+  --t-green-hover-100: rgb(22 101 52 / 0.6);
+  --t-green-border-200: #166534;
+
+  --t-emerald-text-400: #34d399;
+  --t-emerald-text-500: #34d399;
+  --t-emerald-text-600: #34d399;
+  --t-emerald-text-700: #6ee7b7;
+  --t-emerald-text-800: #a7f3d0;
+  --t-emerald-hover-600: #6ee7b7;
+  --t-emerald-hover-700: #a7f3d0;
+  --t-emerald-hover-800: #d1fae5;
+  --t-emerald-bg-50: rgb(6 78 59 / 0.45);
+  --t-emerald-bg-100: rgb(6 95 70 / 0.45);
+  --t-emerald-hover-50: rgb(6 95 70 / 0.4);
+  --t-emerald-hover-100: rgb(6 95 70 / 0.55);
+  --t-emerald-border-200: #065f46;
+  --t-emerald-border-strong: #34d399;
+  --t-emerald-ring: rgb(52 211 153 / 0.45);
+
+  --t-red-text-500: #f87171;
+  --t-red-text-600: #f87171;
+  --t-red-text-700: #fca5a5;
+  --t-red-text-800: #fecaca;
+  --t-red-hover-600: #fca5a5;
+  --t-red-hover-700: #fecaca;
+  --t-red-hover-900: #fee2e2;
+  --t-red-bg-50: rgb(127 29 29 / 0.45);
+  --t-red-bg-100: rgb(153 27 27 / 0.45);
+  --t-red-hover-100: rgb(153 27 27 / 0.6);
+  --t-red-border-200: #7f1d1d;
+
+  --t-rose-text-500: #fb7185;
+  --t-rose-text-600: #fb7185;
+  --t-rose-text-700: #fda4af;
+  --t-rose-text-800: #fecdd3;
+  --t-rose-hover-500: #fda4af;
+  --t-rose-hover-700: #fecdd3;
+  --t-rose-bg-50: rgb(136 19 55 / 0.45);
+  --t-rose-hover-50: rgb(136 19 55 / 0.4);
+  --t-rose-hover-100: rgb(159 18 57 / 0.5);
+  --t-rose-border-200: #9f1239;
+  --t-rose-border-300: #be123c;
+
+  --t-amber-text-500: #fbbf24;
+  --t-amber-text-600: #fbbf24;
+  --t-amber-text-700: #fcd34d;
+  --t-amber-text-800: #fde68a;
+  --t-amber-text-900: #fef3c7;
+  --t-amber-hover-600: #fcd34d;
+  --t-amber-hover-700: #fde68a;
+  --t-amber-bg-50: rgb(120 53 15 / 0.4);
+  --t-amber-bg-100: rgb(146 64 14 / 0.45);
+  --t-amber-hover-50: rgb(146 64 14 / 0.4);
+  --t-amber-hover-100: rgb(146 64 14 / 0.55);
+  --t-amber-border-200: #92400e;
+  --t-amber-ring: #fbbf24;
+
+  --t-yellow-text-600: #facc15;
+  --t-yellow-text-700: #fde047;
+  --t-yellow-text-800: #fef08a;
+  --t-yellow-bg-50: rgb(113 63 18 / 0.4);
+  --t-yellow-bg-100: rgb(133 77 14 / 0.45);
+
+  --t-orange-text-500: #fb923c;
+  --t-orange-border-500: #fb923c;
+  --t-orange-bg-100: rgb(154 52 18 / 0.45);
+
+  --t-sky-text-500: #38bdf8;
+  --t-sky-text-700: #7dd3fc;
+  --t-sky-bg-50: rgb(12 74 110 / 0.45);
+  --t-sky-bg-100: rgb(7 89 133 / 0.45);
+
+  --t-blue-text-500: #60a5fa;
+  --t-blue-text-600: #60a5fa;
+  --t-blue-text-700: #93c5fd;
+  --t-blue-text-800: #bfdbfe;
+  --t-blue-bg-50: rgb(30 58 138 / 0.45);
+  --t-blue-bg-100: rgb(30 64 175 / 0.4);
+  --t-blue-hover-100: rgb(30 64 175 / 0.55);
+  --t-blue-border-100: #1e3a8a;
+  --t-blue-border-200: #1d4ed8;
+
+  --t-violet-text-500: #a78bfa;
+  --t-violet-text-700: #c4b5fd;
+  --t-violet-text-800: #ddd6fe;
+  --t-violet-bg-50: rgb(76 29 149 / 0.45);
+  --t-violet-bg-100: rgb(91 33 182 / 0.45);
+  --t-violet-hover-50: rgb(91 33 182 / 0.4);
+  --t-violet-hover-100: rgb(91 33 182 / 0.55);
+  --t-violet-border-200: #6d28d9;
+  --t-violet-ring: #a78bfa;
+
+  --t-purple-text-700: #d8b4fe;
+  --t-purple-text-800: #e9d5ff;
+  --t-purple-bg-100: rgb(88 28 135 / 0.45);
+
+  --t-fuchsia-text-700: #f0abfc;
+  --t-fuchsia-bg-50: rgb(112 26 117 / 0.45);
+  --t-fuchsia-bg-100: rgb(134 25 143 / 0.45);
+
+  --t-field-bg: #1e293b;
+  --t-field-fg: #f1f5f9;
+  --t-field-border: #475569;
+  --t-selection-bg: #4338ca;
+  --t-selection-fg: #ffffff;
+  --t-scrollbar-thumb: #475569;
+  --t-scrollbar-track: #0f172a;
+}
+
+/* ==========================================================================
+   LAPIS 2 - MAPPING
+   Setiap utility class -> token. Ditulis sekali, tanpa warna literal.
+   ========================================================================== */
+
+/* --- Elemen halaman ---
+   Hanya dark & terra. Di light, <html> dan scrollbar tidak diberi warna
+   oleh tema (seperti sebelumnya), sehingga render light identik. */
+[data-theme="dark"] {
+  background-color: var(--t-page);
+  scrollbar-color: var(--t-scrollbar-thumb) var(--t-scrollbar-track);
+}
+[data-theme="terra"] {
+  background-color: var(--t-page);
+  scrollbar-color: var(--t-scrollbar-thumb) var(--t-scrollbar-track);
+}
+[data-theme="dark"] body,
+[data-theme="terra"] body {
+  background-color: var(--t-page);
+  color: var(--t-text);
+}
+[data-theme] ::selection {
+  background: var(--t-selection-bg);
+  color: var(--t-selection-fg);
+}
+
+html.force-light #theme-toggle {
+  display: none !important;
+}
+
+/* --- Navbar --- */
+[data-theme] nav.bg-indigo-600 {
+  background-color: var(--t-nav-bg) !important;
+}
+[data-theme] nav .hover\:bg-indigo-700:hover {
+  background-color: var(--t-nav-hover) !important;
+}
+
+/* --- Permukaan --- */
+[data-theme] .bg-white { background-color: var(--t-surface) !important; }
+[data-theme] .bg-gray-50 { background-color: var(--t-page) !important; }
+[data-theme] .bg-gray-50\/50 { background-color: var(--t-page-a50) !important; }
+[data-theme] .bg-gray-50\/70 { background-color: var(--t-page-a70) !important; }
+[data-theme] .bg-gray-100 { background-color: var(--t-surface-2) !important; }
+[data-theme] .bg-gray-200 { background-color: var(--t-surface-3) !important; }
+[data-theme] .bg-gray-300 { background-color: var(--t-surface-4) !important; }
+[data-theme] .bg-gray-400 { background-color: var(--t-surface-5) !important; }
+
+[data-theme] .hover\:bg-gray-50:hover { background-color: var(--t-hover-1) !important; }
+[data-theme] .hover\:bg-gray-50\/50:hover { background-color: var(--t-hover-1-a50) !important; }
+[data-theme] .hover\:bg-gray-100:hover { background-color: var(--t-hover-2) !important; }
+[data-theme] .hover\:bg-gray-200:hover { background-color: var(--t-hover-3) !important; }
+
+/* --- Teks ---
+   text-black & text-gray-950 memakai token sendiri: di dark keduanya sama
+   (putih), tapi di light gray-950 jauh lebih gelap dari gray-900. Kalau
+   digabung, judul text-gray-950 ikut berubah warna di light. */
+[data-theme] .text-black,
+[data-theme] .text-gray-950 { color: var(--t-text-950) !important; }
+[data-theme] .text-gray-900 { color: var(--t-text) !important; }
+[data-theme] .text-gray-800 { color: var(--t-text-2) !important; }
+[data-theme] .text-gray-700 { color: var(--t-text-3) !important; }
+[data-theme] .text-gray-600 { color: var(--t-text-4) !important; }
+[data-theme] .text-gray-500 { color: var(--t-muted) !important; }
+[data-theme] .text-gray-400 { color: var(--t-muted-2) !important; }
+[data-theme] .text-gray-300 { color: var(--t-muted-3) !important; }
+[data-theme] .text-gray-200 { color: var(--t-text-3) !important; }
+
+[data-theme] .hover\:text-gray-600:hover { color: var(--t-text-3) !important; }
+[data-theme] .hover\:text-gray-700:hover { color: var(--t-text-2) !important; }
+
+/* --- Border & divider --- */
+[data-theme] .border-gray-50 { border-color: var(--t-border-0) !important; }
+[data-theme] .border-gray-100 { border-color: var(--t-divider) !important; }
+[data-theme] .border-gray-200 { border-color: var(--t-border) !important; }
+[data-theme] .border-gray-300 { border-color: var(--t-border-2) !important; }
+[data-theme] .border-gray-700 { border-color: var(--t-border-3) !important; }
+[data-theme] .hover\:border-gray-300:hover { border-color: var(--t-border-2) !important; }
+
+/* Divide - hanya dark & terra. Di light, utility divide milik Tailwind yang
+   dipakai (hanya pada :not(:last-child)); selector `~` di bawah menimpa
+   SEMUA anak, sehingga di light setiap baris tabel/daftar dapat garis yang
+   sebelumnya transparan (kena class border-transparent). */
+[data-theme="dark"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-divider) !important; }
+[data-theme="dark"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-border) !important; }
+[data-theme="terra"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-divider) !important; }
+[data-theme="terra"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-border) !important; }
+
+/* --- Brand --- */
+/* --- Tombol solid ---
+   Darkmode.css lama SENGAJA tidak meng-override bg-indigo-600 (tombol solid
+   tetap indigo di dark). Mapping ini tetap memakai nilai stock untuk light dan
+   dark - jadi keduanya tidak berubah - dan hanya Terra yang memakai brick.
+   `nav.bg-indigo-600` punya rule sendiri di atas memakai --t-nav-bg. */
+[data-theme] .bg-indigo-500 { background-color: var(--t-btn-alt) !important; }
+[data-theme] .bg-indigo-600 { background-color: var(--t-btn) !important; }
+[data-theme] .bg-indigo-700 { background-color: var(--t-btn-deep) !important; }
+[data-theme] .hover\:bg-indigo-500:hover { background-color: var(--t-btn-alt) !important; }
+[data-theme] .hover\:bg-indigo-600:hover { background-color: var(--t-btn) !important; }
+[data-theme] .hover\:bg-indigo-700:hover { background-color: var(--t-btn-deep) !important; }
+[data-theme] .hover\:bg-indigo-900:hover { background-color: var(--t-brand-text-3) !important; }
+
+/* --- Gradien ---
+   Tailwind v4 memisahkan warna (--tw-gradient-from) dari posisi
+   (--tw-gradient-from-position), jadi cukup warna yang ditimpa agar posisi
+   tetap utuh dan gradien tidak rusak. */
+[data-theme] .from-indigo-600 { --tw-gradient-from: var(--t-grad-from); }
+[data-theme] .from-indigo-500 { --tw-gradient-from: var(--t-grad-from-alt); }
+[data-theme] .to-purple-500 { --tw-gradient-to: var(--t-grad-to); }
+
+[data-theme] .text-indigo-950 { color: var(--t-brand-text-3) !important; }
+[data-theme] .text-indigo-900 { color: var(--t-brand-text-2) !important; }
+[data-theme] .text-indigo-800 { color: var(--t-brand-text-2) !important; }
+[data-theme] .text-indigo-700 { color: var(--t-brand-text) !important; }
+[data-theme] .text-indigo-600 { color: var(--t-link) !important; }
+[data-theme] .text-indigo-500 { color: var(--t-link) !important; }
+[data-theme] .text-indigo-400 { color: var(--t-brand-text-2) !important; }
+[data-theme] .hover\:text-indigo-600:hover { color: var(--t-brand-text) !important; }
+[data-theme] .hover\:text-indigo-800:hover { color: var(--t-brand-text-2) !important; }
+[data-theme] .hover\:text-indigo-900:hover { color: var(--t-brand-text-3) !important; }
+
+[data-theme] .bg-indigo-50 { background-color: var(--t-brand-soft-1) !important; }
+[data-theme] .bg-indigo-50\/70 { background-color: var(--t-brand-soft-1) !important; }
+[data-theme] .bg-indigo-50\/50 { background-color: var(--t-brand-soft-2) !important; }
+[data-theme] .bg-indigo-50\/30 { background-color: var(--t-brand-soft-3) !important; }
+[data-theme] .bg-indigo-100 { background-color: var(--t-brand-soft-4) !important; }
+[data-theme] .hover\:bg-indigo-50:hover { background-color: var(--t-brand-hover-soft) !important; }
+[data-theme] .hover\:bg-indigo-100:hover { background-color: var(--t-brand-hover-soft-2) !important; }
+
+[data-theme] .border-indigo-100 { border-color: var(--t-brand-border-1) !important; }
+[data-theme] .border-indigo-200 { border-color: var(--t-brand-border-2) !important; }
+[data-theme] .border-indigo-500 { border-color: var(--t-brand) !important; }
+[data-theme] .border-indigo-600 { border-color: var(--t-brand-strong) !important; }
+[data-theme] .ring-indigo-200 { --tw-ring-color: var(--t-ring) !important; }
+[data-theme] .hover\:ring-indigo-300:hover { --tw-ring-color: var(--t-ring-hover) !important; }
+[data-theme] .focus\:border-indigo-500:focus { border-color: var(--t-link) !important; }
+[data-theme] .focus\:ring-indigo-500:focus { --tw-ring-color: var(--t-ring-focus); }
+[data-theme] .outline-indigo-600 { outline-color: var(--t-focus) !important; }
+
+/* --- Status: green --- */
+[data-theme] .text-green-500 { color: var(--t-green-text-500) !important; }
+[data-theme] .text-green-600 { color: var(--t-green-text-600) !important; }
+[data-theme] .text-green-700 { color: var(--t-green-text-700) !important; }
+[data-theme] .text-green-800 { color: var(--t-green-text-800) !important; }
+[data-theme] .hover\:text-green-800:hover { color: var(--t-green-hover-800) !important; }
+[data-theme] .hover\:text-green-900:hover { color: var(--t-green-hover-900) !important; }
+[data-theme] .bg-green-50 { background-color: var(--t-green-bg-50) !important; }
+[data-theme] .bg-green-100 { background-color: var(--t-green-bg-100) !important; }
+[data-theme] .hover\:bg-green-100:hover { background-color: var(--t-green-hover-100) !important; }
+[data-theme] .border-green-200 { border-color: var(--t-green-border-200) !important; }
+
+/* --- Status: emerald --- */
+[data-theme] .text-emerald-400 { color: var(--t-emerald-text-400) !important; }
+[data-theme] .text-emerald-500 { color: var(--t-emerald-text-500) !important; }
+[data-theme] .text-emerald-600 { color: var(--t-emerald-text-600) !important; }
+[data-theme] .text-emerald-700 { color: var(--t-emerald-text-700) !important; }
+[data-theme] .text-emerald-800 { color: var(--t-emerald-text-800) !important; }
+[data-theme] .hover\:text-emerald-600:hover { color: var(--t-emerald-hover-600) !important; }
+[data-theme] .hover\:text-emerald-700:hover { color: var(--t-emerald-hover-700) !important; }
+[data-theme] .hover\:text-emerald-800:hover { color: var(--t-emerald-hover-800) !important; }
+[data-theme] .bg-emerald-50 { background-color: var(--t-emerald-bg-50) !important; }
+[data-theme] .bg-emerald-100 { background-color: var(--t-emerald-bg-100) !important; }
+[data-theme] .hover\:bg-emerald-50:hover { background-color: var(--t-emerald-hover-50) !important; }
+[data-theme] .hover\:bg-emerald-100:hover { background-color: var(--t-emerald-hover-100) !important; }
+[data-theme] .border-emerald-200 { border-color: var(--t-emerald-border-200) !important; }
+[data-theme] .border-emerald-500,
+[data-theme] .border-emerald-600 { border-color: var(--t-emerald-border-strong) !important; }
+[data-theme] .focus\:ring-emerald-500:focus { --tw-ring-color: var(--t-emerald-ring); }
+
+/* --- Status: red --- */
+[data-theme] .text-red-500 { color: var(--t-red-text-500) !important; }
+[data-theme] .text-red-600 { color: var(--t-red-text-600) !important; }
+[data-theme] .text-red-700 { color: var(--t-red-text-700) !important; }
+[data-theme] .text-red-800 { color: var(--t-red-text-800) !important; }
+[data-theme] .hover\:text-red-600:hover { color: var(--t-red-hover-600) !important; }
+[data-theme] .hover\:text-red-700:hover { color: var(--t-red-hover-700) !important; }
+[data-theme] .hover\:text-red-900:hover { color: var(--t-red-hover-900) !important; }
+[data-theme] .bg-red-50 { background-color: var(--t-red-bg-50) !important; }
+[data-theme] .bg-red-100 { background-color: var(--t-red-bg-100) !important; }
+[data-theme] .hover\:bg-red-100:hover { background-color: var(--t-red-hover-100) !important; }
+[data-theme] .border-red-200 { border-color: var(--t-red-border-200) !important; }
+
+/* --- Status: rose --- */
+[data-theme] .text-rose-500 { color: var(--t-rose-text-500) !important; }
+[data-theme] .text-rose-600 { color: var(--t-rose-text-600) !important; }
+[data-theme] .text-rose-700 { color: var(--t-rose-text-700) !important; }
+[data-theme] .text-rose-800 { color: var(--t-rose-text-800) !important; }
+[data-theme] .hover\:text-rose-500:hover { color: var(--t-rose-hover-500) !important; }
+[data-theme] .hover\:text-rose-700:hover { color: var(--t-rose-hover-700) !important; }
+[data-theme] .bg-rose-50 { background-color: var(--t-rose-bg-50) !important; }
+[data-theme] .hover\:bg-rose-50:hover { background-color: var(--t-rose-hover-50) !important; }
+[data-theme] .hover\:bg-rose-100:hover { background-color: var(--t-rose-hover-100) !important; }
+[data-theme] .border-rose-200 { border-color: var(--t-rose-border-200) !important; }
+[data-theme] .border-rose-300 { border-color: var(--t-rose-border-300) !important; }
+
+/* --- Status: amber --- */
+[data-theme] .text-amber-500 { color: var(--t-amber-text-500) !important; }
+[data-theme] .text-amber-600 { color: var(--t-amber-text-600) !important; }
+[data-theme] .text-amber-700 { color: var(--t-amber-text-700) !important; }
+[data-theme] .text-amber-800 { color: var(--t-amber-text-800) !important; }
+[data-theme] .text-amber-900 { color: var(--t-amber-text-900) !important; }
+[data-theme] .hover\:text-amber-600:hover { color: var(--t-amber-hover-600) !important; }
+[data-theme] .hover\:text-amber-700:hover { color: var(--t-amber-hover-700) !important; }
+[data-theme] .bg-amber-50 { background-color: var(--t-amber-bg-50) !important; }
+[data-theme] .bg-amber-100 { background-color: var(--t-amber-bg-100) !important; }
+[data-theme] .hover\:bg-amber-50:hover { background-color: var(--t-amber-hover-50) !important; }
+[data-theme] .hover\:bg-amber-100:hover { background-color: var(--t-amber-hover-100) !important; }
+[data-theme] .border-amber-200 { border-color: var(--t-amber-border-200) !important; }
+[data-theme] .ring-amber-400 { --tw-ring-color: var(--t-amber-ring) !important; }
+
+/* --- Status: yellow / orange --- */
+[data-theme] .text-yellow-600 { color: var(--t-yellow-text-600) !important; }
+[data-theme] .text-yellow-700 { color: var(--t-yellow-text-700) !important; }
+[data-theme] .text-yellow-800 { color: var(--t-yellow-text-800) !important; }
+[data-theme] .bg-yellow-50 { background-color: var(--t-yellow-bg-50) !important; }
+[data-theme] .bg-yellow-100 { background-color: var(--t-yellow-bg-100) !important; }
+[data-theme] .border-orange-500 { border-color: var(--t-orange-border-500) !important; }
+[data-theme] .bg-orange-100 { background-color: var(--t-orange-bg-100) !important; }
+
+/* --- Status: sky / blue --- */
+[data-theme] .text-sky-500 { color: var(--t-sky-text-500) !important; }
+[data-theme] .text-sky-700 { color: var(--t-sky-text-700) !important; }
+[data-theme] .bg-sky-50 { background-color: var(--t-sky-bg-50) !important; }
+[data-theme] .bg-sky-100 { background-color: var(--t-sky-bg-100) !important; }
+
+[data-theme] .text-blue-500 { color: var(--t-blue-text-500) !important; }
+[data-theme] .text-blue-600 { color: var(--t-blue-text-600) !important; }
+[data-theme] .text-blue-700 { color: var(--t-blue-text-700) !important; }
+[data-theme] .text-blue-800 { color: var(--t-blue-text-800) !important; }
+[data-theme] .bg-blue-50 { background-color: var(--t-blue-bg-50) !important; }
+[data-theme] .bg-blue-100 { background-color: var(--t-blue-bg-100) !important; }
+[data-theme] .hover\:bg-blue-100:hover { background-color: var(--t-blue-hover-100) !important; }
+[data-theme] .border-blue-100 { border-color: var(--t-blue-border-100) !important; }
+[data-theme] .border-blue-200 { border-color: var(--t-blue-border-200) !important; }
+
+/* --- Status: violet / purple / fuchsia --- */
+[data-theme] .text-violet-500 { color: var(--t-violet-text-500) !important; }
+[data-theme] .text-violet-700 { color: var(--t-violet-text-700) !important; }
+[data-theme] .text-violet-800 { color: var(--t-violet-text-800) !important; }
+[data-theme] .bg-violet-50 { background-color: var(--t-violet-bg-50) !important; }
+[data-theme] .bg-violet-100 { background-color: var(--t-violet-bg-100) !important; }
+[data-theme] .hover\:bg-violet-50:hover { background-color: var(--t-violet-hover-50) !important; }
+[data-theme] .hover\:bg-violet-100:hover { background-color: var(--t-violet-hover-100) !important; }
+[data-theme] .border-violet-200 { border-color: var(--t-violet-border-200) !important; }
+[data-theme] .ring-violet-400 { --tw-ring-color: var(--t-violet-ring) !important; }
+
+[data-theme] .text-purple-700 { color: var(--t-purple-text-700) !important; }
+[data-theme] .text-purple-800 { color: var(--t-purple-text-800) !important; }
+[data-theme] .bg-purple-100 { background-color: var(--t-purple-bg-100) !important; }
+
+[data-theme] .text-fuchsia-700 { color: var(--t-fuchsia-text-700) !important; }
+[data-theme] .bg-fuchsia-50 { background-color: var(--t-fuchsia-bg-50) !important; }
+[data-theme] .bg-fuchsia-100 { background-color: var(--t-fuchsia-bg-100) !important; }
+
+/* ==========================================================================
+   KOMPONEN: Theme switcher (navbar)
+   Menu pakai visibility + opacity, BUKAN `hidden`/display:none — supaya
+   transisi bisa berjalan. Saat tertutup, visibility:hidden men roadblocks
+   klik dan dikeluarkan dari accessibility tree.
+   ========================================================================== */
+.theme-menu {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top right;
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
+}
+
+.theme-menu.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0s;
+}
+
+/* Opsi tema.
+   Warna ditulis di sini (bukan utility `text-gray-600`) dengan sengaja:
+   mapping layer memakai `!important`, jadi kelas utility akan MENANG dan
+   merusak warna opsi aktif yang berlatar brand. */
+.theme-opt {
+  background-color: transparent;
+  color: var(--t-text-4);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.theme-opt:hover {
+  background-color: var(--t-hover-2);
+  color: var(--t-text);
+}
+
+.theme-opt:focus-visible {
+  outline: 2px solid var(--t-focus);
+  outline-offset: -2px;
+}
+
+/* Opsi yang sedang aktif mengikuti warna brand tema (putih di atasnya). */
+.theme-opt[aria-checked="true"],
+.theme-opt[aria-checked="true"]:hover {
+  background-color: var(--t-brand-strong);
+  color: #fff;
+}
+
+.theme-opt[aria-checked="true"] .fa-solid {
+  color: #fff;
+}
+
+/* Halaman kunci-cetak (force-light): sembunyikan seluruh switcher. */
+html.force-light #themeSwitcher {
+  display: none !important;
+}
+html.force-light #theme-toggle {
+  display: none !important;
+}
+
+/* Hormati preferensi pengguna yang mengurangi animasi. */
+@media (prefers-reduced-motion: reduce) {
+  .theme-menu {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* --- Kontrol form native ---
+   Warna eksplisit supaya <select> tertutup dan daftar <option> tetap terbaca.
+
+   PENTING: aturan ini SENGAJA hanya untuk dark & terra. Di light, input/select/
+   textarea TIDAK diberi background atau border color oleh tema - dulu juga
+   begitu, dan memaksanya akan mengubah tampilan light (input jadi putih
+   solid, bukan transparan) serta resonated border pada input yang tidak
+   memakai kelas border. Light dijaga identik dengan permintaan. */
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+[data-theme="dark"] select,
+[data-theme="dark"] textarea,
+[data-theme="terra"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+[data-theme="terra"] select,
+[data-theme="terra"] textarea {
+  background-color: var(--t-field-bg) !important;
+  color: var(--t-field-fg) !important;
+  border-color: var(--t-field-border) !important;
+}
+[data-theme="dark"] select option,
+[data-theme="dark"] select optgroup,
+[data-theme="terra"] select option,
+[data-theme="terra"] select optgroup {
+  background-color: var(--t-field-bg);
+  color: var(--t-field-fg);
+}
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder,
+[data-theme="terra"] input::placeholder,
+[data-theme="terra"] textarea::placeholder {
+  color: var(--t-placeholder) !important;
+  opacity: 1;
+}
