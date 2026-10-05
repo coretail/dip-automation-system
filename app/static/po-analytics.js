@@ -147,23 +147,57 @@
       options: o1,
     });
 
-    // 2) Jumlah PO per kuartal per perusahaan
-    var ds = (data.companies || []).map(function (c, i) {
+    // 2) Jumlah PO per kuartal per perusahaan + qty pcs per perusahaan.
+    //    Batang (sumbu kiri) = jumlah PO, garis (sumbu kanan) = qty pcs.
+    //    Satu perusahaan bisa punya 0 PO: batangnya kosong, tapi kalau PO-nya
+    //    ada tanpa item, nilai pcs-nya 0 juga karena tidak ada yang bisa
+    //    diatribusikan (lihat banner "PO belum punya item").
+    var companies = data.companies || [];
+    var barDs = companies.map(function (c, i) {
       var vals = (data.companyPo && data.companyPo[c]) || [0, 0, 0, 0];
       return {
-        label: c,
+        label: c + ' \u2014 PO',
         data: vals,
-        // Sama seperti di atas: redupkan kuartal yang tidak dipilih.
+        // Sama seperti chart 1: redupkan kuartal yang tidak dipilih.
         backgroundColor: vals.map(function (_, qi) {
           return (qSel && qi + 1 !== qSel) ? p.muted : p.series[i % p.series.length];
         }),
         borderRadius: 4,
+        yAxisID: 'y',
+        order: 2,
       };
     });
+    var lineDs = companies.map(function (c, i) {
+      var vals = (data.companyPcs && data.companyPcs[c]) || [0, 0, 0, 0];
+      var col = p.series[i % p.series.length];
+      return {
+        label: c + ' \u2014 Qty (pcs)',
+        data: vals,
+        type: 'line',
+        borderColor: col,
+        // Titik & garis diredupkan juga supaya kuartal terpilih tetap menonjol.
+        backgroundColor: col,
+        pointBackgroundColor: vals.map(function (_, qi) {
+          return (qSel && qi + 1 !== qSel) ? p.muted : col;
+        }),
+        pointBorderColor: col,
+        pointRadius: 3,
+        borderWidth: 2,
+        tension: 0.25,
+        yAxisID: 'y1',
+        order: 1,
+      };
+    });
+    var o2 = baseOpts(p);
+    o2.scales.y.title = { display: true, text: 'Jumlah PO', color: p.muted, font: { size: 10 } };
+    o2.scales.y1 = {
+      beginAtZero: true, position: 'right', grid: { drawOnChartArea: false },
+      ticks: { color: p.muted, font: { size: 10 }, callback: function (v) { return fmt(v); } },
+    };
     make('chartQuarterCompany', {
       type: 'bar',
-      data: { labels: data.qLabels, datasets: ds },
-      options: baseOpts(p),
+      data: { labels: data.qLabels, datasets: barDs.concat(lineDs) },
+      options: o2,
     });
 
     // 3) Proporsi PO per perusahaan (donat)

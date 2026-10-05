@@ -195,9 +195,14 @@
 </div>
 
 <div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4 mb-6">
-        <h2 class="text-sm font-bold text-gray-900 mb-3">Jumlah PO per kuartal &mdash; per perusahaan</h2>
-        <div class="h-64"><canvas id="chartQuarterCompany" aria-label="Grafik batang jumlah PO per kuartal untuk PT Erfi dan PT Heka" role="img"></canvas></div>
-        <p class="mt-2 text-[11px] text-gray-400">Satu PO yang memuat produk kedua PT dihitung di keduanya.</p>
+        <h2 class="text-sm font-bold text-gray-900 mb-3">Jumlah PO &amp; qty pcs per kuartal &mdash; per perusahaan</h2>
+        <div class="h-64"><canvas id="chartQuarterCompany" aria-label="Grafik jumlah PO dan qty pcs per kuartal untuk PT Erfi dan PT Heka" role="img"></canvas></div>
+        <p class="mt-2 text-[11px] text-gray-400">
+            <b>Batang</b> = jumlah PO (sumbu kiri), <b>garis</b> = qty pcs (sumbu kanan).
+            Satu PO yang memuat produk kedua PT dihitung <b>penuh di keduanya</b>, jadi
+            jumlah qty per perusahaan bisa melebihi total qty.
+            {%- if a.jumlah_po_tanpa_item %} PO tanpa item tidak muncul di sini karena tidak bisa diatribusikan ke perusahaan.{% endif %}
+        </p>
 </div>
 
 {# ===== Daftar top 5 (tab per perusahaan) ===== #}

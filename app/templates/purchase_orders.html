@@ -2,18 +2,20 @@
 {% block title %}Input PO / QC - DIP Builder{% endblock %}
 {% block content %}
 
-{# Helper URL filter:?q=&tahun=&qtr=. Tahun/kuartal difilter di server
-   (lihat po_routes.po_page), jadi semua kontrol di panel kiri ini link biasa. #}
-{% macro po_qs(q, t, qr) -%}
-  ?{% if q %}q={{ q|urlencode }}&amp;{% endif %}tahun={{ t if t else 'all' }}{% if qr %}&amp;qtr={{ qr }}{% endif %}
+{# Helper URL filter: ?q=&tahun=&qtr=&pt=. Tahun/kuartal/perusahaan
+   difilter di server (lihat po_routes.po_page), jadi semua kontrol di panel
+   kiri ini link biasa. Parameter yang tidak aktif DIHAPUS, bukan diisi kosong,
+   supaya URL tetap pendek dan tidak bertabrakan dengan nilai default server. #}
+{% macro po_qs(q, t, qr, p=None) -%}
+  ?{% if q %}q={{ q|urlencode }}&amp;{% endif %}tahun={{ t if t else 'all' }}{% if qr %}&amp;qtr={{ qr }}{% endif %}{% if p %}&amp;pt={{ p|urlencode }}{% endif %}
 {%- endmacro %}
 
 {# Tombol kuartal. Class state dipilih utuh (aktif ATAU idle), bukan ditumpuk,
-   karena Tailwindurutkan utility di CSS — bukan di atribut class — sehingga
+   karena Tailwind mengurutkan utility di CSS — bukan di atribut class — sehingga
    "bg-white" menimpa "bg-indigo-600" dan hasilnya teks putih di atas putih. #}
-{% macro qtr_btn(q, t, n, label, cnt, title, active, disabled) -%}
-<a href="/purchase-orders{{ po_qs(q, t, n) }}"
-   class="po-qtr-btn {{ 'flex-[1.7]' if label == 'Semua' else 'flex-1' }} rounded border px-1 py-1 text-center text-[10px] font-semibold {{ 'cursor-pointer' if not disabled else 'cursor-not-allowed opacity-50' }} {{ 'border-indigo-600 bg-indigo-600 text-white' if active else 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100' }}"
+{% macro qtr_btn(q, t, n, label, cnt, title, active, disabled, p=None) -%}
+<a href="/purchase-orders{{ po_qs(q, t, n, p) }}"
+   class="po-qtr-btn flex-1 rounded border px-1 py-1 text-center text-[10px] font-semibold {{ 'cursor-pointer' if not disabled else 'cursor-not-allowed opacity-50' }} {{ 'border-indigo-600 bg-indigo-600 text-white' if active else 'border-gray-300 bg-white text-gray-600 hover:bg-gray-100' }}"
    title="{{ title }}"{% if disabled %} aria-disabled="true" tabindex="-1"{% endif %}>{{ label }}{% if cnt is not none and cnt != '' %} {{ cnt }}{% endif %}</a>
 {%- endmacro %}
 
@@ -39,10 +41,11 @@
         <form method="get" action="/purchase-orders" class="flex gap-2 mb-2 flex-none">
             <input type="text" name="q" value="{{ q or '' }}" placeholder="Cari No. PO atau nama produk..." class="block w-full min-w-0 rounded-md border border-gray-300 py-1.5 px-2 text-sm">
             <button class="shrink-0 rounded-md bg-gray-900 text-white px-3 text-sm cursor-pointer">Cari</button>
-            {% if q %}<a href="/purchase-orders{{ po_qs('', tahun if tahun else 'all', '') }}" class="shrink-0 rounded-md border border-gray-300 text-gray-600 px-3 py-1.5 text-sm hover:bg-gray-50">Reset</a>{% endif %}
-            {# Bawa filter tahun/kuartal yang aktif saat mencari teks #}
+            {% if q %}<a href="/purchase-orders{{ po_qs('', tahun if tahun else 'all', '', pt) }}" class="shrink-0 rounded-md border border-gray-300 text-gray-600 px-3 py-1.5 text-sm hover:bg-gray-50">Reset</a>{% endif %}
+            {# Bawa filter tahun/kuartal/perusahaan yang aktif saat mencari teks #}
             <input type="hidden" name="tahun" value="{{ tahun if tahun else 'all' }}">
             <input type="hidden" name="qtr" value="{{ qtr or '' }}">
+            <input type="hidden" name="pt" value="{{ pt if pt and pt != 'Tanpa item' else '' }}">
         </form>
 
         {# --- Filter tahun: hanya tahun terpilih yang ditampilkan --- #}
@@ -61,34 +64,55 @@
             </select>
         </div>
 
-        {# --- Filter kuartal: jumlah diambil dari seluruh data tahun terpilih --- #}
+        <div class="flex-none mb-2 flex items-center gap-1">
+            {# Filter perusahaan. PO tidak punya kolom perusahaan: PO dihitung
+               masuk PT bila punya item produk milik PT itu. Satu PO bisa masuk
+               dua PT sekaligus. Opsi "Tanpa item" dipakai untuk PO yang belum
+               punya purchase_order_items, supaya tidak ada PO yang hilang
+               diam-diam saat filter aktif. #}
+            <select id="poPt" class="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-1.5 py-1 text-[11px] font-semibold text-gray-700 focus:border-indigo-500 focus:outline-none"
+                    title="Jumlah PO pada kuartal &amp; tahun yang sedang dipilih.">
+                <option value="" {% if not pt %}selected{% endif %}>Semua PT</option>
+                <option value="PT Erfi" {% if pt == 'PT Erfi' %}selected{% endif %}>PT Erfi{% if pt_counts['PT Erfi'] %} ({{ pt_counts['PT Erfi'] }}){% endif %}</option>
+                <option value="PT Heka" {% if pt == 'PT Heka' %}selected{% endif %}>PT Heka{% if pt_counts['PT Heka'] %} ({{ pt_counts['PT Heka'] }}){% endif %}</option>
+                {% if pt_counts[''] %}
+                <option value="Tanpa item" {% if pt == 'Tanpa item' %}selected{% endif %}>Tanpa item ({{ pt_counts[''] }})</option>
+                {% endif %}
+            </select>
+        </div>
+
+        {# --- Filter kuartal: hanya Q1..Q4 (tidak ada "Semua"). Jumlah diambil dari
+   seluruh data tahun terpilih, jadi angkanya bukan hanya yang tampil. --- #}
         <div id="poQuarterGroup" class="flex-none mb-1" role="group" aria-label="Filter kuartal">
             <div class="flex gap-1">
-                {{ qtr_btn(q, tahun if tahun else 'all', '', 'Semua', q_year_total if tahun else None,
-                           'Semua kuartal' + (' tahun ' ~ tahun if tahun else '') ~ ' — ' ~ (q_year_total if tahun else 0) ~ ' PO',
-                           not qtr, not tahun) }}
                 {% for n in [1, 2, 3, 4] %}
                 {{ qtr_btn(q, tahun if tahun else 'all', n, 'Q' ~ n, q_counts[n] if tahun else None,
                            ['Januari - Maret', 'April - Juni', 'Juli - September', 'Oktober - Desember'][n - 1]
                            ~ (' ' ~ tahun if tahun else '') ~ ' — ' ~ (q_counts[n] if tahun else 0) ~ ' PO',
-                           qtr == n, not tahun) }}
+                           qtr == n, not tahun, pt) }}
                 {% endfor %}
             </div>
         </div>
         <p class="flex-none mb-2 text-[10px] text-gray-400">
-            {%- set _scope = q_counts[qtr] if (tahun and qtr) else (q_year_total if tahun else total_all) -%}
             {%- if not tahun -%}
                 {%- if all_years -%}{{ total_all }} PO (semua tahun){% else -%}Belum ada data PO{% endif -%}
-            {%- elif qtr -%}
-                {{ _scope }} PO di Q{{ qtr }} {{ tahun }}{% if shown and shown < _scope %} — menampilkan {{ shown }} terbaru{% endif %}
+            {%- elif pt -%}
+                {{ shown }} PO {{ pt }} di Q{{ qtr }} {{ tahun }}
+                {%- if q_counts[qtr] and shown < q_counts[qtr] %} — disaring dari {{ q_counts[qtr] }} PO{% endif %}
             {%- else -%}
-                {{ _scope }} PO di {{ tahun }}{% if shown and shown < _scope %} — menampilkan {{ shown }} terbaru{% endif %}
+                {{ shown }} PO di Q{{ qtr }} {{ tahun }}
+                {%- if q_counts[qtr] and shown < q_counts[qtr] %} — menampilkan {{ shown }} terbaru{% endif %}
             {%- endif -%}
         </p>
 
         <div id="poList" class="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-100">
             {% for po in pos %}
-            <a href="/purchase-orders{{ po_qs(q, tahun if tahun else 'all', qtr) }}&amp;po_id={{ po.id }}"
+            {%- if pt and pt != 'Tanpa item' -%}
+                {%- set _nama_po = (po_prod_by_pt.get(po.id) or {}).get(pt) -%}
+            {%- else -%}
+                {%- set _nama_po = po_products.get(po.id) -%}
+            {%- endif -%}
+            <a href="/purchase-orders{{ po_qs(q, tahun if tahun else 'all', qtr, pt) }}&amp;po_id={{ po.id }}"
                class="block px-3 py-2.5 rounded-lg transition {% if sel_po and sel_po.id == po.id %}bg-indigo-50 border border-indigo-200{% else %}hover:bg-indigo-50 border border-transparent{% endif %}">
                 <div class="flex items-center justify-between gap-2">
                     <span class="text-sm font-semibold text-gray-900 truncate min-w-0" title="{{ po.no_po }}">{{ po.no_po }}</span>
@@ -96,14 +120,16 @@
                     <span class="shrink-0 text-[10px] font-bold text-indigo-600 bg-indigo-100 rounded px-1.5 py-0.5">AKTIF</span>
                     {% endif %}
                 </div>
-                {% if po_products.get(po.id) %}
-                <div class="mt-0.5 text-[11px] text-gray-700 truncate">{{ po_products.get(po.id) }}</div>
+                {% if _nama_po %}
+                <div class="mt-0.5 text-[11px] text-gray-700 truncate">{{ _nama_po }}</div>
                 {% endif %}
                 <div class="mt-0.5 text-[11px] text-gray-500">{{ po.tanggal_po or '-' }}{% if po.qty_pcs is not none %} &middot; {{ po.qty_pcs }} pcs{% endif %}</div>
             </a>
             {% else %}
             {% if q %}
-            <div class="text-sm text-gray-400 py-8 text-center">Tidak ada PO yang cocok dengan &quot;{{ q }}&quot;{% if tahun %} di {{ tahun }}{% endif %}.</div>
+            <div class="text-sm text-gray-400 py-8 text-center">Tidak ada PO yang cocok dengan &quot;{{ q }}&quot;{% if tahun %} di {{ tahun }}{% endif %}{% if pt and pt != 'Tanpa item' %} untuk {{ pt }}{% endif %}.</div>
+            {% elif pt %}
+            <div class="text-sm text-gray-400 py-8 text-center">Tidak ada PO untuk {{ pt }}{% if tahun %} di {{ tahun }}{% endif %}.</div>
             {% elif tahun %}
             <div class="text-sm text-gray-400 py-8 text-center">Belum ada PO{% if qtr %} di Q{{ qtr }} {{ tahun }}{% else %} di tahun {{ tahun }}{% endif %}.</div>
             {% else %}
@@ -393,22 +419,43 @@
 </div>
 
 <script>
-/* Filter tahun & kuartal bekerja di server (link biasa + ?tahun=&qtr=), jadi
-   tidak butuh JS untuk Quarter. Yang perlu JS hanya <select> tahun: saat
-   berubah, arahkan ke URL dengan tahun baru. Parameter qtr sengaja dihapus
-   karena kuartal    selalu milik satu tahun — kalau tidak, Q3 2025 ikut tersaring saat
-   pindah tahun. */
+/* Filter tahun, kuartal & perusahaan bekerja di server (link biasa + query
+   param), jadi tidak butuh JS untuk Quarter. Yang perlu JS hanya dua <select>:
+   saat berubah, arahkan ke URL dengan nilai baru.
+
+   Aturan penting:
+   - Ganti tahun  -> pt DIPERTAHANKAN (perusahaan tidak bergantung tahun) dan
+     qtr juga dipertahankan (Q3 2025 -> Q3 2026 sama-sama sah). Kalau sebelumnya
+     sedang "Semua Tahun", qtr memang kosong di URL lalu server memakai kuartal
+     berjalan sebagai default.
+   - Ganti PT     -> po_id DIHAPUS (PO terpilih mungkin tidak ada di hasil
+     saringan), qtr DIPERTAHANKAN. "Tanpa item" dikirim sebagai string kosong
+     supaya tidak dianggap filter. */
 (function () {
     var ySel = document.getElementById('poYear');
-    if (!ySel) return;
-    ySel.addEventListener('change', function () {
-        var u;
-        try { u = new URL(location.href); } catch (e) { return; }
-        if (ySel.value === 'all') u.searchParams.set('tahun', 'all');
-        else u.searchParams.set('tahun', ySel.value);
-        u.searchParams.delete('qtr');
-        u.searchParams.delete('po_id');
-        location.href = u.toString();
+    var pSel = document.getElementById('poPt');
+
+    function go(sel, apply) {
+        if (!sel) return;
+        sel.addEventListener('change', function () {
+            var u;
+            try { u = new URL(location.href); } catch (e) { return; }
+            apply(u, sel.value);
+            u.searchParams.delete('po_id');
+            location.href = u.toString();
+        });
+    }
+
+    go(ySel, function (u, v) {
+        if (v === 'all') u.searchParams.set('tahun', 'all');
+        else u.searchParams.set('tahun', v);
+        // qtr TIDAK dihapus: Q1..Q4 berlaku untuk tahun mana pun.
+    });
+
+    go(pSel, function (u, v) {
+        if (v) u.searchParams.set('pt', v);
+        else u.searchParams.delete('pt');
+        // qtr TIDAK dihapus: constrain PT tidak Quarter.
     });
 })();
 
