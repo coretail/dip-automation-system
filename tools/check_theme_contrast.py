@@ -34,6 +34,21 @@ PAIRS = [
     ("--t-divider", "--t-surface", 1.0, "divider dekoratif"),
 ]
 
+# Pasangan tambahan khusus Rose (lihat .kilo/plans/rose-theme.md §4.1).
+ROSE_PAIRS = [
+    ("--t-text-2", "--t-page", 4.5, "sub-teks di atas latar rose"),
+    ("--t-link", "--t-page", 4.5, "link di atas latar rose"),
+    ("--t-text", "--t-brand-soft-1", 4.5, "teks di atas badge rose"),
+    ("--t-text", "--t-brand-soft-4", 4.5, " teks di atas badge rose sedang"),
+    ("--t-text", "--t-surface-2", 4.5, "teks di atas header tabel rose"),
+    ("--t-brand", "--t-surface", 3.0, "garis bawah tab aktif di atas kartu"),
+    ("--t-brand", "--t-page", 3.0, "garis bawah tab aktif di atas latar"),
+    ("--t-rose-text-800", "--t-surface", 4.5, "pesan error rose-800 di atas kartu"),
+    ("--t-rose-text-800", "--t-page", 4.5, "pesan error rose-800 di atas latar"),
+    ("--t-rose-text-600", "--t-surface", 4.5, "ikon pesan error rose-600"),
+    ("--t-rose-bg-50", "--t-surface", 1.0, "latar kotak error rose-50 (dekoratif)"),
+]
+
 # pasangan yang HARUS gagal â€” dokumentasi aturan tema Terra
 FORBIDDEN = [
     ("--t-white", "--t-brand", 4.5, "putih di atas aksen #DA6556"),
@@ -43,12 +58,21 @@ FORBIDDEN = [
 
 
 def parse_blocks(css: str) -> dict[str, dict[str, str]]:
-    """Ambil blok token per tema."""
+    """Ambil blok token per tema.
+
+    Hanya blok yang benar-benar mendeklarasikan token (`--t-page:`) yang
+    diambil. File ini juga punya rule non-token seperti
+    `[data-theme="dark"] { background-color: var(--t-page) }`; kalau ikut
+    dibaca, nilainya akan menimpa token dengan `var(--…)` dan hasil hitungan
+    kontras jadi tidak bermakna.
+    """
     out: dict[str, dict[str, str]] = {}
     pattern = re.compile(r"(:root,\s*\[data-theme=\"light\"\]|\[data-theme=\"(\w+)\"\])\s*\{(.*?)\n\}", re.S)
     for m in pattern.finditer(css):
         theme = m.group(2) or "light"
         body = m.group(3)
+        if "--t-page:" not in body:
+            continue  # rule non-token (mis. aturan <html> di lapisan mapping)
         vars_found = dict(re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", body))
         if theme in out:
             out[theme].update(vars_found)
@@ -138,7 +162,7 @@ ACCEPTED = {
 
 def main() -> int:
     blocks = parse_blocks(CSS.read_text(encoding="utf-8"))
-    themes = [t for t in ("light", "terra", "dark") if t in blocks]
+    themes = [t for t in ("light", "terra", "rose", "dark") if t in blocks]
     if not themes:
         print("GAGAL: tidak ada blok token yang terbaca di", CSS)
         return 1
@@ -154,7 +178,8 @@ def main() -> int:
         tok = dict(blocks[theme])
         tok["--t-white"] = "#ffffff"
         print(f"--- {theme} ---")
-        for fg, bg, min_ratio, note in PAIRS:
+        pairs = list(PAIRS) + (list(ROSE_PAIRS) if theme == "rose" else [])
+        for fg, bg, min_ratio, note in pairs:
             if fg not in tok or bg not in tok:
                 skipped += 1
                 continue

@@ -349,6 +349,20 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
     per_company.setdefault("PT Erfi", {"q_po": [0, 0, 0, 0], "q_pcs": [0.0] * 4, "po": 0})
     per_company.setdefault("PT Heka", {"q_po": [0, 0, 0, 0], "q_pcs": [0.0] * 4, "po": 0})
 
+    # --- PO yang belum punya item -------------------------------------------
+    # PO seperti ini tetap TERHITUNG di total_po / total_pcs (keduanya dari
+    # purchase_orders), tapi tidak bisa diatribusikan ke produk maupun
+    # perusahaan karena tidak ada purchase_order_items. Tanpa informasi ini
+    # grafik per perusahaan menampilkan "0 PO" padahal PO-nya ada.
+    # PENTING: item_rows sudah difilter tahun oleh route, jadi pengurangan
+    # di sini hanya membuang PO yang benar-benar tanpa item.
+    item_po_ids = {it.get("purchase_order_id") for it in (item_rows or [])}
+    po_tanpa_item = sorted(
+        str(po_by_id[pid].get("no_po") or "")
+        for pid in set(po_by_id) - item_po_ids
+        if po_by_id[pid].get("no_po")
+    )
+
     return {
         "total_po": total_po,
         "total_pcs": total_pcs,
@@ -363,6 +377,8 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
         "top": top,
         "missing": missing,
         "missing_total": sum(1 for pid in active_ids if not prod_meta[pid]["sig"]),
+        "jumlah_po_tanpa_item": len(po_tanpa_item),
+        "po_tanpa_item": po_tanpa_item[:50],
         "qtr": qtr,
         "sort": sort,
         "truncated": len(po_by_id) >= _PO_STATS_LIMIT,

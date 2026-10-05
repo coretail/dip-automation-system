@@ -1,11 +1,12 @@
-/* Theme switcher: atribut data-theme pada <html> (light | terra | dark),
-   disimpan di localStorage. Token & mapping ada di app/static/theme.css.
+/* Theme switcher: atribut data-theme pada <html>
+   (light | terra | rose | dark), disimpan di localStorage.
+   Token & mapping ada di app/static/theme.css.
 
-   UX: tombol di navbar membuka menu horizontal berisi 3 tema (bukan lagi
-   siklus sekali klik). Menu ditutup dengan Escape, klik di luar, atau ArrowUp. */
+   UX: tombol di navbar membuka menu horizontal berisi 4 tema (bukan lagi
+   siklus sekali klik). Menu ditutup dengan Escape, klik di luar, atau Tab. */
 (function () {
   var KEY = "heka-theme";
-  var THEMES = ["light", "terra", "dark"];
+  var THEMES = ["light", "terra", "rose", "dark"];
   var root = document.documentElement;
   if (root.classList.contains("force-light")) return;
 
@@ -24,10 +25,13 @@
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
 
-  // Ikon pada tombol pemicu menunjukkan tema yang AKTIF.
-  var META = {
+// Ikon pada tombol pemicu menunjukkan tema yang AKTIF.
+// `icon`  = nama ikon Font Awesome (tanpa prefix)
+// `style` = prefix gaya; default "fa-solid" (mis. "fa-regular" untuk outline)
+var META = {
     light: { icon: "fa-sun", name: "Terah" },
     terra: { icon: "fa-fire", name: "Terra" },
+    rose: { icon: "fa-heart", style: "fa-regular", name: "Rose" },
     dark: { icon: "fa-moon", name: "Gelap" }
   };
 
@@ -38,8 +42,15 @@
     var meta = META[now];
 
     if (els.icon) {
-      els.icon.classList.remove("fa-sun", "fa-fire", "fa-moon");
-      els.icon.classList.add(meta.icon);
+      // Buang SEMUA kelas fa-* yang menempel, bukan daftar ikon per tema.
+      // Kalau daftar itu ditulis manual, menambah tema baru bisa lewat dan
+      // ikon lama tetap ikut terender.
+      var faClasses = [];
+      Array.prototype.forEach.call(els.icon.classList, function (c) {
+        if (/^fa-/.test(c)) faClasses.push(c);
+      });
+      faClasses.forEach(function (c) { els.icon.classList.remove(c); });
+      els.icon.classList.add(meta.style || "fa-solid", meta.icon);
     }
     if (els.trigger) {
       els.trigger.title = "Tema " + meta.name + " aktif. Klik untuk mengubah tema.";

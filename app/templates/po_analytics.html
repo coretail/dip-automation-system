@@ -84,6 +84,24 @@
 </div>
 {% endfor %}
 
+{% if a.jumlah_po_tanpa_item %}
+<div class="mb-4 rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900" role="status">
+    <i class="fa-solid fa-circle-info mr-1"></i>
+    <b>{{ '{:,}'.format(a.jumlah_po_tanpa_item) }} PO belum punya item</b> pada tahun {{ tahun }}.
+    PO tetap ikut dihitung pada <b>Total PO</b> dan <b>Total qty</b> di atas, tetapi
+    <b>tidak bisa diatribusikan</b> ke produk maupun perusahaan, karena tidak ada baris
+    di <code class="font-mono">purchase_order_items</code> yang mengaitkannya.
+    Karena itu grafik dan tabel per perusahaan/produk bisa terlihat lebih kecil dari
+    kenyataan.
+    {% if a.po_tanpa_item %}
+    <details class="mt-2">
+        <summary class="cursor-pointer text-xs font-semibold">Lihat nomor PO-nya ({{ a.po_tanpa_item | length }}{% if a.jumlah_po_tanpa_item > a.po_tanpa_item | length %} dari {{ '{:,}'.format(a.jumlah_po_tanpa_item) }}{% endif %})</summary>
+        <p class="mt-1 font-mono text-[11px] leading-relaxed">{{ a.po_tanpa_item | join(', ') }}</p>
+    </details>
+    {% endif %}
+</div>
+{% endif %}
+
 {% if not jenis_po_aktif %}
 <div class="mb-4 rounded-md bg-indigo-50 border border-indigo-200 px-4 py-3 text-sm text-indigo-800" role="status">
     <i class="fa-solid fa-circle-info mr-1"></i>
@@ -148,18 +166,29 @@
     <div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4">
         <h2 class="text-sm font-bold text-gray-900 mb-3">Proporsi PO per perusahaan</h2>
         <div class="h-64"><canvas id="chartCompany" aria-label="Grafik donat proporsi PO per perusahaan" role="img"></canvas></div>
-        {# Satu perusahaan bisa 0 PO di tahun ini. Sampaikan eksplisit supaya
-           angka 0 tidak salah dibaca sebagai chart yang gagal render. #}
-        {% set _zero = ana.per_company['PT Erfi']['po'] == 0 and ana.per_company['PT Heka']['po'] == 0 %}
+        {# Satu perusahaan bisa 0 PO karena memang tidak ada, atau karena PO-nya
+           belum punya item sehingga tidak bisa diatribusikan. Dua kondisi itu
+           harus dibedakan supaya angka 0 tidak dibaca sebagai "tidak ada PO".
+           Akses memakai .get() supaya aman walau per_company berubah. #}
+        {% set _erfi_po = ana.per_company.get('PT Erfi', {}).get('po', 0) %}
+        {% set _heka_po = ana.per_company.get('PT Heka', {}).get('po', 0) %}
+        {% set _no_item = a.jumlah_po_tanpa_item | int > 0 %}
+        {% set _zero = _erfi_po == 0 and _heka_po == 0 %}
         <p class="mt-2 text-[11px] text-gray-400">
-            {%- if _zero -%}
+            {%- if _zero and _no_item -%}
+                Tidak ada PO yang bisa diatribusikan ke perusahaan pada tahun {{ tahun }}.
+            {%- elif _zero -%}
                 Tidak ada PO pada tahun {{ tahun }} untuk PT Erfi maupun PT Heka.
-            {%- elif ana.per_company['PT Heka']['po'] == 0 -%}
-                PT Heka belum punya PO pada tahun {{ tahun }} (0 PO).
-            {%- elif ana.per_company['PT Erfi']['po'] == 0 -%}
-                PT Erfi belum punya PO pada tahun {{ tahun }} (0 PO).
+            {%- elif _heka_po == 0 and _erfi_po == 0 -%}
+                PT Erfi 0 PO &middot; PT Heka 0 PO teratribusi.
+            {%- elif _heka_po == 0 -%}
+                PT Erfi {{ _erfi_po }} PO teratribusi &middot; PT Heka 0 PO
+                {%- if _no_item %} ({{ '{:,}'.format(a.jumlah_po_tanpa_item) }} PO belum punya item){% else %} (tidak ada PO){% endif %}.
+            {%- elif _erfi_po == 0 -%}
+                PT Erfi 0 PO teratribusi ({{ '{:,}'.format(a.jumlah_po_tanpa_item) }} PO belum punya item)
+                &middot; PT Heka {{ _heka_po }} PO.
             {%- else -%}
-                PT Erfi {{ ana.per_company['PT Erfi']['po'] }} PO &middot; PT Heka {{ ana.per_company['PT Heka']['po'] }} PO.
+                PT Erfi {{ _erfi_po }} PO &middot; PT Heka {{ _heka_po }} PO teratribusi.
             {%- endif -%}
         </p>
     </div>
@@ -227,6 +256,7 @@
         </div>
         <p class="text-[11px] text-gray-400 mb-2">
             Diurutkan dari <b class="text-gray-600">{{ _sort_label }}</b>{% if qtr %} pada Q{{ qtr }} {{ tahun }}{% else %} tahun {{ tahun }}{% endif %}. PO Rework tidak dihitung di qty.
+            {%- if a.jumlah_po_tanpa_item %} PO tanpa item{% if qtr %} pada kuartal ini{% endif %} juga tidak muncul di daftar ini.{% endif %}
         </p>
         <div class="h-64"><canvas id="chartTop" aria-label="Grafik batang horizontal top 5 produk" role="img"></canvas></div>
         {{ rank_table(a.top[tab], 'Belum ada produk dengan PO pada cakupan ini.') }}

@@ -44,9 +44,15 @@
       tipBg: '#0f172a', listBg: 'rgba(129,140,248,0.75)',
     },
     terra: {
+      // TIDAK diubah dari versi sebelumnya — gerbang §4.3 melarang tema lama bergeser.
       text: '#241A16', muted: '#6E5F55', grid: 'rgba(181,118,106,0.22)',
       series: ['#A14646', '#EB895B', '#FDB773', '#6E5F55'],
       tipBg: '#241A16', listBg: 'rgba(235,137,91,0.75)',
+    },
+    rose: {
+      text: '#2E1B21', muted: '#6B4A52', grid: 'rgba(174,124,136,0.22)',
+      series: ['#965357', '#EEAAC0', '#FBB0C4', '#6B4A52'],
+      tipBg: '#2E1B21', listBg: 'rgba(238,170,192,0.8)',
     },
   };
 

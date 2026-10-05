@@ -53,6 +53,22 @@
   --sidebar-danger-icon: #FFD5D0;
 }
 
+/* Rose: sidebar rose tua, teks putih 5.72:1, satu warna dengan navbar + CTA.
+   Danger memakai merah pastel karena putih di atas #C98A8C hanya 3.07:1. */
+[data-theme="rose"] {
+  --sidebar-bg: #965357;             /* rose solid */
+  --sidebar-fg: #FFFFFF;
+  --sidebar-fg-muted: rgba(255, 255, 255, 0.82);
+  --sidebar-hover: rgba(255, 255, 255, 0.14);
+  --sidebar-active: rgba(255, 255, 255, 0.22);
+  --sidebar-border: rgba(255, 255, 255, 0.26);
+
+  --sidebar-danger-fg: #FFD9D6;
+  --sidebar-danger-fg-hover: #FFFFFF;
+  --sidebar-danger-bg-hover: rgba(255, 255, 255, 0.24);
+  --sidebar-danger-icon: #FFC9C5;
+}
+
 html.sidebar-collapsed {
   --sidebar-width: var(--sidebar-width-collapsed);
 }

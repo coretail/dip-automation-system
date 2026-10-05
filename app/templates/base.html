@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}DIP Kosmetik Automation{% endblock %}</title>
 <script>
-      // Tema: light | terra | dark (lihat app/static/theme.css).
+      // Tema: light | terra | rose | dark (lihat app/static/theme.css).
       // Ditulis SEBELUM render supaya tidak ada kedipan tema lama.
       (function () {
         try {
@@ -14,8 +14,9 @@
             root.setAttribute('data-theme', 'light');
             return;
           }
+          var THEMES = ['light', 'terra', 'rose', 'dark'];
           var t = localStorage.getItem('heka-theme');
-          if (t !== 'light' && t !== 'terra' && t !== 'dark') {
+          if (THEMES.indexOf(t) === -1) {
             t = (window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
           }
           root.setAttribute('data-theme', t);
@@ -109,7 +110,7 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Theme switcher: tombol pemicu + menu horizontal 3 tema -->
+<!-- Theme switcher: tombol pemicu + menu horizontal 4 tema -->
                         <div class="relative" id="themeSwitcher">
                             <button type="button" id="theme-toggle"
                                     class="p-2 rounded-full hover:bg-indigo-700 transition"
@@ -127,6 +128,10 @@
                                 <button type="button" role="menuitemradio" aria-checked="false" data-theme-opt="terra"
                                         class="theme-opt flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer">
                                     <i class="fa-solid fa-fire" aria-hidden="true"></i><span>Terra</span>
+                                </button>
+                                <button type="button" role="menuitemradio" aria-checked="false" data-theme-opt="rose"
+                                        class="theme-opt flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer">
+                                    <i class="fa-regular fa-heart" aria-hidden="true"></i><span>Rose</span>
                                 </button>
                                 <button type="button" role="menuitemradio" aria-checked="false" data-theme-opt="dark"
                                         class="theme-opt flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold cursor-pointer">

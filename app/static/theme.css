@@ -404,6 +404,190 @@
   --t-scrollbar-track: #FDF4EC;
 }
 
+/* ---------------------------------------------------------------------------
+   ROSE - tema keempat (#965357 / #EEAAC0 / #FBB0C4 / #EAD1D7).
+   Terang, pink sebagai AKSEN: latar tetap putih, kartu putih.
+   Sebelas famili status disalin persis dari blok terra (lihat §1.5).
+   -------------------------------------------------------------------------- */
+[data-theme="rose"] {
+  color-scheme: light;
+
+  /* Permukaan & latar */
+  --t-page: #FBF3F5;
+  --t-page-a50: rgb(251 243 245 / 0.5);
+  --t-page-a70: rgb(251 243 245 / 0.7);
+  --t-surface: #FFFFFF;
+  --t-surface-2: #F6DEE5;
+  --t-surface-3: #F2C9D6;
+  --t-surface-4: #E3C7CF;
+  --t-surface-5: #AE7C88;
+
+  /* Hover */
+  --t-hover-1: #FAF0F2;
+  --t-hover-1-a50: rgb(250 240 242 / 0.5);
+  --t-hover-2: #F6DEE5;
+  --t-hover-3: #F2C9D6;
+
+  /* Teks */
+  --t-text-950: #1A0F12;
+  --t-text: #2E1B21;
+  --t-text-2: #4A2F36;
+  --t-text-3: #5E4048;
+  --t-text-4: #6B4A52;
+  --t-muted: #6B4A52;
+  --t-muted-2: #8A626B;
+  --t-muted-3: #BFA0A8;
+  --t-placeholder: #8A626B;
+
+  /* Border & divider */
+  --t-border-0: #F2DDE3;
+  --t-divider: #E3C7CF;
+  --t-border: #E3C7CF;
+  --t-border-2: #AE7C88; /* 3.48:1 - WAJIB untuk border input (WCAG 1.4.11) */
+  --t-border-3: #8A626B;
+
+  /* Brand - ramp rose */
+  --t-brand-text-3: #6B2727;
+  --t-brand-text-2: #8A3B3B;
+  --t-brand-text: #A85E62;
+  --t-link: #965357; /* 5.24:1 di atas #FBF3F5 - aman karena latar putih */
+  --t-brand-soft-1: #F7DCE4;
+  --t-brand-soft-2: rgb(247 220 228 / 0.5);
+  --t-brand-soft-3: rgb(247 220 228 / 0.3);
+  --t-brand-soft-4: #F2C9D6;
+  --t-brand-hover-soft: #F6DEE5;
+  --t-brand-hover-soft-2: #F2C9D6;
+  --t-brand-border-1: #EFC6D2;
+  --t-brand-border-2: #E3A9BA;
+  --t-brand: #AE6064; /* aksen non-teks: 4.51:1 di atas putih (garis bawah tab aktif) */
+  --t-brand-strong: #965357; /* CTA + teks putih 5.72:1 */
+  --t-ring: #965357;
+  --t-ring-hover: #AE6064;
+  --t-ring-focus: rgb(150 83 87 / 0.45);
+  --t-focus: #965357;
+  --t-btn: #965357;
+  --t-btn-alt: #AE6064;
+  --t-btn-deep: #7E4448; /* WAJIB lebih gelap dari --t-btn agar hover terlihat */
+  --t-grad-from: #965357;
+  --t-grad-from-alt: #A85E62;
+  --t-grad-to: #FBB0C4;
+  --t-nav-bg: #965357; /* navbar rose tua */
+  --t-nav-hover: #7E4448;
+
+  /* PENGECUALIAN §1.5: family rose diisi nilai red. Family rose dipakai
+     untuk PESAN ERROR di 15+ tempat (notes.html, admin_users.html).
+     Dengan navbar dan sidebar pink di Rose, rose-50 akan terbaca
+     sebagai dekoratif; diisi nilai red supaya kotak error tetap
+     bertanda bahaya. */
+  --t-rose-text-500: oklch(0.637 0.237 25.331);
+  --t-rose-text-600: oklch(0.577 0.245 27.325);
+  --t-rose-text-700: oklch(0.505 0.213 27.518);
+  --t-rose-text-800: oklch(0.444 0.177 26.899);
+  --t-rose-hover-500: oklch(0.637 0.237 25.331);
+  --t-rose-hover-700: oklch(0.505 0.213 27.518);
+  --t-rose-bg-50: oklch(0.971 0.013 17.38); /* PENGECUALIAN: rose -> red (lihat .kilo/plans/rose-theme.md §1.5) */
+  --t-rose-hover-50: oklch(0.971 0.013 17.38);
+  --t-rose-hover-100: oklch(0.936 0.032 17.717);
+  --t-rose-border-200: oklch(0.885 0.062 18.334);
+  --t-rose-border-300: oklch(0.885 0.062 18.334);
+
+  /* Status lain: disalin PERSIS dari blok terra (tidak ditinting) */
+  --t-green-text-500: oklch(0.723 0.219 149.579);
+  --t-green-text-600: oklch(0.627 0.194 149.214);
+  --t-green-text-700: oklch(0.527 0.154 150.069);
+  --t-green-text-800: oklch(0.448 0.119 151.328);
+  --t-green-hover-800: oklch(0.448 0.119 151.328);
+  --t-green-hover-900: oklch(0.393 0.095 152.535);
+  --t-green-bg-50: oklch(0.982 0.018 155.826);
+  --t-green-bg-100: oklch(0.962 0.044 156.743);
+  --t-green-hover-100: oklch(0.962 0.044 156.743);
+  --t-green-border-200: oklch(0.925 0.084 155.995);
+  --t-emerald-text-400: oklch(0.765 0.177 163.223);
+  --t-emerald-text-500: oklch(0.696 0.17 162.48);
+  --t-emerald-text-600: oklch(0.596 0.145 163.225);
+  --t-emerald-text-700: oklch(0.508 0.118 165.612);
+  --t-emerald-text-800: oklch(0.432 0.095 166.913);
+  --t-emerald-hover-600: oklch(0.596 0.145 163.225);
+  --t-emerald-hover-700: oklch(0.508 0.118 165.612);
+  --t-emerald-hover-800: oklch(0.432 0.095 166.913);
+  --t-emerald-bg-50: oklch(0.979 0.021 166.113);
+  --t-emerald-bg-100: oklch(0.95 0.052 163.051);
+  --t-emerald-hover-50: oklch(0.979 0.021 166.113);
+  --t-emerald-hover-100: oklch(0.95 0.052 163.051);
+  --t-emerald-border-200: oklch(0.905 0.093 164.15);
+  --t-emerald-border-strong: oklch(0.696 0.17 162.48);
+  --t-emerald-ring: oklch(0.696 0.17 162.48 / 0.45);
+  --t-red-text-500: oklch(0.637 0.237 25.331);
+  --t-red-text-600: oklch(0.577 0.245 27.325);
+  --t-red-text-700: oklch(0.505 0.213 27.518);
+  --t-red-text-800: oklch(0.444 0.177 26.899);
+  --t-red-hover-600: oklch(0.577 0.245 27.325);
+  --t-red-hover-700: oklch(0.505 0.213 27.518);
+  --t-red-hover-900: oklch(0.396 0.141 25.723);
+  --t-red-bg-50: oklch(0.971 0.013 17.38);
+  --t-red-bg-100: oklch(0.936 0.032 17.717);
+  --t-red-hover-100: oklch(0.936 0.032 17.717);
+  --t-red-border-200: oklch(0.885 0.062 18.334);
+  --t-amber-text-500: oklch(0.769 0.188 70.08);
+  --t-amber-text-600: oklch(0.666 0.179 58.318);
+  --t-amber-text-700: oklch(0.555 0.163 48.998);
+  --t-amber-text-800: oklch(0.473 0.137 46.201);
+  --t-amber-text-900: oklch(0.414 0.112 45.904);
+  --t-amber-hover-600: oklch(0.666 0.179 58.318);
+  --t-amber-hover-700: oklch(0.555 0.163 48.998);
+  --t-amber-bg-50: oklch(0.987 0.022 95.277);
+  --t-amber-bg-100: oklch(0.962 0.059 95.617);
+  --t-amber-hover-50: oklch(0.962 0.059 95.617);
+  --t-amber-hover-100: oklch(0.962 0.059 95.617);
+  --t-amber-border-200: oklch(0.924 0.12 95.746);
+  --t-amber-ring: oklch(0.769 0.188 70.08);
+  --t-yellow-text-600: oklch(0.681 0.162 75.834);
+  --t-yellow-text-700: oklch(0.554 0.135 66.442);
+  --t-yellow-text-800: oklch(0.476 0.114 61.907);
+  --t-yellow-bg-50: oklch(0.987 0.026 102.212);
+  --t-yellow-bg-100: oklch(0.973 0.071 103.193);
+  --t-orange-text-500: oklch(0.705 0.213 47.604);
+  --t-orange-border-500: oklch(0.705 0.213 47.604);
+  --t-orange-bg-100: oklch(0.954 0.038 75.164);
+  --t-sky-text-500: oklch(0.685 0.169 237.323);
+  --t-sky-text-700: oklch(0.5 0.134 242.749);
+  --t-sky-bg-50: oklch(0.977 0.013 236.62);
+  --t-sky-bg-100: oklch(0.951 0.026 236.824);
+  --t-blue-text-500: oklch(0.623 0.214 259.815);
+  --t-blue-text-600: oklch(0.546 0.245 262.881);
+  --t-blue-text-700: oklch(0.488 0.243 264.376);
+  --t-blue-text-800: oklch(0.424 0.199 265.638);
+  --t-blue-bg-50: oklch(0.97 0.014 254.604);
+  --t-blue-bg-100: oklch(0.932 0.032 255.585);
+  --t-blue-hover-100: oklch(0.932 0.032 255.585);
+  --t-blue-border-100: oklch(0.932 0.032 255.585);
+  --t-blue-border-200: oklch(0.882 0.059 254.128);
+  --t-violet-text-500: oklch(0.606 0.25 292.717);
+  --t-violet-text-700: oklch(0.491 0.27 292.581);
+  --t-violet-text-800: oklch(0.432 0.232 292.759);
+  --t-violet-bg-50: oklch(0.969 0.016 293.756);
+  --t-violet-bg-100: oklch(0.943 0.029 294.588);
+  --t-violet-hover-50: oklch(0.943 0.029 294.588);
+  --t-violet-hover-100: oklch(0.943 0.029 294.588);
+  --t-violet-border-200: oklch(0.894 0.057 293.283);
+  --t-violet-ring: oklch(0.606 0.25 292.717);
+  --t-purple-text-700: oklch(0.496 0.265 301.924);
+  --t-purple-text-800: oklch(0.438 0.218 303.724);
+  --t-purple-bg-100: oklch(0.946 0.033 307.174);
+  --t-fuchsia-text-700: oklch(0.518 0.253 323.949);
+  --t-fuchsia-bg-50: oklch(0.977 0.017 320.058);
+  --t-fuchsia-bg-100: oklch(0.952 0.037 318.852);
+
+  /* Form & misc */
+  --t-field-bg: #FFFFFF;
+  --t-field-fg: #2E1B21;
+  --t-field-border: #AE7C88;
+  --t-selection-bg: #965357;
+  --t-selection-fg: #FFFFFF;
+  --t-scrollbar-thumb: #AE7C88;
+  --t-scrollbar-track: #FBF3F5;
+}
+
 [data-theme="dark"] {
   color-scheme: dark;
 
@@ -589,8 +773,8 @@
    ========================================================================== */
 
 /* --- Elemen halaman ---
-   Hanya dark & terra. Di light, <html> dan scrollbar tidak diberi warna
-   oleh tema (seperti sebelumnya), sehingga render light identik. */
+   Hanya dark, terra, dan rose. Di light, <html> dan scrollbar tidak diberi
+   warna oleh tema (seperti sebelumnya), sehingga render light identik. */
 [data-theme="dark"] {
   background-color: var(--t-page);
   scrollbar-color: var(--t-scrollbar-thumb) var(--t-scrollbar-track);
@@ -599,8 +783,13 @@
   background-color: var(--t-page);
   scrollbar-color: var(--t-scrollbar-thumb) var(--t-scrollbar-track);
 }
+[data-theme="rose"] {
+  background-color: var(--t-page);
+  scrollbar-color: var(--t-scrollbar-thumb) var(--t-scrollbar-track);
+}
 [data-theme="dark"] body,
-[data-theme="terra"] body {
+[data-theme="terra"] body,
+[data-theme="rose"] body {
   background-color: var(--t-page);
   color: var(--t-text);
 }
@@ -670,6 +859,8 @@ html.force-light #theme-toggle {
 [data-theme="dark"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-border) !important; }
 [data-theme="terra"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-divider) !important; }
 [data-theme="terra"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-border) !important; }
+[data-theme="rose"] .divide-gray-100 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-divider) !important; }
+[data-theme="rose"] .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--t-border) !important; }
 
 /* --- Brand --- */
 /* --- Tombol solid ---
@@ -910,17 +1101,20 @@ html.force-light #theme-toggle {
 /* --- Kontrol form native ---
    Warna eksplisit supaya <select> tertutup dan daftar <option> tetap terbaca.
 
-   PENTING: aturan ini SENGAJA hanya untuk dark & terra. Di light, input/select/
-   textarea TIDAK diberi background atau border color oleh tema - dulu juga
-   begitu, dan memaksanya akan mengubah tampilan light (input jadi putih
-   solid, bukan transparan) serta resonated border pada input yang tidak
-   memakai kelas border. Light dijaga identik dengan permintaan. */
+   PENTING: aturan ini SENGAJA hanya untuk dark, terra, dan rose. Di light,
+   input/select/textarea TIDAK diberi background atau border color oleh tema -
+   dulu juga begitu, dan memaksanya akan mengubah tampilan light (input jadi
+   putih solid, bukan transparan) serta memberi border pada input yang tidak
+   memakai kelas border. Light dijaga identik. */
 [data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
 [data-theme="dark"] select,
 [data-theme="dark"] textarea,
 [data-theme="terra"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
 [data-theme="terra"] select,
-[data-theme="terra"] textarea {
+[data-theme="terra"] textarea,
+[data-theme="rose"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+[data-theme="rose"] select,
+[data-theme="rose"] textarea {
   background-color: var(--t-field-bg) !important;
   color: var(--t-field-fg) !important;
   border-color: var(--t-field-border) !important;
@@ -928,14 +1122,18 @@ html.force-light #theme-toggle {
 [data-theme="dark"] select option,
 [data-theme="dark"] select optgroup,
 [data-theme="terra"] select option,
-[data-theme="terra"] select optgroup {
+[data-theme="terra"] select optgroup,
+[data-theme="rose"] select option,
+[data-theme="rose"] select optgroup {
   background-color: var(--t-field-bg);
   color: var(--t-field-fg);
 }
 [data-theme="dark"] input::placeholder,
 [data-theme="dark"] textarea::placeholder,
 [data-theme="terra"] input::placeholder,
-[data-theme="terra"] textarea::placeholder {
+[data-theme="terra"] textarea::placeholder,
+[data-theme="rose"] input::placeholder,
+[data-theme="rose"] textarea::placeholder {
   color: var(--t-placeholder) !important;
   opacity: 1;
 }
