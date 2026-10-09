@@ -10,7 +10,7 @@ from typing import List
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import Depends, Form
+from fastapi import Depends, Form, Request
 from fastapi.responses import RedirectResponse
 from pypdf import PdfReader, PdfWriter
 from xhtml2pdf import pisa
@@ -173,6 +173,7 @@ def register_efek_samping_routes(
 ):
     @app.post("/products/{product_id}/monitoring-efek-samping/generate")
     async def generate_monitoring_efek_samping(
+        request: Request,
         product_id: str,
         ada_kasus: str = Form("0"),
         kasus_nama: List[str] = Form(None),
@@ -189,6 +190,7 @@ def register_efek_samping_routes(
             lock = _generate_locks.setdefault(product_id, asyncio.Lock())
         async with lock:
             return await _generate_monitoring_efek_samping_inner(
+                request,
                 product_id,
                 ada_kasus,
                 kasus_nama,
@@ -201,6 +203,7 @@ def register_efek_samping_routes(
             )
 
     async def _generate_monitoring_efek_samping_inner(
+        request: Request,
         product_id: str,
         ada_kasus: str,
         kasus_nama: List[str] | None,
@@ -349,11 +352,13 @@ def register_efek_samping_routes(
             product_id,
             product.get("nama_produk") or product_id,
             [{"field": "Laporan Monitoring Efek Samping", "note": period_label}],
+            request=request,
         )
         return _redirect(f"Laporan monitoring efek samping {period_label} berhasil digenerate.")
 
     @app.post("/products/{product_id}/monitoring-efek-samping/delete")
     async def delete_monitoring_efek_samping(
+        request: Request,
         product_id: str,
         current_user: dict = Depends(get_current_user),
     ):
@@ -417,5 +422,6 @@ def register_efek_samping_routes(
             product_id,
             product.get("nama_produk") or product_id,
             [{"field": "Laporan Monitoring Efek Samping", "note": "Deleted"}],
+            request=request,
         )
         return _redirect("Laporan monitoring efek samping berhasil dihapus.")

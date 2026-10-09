@@ -295,6 +295,7 @@ def register_raw_materials_routes(
 
     @app.post("/raw-materials/{rm_id}/quick-upload-company-doc")
     async def quick_upload_company_doc(
+        request: Request,
         rm_id: str,
         perusahaan: str = Form(...),
         msds_file: UploadFile = File(None),
@@ -330,7 +331,8 @@ def register_raw_materials_routes(
                 document_list = " dan ".join(uploaded_documents)
                 log_activity(
                     current_user, "edit", "raw_material_company_doc", rm_id,
-                    f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} ({perusahaan})"
+                    f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} ({perusahaan})",
+                    request=request
                 )
                 response.set_cookie("success_msg", "Dokumen berhasil diupload.")
             else:
@@ -385,7 +387,8 @@ def register_raw_materials_routes(
             return response
         new_rm_id = rm_resp.data[0]["id"]
 
-        log_activity(current_user, "create", "raw_material", new_rm_id, nama_dagang)
+        log_activity(current_user, "create", "raw_material", new_rm_id, nama_dagang,
+                   request=request)
 
         # --- Simpan spec + MSDS per perusahaan (kalau diisi) ---
         try:
@@ -438,6 +441,7 @@ def register_raw_materials_routes(
 
     @app.post("/raw-materials/quick-add")
     async def quick_add_raw_material(
+        request: Request,
         nama_dagang: str = Form(...),
         kode_bahan_baku: str = Form(...),
         tipe: str = Form(...),
@@ -468,7 +472,8 @@ def register_raw_materials_routes(
 
             new_rm = rm_resp.data[0]
             # Panggil log_activity (pola yang sama dengan add_raw_material)
-            log_activity(current_user, "create", "raw_material", new_rm["id"], nama_dagang)
+            log_activity(current_user, "create", "raw_material", new_rm["id"], nama_dagang,
+                       request=request)
 
             return JSONResponse(
                 status_code=200,
@@ -484,6 +489,7 @@ def register_raw_materials_routes(
 
     @app.post("/raw-materials/edit/{rm_id}")
     async def edit_raw_material(
+        request: Request,
         rm_id: str,
         nama_dagang: str = Form(...),
         kode_bahan_baku: str = Form(...),
@@ -628,7 +634,8 @@ def register_raw_materials_routes(
         await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
 
         if changes:
-            log_activity(current_user, "update", "raw_material", rm_id, nama_dagang, changes)
+            log_activity(current_user, "update", "raw_material", rm_id, nama_dagang, changes,
+                       request=request)
 
         # --- Sisa kode management komponen INCI lu di bawah biarkan utuh ---
         # TAPI scoped ke varian yang lagi diedit: komponen milik varian itu + sisa
@@ -668,7 +675,8 @@ def register_raw_materials_routes(
         return RedirectResponse(url="/raw-materials", status_code=303)
 
     @app.post("/raw-materials/delete/{rm_id}")
-    async def delete_raw_material(rm_id: str, current_user: dict = Depends(get_current_user)):
+    async def delete_raw_material(request: Request, rm_id: str,
+                                  current_user: dict = Depends(get_current_user)):
         # Cek dulu apakah bahan baku ini masih dipakai di formula produk manapun
         usage_check = supabase.table("product_formula_lines").select("product_id, products(nama_produk)").eq("raw_material_id", rm_id).execute()
 
@@ -731,7 +739,8 @@ def register_raw_materials_routes(
             print(f"Gagal hapus raw_material {rm_id}: {e}")
             return RedirectResponse(url="/raw-materials?error=Gagal+menghapus+bahan+baku.+Coba+lagi+atau+hubungi+admin.", status_code=303)
 
-        log_activity(current_user, "delete", "raw_material", rm_id, nama_sebelum_hapus)
+        log_activity(current_user, "delete", "raw_material", rm_id, nama_sebelum_hapus,
+                   request=request)
 
         return RedirectResponse(url="/raw-materials?success=Bahan+baku+beserta+seluruh+riwayat+batch+%26+dokumen+terkait+berhasil+dihapus", status_code=303)
 
@@ -746,6 +755,7 @@ def register_raw_materials_routes(
 
     @app.post("/raw-materials/{rm_id}/variants/add")
     async def add_raw_material_variant(
+        request: Request,
         rm_id: str,
         nama_varian: str = Form(...),
         current_user: dict = Depends(get_current_user),
@@ -769,13 +779,15 @@ def register_raw_materials_routes(
             "nama_varian": nama,
             "is_default": False,
         }).execute()
-        log_activity(current_user, "create", "raw_material_variant", new_variant.data[0]["id"], f"{rm_check.data[0].get('nama_dagang')} / {nama}")
+        log_activity(current_user, "create", "raw_material_variant", new_variant.data[0]["id"], f"{rm_check.data[0].get('nama_dagang')} / {nama}",
+                       request=request)
         response = RedirectResponse(url="/raw-materials", status_code=303)
         response.set_cookie("success_msg", f"Varian '{nama}' berhasil ditambahkan. Isi breakdown INCI-nya lewat menu Edit.")
         return response
 
     @app.post("/raw-materials/{rm_id}/variants/{variant_id}/set-default")
-    async def set_default_raw_material_variant(rm_id: str, variant_id: str, current_user: dict = Depends(get_current_user)):
+    async def set_default_raw_material_variant(request: Request, rm_id: str, variant_id: str,
+                                              current_user: dict = Depends(get_current_user)):
         target = supabase.table("raw_material_composition_variants") \
             .select("id, nama_varian, raw_material_id").eq("id", variant_id).limit(1).execute()
         if not target.data or target.data[0].get("raw_material_id") != rm_id:
@@ -785,13 +797,15 @@ def register_raw_materials_routes(
             .update({"is_default": False}).eq("raw_material_id", rm_id).execute()
         supabase.table("raw_material_composition_variants") \
             .update({"is_default": True}).eq("id", variant_id).execute()
-        log_activity(current_user, "update", "raw_material_variant", variant_id, f"{target.data[0].get('nama_varian')} (jadi default)")
+        log_activity(current_user, "update", "raw_material_variant", variant_id, f"{target.data[0].get('nama_varian')} (jadi default)",
+                       request=request)
         response = RedirectResponse(url="/raw-materials", status_code=303)
         response.set_cookie("success_msg", f"Varian '{target.data[0].get('nama_varian')}' sekarang jadi varian default.")
         return response
 
     @app.post("/raw-materials/{rm_id}/variants/{variant_id}/delete")
-    async def delete_raw_material_variant(rm_id: str, variant_id: str, current_user: dict = Depends(get_current_user)):
+    async def delete_raw_material_variant(request: Request, rm_id: str, variant_id: str,
+                                         current_user: dict = Depends(get_current_user)):
         target = supabase.table("raw_material_composition_variants") \
             .select("id, nama_varian, is_default, raw_material_id").eq("id", variant_id).limit(1).execute()
         if not target.data or target.data[0].get("raw_material_id") != rm_id:
@@ -834,7 +848,8 @@ def register_raw_materials_routes(
                 supabase.table("raw_material_composition_variants") \
                     .update({"is_default": True}).eq("id", remaining.data[0]["id"]).execute()
 
-        log_activity(current_user, "delete", "raw_material_variant", variant_id, nama_varian)
+        log_activity(current_user, "delete", "raw_material_variant", variant_id, nama_varian,
+                   request=request)
         response = RedirectResponse(url="/raw-materials", status_code=303)
         response.set_cookie("success_msg", f"Varian '{nama_varian}' berhasil dihapus.")
         return response
@@ -963,6 +978,7 @@ def register_raw_materials_routes(
 
     @app.post("/raw-materials/batches/edit/{batch_id}")
     async def edit_material_batch(
+        request: Request,
         batch_id: str,
         no_batch: str = Form(...),
         supplier: str = Form(...),
@@ -1032,7 +1048,8 @@ def register_raw_materials_routes(
 
         try:
             supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
-            log_activity(current_user, "edit", "raw_material_batch", batch_id, f"Update batch {no_batch}")
+            log_activity(current_user, "edit", "raw_material_batch", batch_id, f"Update batch {no_batch}",
+                       request=request)
         except Exception as e:
             print(f"Gagal update batch: {e}")
 
@@ -1040,6 +1057,7 @@ def register_raw_materials_routes(
 
     @app.post("/raw-materials/batches/{batch_id}/quick-upload-doc")
     async def quick_upload_batch_doc(
+        request: Request,
         batch_id: str,
         coa_file: UploadFile = File(None),
         halal_file: UploadFile = File(None),
@@ -1109,7 +1127,8 @@ def register_raw_materials_routes(
                 document_list = ", ".join(uploaded_documents)
                 log_activity(
                     current_user, "edit", "raw_material_batch", batch_id,
-                    f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} — batch {no_batch}"
+                    f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} — batch {no_batch}",
+                    request=request
                 )
                 response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
                 response.set_cookie("success_msg", "Dokumen berhasil diupload.")
@@ -1150,7 +1169,8 @@ def register_raw_materials_routes(
 
             supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
 
-            log_activity(current_user, "acc_dipakai", "raw_material_batch", batch_id, f"ED diperpanjang ke {new_expiry_date}")
+            log_activity(current_user, "acc_dipakai", "raw_material_batch", batch_id, f"ED diperpanjang ke {new_expiry_date}",
+                           request=request)
 
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
             response.set_cookie("success_msg", f"ACC Dipakai berhasil disimpan. ED baru: {new_expiry_date}")
@@ -1188,7 +1208,8 @@ def register_raw_materials_routes(
 
             supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
 
-            log_activity(current_user, "acc_dimusnahkan", "raw_material_batch", batch_id, "Batch dimusnahkan (dispose)")
+            log_activity(current_user, "acc_dimusnahkan", "raw_material_batch", batch_id, "Batch dimusnahkan (dispose)",
+                           request=request)
 
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
             response.set_cookie("success_msg", "Batch berhasil dimusnahkan (ACC Dimusnahkan).")

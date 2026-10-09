@@ -674,6 +674,26 @@ def _new_request_id() -> str:
     return str(uuid.uuid4())
 
 
+def _request_id_for(request) -> str:
+    """request_id milik satu HTTP request, dibuat sekali lalu di-cache.
+
+    Disimpan di ``request.scope`` -- bukan ``request.state``. Alasannya:
+    ``State`` milik Starlette hanya mendukung ``__getitem__``/``__setitem__``
+    (tidak ada ``.get()``), sedangkan ``scope`` adalah dict biasa yang dijamin
+    ada dan berumur persis satu request. Dengan begitu semua activity log
+    dalam satu request memakai ID yang sama, dan request berikutnya otomatis
+    dapat ID baru tanpa perlu state/global.
+    """
+    scope = getattr(request, "scope", None)
+    if not isinstance(scope, dict):
+        return _new_request_id()
+    rid = scope.get("_activity_request_id")
+    if not rid:
+        rid = _new_request_id()
+        scope["_activity_request_id"] = rid
+    return rid
+
+
 def mask_email(email: str) -> str:
     """Disamarkan sebagian supaya tetap bisa ditelusuri tanpa menyimpan PII penuh.
 
@@ -774,7 +794,12 @@ def log_activity(current_user: dict, action: str, entity_type: str, entity_id: s
         row["user_agent"] = (request.headers.get("user-agent") or "-")[:500]
         row["route"] = getattr(request.scope.get("route"), "path", None)
         row["http_method"] = request.method
-        row["request_id"] = request_id or _new_request_id()
+        # Satu HTTP request harus menghasilkan SATU request_id untuk semua
+        # activity log di dalamnya, supaya beberapa baris log dari satu aksi
+        # bisa dikelompokkan (mis. create produk = 1 insert + 1 log).
+        # ID dicache per-request oleh _request_id_for(); kalau tidak, tiap log
+        # dapat UUID baru dan kolom request_id jadi tak berguna untuk korelasi.
+        row["request_id"] = request_id or _request_id_for(request)
     elif request_id:
         row["request_id"] = request_id
 
@@ -1455,14 +1480,16 @@ async def admin_trash_page(request: Request, current_user: dict = Depends(get_cu
     )
 
 @app.post("/admin/products/{product_id}/restore")
-async def restore_product(product_id: str, current_user: dict = Depends(get_current_user)):
+async def restore_product(request: Request, product_id: str,
+                          current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Akses ditolak")
         
     try:
         supabase.table("products").update({"is_deleted": False, "deleted_at": None}).eq("id", product_id).execute()
         # Perlu fungsi log_activity yang sudah ada di main.py
-        log_activity(current_user, "restore", "product", product_id, "Restore produk dari sampah")
+        log_activity(current_user, "restore", "product", product_id,
+                     "Restore produk dari sampah", request=request)
         return RedirectResponse(url="/admin/trash?success=Produk berhasil dikembalikan", status_code=303)
     except Exception as e:
         print(f"Gagal restore produk: {e}")
@@ -1593,7 +1620,8 @@ async def update_company_document(
         else:
             supabase.table(table).insert({"perusahaan": perusahaan, column: file_url}).execute()
 
-        log_activity(current_user, "update", doc_type, perusahaan, f"{label} {perusahaan}")
+        log_activity(current_user, "update", doc_type, perusahaan,
+                     f"{label} {perusahaan}", request=request)
 
         response = RedirectResponse(url="/admin/company-documents", status_code=303)
         response.set_cookie("success_msg", f"{label} ({perusahaan}) berhasil diperbarui.")
@@ -1608,6 +1636,7 @@ async def update_company_document(
 
 @app.post("/products/add")
 async def add_product(
+    request: Request,
     nama_produk: str = Form(...),
     perusahaan: str = Form(...),
     nama_customer: str = Form(None),
@@ -1661,7 +1690,8 @@ async def add_product(
         new_product_id = new_product_resp.data[0]["id"] if new_product_resp.data else None
         if not new_product_id:
             raise Exception("Insert produk tidak mengembalikan data")
-        log_activity(current_user, "create", "product", new_product_id, nama_produk)
+        log_activity(current_user, "create", "product", new_product_id, nama_produk,
+                     request=request)
         return RedirectResponse(url="/", status_code=303)
     except Exception as e:
         print(f"\n🔴 [ERROR add_product] Gagal menyimpan produk '{nama_produk}': {e}")
@@ -1902,7 +1932,8 @@ async def qualitative_quantitative_report(request: Request, product_id: str, cur
 
 
 @app.get("/products/{product_id}/qualitative-quantitative/export-xlsx")
-async def export_qualquant_xlsx(product_id: str, current_user: dict = Depends(get_current_user)):
+async def export_qualquant_xlsx(request: Request, product_id: str,
+                                current_user: dict = Depends(get_current_user)):
     """Export dokumen Formula Kualitatif & Kuantitatif (.xlsx) via openpyxl.
 
     Menghasilkan workbook 3 sheet ("Formula Nama Dagang", "Formula INCI Murni",
@@ -1920,7 +1951,8 @@ async def export_qualquant_xlsx(product_id: str, current_user: dict = Depends(ge
     safe_name = slugify(data["product"].get("nama_produk") or "produk").replace("-", "_")
     filename = f"Qual_Quan_Formula_{safe_name}.xlsx"
 
-    log_activity(current_user, "export", "product_qualquan_xlsx", product_id, filename)
+    log_activity(current_user, "export", "product_qualquan_xlsx", product_id,
+                 filename, request=request)
 
     return StreamingResponse(
         io.BytesIO(content),
@@ -2039,7 +2071,9 @@ async def save_finished_spec(
         supabase.table("product_finished_specs").insert(spec_data).execute()
         success_msg = "Spesifikasi Produk Jadi berhasil disimpan."
 
-    log_activity(current_user, "update", "product_finished_specs", product_id, f"Spesifikasi Produk Jadi - {product['nama_produk']}")
+    log_activity(current_user, "update", "product_finished_specs", product_id,
+                 f"Spesifikasi Produk Jadi - {product['nama_produk']}",
+                 request=request)
 
     response = RedirectResponse(url=f"/products/{product_id}/finished-spec", status_code=303)
     response.set_cookie("success_msg", success_msg)
@@ -2307,6 +2341,7 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
 # 2. Proses Simpan Perubahan Info Produk (PERBAIKAN: Kolom disinkronkan dengan add_product)
 @app.post("/products/{product_id}/edit")
 async def update_product(
+    request: Request,
     product_id: str,
     nama_produk: str = Form(...),
     perusahaan: str = Form(...),
@@ -2541,14 +2576,16 @@ async def update_product(
     product_file_fields = {k for k in product_field_labels if k.endswith("_file_url")}
     product_changes = _build_diff_changes(old_product, update_payload, product_field_labels, product_file_fields)
     if product_changes:
-        log_activity(current_user, "update", "product", product_id, nama_produk, product_changes)
+        log_activity(current_user, "update", "product", product_id, nama_produk,
+                     product_changes, request=request)
     
     response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
     response.set_cookie("success_msg", f"Data & dokumen DIP produk '{nama_produk}' berhasil diperbarui!")
     return response
 
 @app.post("/products/delete/{product_id}")
-async def delete_product(product_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_product(request: Request, product_id: str,
+                         current_user: dict = Depends(get_current_user)):
     # Ambil nama-nya dulu sebelum dihapus, biar activity log masih kebaca gak "id doang"
     product_before = supabase.table("products").select("nama_produk").eq("id", product_id).single().execute()
     nama_sebelum_hapus = product_before.data.get("nama_produk") if product_before.data else product_id
@@ -2562,7 +2599,8 @@ async def delete_product(product_id: str, current_user: dict = Depends(get_curre
         print(f"Gagal hapus produk {product_id}: {e}")
         return RedirectResponse(url="/", status_code=303)
 
-    log_activity(current_user, "delete", "product", product_id, nama_sebelum_hapus)
+    log_activity(current_user, "delete", "product", product_id, nama_sebelum_hapus,
+                 request=request)
     return RedirectResponse(url="/", status_code=303)
 
 # 1. PROSES POST CREATION SAMPLE (Kode FSP Manual)

@@ -914,7 +914,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             print(f"[PO] insert gagal: {ex}")
         if not new_id:
             return _redirect_po(None, err="Gagal membuat PO (kemungkinan duplikat).")
-        log_activity(current_user, "create", "purchase_order", new_id, no_po_clean)
+        log_activity(current_user, "create", "purchase_order", new_id, no_po_clean, request=request)
         return _redirect_po(new_id, ok=f"PO {no_po_clean} dibuat.")
 
     @app.post("/product-batches")
@@ -975,7 +975,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             if wants_json:
                 return JSONResponse({"ok": False, "error": msg}, status_code=500)
             return _redirect_po(back, err=msg)
-        log_activity(current_user, "create", "product_batch", new_b["id"], f"{nb}")
+        log_activity(current_user, "create", "product_batch", new_b["id"], f"{nb}", request=request)
         if wants_json:
             return JSONResponse({"ok": True, "batch": new_b})
         return _redirect_po(back, ok=f"Batch {nb} dibuat.")
@@ -1055,7 +1055,8 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                 return _redirect_po(po_id, err="Gagal menyimpan item. Coba lagi.")
         if not saved:
             return _redirect_po(po_id, err="Gagal menyimpan item. Coba lagi.")
-        log_activity(current_user, "create", "purchase_order_item", saved_id, f"{po.get('no_po')} #{saved_nxt}")
+        log_activity(current_user, "create", "purchase_order_item", saved_id, f"{po.get('no_po')} #{saved_nxt}",
+                       request=request)
         return _redirect_po(po_id, ok=f"Item #{saved_nxt} tersimpan.")
 
     @app.post("/purchase-orders/{po_id}/items/{item_id}/update")
@@ -1122,11 +1123,13 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             item_id,
             f"item {item_id[:8]} (urutan {currow.get('urutan')})" if currow else f"item {item_id[:8]}",
             item_changes,
+            request=request,
         )
         return _redirect_po(po_id, ok="Perubahan item tersimpan.")
 
     @app.post("/purchase-orders/{po_id}/items/{item_id}/delete")
-    async def po_item_delete(po_id: str, item_id: str, current_user: dict = Depends(get_current_user)):
+    async def po_item_delete(request: Request, po_id: str, item_id: str,
+                             current_user: dict = Depends(get_current_user)):
         currow = None
         try:
             cur = supabase.table("purchase_order_items").select("id, purchase_order_id, urutan").eq("id", item_id).limit(1).execute()
@@ -1140,5 +1143,6 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         except Exception as ex:
             print(f"[PO] delete gagal: {ex}")
             return _redirect_po(po_id, err="Gagal menghapus item.")
-        log_activity(current_user, "delete", "purchase_order_item", item_id, f"urutan {currow.get('urutan')}")
+        log_activity(current_user, "delete", "purchase_order_item", item_id, f"urutan {currow.get('urutan')}",
+                       request=request)
         return _redirect_po(po_id, ok="Item dihapus.")

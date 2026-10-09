@@ -624,6 +624,7 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             log_activity(
                 current_user, "create", "note", note_id or "-",
                 (text[:80] + ("…" if len(text) > 80 else "")) + extra,
+                request=request,
             )
         except Exception as e:
             print(f"[NOTES] Gagal simpan note: {e}")
@@ -632,7 +633,8 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         return RedirectResponse(url="/notes?status=created", status_code=303)
 
     @app.post("/notes/{note_id}/delete")
-    async def delete_note(note_id: str, current_user: dict = Depends(get_current_user)):
+    async def delete_note(request: Request, note_id: str,
+                          current_user: dict = Depends(get_current_user)):
         try:
             res = supabase.table("team_notes").select("id, author_id, body").eq("id", note_id).execute()
             row = (res.data or [None])[0]
@@ -641,7 +643,8 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             if row["author_id"] != current_user["id"] and current_user.get("role") != "admin":
                 raise HTTPException(status_code=403, detail="Hanya penulis atau admin yang boleh hapus.")
             supabase.table("team_notes").delete().eq("id", note_id).execute()
-            log_activity(current_user, "delete", "note", note_id, (row.get("body") or "")[:80])
+            log_activity(current_user, "delete", "note", note_id, (row.get("body") or "")[:80],
+                           request=request)
         except HTTPException:
             raise
         except Exception as e:
@@ -651,6 +654,7 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
 
     @app.post("/notes/{note_id}/complete")
     async def complete_note(
+        request: Request,
         note_id: str,
         completion_note: str = Form(""),
         current_user: dict = Depends(get_current_user),
@@ -666,14 +670,15 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             }).eq("id", note_id).execute()
             
             # Log
-            log_activity(current_user, "complete", "note", note_id, "Selesai")
+            log_activity(current_user, "complete", "note", note_id, "Selesai", request=request)
         except Exception as e:
             print(f"[NOTES] Gagal menyelesaikan note: {e}")
             return RedirectResponse(url="/notes?error=complete_failed", status_code=303)
         return RedirectResponse(url="/notes?status=completed", status_code=303)
 
     @app.post("/notes/{note_id}/reopen")
-    async def reopen_note(note_id: str, current_user: dict = Depends(get_current_user)):
+    async def reopen_note(request: Request, note_id: str,
+                          current_user: dict = Depends(get_current_user)):
         try:
             # Reopen
             supabase.table("team_notes").update({
@@ -685,7 +690,7 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             }).eq("id", note_id).execute()
             
             # Log
-            log_activity(current_user, "reopen", "note", note_id, "Reopened")
+            log_activity(current_user, "reopen", "note", note_id, "Reopened", request=request)
         except Exception as e:
             print(f"[NOTES] Gagal membuka kembali note: {e}")
             return RedirectResponse(url="/notes?error=reopen_failed", status_code=303)
