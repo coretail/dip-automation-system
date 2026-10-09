@@ -18,6 +18,7 @@ import re
 import json
 import base64
 import sys
+import uuid
 import tempfile
 import httpx
 import unicodedata
@@ -668,8 +669,83 @@ def touch_user_presence(user_id: str, online: bool = True, active: bool = True) 
         return False
 
 
-def log_activity(current_user: dict, action: str, entity_type: str, entity_id: str, entity_label: str, changes: list = None):
-    """Catat activity log ke DB Supabase + cetak log rapi ke terminal Render."""
+def _new_request_id() -> str:
+    """UUID v4 penanda satu request, dipakai bersama oleh semua baris log."""
+    return str(uuid.uuid4())
+
+
+def mask_email(email: str) -> str:
+    """Disamarkan sebagian supaya tetap bisa ditelusuri tanpa menyimpan PII penuh.
+
+    'budi.santoso@erfi.com' -> 'b**********o@erfi.com'
+    Panjang bagian yang disamarkan dipertahankan (kecuali username 1 karakter,
+    yang mustahil disamarkan sambil menjaga panjangnya) sehingga panjang akun
+    tidak ikut bocor lewat audit log.
+    """
+    if not email or "@" not in email:
+        return "-"
+    local, _, domain = email.partition("@")
+    if not local:
+        return f"@{domain}"
+    if len(local) == 1:
+        # Satu karakter: tidak ada yang bisa disamarkan tanpa membocorkan
+        # karakter itu sendiri, jadi seluruhnya diganti.
+        masked = "*"
+    elif len(local) == 2:
+        masked = local[0] + "*"
+    else:
+        masked = local[0] + "*" * (len(local) - 2) + local[-1]
+    return f"{masked}@{domain}"
+
+
+def _user_label(uid: str) -> str:
+    """Label manusia untuk user target (fallback ke UUID bila profil hilang)."""
+    if not uid:
+        return "-"
+    try:
+        res = supabase.table("profiles").select("full_name").eq("id", uid).execute()
+        if res.data and res.data[0].get("full_name"):
+            return res.data[0]["full_name"]
+    except Exception:
+        pass
+    return f"User {uid}"
+
+
+def _user_role_and_label(uid: str):
+    """-> (role, label) dari baris profiles, untuk needs diff role sebelum diubah."""
+    try:
+        res = supabase.table("profiles").select("full_name, role").eq("id", uid).execute()
+        if res.data:
+            row = res.data[0] or {}
+            return (row.get("role"),
+                    row.get("full_name") or f"User {uid}")
+    except Exception:
+        pass
+    return (None, f"User {uid}")
+
+
+def log_activity(current_user: dict, action: str, entity_type: str, entity_id: str,
+                 entity_label: str, changes: list = None, *, request=None,
+                 outcome: str = "success", request_id: str = None,
+                 source: str = "app"):
+    """Catat activity log ke DB Supabase + cetak log rapi ke terminal Render.
+
+    Parameter baru (semua opsional & keyword-only) dipakai sejak hardening audit
+    2026-10-05 agar 7 operasi berisiko tinggi ikut tercatat. WAJIB kompatibel
+    mundur: seluruh call site lama tetap berfungsi tanpa perubahan.
+
+    Args:
+        request: objek Request FastAPI. Kalau diisi, ip_address / user_agent /
+            route / http_method terisi otomatis dari context request.
+        outcome: 'success' | 'rejected' | 'failed'. 'rejected' dipakai saat
+            operasi ditolak validasi atau proteksi role -- penolakan tetap
+            dicatat karena untuk keamanan sama pentingnya dengan keberhasilan.
+        request_id: dipakai bersama oleh beberapa log dari satu request yang sama.
+        source: 'app' | 'public' | 'migration'.
+    """
+    outcome = outcome if outcome in ("success", "rejected", "failed") else "success"
+    source = source if source in ("app", "public", "migration") else "app"
+
     # 1. Cetak log ke terminal Render
     print_activity_terminal(
         current_user=current_user,
@@ -677,21 +753,36 @@ def log_activity(current_user: dict, action: str, entity_type: str, entity_id: s
         entity_type=entity_type,
         entity_label=entity_label,
         entity_id=entity_id,
-        changes=changes
+        changes=changes,
+        outcome=outcome,
     )
 
     # 2. Simpan ke tabel activity_logs Supabase
+    row = {
+        "actor_id": current_user.get("id") if current_user else None,
+        "actor_name": current_user.get("full_name") if current_user else "System",
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "entity_label": entity_label,
+        "changes": changes or [],
+        "outcome": outcome,
+        "source": source,
+    }
+    if request is not None:
+        row["ip_address"] = _client_ip(request)
+        row["user_agent"] = (request.headers.get("user-agent") or "-")[:500]
+        row["route"] = getattr(request.scope.get("route"), "path", None)
+        row["http_method"] = request.method
+        row["request_id"] = request_id or _new_request_id()
+    elif request_id:
+        row["request_id"] = request_id
+
     try:
-        supabase.table("activity_logs").insert({
-            "actor_id": current_user.get("id") if current_user else None,
-            "actor_name": current_user.get("full_name") if current_user else "System",
-            "action": action,
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-            "entity_label": entity_label,
-            "changes": changes or [],
-        }).execute()
+        supabase.table("activity_logs").insert(row).execute()
     except Exception as e:
+        # Fail-open (keputusan user 2026-10-05): kegagalan audit tidak boleh
+        # membatalkan operasi bisnis. Error tetap dicetak agar bisa ditelusuri.
         print(f"Gagal catat activity log ke DB ({entity_type}/{action}/{entity_id}): {e}")
 
 # Lebar garis pemisah + nama field, disamakan dengan banner [LOGIN SUCCESS]
@@ -704,7 +795,7 @@ def _log_field(label: str, value: str) -> str:
     return f"   • {label:<8}: {value}"
 
 
-def print_activity_terminal(current_user: dict, action: str, entity_type: str, entity_label: str, entity_id: str = None, changes: list = None):
+def print_activity_terminal(current_user: dict, action: str, entity_type: str, entity_label: str, entity_id: str = None, changes: list = None, outcome: str = "success"):
     """
     Format dan cetak log aktivitas ke stdout/terminal Render.
 
@@ -721,9 +812,24 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
     action_badges = {
         "create": "🟢 [CREATED]",
         "update": "🟡 [UPDATED]",
-        "delete": "🔴 [DELETED]"
+        "delete": "🔴 [DELETED]",
+        "reset_password": "🔑 [PASSWORD RESET]",
+        "restore": "↩️ [RESTORED]",
+        "export": "📤 [EXPORTED]",
+        "generate": "⚙️ [GENERATED]",
+        "upload": "📎 [UPLOADED]",
+        "complete": "✅ [COMPLETED]",
+        "reopen": "🔄 [REOPENED]",
+        "public_link_visit": "🔗 [PUBLIC LINK]",
     }
-    badge = action_badges.get(action.lower(), f"🔵 [{action.upper()}]")
+    # 'rejected' & 'failed' sengaja TIDAK memakai badge aksi: keduanya memakai
+    # badge khusus supaya terlihat alarmed saat dipindai terminal.
+    if outcome == "rejected":
+        badge = "🚫 [REJECTED]"
+    elif outcome == "failed":
+        badge = "💥 [FAILED]"
+    else:
+        badge = action_badges.get(action.lower(), f"🔵 [{action.upper()}]")
 
     print("\n" + _LOG_RULE)
     print(f"📝 {badge} ACTIVITY LOG")
@@ -733,6 +839,10 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
     print(_log_field("Actor", actor_name))
     print(_log_field("Entity", entity_type.upper() + f" -> '{entity_label}'"
                       + (f" (ID: {entity_id})" if entity_id else "")))
+    # Outcome dicetak hanya kalau bukan sukses, supaya log sukses tetap ringkas
+    # dan sesuai format lama.
+    if outcome != "success":
+        print(_log_field("Outcome", outcome))
 
     if changes:
         print(_log_field("Changes", ""))
@@ -762,6 +872,48 @@ def _build_diff_changes(old_row: dict, update_payload: dict, field_labels: dict,
             continue
         old_val = old_row.get(field)
         new_val = update_payload.get(field)
+        if (old_val or None) != (new_val or None):
+            changes.append({"field": label, "old": old_val, "new": new_val})
+    return changes
+
+
+# Label kolom sample_submissions -> label bahasa manusia untuk activity log.
+# Dipakai supaya diff FSP terbaca seperti diff produk/bahan baku, bukan nama kolom mentah.
+FSP_FIELD_LABELS = {
+    "sample_code": "Kode FSP",
+    "product_name": "Produk",
+    "product_item": "Item Produk",
+    "netto": "Netto",
+    "sediaan": "Sediaan",
+    "kemasan": "Kemasan",
+    "hero_ingredient": "Hero Ingredient",
+    "description": "Deskripsi",
+    "qc_signer": "QC Signer",
+    "rd_signer": "RD Signer",
+    "company": "Perusahaan",
+    "draft_producer": "Produsen (draft)",
+    "draft_brand": "Merk (draft)",
+}
+
+# Sub-field JSONB additional_notes sample_submissions yang ikut dilacak diff-nya.
+FSP_NOTES_LABELS = {
+    "ph": "pH",
+    "viscosity": "Viskositas",
+    "color": "Warna",
+}
+
+
+def _fsp_notes_changes(old_row: dict, update_payload: dict) -> list:
+    """Diff untuk additional_notes (JSONB) -- harus di-flatten dulu supaya perubahan
+    di dalam JSONB tetap terlihat, bukan tertulis '{"ph": "5", "viscosity": "10"}'."""
+    changes = []
+    old_notes = old_row.get("additional_notes") or {}
+    new_notes = update_payload.get("additional_notes") or {}
+    if not isinstance(old_notes, dict) or not isinstance(new_notes, dict):
+        return changes
+    for key, label in FSP_NOTES_LABELS.items():
+        old_val = old_notes.get(key)
+        new_val = new_notes.get(key)
         if (old_val or None) != (new_val or None):
             changes.append({"field": label, "old": old_val, "new": new_val})
     return changes
@@ -2523,8 +2675,38 @@ async def create_sample_submission(
         }
         result = supabase.table("sample_submissions").insert(data_to_insert).execute()
         new_id = result.data[0]['id']
+
+        # Catat pembuatan FSP. entity_label memakai sample_code (bukan UUID)
+        # karena itu pengenal yang dibaca manusia saat membuka berkasan.
+        log_activity(
+            current_user, "create", "sample_submission", new_id, sample_code,
+            changes=[
+                {"field": "Kode FSP", "new": sample_code},
+                {"field": "Produk", "new": final_product_name},
+                {"field": "Merk", "new": final_brand_id and (draft_brnd or None) or None},
+                {"field": "Produsen", "new": draft_prod},
+                {"field": "Perusahaan", "new": final_company},
+                {"field": "Revisi", "new": revision_number},
+                {"field": "Netto", "new": netto},
+                {"field": "Sediaan", "new": sediaan},
+                {"field": "Kemasan", "new": kemasan},
+                {"field": "QC Signer", "new": qc_signer},
+                {"field": "RD Signer", "new": rd_signer},
+            ],
+            request=request, outcome="success",
+        )
     except Exception as e:
         print(f"Eror saat simpan form sample: {e}")
+        try:
+            log_activity(
+                current_user, "create", "sample_submission", None, sample_code,
+                changes=[{"field": "Kode FSP", "new": sample_code},
+                         {"field": "Produk", "new": final_product_name},
+                         {"field": "Error", "note": str(e)[:300]}],
+                request=request, outcome="failed",
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail="Gagal menyimpan dokumen.")
 
     return RedirectResponse(url=f"/sample-submissions/preview/{new_id}", status_code=303)
@@ -2564,6 +2746,7 @@ async def edit_sample_submission_page(request: Request, submission_id: str, curr
 # 3. PROSES POST UPDATE SAMPLE
 @app.post("/sample-submissions/edit/{submission_id}")
 async def update_sample_submission(
+    request: Request,
     submission_id: str,
     sample_prefix: str = Form("FSP"),   
     brand_id: str = Form(...),
@@ -2585,10 +2768,14 @@ async def update_sample_submission(
     color_value: str = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    # 1. Ambil data lama buat nemuin suffix /TGL/X.Y aslinya
+    # 1. Ambil SELURUH baris lama, bukan cuma sample_code.
+    # Selain untuk nemuin suffix /TGL/X.Y, baris lengkap ini dipakai untuk
+    # menyusun diff old-vs-new di activity log. Kalau cuma sample_code yang
+    # diambil, nilai lama field lain tidak akan pernah tercatat.
     try:
-        sub_resp = supabase.table("sample_submissions").select("sample_code").eq("id", submission_id).single().execute()
-        old_code = sub_resp.data.get("sample_code", "FSP/01-01-2026/1.1") if sub_resp.data else "FSP/01-01-2026/1.1"
+        sub_resp = supabase.table("sample_submissions").select("*").eq("id", submission_id).single().execute()
+        old_row = sub_resp.data or {}
+        old_code = old_row.get("sample_code") or "FSP/01-01-2026/1.1"
     except Exception:
         raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan")
 
@@ -2645,18 +2832,77 @@ async def update_sample_submission(
         supabase.table("sample_submissions").update(update_payload).eq("id", submission_id).execute()
     except Exception as e:
         print(f"Gagal update sample submission: {e}")
+        try:
+            log_activity(
+                current_user, "update", "sample_submission", submission_id,
+                old_code,
+                changes=[{"field": "Kode FSP", "old": old_code,
+                          "new": new_sample_code},
+                         {"field": "Error", "note": str(e)[:300]}],
+                request=request, outcome="failed",
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail="Gagal mengupdate pengajuan sample.")
+
+    # Susun diff old-vs-new memakai helper yang sama dengan produk & bahan baku,
+    # supaya bentuk payload audit konsisten di seluruh aplikasi.
+    fsp_changes = _build_diff_changes(old_row, update_payload, FSP_FIELD_LABELS)
+    fsp_changes += _fsp_notes_changes(old_row, update_payload)
+    # Bila diff-nya kosong, tetap catat bahwa dokumen dibuka & disimpan tanpa
+    # perubahan isi -- informasi "disimpan tanpa perubahan" itu berguna sendiri.
+    if not fsp_changes:
+        fsp_changes = [{"field": "Perubahan Isi", "note": "disimpan tanpa perubahan isi"}]
+
+    log_activity(
+        current_user, "update", "sample_submission", submission_id,
+        new_sample_code,
+        changes=fsp_changes, request=request, outcome="success",
+    )
 
     return RedirectResponse(url=f"/sample-submissions/preview/{submission_id}", status_code=303)
 
 
 # 4. PROSES HAPUS SAMPLE
 @app.post("/sample-submissions/delete/{submission_id}")
-async def delete_sample_submission(submission_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_sample_submission(request: Request, submission_id: str,
+                                   current_user: dict = Depends(get_current_user)):
+    # Baca baris SEBELUM dihapus. Setelah dihapus, isinya hilang begitu saja
+    # dan tidak ada cara merekonstruksi apa yang pernah tersimpan.
+    old_row = {}
+    try:
+        old_res = supabase.table("sample_submissions").select("*").eq("id", submission_id).execute()
+        if old_res.data:
+            old_row = old_res.data[0] or {}
+    except Exception as e:
+        print(f"Gagal baca sample submission sebelum hapus: {e}")
+
+    old_code = old_row.get("sample_code") or f"Sample {submission_id}"
+
     try:
         supabase.table("sample_submissions").delete().eq("id", submission_id).execute()
+        # Tidak perlu menduplikasi seluruh isi ke changes -- cukup penanda
+        # penghapusan beserta pembeda utamanya. Ini menjaga ukuran tabel terkendali.
+        log_activity(
+            current_user, "delete", "sample_submission", submission_id, old_code,
+            changes=[
+                {"field": "Kode FSP", "old": old_row.get("sample_code")},
+                {"field": "Produk", "old": old_row.get("product_name")},
+                {"field": "Perusahaan", "old": old_row.get("company")},
+                {"field": "Revisi", "old": old_row.get("revision_number")},
+                {"field": "Seluruh Isi",
+                 "note": "baris dihapus dari sample_submissions"},
+            ],
+            request=request, outcome="success",
+        )
     except Exception as e:
         print(f"Gagal hapus sample submission: {e}")
+        log_activity(
+            current_user, "delete", "sample_submission", submission_id, old_code,
+            changes=[{"field": "Kode FSP", "old": old_row.get("sample_code")},
+                     {"field": "Error", "note": str(e)[:300]}],
+            request=request, outcome="failed",
+        )
     return RedirectResponse(url="/sample-submissions", status_code=303)
 
 # =====================================================================
@@ -2664,6 +2910,7 @@ async def delete_sample_submission(submission_id: str, current_user: dict = Depe
 # =====================================================================
 @app.post("/brands/add")
 async def add_brand(
+    request: Request,
     producer_name: str = Form(...),
     brand_name: str = Form(...),
     current_user: dict = Depends(get_current_user)
@@ -2672,6 +2919,12 @@ async def add_brand(
     brand_name = brand_name.strip()
 
     if not producer_name or not brand_name:
+        log_activity(
+            current_user, "create", "brand", None, brand_name or "-",
+            changes=[{"field": "Validasi",
+                      "note": "nama produsen atau nama merk kosong"}],
+            request=request, outcome="rejected",
+        )
         response = RedirectResponse(url="/brands", status_code=303)
         response.set_cookie("error_msg", "Nama Produsen dan Nama Merk wajib diisi.")
         return response
@@ -2679,11 +2932,14 @@ async def add_brand(
     try:
         # 1. Cek/get-or-create Produsen (case-insensitive, biar 'Seruni' & 'seruni' gak dobel)
         prod_check = supabase.table("producers").select("id").ilike("name", producer_name).execute()
+        # Lacak apakah produsen ikut dibuat, karena itu perubahan master data tersendiri.
+        producer_created = False
         if prod_check.data:
             producer_id = prod_check.data[0]["id"]
         else:
             new_prod = supabase.table("producers").insert({"name": producer_name}).execute()
             producer_id = new_prod.data[0]["id"]
+            producer_created = True
 
         # 2. Cek/get-or-create Brand di bawah produsen itu
         brand_check = supabase.table("brands") \
@@ -2693,14 +2949,36 @@ async def add_brand(
             .execute()
 
         if brand_check.data:
+            log_activity(
+                current_user, "create", "brand", brand_check.data[0]["id"], brand_name,
+                changes=[{"field": "Nama Merk",
+                          "note": f"sudah terdaftar di bawah produsen '{producer_name}'"}],
+                request=request, outcome="rejected",
+            )
             response = RedirectResponse(url="/brands", status_code=303)
             response.set_cookie("error_msg", f"Merk '{brand_name}' sudah terdaftar di bawah produsen '{producer_name}'.")
             return response
 
-        supabase.table("brands").insert({
+        new_brand_res = supabase.table("brands").insert({
             "producer_id": producer_id,
             "name": brand_name
         }).execute()
+        new_brand_id = new_brand_res.data[0]["id"] if new_brand_res.data else None
+
+        changes = [
+            {"field": "Nama Merk", "new": brand_name},
+            {"field": "Produsen", "new": producer_name},
+            {"field": "ID Produsen", "new": producer_id},
+        ]
+        # Bedakan dua perubahan master data yang terjadi dalam satu request.
+        if producer_created:
+            changes.append({"field": "Produsen",
+                            "note": "produsen baru ikut dibuat"})
+
+        log_activity(
+            current_user, "create", "brand", new_brand_id, brand_name,
+            changes=changes, request=request, outcome="success",
+        )
 
         response = RedirectResponse(url="/brands", status_code=303)
         response.set_cookie("success_msg", f"Merk '{brand_name}' berhasil ditambahkan.")
@@ -2708,6 +2986,13 @@ async def add_brand(
 
     except Exception as e:
         print(f"Gagal tambah brand baru: {e}")
+        log_activity(
+            current_user, "create", "brand", None, brand_name or "-",
+            changes=[{"field": "Nama Merk", "new": brand_name},
+                     {"field": "Produsen", "new": producer_name},
+                     {"field": "Error", "note": str(e)[:300]}],
+            request=request, outcome="failed",
+        )
         response = RedirectResponse(url="/brands", status_code=303)
         response.set_cookie("error_msg", "Gagal menambahkan merk. Coba lagi.")
         return response
@@ -2780,6 +3065,7 @@ async def brands_page(request: Request, current_user: dict = Depends(get_current
 
 @app.post("/brands/{brand_id}/update-documents")
 async def update_brand_documents(
+    request: Request,
     brand_id: str,
     perusahaan: str = Form(...),
     hak_lisensi_merk_file: UploadFile = File(None),
@@ -2787,16 +3073,31 @@ async def update_brand_documents(
 ):
     # Validasi perusahaan
     if perusahaan not in ["PT Erfi", "PT Heka"]:
+        log_activity(
+            current_user, "update", "brand_legal_document", brand_id, "-",
+            changes=[{"field": "Perusahaan", "note": "nilai tidak valid"}],
+            request=request, outcome="rejected",
+        )
         response = RedirectResponse(url="/brands", status_code=303)
         response.set_cookie("error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
         return response
+
+    # Label merk supaya log_activity tidak cuma berisi UUID.
+    brand_label = brand_id
+    try:
+        b_res = supabase.table("brands").select("name").eq("id", brand_id).execute()
+        if b_res.data and b_res.data[0].get("name"):
+            brand_label = b_res.data[0]["name"]
+    except Exception:
+        pass
 
     # Map perusahaan to slug for file path
     perusahaan_slug = "erfi" if perusahaan == "PT Erfi" else "heka"
 
     try:
         update_data = {}
-        
+        path = None
+
         if hak_lisensi_merk_file and hak_lisensi_merk_file.filename:
             file_bytes = await hak_lisensi_merk_file.read()
             # Path includes perusahaan_slug to avoid conflicts
@@ -2811,12 +3112,15 @@ async def update_brand_documents(
         if update_data:
             # Check if row exists for this brand_id + perusahaan
             existing_resp = supabase.table("brand_legal_documents").select("id").eq("brand_id", brand_id).eq("perusahaan", perusahaan).limit(1).execute()
-            
+
+            row_action = "update" if existing_resp.data else "insert"
             if existing_resp.data:
-                # Update existing row
+                # Update existing row.
+                # updated_at harus timestamp ISO dari Python, bukan string "now()" --
+                # PostgREST menyimpan string itu apa adanya dan gagal di-cast ke timestamptz.
                 supabase.table("brand_legal_documents").update({
                     "hak_lisensi_merk_file_url": update_data["hak_lisensi_merk_file_url"],
-                    "updated_at": "now()"
+                    "updated_at": datetime.now(WIB).isoformat()
                 }).eq("brand_id", brand_id).eq("perusahaan", perusahaan).execute()
             else:
                 # Insert new row
@@ -2826,12 +3130,42 @@ async def update_brand_documents(
                     "hak_lisensi_merk_file_url": update_data["hak_lisensi_merk_file_url"]
                 }).execute()
 
+            # URL lama SENGAJA tidak dicatat: upload memakai upsert di path yang sama,
+            # jadi URL lama identik dengan URL baru. Yang dicatat adalah path & aksi
+            # baris -- informasi yang berguna tanpa membocorkan apa pun.
+            log_activity(
+                current_user, "update", "brand_legal_document", brand_id,
+                f"{brand_label} — {perusahaan}",
+                changes=[
+                    {"field": "Hak & Lisensi Merk", "note": "File diganti"},
+                    {"field": "Perusahaan", "new": perusahaan},
+                    {"field": "Bucket", "new": "legal-documents"},
+                    {"field": "Path", "new": path},
+                    {"field": "Aksi Baris", "note": row_action},
+                ],
+                request=request, outcome="success",
+            )
+        else:
+            log_activity(
+                current_user, "update", "brand_legal_document", brand_id,
+                f"{brand_label} — {perusahaan}",
+                changes=[{"field": "Upload", "note": "tidak ada berkas yang diunggah"}],
+                request=request, outcome="rejected",
+            )
+
         response = RedirectResponse(url="/brands", status_code=303)
         response.set_cookie("success_msg", f"Dokumen Hak/Lisensi Merk untuk {perusahaan} berhasil diperbarui.")
         return response
 
     except Exception as e:
         print(f"Gagal update dokumen brand {brand_id} untuk {perusahaan}: {e}")
+        log_activity(
+            current_user, "update", "brand_legal_document", brand_id,
+            f"{brand_label} — {perusahaan}",
+            changes=[{"field": "Perusahaan", "new": perusahaan},
+                     {"field": "Error", "note": str(e)[:300]}],
+            request=request, outcome="failed",
+        )
         response = RedirectResponse(url="/brands", status_code=303)
         response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
         return response
@@ -3048,6 +3382,7 @@ async def manage_users_page(request: Request, current_user: dict = Depends(get_c
 # 1. PROSES ADMIN BIKIN AKUN USER BARU (KHUSUS ADMIN)
 @app.post("/admin/users/create")
 async def admin_create_user(
+    request: Request,
     email: str = Form(...),
     username: str = Form(...),
     password: str = Form(...),
@@ -3068,6 +3403,13 @@ async def admin_create_user(
         existing_usernames = {str(pf.get("full_name") or "").strip().lower() for pf in (existing_profiles.data or [])}
         if clean_username in existing_usernames:
             print(f"Tolak buat akun: username '{clean_username}' sudah dipakai.")
+            # Dicatat sebagai 'rejected': percobaan membuat akun yang bentrok adalah
+            # sinyal keamanan, sama pentingnya dicatat sebagai keberhasilan.
+            log_activity(
+                current_user, "create", "user", None, clean_username,
+                changes=[{"field": "Username", "note": "sudah dipakai akun lain"}],
+                request=request, outcome="rejected",
+            )
             return RedirectResponse(url="/admin/users?error=username_exists", status_code=303)
 
         # Daftarin ke Supabase Auth Service, langsung confirmed (dibuat admin, bukan self-register)
@@ -3080,27 +3422,65 @@ async def admin_create_user(
         new_uid = auth_res.user.id
 
         # Inject ke tabel profiles dengan role yang dipilih admin (default staff)
+        final_role = role if role in ("staff", "admin") else "staff"
         supabase.table("profiles").insert({
             "id": new_uid,
             "full_name": clean_username,
-            "role": role if role in ("staff", "admin") else "staff",
+            "role": final_role,
             # Jangan pakai string "now()" (PostgREST simpan sebagai literal & bisa gagal cast ke timestamptz).
             # Kirim timestamp ISO nyata dari Python.
             "updated_at": datetime.now(WIB).isoformat()
         }).execute()
+
+        # Ambil perusahaan account agar tercatat penuh di audit.
+        new_perusahaan = None
+        try:
+            prof_res = supabase.table("profiles").select("perusahaan").eq("id", new_uid).execute()
+            new_perusahaan = prof_res.data[0].get("perusahaan") if prof_res.data else None
+        except Exception:
+            pass
+
+        # CATATAN: password SENGAJA TIDAK pernah masuk changes / entity_label.
+        # Email disamarkan sebagian sesuai kebijakan redaksi data.
+        log_activity(
+            current_user, "create", "user", new_uid, clean_username,
+            changes=[
+                {"field": "Username", "new": clean_username},
+                {"field": "Email", "new": mask_email(clean_email)},
+                {"field": "Role", "new": final_role},
+                {"field": "Perusahaan", "new": new_perusahaan},
+            ],
+            request=request, outcome="success",
+        )
 
         return RedirectResponse(url="/admin/users?status=create_success", status_code=303)
 
     except Exception as e:
         print(f"Gagal bikin user baru (admin): {e}")
         error_str = str(e).lower()
-        if "already been registered" in error_str or "already registered" in error_str or "user already exists" in error_str:
+        dup_email = ("already been registered" in error_str
+                     or "already registered" in error_str
+                     or "user already exists" in error_str)
+        try:
+            log_activity(
+                current_user, "create", "user", None,
+                (username or "").strip().lower(),
+                changes=[{"field": "Email",
+                          "note": "sudah terdaftar di Auth" if dup_email
+                                  else "gagal membuat akun"}],
+                request=request,
+                outcome="rejected" if dup_email else "failed",
+            )
+        except Exception:
+            pass
+        if dup_email:
             return RedirectResponse(url="/admin/users?error=email_exists", status_code=303)
         return RedirectResponse(url="/admin/users?error=create_failed", status_code=303)
 
 # 2. PROSES RESET PASSWORD USER (KHUSUS ADMIN)
 @app.post("/admin/users/reset-password")
 async def admin_reset_password(
+    request: Request,
     target_uid: str = Form(...),
     new_password: str = Form(...),
     current_user: dict = Depends(get_current_user)
@@ -3111,12 +3491,24 @@ async def admin_reset_password(
 
     # Validasi minimal: password baru minimal 6 karakter (sama kayak minlength di form modal)
     if len(new_password.strip()) < 6:
+        log_activity(
+            current_user, "reset_password", "user", target_uid,
+            _user_label(target_uid),
+            changes=[{"field": "Proteksi", "note": "password baru terlalu pendek (< 6 karakter)"}],
+            request=request, outcome="rejected",
+        )
         return RedirectResponse(url="/admin/users?error=password_too_short", status_code=303)
 
     # Cek apakah target akun terproteksi -- kalau iya dan yang minta bukan akun itu sendiri, tolak
     if target_uid != current_user["id"]:
         target_check = supabase.table("profiles").select("is_protected").eq("id", target_uid).execute()
         if target_check.data and target_check.data[0].get("is_protected"):
+            log_activity(
+                current_user, "reset_password", "user", target_uid,
+                _user_label(target_uid),
+                changes=[{"field": "Proteksi", "note": "akun ditandai terproteksi"}],
+                request=request, outcome="rejected",
+            )
             return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
 
     try:
@@ -3128,24 +3520,36 @@ async def admin_reset_password(
         # Dipakai update_user_by_id karena di supabase-py v2 method update_user sudah dihapus.
         supabase.auth.admin.update_user_by_id(target_uid, {"password": new_password})
 
-        # Catat activity log
+        # Catat activity log. Password SENGAJA TIDAK pernah dicatat, hanya bahwa
+        # reset berhasil dilakukan.
         log_activity(
             current_user,
             "reset_password",
             "user",
             target_uid,
-            target_name or f"User {target_uid}"
+            target_name or f"User {target_uid}",
+            changes=[{"field": "Password", "note": "di-reset oleh admin (nilai tidak dicatat)"}],
+            request=request,
+            outcome="success",
         )
 
         return RedirectResponse(url="/admin/users?status=reset_success", status_code=303)
 
     except Exception as e:
         print(f"Gagal reset password user {target_uid}: {e}")
+        log_activity(
+            current_user, "reset_password", "user", target_uid,
+            _user_label(target_uid),
+            changes=[{"field": "Password", "note": "reset gagal"},
+                     {"field": "Error", "note": str(e)[:300]}],
+            request=request, outcome="failed",
+        )
         return RedirectResponse(url="/admin/users?error=reset_failed", status_code=303)
 
 # 3. PROSES UPDATE ROLE USER (POST)
 @app.post("/admin/users/update-role")
 async def update_user_role(
+    request: Request,
     target_uid: str = Form(...),
     new_role: str = Form(...),
     current_user: dict = Depends(get_current_user)
@@ -3157,15 +3561,36 @@ async def update_user_role(
     if target_uid != current_user["id"]:
         target_check = supabase.table("profiles").select("is_protected").eq("id", target_uid).execute()
         if target_check.data and target_check.data[0].get("is_protected"):
+            log_activity(
+                current_user, "update", "user", target_uid,
+                _user_label(target_uid),
+                changes=[{"field": "Proteksi", "note": "akun ditandai terproteksi"}],
+                request=request, outcome="rejected",
+            )
             return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
+
+    # Ambil role SEBELUM diubah supaya diff old/new bisa diisi.
+    old_role, target_label = _user_role_and_label(target_uid)
 
     try:
         # Update kolom role di tabel profiles berdasarkan UUID user yang dipilih
         # (updated_at pakai timestamp ISO asli, bukan string "now()" biar gak gagal cast di PostgREST)
         supabase.table("profiles").update({"role": new_role, "updated_at": datetime.now(WIB).isoformat()}).eq("id", target_uid).execute()
+
+        log_activity(
+            current_user, "update", "user", target_uid, target_label,
+            changes=[{"field": "Role", "old": old_role, "new": new_role}],
+            request=request, outcome="success",
+        )
         return RedirectResponse(url="/admin/users?status=update_success", status_code=303)
     except Exception as e:
         print(f"Gagal update role: {e}")
+        log_activity(
+            current_user, "update", "user", target_uid, target_label,
+            changes=[{"field": "Role", "old": old_role, "new": new_role},
+                     {"field": "Error", "note": str(e)[:300]}],
+            request=request, outcome="failed",
+        )
         return RedirectResponse(url="/admin/users?error=update_failed", status_code=303)
 
 @app.get("/", response_class=HTMLResponse)
@@ -3349,6 +3774,7 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
 
 @app.post("/admin/users/delete")
 async def delete_user(
+    request: Request,
     target_uid: str = Form(...),
     current_user: dict = Depends(get_current_user)
 ):
@@ -3358,12 +3784,35 @@ async def delete_user(
 
     # Cek biar admin gak ketidaksengajaan ngapus akunnya sendiri
     if target_uid == current_user["id"]:
+        log_activity(
+            current_user, "delete", "user", target_uid, "akun sendiri",
+            changes=[{"field": "Proteksi", "note": "admin mencoba menghapus akunnya sendiri"}],
+            request=request, outcome="rejected",
+        )
         return RedirectResponse(url="/admin/users?error=cannot_delete_self", status_code=303)
+
+    # Snapshot profil target SEBELUM dihapus. Setelah baris profiles hilang,
+    # nama/role/perusahaan tidak bisa direkonstruksi lagi -- karena itu seluruh
+    # data ini harus diambil di sini dan disimpan ke activity log.
+    target_snapshot = {}
+    try:
+        snap_res = supabase.table("profiles").select(
+            "full_name, role, perusahaan, is_protected").eq("id", target_uid).execute()
+        if snap_res.data:
+            target_snapshot = snap_res.data[0] or {}
+    except Exception as ex:
+        print(f"Gagal ambil snapshot profil target {target_uid}: {ex}")
+
+    target_label = (target_snapshot.get("full_name") or f"User {target_uid}")
 
     # Cek apakah target akun terproteksi (dan bukan dirinya sendiri -- walau baris di atas
     # sudah menangkap kasus itu, ini sebagai lapis proteksi tambahan)
-    target_check = supabase.table("profiles").select("is_protected").eq("id", target_uid).execute()
-    if target_check.data and target_check.data[0].get("is_protected"):
+    if target_snapshot.get("is_protected"):
+        log_activity(
+            current_user, "delete", "user", target_uid, target_label,
+            changes=[{"field": "Proteksi", "note": "akun ditandai terproteksi"}],
+            request=request, outcome="rejected",
+        )
         return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
 
     try:
@@ -3375,13 +3824,32 @@ async def delete_user(
         # 1. Hapus dari Supabase Auth Service
         supabase_admin.auth.admin.delete_user(target_uid)
 
-        # 2. Hapus dari tabel profiles
+        # 2. Hapus dari tabel profiles.
+        # activity_logs.actor_id memakai ON DELETE SET NULL, jadi baris audit milik
+        # user ini tetap tersimpan (aktor jadi NULL, identitasnya ada di actor_name).
         supabase.table("profiles").delete().eq("id", target_uid).execute()
+
+        log_activity(
+            current_user, "delete", "user", target_uid, target_label,
+            changes=[
+                {"field": "Username", "old": target_snapshot.get("full_name")},
+                {"field": "Role", "old": target_snapshot.get("role")},
+                {"field": "Perusahaan", "old": target_snapshot.get("perusahaan")},
+                {"field": "Auth", "note": "dihapus dari Supabase Auth"},
+            ],
+            request=request, outcome="success",
+        )
 
         return RedirectResponse(url="/admin/users?status=delete_success", status_code=303)
 
     except Exception as e:
         print(f"Gagal hapus user: {e}")
+        log_activity(
+            current_user, "delete", "user", target_uid, target_label,
+            changes=[{"field": "Username", "old": target_snapshot.get("full_name")},
+                     {"field": "Error", "note": str(e)[:300]}],
+            request=request, outcome="failed",
+        )
         return RedirectResponse(url="/admin/users?error=delete_failed", status_code=303)
 
 

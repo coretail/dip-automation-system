@@ -561,6 +561,7 @@ Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadshee
 |---|---|
 | `001_create_purchase_orders.sql` | Membuat **`purchase_orders`** dan **`purchase_order_items`** beserta FK dan UNIQUE. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada sebelumnya, dan file ini hanya mereferensikannya dengan FK `RESTRICT` |
 | `002_add_jenis_po.sql` | Menambah kolom `purchase_orders.jenis_po` untuk PO Rework |
+| `003_activity_log_audit_hardening.sql` | Menambah 7 kolom konteks request & verdict ke `activity_logs`, 4 index investigasi, 2 `CHECK`, `REVOKE` dari `anon`/`authenticated`, dan memperbaiki FK `actor_id` ke `ON DELETE SET NULL` |
 
 > ⚠️ Skema produksi **tidak dikelola otomatis** — jalankan file SQL ini manual melalui Supabase SQL Editor.
 
@@ -665,22 +666,49 @@ Ambang ED memakai aturan yang sama dengan NA, tetapi diterapkan ke `raw_material
 
 `activity_logs` menyimpan `actor_id`, `actor_name`, `action`, `entity_type`, `entity_id`, `entity_label`, dan `changes`. Timestamp diisi oleh database, bukan aplikasi.
 
+Sejak 5 Oktober 2025 tabel ini diperkuat (lihat `migration/003_activity_log_audit_hardening.sql`) dengan konteks request & verdict:
+
+| Kolom | Isi |
+|---|---|
+| `outcome` | `success` \| `rejected` \| `failed`. `rejected` = ditolak validasi/role, `failed` = exception |
+| `source` | `app` \| `public` \| `migration` |
+| `ip_address` | `INET`, urutan prioritas `X-Forwarded-For` → `X-Real-IP` → `request.client.host` |
+| `user_agent` | Dipotong 500 karakter |
+| `route` | **Template** route FastAPI, bukan URL konkret, supaya bisa dikelompokkan tanpa cardinality meledak |
+| `http_method` | `POST`, `GET`, dst. |
+| `request_id` | UUID v4 per request, dipakai bersama semua baris log dari satu request |
+
+Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelumnya tabel ini **hanya** punya primary key.
+
 | Jenis entitas | Aksi yang tercatat |
 |---|---|
 | `product` | `create`, `update`, `delete`, `restore`, `generate` (efek samping), `public_link_visit` |
 | `product_finished_specs` | `update` |
 | `product_qualquan_xlsx` | `export` |
 | `{doc_type}` perusahaan | `update` (NIB, CPKB, Surat Tidak Pidana, Protap, CV, SOP CPKB) |
-| `user` | `reset_password` |
+| `user` | `create`, `delete`, `update` (role), `reset_password` |
+| `brand` | `create` |
+| `brand_legal_document` | `update` (upload dokumen Hak/Lisensi) |
+| `sample_submission` | `create`, `update`, `delete` |
 | `raw_material` | `create`, `update`, `delete` |
 | `raw_material_variant` | `create`, `update`, `delete` |
 | `raw_material_batch` | `edit`, `acc_dipakai`, `acc_dimusnahkan` |
 | `raw_material_company_doc` | `edit` |
 | `note` | `create`, `delete`, `complete`, `reopen` |
 
-> ⚠️ **Beberapa operasi sengaja tidak di-log:** pembuatan & penghapusan user, tambah brand, unggah dokumen brand, dan seluruh operasi FSP (create/edit/delete) **tidak** tercatat di audit trail. Bila riwayat aktivitas ini dibutuhkan untuk audit, itu celah yang perlu ditutup.
+#### Aturan pencatatan yang perlu diketahui
+
+- **Penolakan tetap dicatat.** Jalur validasi yang mengembalikan redirect lebih dulu (username bentrok, email sudah terdaftar, akun terproteksi, admin mencoba hapus akunnya sendiri) dicatat dengan `outcome='rejected'`. Untuk keamanan, mengetahui bahwa percobaan **ditolak** sama pentingnya dengan mengetahui bahwa berhasil.
+- **Password tidak pernah masuk payload.** `reset_password` hanya mencatat `{"field": "Password", "note": "di-reset oleh admin"}` — tanpa pasangan `old`/`new`. Email pada pembuatan akun **disamarkan sebagian** (`budi.santoso@erfi.com` → `b**********o@erfi.com`); panjang bagian yang disamarkan ikut dipertahankan agar panjang akun tidak bocor.
+- **Nilai lama diambil sebelum penghapusan.** `delete_user` dan `delete_sample_submission` membaca baris target lebih dulu, karena setelah `DELETE` isinya hilang dan tidak bisa direkonstruksi.
+- **Dokumen tidak mencatat URL.** Perubahan field dokumen logged sebagai catatan **"File diganti"**, karena upload menimpa berkas di tempat sehingga URL-nya tidak berubah. Untuk dokumen merk yang dicatat justru **path** + `Aksi Baris` (`insert`/`update`), yang berguna tanpa membocorkan apa pun.
+- **Logging bersifat fail-open.** Kegagalan insert ke `activity_logs` **tidak** membatalkan operasi bisnis; error tetap dicetak ke terminal. Ini keputusan sadar agar audit tidak pernah menghentikan pekerjaan tim.
+- **FK `actor_id` memakai `ON DELETE SET NULL`.** Sebelumnya `NO ACTION`, yang membuat `POST /admin/users/delete` gagal untuk setiap user yang punya baris log — saat ini 6 user. Sekarang baris audit tetap tersimpan, `actor_id`-nya jadi NULL, dan identitas pelakunya tetap terbaca dari `actor_name`.
+
+> ⚠️ **Celah yang tersisa:** audit hanya mencatat aksi yang lewat aplikasi. Penulisan langsung lewat Supabase SQL Editor atau skrip di `migration/` **tidak** masuk audit trail. Ini kanal resmi yang kecil dan penggunanya sudah berpose sebagai administrator.
 >
 > ℹ️ Perubahan field dokumen tidak logged sebagai pasangan URL lama → baru, melainkan sebagai catatan **"File diganti"** — karena upload menimpa berkas di tempat sehingga URL-nya tidak berubah dan mencatatnya hanya membingungkan.
+
 
 
 ---

@@ -52,6 +52,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 | **Checklist Kelengkapan DIP (Dashboard)** | Matriks kelengkapan Bab I–IV per produk + progress DIP (%) + status legalitas NA. | ✅ **Selesai** |
 | **FSP (Form Pengajuan Sample Produk)** | CRUD pengajuan sample, auto-generate kode `FSP/DD-MM-YYYY/X.Y`, nomor revisi otomatis, preview & cetak. | ✅ **Selesai** |
 | **Manajemen Brand** | Tambah brand, upload dokumen Hak & Lisensi Merk per brand, plus quick-add via modal. | ✅ **Selesai** |
+| **Hardening Audit Trail** | Tutup 7 operasi berisiko tinggi yang sebelumnya **tidak tercatat sama sekali**: buat/hapus user, ganti role, reset password, tambah merk, upload dokumen merk, dan create/edit/delete FSP. Migration `003_activity_log_audit_hardening.sql` menambah 7 kolom konteks (`outcome`, `source`, `ip_address`, `user_agent`, `route`, `http_method`, `request_id`), 4 index investigasi (sebelumnya tabel hanya punya primary key), dan 2 `CHECK`. Perilaku **fail-open** — kegagalan audit tidak membatalkan operasi bisnis. | ✅ **Selesai** |
 | **Activity Log & Uptime Monitor** | Riwayat aktivitas di tabel `activity_logs` + log terminal; endpoint `/health` (GET & HEAD). | ✅ **Selesai** |
 | **Edit Produk Multi-Tab (Bab 1–4)** | Halaman Edit Produk 5 tab: Informasi Dasar, Bab 1, Bab 2, Bab 3, Bab 4. | ✅ **Selesai** |
 
@@ -112,7 +113,12 @@ Bab I, III, dan IV di-generate dengan satu pendekatan: halaman cover/checklist d
 * Export laporan Qualitative-Quantitative Formula ke Excel (3 sheet, generate di server via `openpyxl`) dan cetak ke PDF lewat `window.print()`.
 
 ### 9. Activity Log & Monitoring
-* **Activity Log:** Seluruh aksi penting tercatat di tabel `activity_logs` dan dicetak berformat ke terminal server (timestamp WIB) dengan badge aksi (`🟢 CREATED`, `🟡 UPDATED`, `🔴 DELETED`). Perubahan field teks logged sebagai pasangan nilai lama → baru; perubahan dokumen logged sebagai catatan *"File diganti"* karena upload menimpa di tempat sehingga URL tidak berubah.
+* **Activity Log:** Seluruh aksi penting tercatat di tabel `activity_logs` dan dicetak berformat ke terminal server (timestamp WIB) dengan badge aksi (`🟢 CREATED`, `🟡 UPDATED`, `🔴 DELETED`, plus `🔑 PASSWORD RESET`, `📎 UPLOADED`, dan lainnya). Perubahan field teks logged sebagai pasangan nilai lama → baru; perubahan dokumen logged sebagai catatan *"File diganti"* karena upload menimpa di tempat sehingga URL tidak berubah.
+* **Konteks request:** setiap log dari route internal juga menyimpan `outcome` (`success`/`rejected`/`failed`), `ip_address`, `user_agent`, `route`, `http_method`, dan `request_id` —_request ID dipakai bersama semua baris log dari satu request_.
+* **Penolakan tetap dicatat:** percobaan yang ditolak validasi atau proteksi role dicatat dengan `outcome='rejected'`, karena untuk keamanan sama pentingnya dengan keberhasilan.
+* **Kebijakan redaksi data:** password **tidak pernah** masuk payload (hanya catatan bahwa aksi dilakukan); email pada pembuatan akun disamarkan sebagian (`b**o@erfi.com`) dengan panjang username tetap dipertahankan agar panjang akun tidak bocor.
+* **Nilai lama diambil sebelum penghapusan**, sehingga `delete_user` dan `delete_sample_submission` tetap bisa direkonstruksi meski baris target sudah hilang.
+* **Fail-open:** kegagalan insert log tidak membatalkan operasi bisnis; error tetap dicetak ke terminal.
 * **Log portal publik:** Setiap pembukaan link publik `/dip/{slug}` mencatat IP, User-Agent, dan username ke `public_link_audits`, dengan fallback ke `activity_logs` bila tabel khusus belum ada, dan dicetak real-time ke terminal.
 * **Web Uptime Monitor:** Endpoint `/health` (GET & HEAD).
 * **Penyaringan log:** access log dari empat poller berfrekuensi tinggi (`/health`, heartbeat presence, unread-count mention, presence admin) disaring agar terminal tetap terbaca.
@@ -213,6 +219,7 @@ Skema produksi tidak dikelola otomatis. Jalankan file SQL di folder `migration/`
 |---|---|
 | `migration/001_create_purchase_orders.sql` | Membuat `purchase_orders` + `purchase_order_items`. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada, dan hanya direferensikan dengan FK `RESTRICT` |
 | `migration/002_add_jenis_po.sql` | Menambah kolom `purchase_orders.jenis_po` untuk PO Rework |
+| `migration/003_activity_log_audit_hardening.sql` | Menambah 7 kolom konteks request & verdict ke `activity_logs`, 4 index investigasi, 2 `CHECK`, `REVOKE` dari `anon`/`authenticated`, dan memperbaiki FK `actor_id` ke `ON DELETE SET NULL` |
 
 ---
 
@@ -275,8 +282,9 @@ Folder `migration/` berisi toolkit bermigrasi data historis (spreadsheet → Sup
 
 | File | Isi |
 |---|---|
-| `001_create_purchase_orders.sql` | `purchase_orders`, `product_batches`, `purchase_order_items` beserta FK & UNIQUE |
-| `002_add_jenis_po.sql` | kolom `purchase_orders.jenis_po` untuk PO Rework |
+| `001_create_purchase_orders.sql` | Membuat `purchase_orders` + `purchase_order_items`. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada, dan hanya direferensikan dengan FK `RESTRICT` |
+| `002_add_jenis_po.sql` | Kolom `purchase_orders.jenis_po` untuk PO Rework |
+| `003_activity_log_audit_hardening.sql` | Konteks request & verdict (`outcome`, `source`, `ip_address`, `user_agent`, `route`, `http_method`, `request_id`) + index + constraint pada `activity_logs` |
 
 ### Skrip migrasi & rollback
 
