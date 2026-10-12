@@ -239,11 +239,18 @@ guard fail-closed, tanpa cetak secret):
 * [2] Lookup user valid (ID pertama): OK 200, email sesuai.
 * [3] Lookup ID tak-ada (`00000000-...`): `AuthApiError code=404
   User not found` — 404 sesuai harapan, bukan 500.
-* [4] Login akun uji staging khusus: DILEWATI atas pilihan pengguna pada
-  sesi ini (skrip mendukung via argumen email+password, tidak dijalankan).
-* Verifikasi profil aplikasi dan isolasi akses sesuai desain: BELUM
-  dilakukan.
+* [4] Login akun uji staging khusus: LOLOS via akun ke-4
+  `uitest.staging@test.local` (dibuat pada sesi ini via Auth Admin API
+  dengan `email_confirm: True`, tanpa `INSERT` SQL langsung).
+* Verifikasi profil aplikasi: LOLOS — baris `profiles` terbaca kembali
+  (`full_name=uitest.staging`, `role=staff`, ID cocok dengan `auth.users`).
+  Isolasi akses sesuai desain (RLS penuh): BELUM dilakukan.
 
 Kesimpulan sementara: kegagalan scan `confirmation_token` NULL teratasi
-untuk jalur list, lookup valid, dan lookup tak-ada. Login password grant
-dan verifikasi profil/isolasi masih menunggu.
+untuk jalur list, lookup valid, lookup tak-ada, pembuatan user via Admin
+API, login password grant, dan penulisan/pembacaan profil. Verifikasi
+isolasi akses (RLS) masih menunggu.
+
+> Password akun uji ke-4 TIDAK dicatat di dokumen/repo ini. Password acak
+> ditampilkan sekali pada output eksekusi dan harus disimpan di pengelola
+> kredensial terpisah bila masih diperlukan.
