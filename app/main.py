@@ -1,3 +1,13 @@
+import os as _os
+
+# Validasi mentah SEBELUM modul pembuat klien / FastAPI diimpor. Hanya aktif
+# bila DIP_APP_ENV=staging. Tanpa Settings, tanpa supabase, tanpa network.
+# Kontrak eksplisit: environment efektif.
+if _os.getenv("DIP_APP_ENV", "").strip().lower() == "staging":
+    from app.staging_preflight import validate_effective_env as _preflight_startup
+
+    _preflight_startup(_os.environ, caller="startup")
+
 from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile, status, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -5,6 +15,9 @@ from fastapi.templating import Jinja2Templates
 from typing import List
 from app.database import supabase
 from app.config import settings
+from app.staging_guard import assert_allowed_target as _assert_allowed_target
+
+_assert_allowed_target("startup")
 from app.excel_generator import XLSX_MIME, build_formula_workbook
 from app.efek_samping import _efek_samping_meta, register_efek_samping_routes
 from decimal import Decimal, ROUND_HALF_UP
@@ -27,9 +40,6 @@ from xhtml2pdf import pisa
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from typing import Optional
-
-from dotenv import load_dotenv
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 # Pastikan stdout/stderr selalu UTF-8 biar log emoji aman di semua terminal
@@ -974,15 +984,14 @@ async def login_submit(
     try:
         login_identifier = email.strip()
         
-        # 1. Ambil langsung variabel dari environment yang udah di-load sempurna di atas
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        
-        # Validasi darurat biar keliatan di log terminal lu kalau env lu masih kosong
-        if not supabase_url or not supabase_service_key:
-            print("❌ Eror: SUPABASE_URL atau SUPABASE_SERVICE_ROLE_KEY di file .env kagak kebaca men!")
-            
-        supabase_admin = create_client(supabase_url, supabase_service_key)
+        # 1. Client admin lewat guard staging (fail-closed; tanpa cetak secret)
+        from app.staging_guard import staging_client as _staging_client
+
+        try:
+            supabase_admin = _staging_client("login")
+        except RuntimeError as _guard_err:
+            print(f"❌ Konfigurasi Supabase ditolak guard: {type(_guard_err).__name__}")
+            raise HTTPException(status_code=500, detail="Konfigurasi server tidak valid.")
         
         # JIKA YANG DIINPUT BUKAN EMAIL (GA ADA TANDA @)
         if "@" not in login_identifier:
@@ -3854,10 +3863,10 @@ async def delete_user(
         return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
 
     try:
-        # Inisialisasi admin client buat hapus user dari Supabase Auth
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        supabase_admin = create_client(supabase_url, supabase_service_key)
+        # Inisialisasi admin client lewat guard staging (fail-closed)
+        from app.staging_guard import staging_client as _staging_client2
+
+        supabase_admin = _staging_client2("admin-delete-user")
 
         # 1. Hapus dari Supabase Auth Service
         supabase_admin.auth.admin.delete_user(target_uid)
