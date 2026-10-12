@@ -248,8 +248,28 @@ guard fail-closed, tanpa cetak secret):
 
 Kesimpulan sementara: kegagalan scan `confirmation_token` NULL teratasi
 untuk jalur list, lookup valid, lookup tak-ada, pembuatan user via Admin
-API, login password grant, dan penulisan/pembacaan profil. Verifikasi
-isolasi akses (RLS) masih menunggu.
+API, login password grant, dan penulisan/pembacaan profil.
+
+## 11. Verifikasi Isolasi Akses / RLS (2026-10-12, Fakta)
+
+Desain acuan (dokumen `backup-rls/migration_a_execution_2026-10-10.md`):
+deny-by-default — 24 tabel RLS aktif tanpa policy, `profiles` berpolicy
+`Users can view their own profile` (`PERMISSIVE/SELECT`,
+`auth.uid() = id`).
+
+Uji tiga lapis via skrip terisolasi (`staging_rls_check.py`, read-only,
+tanpa cetak secret) terhadap project staging:
+
+* [A] anon tanpa JWT → `profiles`: 0 baris (PASS, ditolak/kosong).
+* [A2] anon tanpa JWT → `products`: 0 baris (PASS).
+* [B] JWT `uitest.staging@test.local` → profil sendiri: 1 baris (PASS).
+* [B2] JWT yang sama → profil user lain: 0 baris (PASS, terisolasi).
+* [B3] JWT yang sama → `products`: 0 baris (PASS, deny-by-default).
+* [C] service_role → `profiles`: 4 baris (PASS, kontrol positif admin).
+
+Ringkasan: `ISOLASI-LOLOS` 6/6. Seluruh urutan pengujian staging
+(list → lookup → 404 → login → profil → isolasi) kini lulus. Keputusan
+kesiapan staging tetap di tangan pengguna.
 
 > Password akun uji ke-4 TIDAK dicatat di dokumen/repo ini. Password acak
 > ditampilkan sekali pada output eksekusi dan harus disimpan di pengelola
