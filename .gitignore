@@ -35,10 +35,11 @@ ENV/
 env.bak/
 venv.bak/
 
-# Environment Variables 
+# Environment Variables
 .env
 .env.*
 !.env.example
+!.env.staging.example
 *.env
 
 # Professional IDES and Editors
@@ -73,6 +74,10 @@ skills-lock.json
 # Migration (local only, contains sensitive data)
 /migration/
 migration/
+
+# RLS backup dumps (local only, contains database data)
+/backup-rls/
+backup-rls/
 
 # Test artifacts (local only)
 tests/
