@@ -2,12 +2,24 @@
 
 ## Status Dokumen
 
-**Dokumentasi saja — tidak ada perubahan kode, konfigurasi, skema, atau data.**
+**Dokumentasi + remediasi staging terotorisasi — belum ada perubahan yang
+dieksekusi dari sesi ini.**
 
 Dokumen ini mencatat hasil investigasi kegagalan Supabase Auth HTTP 500 pada
 project staging. Fakta teramati, hipotesis teknis, dan tindakan yang belum
 dilakukan dipisahkan secara eksplisit. Tanpa secret, tanpa kredensial, tanpa
 nilai token/key.
+
+> Pembaruan 2026-10-12: pengguna mengotorisasi satu `UPDATE` terbatas pada
+> `auth.users` project staging (`odtfppboyjlbatajncgj`) untuk mengisi empat
+> kolom token yang `NULL` dengan string kosong. `UPDATE` tersebut BELUM
+> dieksekusi dari workspace karena tidak ada jalur eksekusi SQL ke skema
+> `auth` yang tersedia (tidak ada `DATABASE_URL`/password DB di workspace,
+> tidak ada fungsi RPC `exec_sql`, endpoint `/pg/query` dan `/pg-meta/query`
+> mengembalikan 404, dan Auth Admin API tidak dapat menjangkau kolom token
+> internal). Probe read-only terakhir masih menunjukkan `admin list users`
+> 500 (`Database error finding users`). Eksekusi harus dilakukan manual via
+> SQL Editor Dashboard project staging, mengikuti instruksi §7.
 
 ## 1. Identitas Lingkungan (Fakta)
 
@@ -79,13 +91,27 @@ Request ID yang dilaporkan:
 * Ada ketidakcocokan antara nilai `NULL` pada data internal Auth dan asumsi
   tipe/model yang digunakan GoTrue saat melakukan scan.
 
+### Terjawab dari Instruksi Remediasi Terotorisasi (2026-10-12)
+
+* Semua 3 baris terdampak, di 4 kolom: `confirmation_token`,
+  `recovery_token`, `email_change_token_new`, `email_change`. Bagian
+  "Belum Diketahui" sebelumnya tentang cakupan baris/kolom kini terjawab
+  untuk keperluan remediasi.
+* Alasan 4 kolom sekaligus: perbaikan resmi Supabase hanya menyebut
+  `confirmation_token`; jika hanya kolom itu yang diisi, error kemungkinan
+  besar pindah ke kolom berikutnya (`recovery_token`, dst.) karena model
+  GoTrue memindai semuanya sebagai string non-nullable.
+
 ### Belum Diketahui
 
-* Baris mana yang terkait, bagaimana nilai `NULL` tersebut terbentuk, dan
-  apakah penyebab dasarnya merupakan bug GoTrue, migrasi, impor data, atau
-  kondisi lain.
-* Belum terbukti bahwa satu baris tertentu menyebabkan seluruh operasi Auth
-  gagal sebelum ada konfirmasi tambahan.
+* Bagaimana nilai `NULL` tersebut terbentuk, dan apakah penyebab dasarnya
+  merupakan bug GoTrue, migrasi, impor data, atau kondisi lain.
+* Apakah user dibuat via SQL langsung (melewati Auth Admin API) — jika ya,
+  itulah kandidat asal `NULL`. Jalur pembuatan akun di aplikasi
+  (`POST /admin/users/create`, `app/main.py`, `auth.admin.create_user`
+  dengan `email_confirm: True`) memakai Auth Admin API resmi dan tidak
+  melakukan `INSERT` langsung ke `auth.users`; tidak ada skrip seed SQL ke
+  `auth.users` di repo.
 
 ## 4. Pengujian yang Sudah Dilakukan (Fakta)
 
@@ -124,15 +150,79 @@ aplikasi yang teridentifikasi dari temuan ini.
    timestamp lengkap, pesan error, dan request ID di atas.
 2. Minta konfirmasi penyebab `confirmation_token` bernilai `NULL` dan
    remediasi resmi yang didukung platform.
-3. Jangan melakukan SQL `UPDATE`/`DELETE` langsung terhadap `auth.users`.
+3. Jangan menghapus lalu membuat ulang user. ID `auth.users` kemungkinan
+   dirujuk tabel `profiles`, sehingga membuat ulang bisa merusak relasi.
+   `UPDATE` terbatas di bawah lebih aman.
 4. Jangan menghapus atau membuat ulang user berdasarkan tebakan. Dashboard
    list sendiri dilaporkan gagal, sehingga identifikasi user terdampak belum
    dapat diandalkan.
-5. Setelah perbaikan terkonfirmasi, uji secara bertahap:
-   * Auth admin list users;
-   * lookup user yang valid;
-   * lookup ID yang tidak ada dan pastikan respons sesuai;
-   * login dengan akun staging khusus pengujian;
+
+## 7. Remediasi Terotorisasi — UPDATE 4 Kolom (Staging Saja, Belum Dieksekusi)
+
+> Otorisasi: pengguna, 2026-10-12. Scope: HANYA project staging
+> `odtfppboyjlbatajncgj`. Produksi (`dytuprmoorvrugutozwv`) TIDAK tersentuh.
+
+Query mengisi `NULL` menjadi string kosong di keempat kolom, hanya pada
+baris yang memiliki minimal satu `NULL` di antara keempatnya. Tidak mengubah
+ID, password, atau identitas:
+
+```sql
+update auth.users
+   set confirmation_token     = coalesce(confirmation_token, ''),
+       recovery_token         = coalesce(recovery_token, ''),
+       email_change_token_new = coalesce(email_change_token_new, ''),
+       email_change           = coalesce(email_change, '')
+ where confirmation_token is null or recovery_token is null
+    or email_change_token_new is null or email_change is null;
+```
+
+Langkah eksekusi manual (workspace tidak memiliki jalur SQL ke skema
+`auth`):
+
+1. Buka SQL Editor pada Dashboard project staging `odtfppboyjlbatajncgj`
+   (bukan project produksi). Verifikasi project ref di URL sebelum
+   menjalankan apa pun.
+2. (Read-only dulu) Jalankan `SELECT` sebaran untuk konfirmasi cakupan
+   sebelum `UPDATE`:
+
+   ```sql
+   select id,
+          confirmation_token is null as ct_null,
+          recovery_token is null as rt_null,
+          email_change_token_new is null as ectn_null,
+          email_change is null as ec_null
+     from auth.users
+    where confirmation_token is null or recovery_token is null
+       or email_change_token_new is null or email_change is null;
+   ```
+
+   Ekspektasi dari otorisasi: 3 baris.
+3. Jalankan `UPDATE` di atas. Catat jumlah baris yang diubah (harus 3).
+4. Uji ulang sesuai urutan:
+   * Auth admin list users (harus 200);
+   * lookup user yang valid (harus 200);
+   * lookup ID yang tidak ada (harus 404, bukan 500);
+   * login dengan akun staging khusus pengujian (harus 200 + sesi);
    * verifikasi profil aplikasi dan isolasi akses sesuai desain.
-6. Jangan menyatakan staging production-ready sebelum seluruh pengujian
-   relevan lulus.
+
+## 8. Pencegahan Terulang — Jalur Pembuatan User
+
+* Tidak ada skrip seed SQL ke `auth.users` di repo (hasil `grep`
+  `auth.users`/`confirmation_token`/`recovery_token`/`email_change_token`
+  pada `*.py`: nihil di luar catatan ini dan komentar kode).
+* Satu-satunya jalur pembuatan user di aplikasi:
+  `POST /admin/users/create` → `auth.admin.create_user` dengan
+  `email_confirm: True` (`app/main.py`). Jalur ini memakai Auth Admin API
+  resmi; GoTrue mengisi kolom token melalui jalurnya sendiri.
+* Aturan: buat user hanya lewat Auth Admin API (aplikasi atau Dashboard).
+  Jangan `INSERT` langsung ke `auth.users`; jika `INSERT` langsung tidak
+  terhindarkan, isi keempat kolom token dengan `''` agar scan GoTrue tidak
+  gagal.
+* Tidak ada perubahan kode yang dilakukan pada sesi ini untuk aturan ini;
+  penegakan bersifat prosedural sampai ada kebutuhan patch kode yang
+  disetujui terpisah.
+
+## 9. Kriteria Selesai
+
+Jangan menyatakan staging production-ready sebelum seluruh pengujian
+relevan lulus (urutan §7 langkah 4 + isolasi akses sesuai desain).
