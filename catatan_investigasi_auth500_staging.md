@@ -226,3 +226,24 @@ Langkah eksekusi manual (workspace tidak memiliki jalur SQL ke skema
 
 Jangan menyatakan staging production-ready sebelum seluruh pengujian
 relevan lulus (urutan §7 langkah 4 + isolasi akses sesuai desain).
+
+## 10. Hasil Uji Ulang Pasca-UPDATE (2026-10-12, Fakta)
+
+`UPDATE` 4 kolom dijalankan manual via SQL Editor Dashboard staging oleh
+pengguna. Uji ulang bertahap via skrip terisolasi (`staging_retest_auth.py`,
+guard fail-closed, tanpa cetak secret):
+
+* [1] Auth admin list users: OK, `count=3` — tiga ID yang sebelumnya 500
+  kini terbaca: `admin.staging@test.local`, `staff1.staging@test.local`,
+  `staff2.staging@test.local`.
+* [2] Lookup user valid (ID pertama): OK 200, email sesuai.
+* [3] Lookup ID tak-ada (`00000000-...`): `AuthApiError code=404
+  User not found` — 404 sesuai harapan, bukan 500.
+* [4] Login akun uji staging khusus: DILEWATI atas pilihan pengguna pada
+  sesi ini (skrip mendukung via argumen email+password, tidak dijalankan).
+* Verifikasi profil aplikasi dan isolasi akses sesuai desain: BELUM
+  dilakukan.
+
+Kesimpulan sementara: kegagalan scan `confirmation_token` NULL teratasi
+untuk jalur list, lookup valid, dan lookup tak-ada. Login password grant
+dan verifikasi profil/isolasi masih menunggu.
