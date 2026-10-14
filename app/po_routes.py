@@ -603,7 +603,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             pos = sorted(
                 gabung.values(),
                 key=lambda r: (
-                    r.get("tanggal_po") is None,          # yang null paling bawah
+                    r.get("tanggal_po") is not None,      # yang null paling bawah
                     str(r.get("tanggal_po") or ""),       # tanggal terbaru dulu
                     str(r.get("no_po") or ""),            # tie-break
                 ),
