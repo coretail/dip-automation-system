@@ -269,7 +269,8 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
 
     pos_rows      : {id, no_po, tanggal_po, qty_pcs, jenis_po?}
     item_rows     : {purchase_order_id, product_id}
-    product_rows  : {id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url}
+    product_rows  : {id, nama_produk, perusahaan, is_deleted,
+                     laporan_uji_sig_file_url, brand_id, brands/name}
     tahun         : hanya PO & item tahun ini yang dihitung. Route sudah memfilter
                     lewat rentang tanggal di SQL, jadi ini jaring pengaman kedua:
                     kalau tahun=None TIDAK ada yang dihitung, bukan "semua tahun".
@@ -303,6 +304,8 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
                 "company": _company_bucket(r.get("perusahaan")),
                 "active": not r.get("is_deleted"),
                 "sig": bool(r.get("laporan_uji_sig_file_url")),
+                "brand_id": r.get("brand_id"),
+                "brand": _clean_text(r.get("brand"), 200) or None,
             }
 
     # --- KPI & per kuartal -------------------------------------------------
@@ -361,6 +364,7 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
                 pcs += _num(po.get("qty_pcs"))
         return {
             "id": pid, "nama": meta["nama"], "company": meta["company"],
+            "brand_id": meta["brand_id"], "brand": meta["brand"],
             "po_count": len(po_ids), "rework_po": rw, "pcs": pcs, "sig": meta["sig"],
         }
 
@@ -370,8 +374,8 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
     # "po" = urutkan berdasarkan jumlah PO; "pcs" = berdasarkan total qty.
     def _rank(rows):
         if sort == "po":
-            return sorted(rows, key=lambda r: (-r["po_count"], -r["pcs"], r["nama"]))
-        return sorted(rows, key=lambda r: (-r["pcs"], -r["po_count"], r["nama"]))
+            return sorted(rows, key=lambda r: (-r["po_count"], -r["pcs"], str(r["nama"]).lower()))
+        return sorted(rows, key=lambda r: (-r["pcs"], -r["po_count"], str(r["nama"]).lower()))
 
     top, missing = {}, {}
     for t in PO_ANALYTICS_TABS:
@@ -384,6 +388,38 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
             if not prod_meta[pid]["sig"] and (t == "all" or _tab_of(prod_meta[pid]["company"]) == t)
         ]
         missing[t] = _rank(pool_missing)[:top_n]
+
+    # Rincian tetap memuat semua produk aktif, termasuk yang tidak punya PO.
+    # Agregat merek memakai union purchase_order_id agar satu PO multi-produk
+    # dalam merek yang sama tidak menggandakan qty.
+    detail = {}
+    for t in PO_ANALYTICS_TABS:
+        rows_t = [
+            _row(pid) for pid in active_ids
+            if t == "all" or _tab_of(prod_meta[pid]["company"]) == t
+        ]
+        brand_agg = {}
+        for row in rows_t:
+            key = row["brand_id"] or None
+            entry = brand_agg.setdefault(key, {"po_ids": set(), "produk": 0, "nama": None})
+            entry["produk"] += 1
+            entry["nama"] = entry["nama"] or row["brand"]
+            entry["po_ids"].update(prod_po_ids.get(row["id"]) or set())
+
+        brand_rows = []
+        for brand_id, entry in brand_agg.items():
+            po_ids = entry["po_ids"]
+            brand_rows.append({
+                "nama": (entry["nama"] or "(Tanpa merek)") if brand_id else "(Tanpa merek)",
+                "produk": entry["produk"],
+                "po_count": len(po_ids),
+                "pcs": sum(
+                    _num(po_by_id[poid].get("qty_pcs"))
+                    for poid in po_ids
+                    if not _is_rework(po_by_id[poid])
+                ),
+            })
+        detail[t] = {"produk": _rank(rows_t), "merek": _rank(brand_rows)}
 
     # Daftar perusahaan SELALU per tahun, jadi grafik per perusahaan dan donat
     # proporsi tidak ikut berubah hanya karena pengguna berganti kuartal.
@@ -430,6 +466,7 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
         "produk_diproduksi": len(produced),
         "top": top,
         "missing": missing,
+        "detail": detail,
         "missing_total": sum(1 for pid in active_ids if not prod_meta[pid]["sig"]),
         "jumlah_po_tanpa_item": len(po_tanpa_item),
         "po_tanpa_item": po_tanpa_item[:50],
@@ -799,13 +836,37 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                 warnings.append("Gagal memuat item PO per produk.")
             try:
                 prod_rows = supabase.table("products").select(
-                    "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url"
+                    "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url, brand_id, brands(id, name)"
                 ).limit(_PO_STATS_LIMIT).execute().data or []
-            except Exception as ex:
-                print(f"[PO] analytics produk gagal: {ex}")
-                warnings.append("Gagal memuat master produk.")
+                for row in prod_rows:
+                    brand = row.get("brands")
+                    if isinstance(brand, list):
+                        brand = brand[0] if brand else None
+                    row["brand"] = (brand or {}).get("name") if isinstance(brand, dict) else None
+            except Exception as embed_ex:
+                print(f"[PO] analytics embed brand gagal, mencoba fallback: {embed_ex}")
+                try:
+                    prod_rows = supabase.table("products").select(
+                        "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url, brand_id"
+                    ).limit(_PO_STATS_LIMIT).execute().data or []
+                    brand_ids = list({r.get("brand_id") for r in prod_rows if r.get("brand_id")})
+                    brands_by_id = {}
+                    if brand_ids:
+                        try:
+                            brands = supabase.table("brands").select("id, name").in_("id", brand_ids).execute().data or []
+                            brands_by_id = {str(b["id"]): b.get("name") for b in brands if b.get("id")}
+                        except Exception as brands_ex:
+                            print(f"[PO] analytics query fallback merek gagal: {brands_ex}")
+                            warnings.append("Gagal memuat nama merek; rincian produk tetap ditampilkan.")
+                    for row in prod_rows:
+                        row["brand"] = brands_by_id.get(str(row.get("brand_id")))
+                except Exception as fallback_ex:
+                    print(f"[PO] analytics fallback brand gagal: {fallback_ex}")
+                    warnings.append("Gagal memuat master produk dan merek.")
+                    prod_rows = []
 
         ana = _build_po_analytics(pos, item_rows, prod_rows, tahun, qtr=qtr, sort=sort)
+        ana["produk_truncated"] = len(prod_rows) >= _PO_STATS_LIMIT
 
         ctx = {
             "current_user": current_user,

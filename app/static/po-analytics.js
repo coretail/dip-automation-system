@@ -269,6 +269,39 @@
     });
   }
 
+  function initDetailTables() {
+    document.querySelectorAll('[data-detail-selector]').forEach(function (selector) {
+      var kind = selector.getAttribute('data-detail-selector');
+      var body = document.querySelector('tbody[data-detail="' + kind + '"]');
+      if (!body) return;
+      var rows = Array.prototype.slice.call(body.querySelectorAll('tr[data-row]'));
+      var count = body.parentNode.parentNode.parentNode.querySelector('[data-count]');
+      var buttons = selector.querySelectorAll('[data-n]');
+
+      function apply(limit) {
+        rows.forEach(function (row, index) { row.hidden = index >= limit; });
+        buttons.forEach(function (button) {
+          var active = Number(button.getAttribute('data-n')) === limit;
+          button.setAttribute('aria-pressed', active ? 'true' : 'false');
+          button.classList.toggle('bg-indigo-600', active);
+          button.classList.toggle('text-white', active);
+          button.classList.toggle('border-indigo-600', active);
+          button.classList.toggle('bg-white', !active);
+          button.classList.toggle('text-gray-600', !active);
+          button.classList.toggle('border-gray-300', !active);
+        });
+        if (count) count.textContent = String(Math.min(limit, rows.length));
+      }
+
+      buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          apply(Number(button.getAttribute('data-n')) || 10);
+        });
+      });
+      apply(10);
+    });
+  }
+
   function showFallback(reason) {
     // Chart tidak tersedia -> sembunyikan canvas, tabel angka tetap tampil.
     ['chartQuarter', 'chartCompany', 'chartQuarterCompany', 'chartTop', 'chartMissing']
@@ -287,6 +320,7 @@
   }
 
   document.addEventListener('DOMContentLoaded', function () {
+    initDetailTables();
     if (!document.getElementById(DATA_ID)) return;
     if (!window.Chart) {
       showFallback('Chart.js tidak tersedia');

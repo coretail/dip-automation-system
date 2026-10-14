@@ -427,6 +427,7 @@ Aturan ini penting karena setiap grafik punya sumber tabel berbeda:
 - **Grafik 2 — Proporsi PO per perusahaan** (`chartCompany`): donat.
 - **Grafik 3 — Jumlah PO & qty pcs per kuartal per perusahaan** (`chartQuarterCompany`): **batang = jumlah PO (sumbu kiri)**, **garis = qty pcs (sumbu kanan)**, warna batang & garis per PT sama agar mudah dipasangkan. Keduanya diredupkan pada kuartal yang tidak dipilih agar kuartal yang sedang dipilih menonjol.
 - **Tabel Top 5 produk** — dua tab: "produk dengan PO terbanyak" dan "produk belum punya Laporan Uji SIG".
+- **Tabel rincian qty per produk** dan **per merek** — semua produk aktif/merek aktif ditampilkan, mengikuti filter tahun/kuartal/perusahaan/urutan; selector client-side 5/10/25/100 tersedia terpisah untuk tiap tabel.
 - **Filter:** tahun, kuartal, urutan (jumlah PO ↔ total qty), tab perusahaan (Semua / PT Erfi / PT Heka).
 
 #### C. Transparansi: PO tanpa item
@@ -441,7 +442,9 @@ Ini bagian yang paling sering membingungkan, jadi dirancang eksplisit:
 #### D. Pembatasan & pitfall yang perlu diketahui
 
 - **Batas 5.000 baris** per tabel. Bila data tahun terpilih melampaui batas ini, halaman menampilkan banner "data belum tentu lengkap", dan daftar `po_tanpa_item` bisa **false positive** — item yang tidak sengaja terpotong akan terlihat seperti PO tanpa item.
+- Tabel rincian mengikuti batas master produk 5.000 baris dan menampilkan banner amber bila hasil terpotong. Agregat merek menghitung union PO berdasarkan `brand_id`, sehingga produk dengan merek bernama sama tetapi ID berbeda tidak tergabung.
 - **Satu PO lintas perusahaan dihitung penuh di kedua perusahaan.** PO yang memuat produk PT Erfi *dan* PT Heka tetap menyumbang `qty_pcs` penuh ke keduanya, sehingga jumlah qty per perusahaan bisa **melebihi** `total_pcs`. Ini perilaku yang disengaja demi konsistensi dengan angka header, dan dinyatakan eksplisit di bawah grafik.
+- Pada tabel produk, PO multi-produk memberi qty penuh ke tiap produk. Pada tabel merek, beberapa produk dari merek yang sama memakai union PO sehingga qty PO dihitung sekali; PO lintas merek tetap penuh di setiap merek. Produk tanpa `brand_id` masuk bucket `(Tanpa merek)` dan produk 0 PO tetap tampil.
 - Bila kolom `purchase_orders.jenis_po` belum ada di database, halaman menampilkan banner biru yang menyuruh menjalankan `migration\002_add_jenis_po.sql`, dan seluruh `qty_pcs` dihitung tanpa pemisahan rework.
 
 

@@ -156,6 +156,11 @@
     Data tahun {{ tahun }} melebihi 5.000 PO sehingga angka di halaman ini belum tentu lengkap.
 </p>
 {% endif %}
+{% if ana.produk_truncated %}
+<p class="mb-4 rounded-md bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">
+    Data master produk mencapai batas 5.000 baris; tabel rincian mungkin belum lengkap.
+</p>
+{% endif %}
 
 <!-- ===== Chart utama ===== -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -278,6 +283,98 @@
         </p>
         <div class="h-64"><canvas id="chartMissing" aria-label="Grafik batang horizontal produk tanpa laporan uji SIG" role="img"></canvas></div>
         {{ rank_table(a.missing[tab], 'Semua produk aktif sudah punya Laporan Uji SIG.') }}
+    </div>
+</div>
+
+{# Rincian lengkap: semua produk aktif dirender server-side; JS hanya membatasi
+   jumlah baris yang terlihat. Qty produk memberi qty penuh tiap PO yang memuatnya.
+   Agregat merek menggunakan union PO unik berdasarkan brand_id. #}
+{% macro detail_selector(kind) %}
+<div class="flex items-center gap-1" data-detail-selector="{{ kind }}">
+    <span class="text-[11px] text-gray-500 mr-1">Tampilkan:</span>
+    {% for n in [5, 10, 25, 100] %}
+    <button type="button" data-n="{{ n }}" aria-pressed="{{ 'true' if n == 10 else 'false' }}"
+            class="detail-size-chip px-2 py-1 rounded-md text-[11px] font-semibold border {% if n == 10 %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-600 border-gray-300 hover:bg-gray-50{% endif %}">{{ n }}</button>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+<div class="space-y-4 mt-4">
+    <div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h2 class="text-sm font-bold text-gray-900">Rincian qty PO per produk &mdash; {{ _scope }}</h2>
+            {{ detail_selector('produk') }}
+        </div>
+        <p class="text-[11px] text-gray-400 mb-2">
+            PO multi-produk memberi qty penuh ke tiap produk sehingga jumlah kolom Qty bisa melebihi total qty.
+            PO Rework tidak dihitung pada qty; PO tanpa item tidak muncul; mengikuti filter aktif.
+        </p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-xs">
+                <thead class="text-[10px] uppercase text-gray-500 bg-gray-50">
+                    <tr>
+                        <th class="px-2 py-2 text-left">#</th>
+                        <th class="px-2 py-2 text-left">Produk</th>
+                        <th class="px-2 py-2 text-left">Merek</th>
+                        <th class="px-2 py-2 text-left">Perusahaan</th>
+                        <th class="px-2 py-2 text-right">Jumlah PO</th>
+                        <th class="px-2 py-2 text-right">Qty (pcs)</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100" data-detail="produk">
+                    {% for r in a.detail[tab].produk %}
+                    <tr data-row>
+                        <td class="px-2 py-1.5 text-gray-400">{{ loop.index }}</td>
+                        <td class="px-2 py-1.5 text-gray-900 font-medium"><a href="/products/{{ r.id }}/edit" class="hover:text-indigo-600 hover:underline">{{ r.nama }}</a></td>
+                        <td class="px-2 py-1.5 text-gray-600">{{ r.brand or '(Tanpa merek)' }}</td>
+                        <td class="px-2 py-1.5 text-gray-600">{{ r.company }}</td>
+                        <td class="px-2 py-1.5 text-right text-gray-700">{{ r.po_count }}</td>
+                        <td class="px-2 py-1.5 text-right font-semibold text-gray-900">{{ '{:,}'.format(r.pcs | int) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="px-2 py-6 text-center text-gray-400">Belum ada produk aktif.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="mt-2 text-[11px] text-gray-400">Menampilkan <span data-count>{{ [a.detail[tab].produk | length, 10] | min }}</span> dari {{ a.detail[tab].produk | length }} produk aktif.</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-xs border border-gray-200 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h2 class="text-sm font-bold text-gray-900">Rincian qty PO per merek &mdash; {{ _scope }}</h2>
+            {{ detail_selector('merek') }}
+        </div>
+        <p class="text-[11px] text-gray-400 mb-2">
+            PO lintas merek dihitung penuh di tiap merek, tetapi PO dengan beberapa produk dari merek yang sama dihitung sekali berdasarkan PO unik. PO Rework tidak dihitung pada qty.
+        </p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-xs">
+                <thead class="text-[10px] uppercase text-gray-500 bg-gray-50">
+                    <tr>
+                        <th class="px-2 py-2 text-left">#</th>
+                        <th class="px-2 py-2 text-left">Merek</th>
+                        <th class="px-2 py-2 text-right">Jumlah Produk</th>
+                        <th class="px-2 py-2 text-right">Jumlah PO</th>
+                        <th class="px-2 py-2 text-right">Qty (pcs)</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100" data-detail="merek">
+                    {% for r in a.detail[tab].merek %}
+                    <tr data-row>
+                        <td class="px-2 py-1.5 text-gray-400">{{ loop.index }}</td>
+                        <td class="px-2 py-1.5 text-gray-900 font-medium">{{ r.nama }}</td>
+                        <td class="px-2 py-1.5 text-right text-gray-700">{{ r.produk }}</td>
+                        <td class="px-2 py-1.5 text-right text-gray-700">{{ r.po_count }}</td>
+                        <td class="px-2 py-1.5 text-right font-semibold text-gray-900">{{ '{:,}'.format(r.pcs | int) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="px-2 py-6 text-center text-gray-400">Belum ada merek dari produk aktif.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="mt-2 text-[11px] text-gray-400">Menampilkan <span data-count>{{ [a.detail[tab].merek | length, 10] | min }}</span> dari {{ a.detail[tab].merek | length }} merek.</p>
     </div>
 </div>
 {% endif %}

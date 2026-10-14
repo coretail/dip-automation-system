@@ -85,3 +85,4 @@ backup-rls/
 /tests/*
 !/tests/
 !/tests/verify_product_attachments.py
+!/tests/verify_po_analytics_detail.py
