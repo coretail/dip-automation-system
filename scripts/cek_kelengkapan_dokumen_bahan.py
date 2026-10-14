@@ -324,15 +324,15 @@ def _page_setup(ws, landscape=True):
     ws.sheet_view.zoomScale = 90
 
 
-def _title_block(ws, last_col: int, title: str, subtitle: str):
-    ws.merge_cells(start_row=1, start_column=2, end_row=1, end_column=last_col)
-    cell = ws.cell(row=1, column=2, value=title)
+def _title_block(ws, last_col: int, title: str, subtitle: str, start_col: int = 2):
+    ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=last_col)
+    cell = ws.cell(row=1, column=start_col, value=title)
     cell.font = TITLE_FONT
     cell.alignment = ALIGN_CENTER
     ws.row_dimensions[1].height = 22
 
-    ws.merge_cells(start_row=2, start_column=2, end_row=2, end_column=last_col)
-    cell = ws.cell(row=2, column=2, value=subtitle)
+    ws.merge_cells(start_row=2, start_column=start_col, end_row=2, end_column=last_col)
+    cell = ws.cell(row=2, column=start_col, value=subtitle)
     cell.font = SUBTITLE_FONT
     cell.alignment = ALIGN_CENTER
     ws.row_dimensions[2].height = 16
@@ -620,12 +620,16 @@ def build_report(source_path: str, output_path: str):
         ws3, mat_cols,
         "MATRIKS BAHAN BAKU x PRODUK + STATUS KELENGKAPAN DOKUMEN",
         f"Produk DR. WIDYCLINIC - {COMPANY} - {now_str}",
+        start_col=1,
     )
     header = ["No", "Nama Bahan"] + [str(n) for n in range(1, max_num + 1)] + [
         "Status Dokumen", "Keterangan (Daftar Produk)",
     ]
     row = 4
-    row = _table_header(ws3, row, header)
+    # Header WAJIB mulai kolom A: baris data matriks ditulis dari kolom A,
+    # jadi kalau header mulai di kolom B seluruh label produk bergeser 1 kolom
+    # (header "18" jatuh di atas kolom Status).
+    row = _table_header(ws3, row, header, first_col=1)
     for r in results:
         _body_cell(ws3, row, 1, r["no"], align=ALIGN_CENTER_NOWRAP)
         _body_cell(ws3, row, 2, r["nama"], bold=True)
