@@ -223,6 +223,11 @@
                                 <i class="fa-solid fa-pen-to-square text-xs"></i>
                             </a>
 
+                            <a href="/products/{{ product.id }}/lampiran" class="relative p-1.5 bg-gray-50 text-gray-600 rounded hover:bg-gray-100" title="Lampiran Produk">
+                                <i class="fa-solid fa-paperclip text-xs"></i>
+                                {% if attachment_counts.get(product.id, 0) > 0 %}<span class="absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-indigo-600 text-white text-[9px] leading-4 text-center">{{ attachment_counts[product.id] }}</span>{% endif %}
+                            </a>
+
                             <!-- 4. Tombol Hapus Produk (Merah) -->
                             <form action="/products/delete/{{ product.id }}" method="POST" style="display: inline;" onsubmit='return confirm("Yakin mau hapus produk " + {{ (product.nama_produk or "TANPA NAMA") | tojson }} + "? Semua formula di dalamnya bakal ikut kehapus men.")'>
                                 <button type="submit" class="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 cursor-pointer" title="Hapus Produk">

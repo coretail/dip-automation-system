@@ -71,13 +71,17 @@ skills-lock.json
 .mcp.json
 !.vscode/settings.json
 
-# Migration (local only, contains sensitive data)
-/migration/
-migration/
+# Migration SQL schema is source-controlled; operational import/rollback files
+# and spreadsheet/CSV data remain ignored.
+/migration/*
+!/migration/
+!/migration/*.sql
 
 # RLS backup dumps (local only, contains database data)
 /backup-rls/
 backup-rls/
 
-# Test artifacts (local only)
-tests/
+# Test artifacts (local only), except source-controlled verification scripts.
+/tests/*
+!/tests/
+!/tests/verify_product_attachments.py

@@ -2329,6 +2329,57 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
     error_msg = request.cookies.get("error_msg")
     success_msg = request.cookies.get("success_msg")
 
+    # Lampiran produk (fitur attachment) — dikelompokkan per tanggal unggah.
+    # Jika tabel atau bucket belum tersedia, halaman tetap fail-soft.
+    lampiran_groups = {}
+    try:
+        att_resp = supabase.table("product_attachments") \
+            .select("id, kategori, file_name, file_path, file_size, catatan, uploaded_by, uploaded_by_name, created_at") \
+            .eq("product_id", product_id) \
+            .order("created_at", desc=True) \
+            .execute()
+        _attachment_rows = att_resp.data or []
+        for _att in _attachment_rows:
+            try:
+                date_key = datetime.fromisoformat(str(_att.get("created_at") or "").replace("Z", "+00:00")).astimezone(WIB).strftime("%Y-%m-%d")
+            except Exception:
+                date_key = str(_att.get("created_at") or "")[:10]
+            lampiran_groups.setdefault(date_key, []).append({
+                "id": _att.get("id"),
+                "kategori": _att.get("kategori"),
+                "file_name": _att.get("file_name"),
+                "file_size": _att.get("file_size"),
+                "catatan": _att.get("catatan"),
+                "uploaded_by_name": _att.get("uploaded_by_name"),
+                "created_at": _att.get("created_at"),
+                "file_path": _att.get("file_path"),
+                "signed_url": None,
+                "can_manage": bool(_att.get("uploaded_by") and current_user.get("id") and str(_att.get("uploaded_by")) == str(current_user.get("id"))) or current_user.get("role") == "admin",
+            })
+        _paths = [_att.get("file_path") for _att in _attachment_rows if _att.get("file_path")]
+        try:
+            _signed_rows = supabase.storage.from_("product-attachments").create_signed_urls(_paths, 3600) if _paths else []
+            if isinstance(_signed_rows, dict):
+                _signed_rows = _signed_rows.get("data") or _signed_rows.get("signedURLs") or []
+        except Exception as _signed_exc:
+            print(f"Gagal membuat signed URL lampiran {product_id}: {_signed_exc}")
+            _signed_rows = []
+        _signed_map = {
+            x.get("path"): (x.get("signedURL") or x.get("signedUrl"))
+            for x in (_signed_rows or [])
+            if isinstance(x, dict)
+            and x.get("path")
+            and not x.get("error")
+            and isinstance(x.get("signedURL") or x.get("signedUrl"), str)
+            and (x.get("signedURL") or x.get("signedUrl")).startswith("https://")
+        }
+        for _items in lampiran_groups.values():
+            for _item in _items:
+                _item["signed_url"] = _signed_map.get(_item.get("file_path"))
+    except Exception as e:
+        print(f"Gagal ambil lampiran produk {product_id}: {e}")
+        lampiran_groups = {}
+
     return templates.TemplateResponse(
         request=request,
         name="edit_product.html",
@@ -2344,6 +2395,8 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
             "success_msg": success_msg,
             "efek_samping": _efek_samping_meta(product),
             "current_user": current_user,
+            "lampiran_groups": lampiran_groups,
+            "lampiran_categories": LAMPIRAN_CATEGORIES,
         }
     )
 
@@ -3794,28 +3847,50 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
         
     except Exception as e:
         print(f"Gagal ambil data dashboard: {e}")
-    
+
+    # Jumlah lampiran per produk (tabel product_attachments) — dibutuhkan
+    # dashboard.html untuk badge jumlah lampiran pada tiap kartu produk.
+    try:
+        att_rows = supabase.table("product_attachment_counts").select("product_id, jumlah").execute()
+        attachment_counts = {}
+        for _row in (att_rows.data or []):
+            if _row.get("product_id"):
+                attachment_counts[_row["product_id"]] = int(_row.get("jumlah") or 0)
+    except Exception as e:
+        print(f"Gagal ambil agregat lampiran, fallback tabel: {e}")
+        try:
+            att_rows = supabase.table("product_attachments").select("product_id").execute()
+            attachment_counts = {}
+            for _row in (att_rows.data or []):
+                _pid = _row.get("product_id")
+                if _pid:
+                    attachment_counts[_pid] = attachment_counts.get(_pid, 0) + 1
+        except Exception as fallback_exc:
+            print(f"Gagal hitung lampiran: {fallback_exc}")
+            attachment_counts = {}
+
     ed_notification_count = await get_ed_notification_count()
-    
+
     import json
     try:
         greeting = json.loads(request.cookies.get("greeting_cache", ""))
     except Exception:
         greeting = get_time_greeting()
-    
+
     return templates.TemplateResponse(
         request=request,
-        name="dashboard.html", 
+        name="dashboard.html",
         context={
-            "request": request, 
+            "request": request,
             "current_user": current_user,
-            "products": products, 
+            "products": products,
             "user": current_user,
             "brands": brands,
             "ed_notification_count": ed_notification_count,
             "greeting": greeting,
             "error_msg": error_msg,
-            "success_msg": success_msg
+            "success_msg": success_msg,
+            "attachment_counts": attachment_counts
         }
     )
 
@@ -3932,6 +4007,15 @@ register_raw_materials_routes(
 from app.po_routes import register_po_routes
 register_po_routes(app, get_current_user, log_activity, templates, get_ed_notification_count,
                    _build_diff_changes)
+
+from app.product_attachments_routes import LAMPIRAN_CATEGORIES, register_product_attachment_routes
+register_product_attachment_routes(
+    app,
+    get_current_user=get_current_user,
+    log_activity=log_activity,
+    templates=templates,
+    supabase=supabase,
+)
 
 # Generator DIP Bab I-IV + preview + ZIP Bab II -> app/dip_documents.py.
 # Fungsi generator dikembalikan sebagai dict supaya bisa diteruskan ke

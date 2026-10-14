@@ -100,7 +100,7 @@
 
     <!-- ================= NAVIGASI TABS ================= -->
     <div class="border-b border-gray-200 mb-6">
-        <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+        <nav class="-mb-px flex space-x-6 overflow-x-auto whitespace-nowrap" aria-label="Tabs">
             <button type="button" onclick="switchEditTab('tab-info', this)" data-tab="tab-info" class="edit-tab-btn border-indigo-500 text-indigo-600 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-circle-info mr-1.5"></i> Informasi Dasar
             </button>
@@ -115,6 +115,9 @@
             </button>
             <button type="button" onclick="switchEditTab('tab-bab4', this)" data-tab="tab-bab4" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
                 <i class="fa-solid fa-shield-halved mr-1.5"></i> Bab 4
+            </button>
+            <button type="button" onclick="switchEditTab('tab-lampiran', this)" data-tab="tab-lampiran" class="edit-tab-btn border-transparent text-gray-500 hover:text-gray-700 py-3 px-1 border-b-2 font-semibold text-sm transition-all focus:outline-none">
+                <i class="fa-solid fa-paperclip mr-1.5"></i> Lampiran
             </button>
         </nav>
     </div>
@@ -551,6 +554,16 @@
             {{ pdf_upload_card('5b. Desain Kemasan Sekunder (Penandaan)', 'desain_sekunder_file', product.desain_sekunder_file_url, 'Layout/Desain cetak fisik kemasan luar (Dus/Box).') }}
         </div>
 
+        <div id="tab-lampiran" class="edit-tab-content hidden space-y-4">
+            {% include 'lampiran_uploader.html' %}
+            <div data-lampiran-list class="space-y-5">
+            {% for date_key, items in lampiran_groups.items() %}
+                <section data-date-group="{{ date_key }}" class="space-y-2"><h3 class="text-sm font-bold text-gray-700">{{ date_key }}</h3>
+                {% for item in items %}<div class="lampiran-item bg-white border border-gray-200 rounded-lg p-3 space-y-3" data-attachment-id="{{ item.id }}"><div class="flex items-start justify-between gap-2"><div><p class="font-semibold text-sm break-all">{{ item.file_name }}</p><p class="text-xs text-gray-500">{{ item.file_size or 0 }} byte · {{ item.uploaded_by_name or '-' }} · {{ item.created_at }}</p></div><span class="text-[11px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700">{{ item.kategori }}</span></div>{% if item.signed_url %}<iframe src="{{ item.signed_url }}" class="w-full h-64 border-0" title="Preview {{ item.file_name }}"></iframe><a href="{{ item.signed_url }}" target="_blank" rel="noopener" class="text-xs text-indigo-600 hover:underline">Buka di tab baru</a>{% else %}<p class="p-4 text-xs text-amber-700 bg-gray-50">Gagal membuat link preview, muat ulang halaman</p>{% endif %}{% if item.catatan %}<p class="text-xs text-gray-600 whitespace-pre-wrap">{{ item.catatan }}</p>{% endif %}{% if item.can_manage %}<div class="flex gap-2"><button type="button" class="text-xs text-indigo-600 hover:underline" onclick='editLampiran({{ item | tojson }}, document.querySelector("[data-lampiran-root]"))'>Edit</button><button type="button" class="text-xs text-red-600 hover:underline" onclick='deleteLampiran({{ item | tojson }}, document.querySelector("[data-lampiran-root]"))'>Hapus</button></div>{% endif %}</div>{% endfor %}</section>
+            {% else %}<p data-lampiran-empty class="text-sm text-gray-500">Belum ada lampiran.</p>{% endfor %}
+            </div>
+        </div>
+
         <!-- BUTTON ACTION -->
         <div class="flex justify-end gap-3 pt-6 border-t border-gray-200 mt-6">
             <a href="/" class="bg-gray-100 text-gray-700 px-5 py-2.5 rounded-md hover:bg-gray-200 text-sm font-semibold">Batal</a>
@@ -593,7 +606,7 @@ function showFileToast(msg) {
 
 <script>
 function validateAllFiles() {
-    const fileInputs = document.querySelectorAll('input[type="file"][accept=".pdf"]');
+    const fileInputs = document.querySelectorAll('input[type="file"][accept=".pdf"]:not(.lampiran-file-input)');
     let allValid = true;
     
     fileInputs.forEach(input => {
@@ -707,7 +720,7 @@ document.addEventListener("DOMContentLoaded", function() {
     // Baca query param ?tab= dan buka tab yang sesuai (dari klik badge di dashboard)
     const urlParams = new URLSearchParams(window.location.search);
     const requestedTab = urlParams.get('tab');
-    const validTabs = ['info', 'bab1', 'bab2', 'bab3', 'bab4'];
+    const validTabs = ['info', 'bab1', 'bab2', 'bab3', 'bab4', 'lampiran'];
     if (requestedTab && validTabs.includes(requestedTab)) {
         const tabId = 'tab-' + requestedTab;
         const btnEl = document.querySelector('[data-tab="' + tabId + '"]');
@@ -1259,4 +1272,5 @@ document.getElementById('quick-add-brand-form').addEventListener('submit', async
 
 </script>
 <script src="/static/efek_samping.js"></script>
+<script src="/static/lampiran.js"></script>
 {% endblock %}

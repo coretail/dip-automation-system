@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Lampiran Produk - {{ product.nama_produk or 'Produk' }}{% endblock %}
+{% block content %}
+<div class="app-container px-4 sm:px-6 lg:px-8 py-6">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div><h1 class="text-2xl font-bold text-gray-900">Lampiran Produk</h1><p class="text-sm text-gray-500">{{ product.nama_produk or 'Tanpa nama' }}</p></div>
+        <a href="/products/{{ product.id }}/edit?tab=lampiran" class="text-sm text-indigo-600 hover:underline">Kembali ke Edit Produk</a>
+    </div>
+    {% include 'lampiran_uploader.html' %}
+    <div data-lampiran-list class="space-y-5 mt-6">
+    {% for date_key, items in lampiran_groups.items() %}<section data-date-group="{{ date_key }}" class="space-y-2"><h3 class="text-sm font-bold text-gray-700">{{ date_key }}</h3>{% for item in items %}<div class="lampiran-item bg-white border border-gray-200 rounded-lg p-3 space-y-3" data-attachment-id="{{ item.id }}" data-created-at="{{ item.created_at }}"><div class="flex flex-wrap items-start justify-between gap-2"><div><p class="font-semibold text-sm break-all">{{ item.file_name }}</p><p class="text-xs text-gray-500">{{ item.file_size or 0 }} byte · {{ item.uploaded_by_name or '-' }} · {{ item.created_at }}</p></div><span class="text-[11px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700">{{ item.kategori }}</span></div>{% if item.signed_url %}<iframe src="{{ item.signed_url }}" class="w-full h-64 border-0" title="Preview {{ item.file_name }}"></iframe><a href="{{ item.signed_url }}" target="_blank" rel="noopener" class="text-xs text-indigo-600 hover:underline">Buka di tab baru</a>{% else %}<p class="p-4 text-xs text-amber-700 bg-gray-50">Gagal membuat link preview, muat ulang halaman</p>{% endif %}{% if item.catatan %}<p class="text-xs text-gray-600 whitespace-pre-wrap">{{ item.catatan }}</p>{% endif %}{% if item.can_manage %}<div class="flex gap-2"><button type="button" class="text-xs text-indigo-600 hover:underline" onclick='editLampiran({{ item | tojson }}, document.querySelector("[data-lampiran-root]"))'>Edit</button><button type="button" class="text-xs text-red-600 hover:underline" onclick='deleteLampiran({{ item | tojson }}, document.querySelector("[data-lampiran-root]"))'>Hapus</button></div>{% endif %}</div>{% endfor %}</section>{% else %}<p data-lampiran-empty class="text-sm text-gray-500">Belum ada lampiran.</p>{% endfor %}
+    </div>
+</div>
+{% endblock %}
+{% block head_extra %}<script src="/static/lampiran.js" defer></script>{% endblock %}
