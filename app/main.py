@@ -1851,6 +1851,7 @@ async def _gather_qualquant_data(product_id: str) -> dict:
 
                 grouped_trade[group_key].append({
                     "inci_name": comp.get("inci_name") or "Unknown",
+                    "cas_number": comp.get("cas_number") or "-",
                     "function": comp.get("function") or "-",
                     "pct_ww": clean_pct,
                     "is_bahan_aktif": bool(comp.get("is_bahan_aktif")),
@@ -1859,6 +1860,7 @@ async def _gather_qualquant_data(product_id: str) -> dict:
             clean_line_pct = float(Decimal(str(line_pct)).normalize())
             grouped_trade[group_key].append({
                 "inci_name": nama_dagang_str,
+                "cas_number": "-",
                 "function": "-",
                 "pct_ww": clean_line_pct,
                 "is_bahan_aktif": False,
@@ -1883,6 +1885,7 @@ async def _gather_qualquant_data(product_id: str) -> dict:
             if inci_key not in grouped_pure:
                 grouped_pure[inci_key] = {
                     "inci_name": inci_name_raw,
+                    "cas_number": comp.get("cas_number") or "-",
                     "function": comp["function"],
                     # Gunakan Decimal('0.0') sebagai inisialisasi awal agar presisi
                     "pct_ww_decimal": Decimal('0.0'),
@@ -1890,6 +1893,9 @@ async def _gather_qualquant_data(product_id: str) -> dict:
                 }
             if comp.get("is_bahan_aktif"):
                 grouped_pure[inci_key]["is_bahan_aktif"] = True
+            if (grouped_pure[inci_key].get("cas_number") in (None, "", "-")
+                    and comp.get("cas_number") not in (None, "", "-")):
+                grouped_pure[inci_key]["cas_number"] = comp["cas_number"]
             # Jumlahkan dengan tipe data Decimal murni
             grouped_pure[inci_key]["pct_ww_decimal"] += Decimal(str(comp["pct_ww"]))
 
@@ -1899,6 +1905,7 @@ async def _gather_qualquant_data(product_id: str) -> dict:
         clean_sum = float(item["pct_ww_decimal"].normalize())
         pure_breakdown.append({
             "inci_name": item["inci_name"],
+            "cas_number": item.get("cas_number") or "-",
             "function": item["function"],
             "pct_ww": clean_sum,
             "is_bahan_aktif": bool(item.get("is_bahan_aktif")),

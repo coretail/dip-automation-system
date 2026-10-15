@@ -555,6 +555,62 @@ def _sheet_formula_pure(wb: Workbook, product: dict, pure_breakdown: list, compa
     _page_setup(ws)
 
 
+def _sheet_formula_pure_cas(wb: Workbook, product: dict, pure_breakdown: list, company: dict):
+    """Sheet Formula INCI Murni dengan kolom CAS di antara INCI dan fungsi."""
+    ws = wb.create_sheet("Formula INCI + CAS")
+
+    _letterhead(ws, company, last_col="E")
+    _set_merged(ws, f"B{REF_TITLE_ROW}:E{REF_TITLE_ROW}",
+                "FORMULA KUALITATIF & KUANTITATIF",
+                font=FONT_TITLE, align=ALIGN_CENTER)
+    ws.row_dimensions[REF_TITLE_ROW].height = LETTERHEAD_ROW_HEIGHT
+    _info_block(ws, REF_INFO_ROW, _formula_info_pairs(product), value_col=3)
+
+    data_start = _table_header(
+        ws, REF_HEADER_ROW, ["Ingredients", "CAS", "Function", "% w/w"],
+        fill=_header_fill_for(product, company)
+    ) + 1
+
+    row = data_start
+    for comp in pure_breakdown:
+        for col, value, alignment in (
+            (2, _dash(comp.get("inci_name")), ALIGN_LEFT_CENTER_WRAP),
+            (3, _dash(comp.get("cas_number")), ALIGN_CENTER),
+            (4, _dash(comp.get("function")), ALIGN_LEFT_CENTER_WRAP),
+        ):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.font = FONT_NORMAL
+            cell.alignment = alignment
+
+        pct_cell = ws.cell(row=row, column=5, value=float(comp.get("pct_ww") or 0))
+        pct_cell.font = FONT_NORMAL
+        pct_cell.number_format = PCT_NUMBER_FORMAT
+        pct_cell.alignment = ALIGN_CENTER
+        if comp.get("is_bahan_aktif"):
+            for col in range(2, 6):
+                ws.cell(row=row, column=col).fill = ACTIVE_FILL
+        ws.row_dimensions[row].height = REF_ROW_HEIGHT_DATA_PURE
+        row += 1
+
+    data_last_row = max(data_start, row - 1)
+    _border_range(ws, data_start, data_last_row, 2, 5)
+    total_row = data_last_row + 1
+    _set_merged(ws, f"B{total_row}:D{total_row}", "Total :",
+                font=FONT_SIGN, align=ALIGN_LEFT_CENTER)
+    total_pct = ws.cell(row=total_row, column=5,
+                        value=f"=SUM(E{data_start - 1}:E{data_last_row})")
+    total_pct.number_format = PCT_TOTAL_FORMAT
+    total_pct.font = FONT_SIGN
+    total_pct.alignment = ALIGN_CENTER
+    _border_range(ws, total_row, total_row, 2, 5, border=BORDER_TOTAL_TOP)
+    _fill_range(ws, total_row, 2, 5, TOTAL_FILL)
+    ws.row_dimensions[total_row].height = LETTERHEAD_ROW_HEIGHT
+    _signature_block(ws, total_row + 1, "B", "E", with_labels=False)
+
+    _apply_widths(ws, {2: 43.141, 3: 21.0, 4: 21.711, 5: 21.0}, 2, pure_breakdown)
+    _page_setup(ws)
+
+
 # ==================== TEXT DESIGN ====================
 # Struktur sheet "Text Design" mengikuti dokumen acuan
 # excel-example/Text Design  Pherini Breast Serum 07032025.xlsx:
@@ -747,6 +803,7 @@ def build_formula_workbook(product: dict, trade_breakdown: list,
     wb = Workbook()
     _sheet_formula_trade(wb, product, trade_breakdown, company)
     _sheet_formula_pure(wb, product, pure_breakdown, company)
+    _sheet_formula_pure_cas(wb, product, pure_breakdown, company)
     _sheet_text_design(wb, product, pure_breakdown, company)
 
     buffer = io.BytesIO()
