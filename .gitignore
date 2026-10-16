@@ -86,3 +86,6 @@ backup-rls/
 !/tests/
 !/tests/verify_product_attachments.py
 !/tests/verify_po_analytics_detail.py
+# Unit test murni migrasi storage (tanpa secret/koneksi).
+!/tests/test_parse_storage_url.py
+!/tests/test_object_store_r2.py
