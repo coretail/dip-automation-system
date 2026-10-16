@@ -8,6 +8,7 @@ from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.database import supabase
+from app import object_store
 
 
 def _is_deleted_product(embedded):
@@ -722,10 +723,11 @@ def register_raw_materials_routes(
                     continue
                 bucket, path = _parse_storage_url(url)
                 if bucket and path:
-                    try:
-                        supabase.storage.from_(bucket).remove([path])
-                    except Exception as e:
-                        print(f"Gagal hapus file storage {path}: {e}")
+                    remove_result = object_store.primary_result(
+                        object_store.remove(bucket, path, client=supabase)
+                    )
+                    if not remove_result.get("ok") and not remove_result.get("missing"):
+                        print(f"Gagal hapus file storage {path}: {remove_result.get('error')}")
 
             # Hapus baris-baris dependent dulu, baru bahan bakunya sendiri
             supabase.table("raw_material_batches").delete().eq("raw_material_id", rm_id).execute()
@@ -899,12 +901,8 @@ def register_raw_materials_routes(
                 coa_bytes = await coa_file.read()
                 coa_path = f"coa/coa_{clean_batch}.pdf"
 
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=coa_path,
-                    file=coa_bytes,
-                    file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                coa_url = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
+                object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
+                coa_url = object_store.public_url("raw-material-docs", coa_path, client=supabase)
                 print("--> Sukses upload CoA.")
             except Exception as e:
                 print(f"Gagal upload CoA: {e}")
@@ -915,12 +913,8 @@ def register_raw_materials_routes(
                 halal_bytes = await halal_file.read()
                 halal_path = f"halal/halal_{clean_batch}.pdf"
 
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=halal_path,
-                    file=halal_bytes,
-                    file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                halal_url = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
+                object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
+                halal_url = object_store.public_url("raw-material-docs", halal_path, client=supabase)
                 print("--> Sukses upload Halal.")
             except Exception as e:
                 print(f"Gagal upload Halal Cert: {e}")
@@ -933,12 +927,8 @@ def register_raw_materials_routes(
                 qc_report_bytes = await qc_report_file.read()
                 qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
 
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=qc_report_path,
-                    file=qc_report_bytes,
-                    file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                qc_report_url = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
+                object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
+                qc_report_url = object_store.public_url("raw-material-docs", qc_report_path, client=supabase)
                 print("--> Sukses upload Laporan Pemeriksaan Aktual.")
             except Exception as e:
                 print(f"Gagal upload Laporan Pemeriksaan Aktual: {e}")
@@ -1017,10 +1007,8 @@ def register_raw_materials_routes(
             try:
                 coa_bytes = await coa_file.read()
                 coa_path = f"coa/coa_{clean_batch}.pdf"
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=coa_path, file=coa_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                update_data["coa_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
+                object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
+                update_data["coa_file_url"] = object_store.public_url("raw-material-docs", coa_path, client=supabase)
             except Exception as e:
                 print(f"Gagal update CoA: {e}")
 
@@ -1028,10 +1016,8 @@ def register_raw_materials_routes(
             try:
                 halal_bytes = await halal_file.read()
                 halal_path = f"halal/halal_{clean_batch}.pdf"
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=halal_path, file=halal_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                update_data["halal_batch_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
+                object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
+                update_data["halal_batch_file_url"] = object_store.public_url("raw-material-docs", halal_path, client=supabase)
             except Exception as e:
                 print(f"Gagal update Halal: {e}")
 
@@ -1039,10 +1025,8 @@ def register_raw_materials_routes(
             try:
                 qc_report_bytes = await qc_report_file.read()
                 qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=qc_report_path, file=qc_report_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                update_data["qc_report_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
+                object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
+                update_data["qc_report_file_url"] = object_store.public_url("raw-material-docs", qc_report_path, client=supabase)
             except Exception as e:
                 print(f"Gagal update QC Report: {e}")
 
@@ -1089,10 +1073,8 @@ def register_raw_materials_routes(
             try:
                 coa_bytes = await coa_file.read()
                 coa_path = f"coa/coa_{clean_batch}.pdf"
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=coa_path, file=coa_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                update_data["coa_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(coa_path)
+                object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
+                update_data["coa_file_url"] = object_store.public_url("raw-material-docs", coa_path, client=supabase)
                 uploaded_documents.append("CoA")
             except Exception as e:
                 print(f"Gagal quick-upload CoA: {e}")
@@ -1101,10 +1083,8 @@ def register_raw_materials_routes(
             try:
                 halal_bytes = await halal_file.read()
                 halal_path = f"halal/halal_{clean_batch}.pdf"
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=halal_path, file=halal_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                update_data["halal_batch_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(halal_path)
+                object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
+                update_data["halal_batch_file_url"] = object_store.public_url("raw-material-docs", halal_path, client=supabase)
                 uploaded_documents.append("Halal")
             except Exception as e:
                 print(f"Gagal quick-upload Halal: {e}")
@@ -1113,10 +1093,8 @@ def register_raw_materials_routes(
             try:
                 qc_report_bytes = await qc_report_file.read()
                 qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
-                supabase.storage.from_("raw-material-docs").upload(
-                    path=qc_report_path, file=qc_report_bytes, file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                update_data["qc_report_file_url"] = supabase.storage.from_("raw-material-docs").get_public_url(qc_report_path)
+                object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
+                update_data["qc_report_file_url"] = object_store.public_url("raw-material-docs", qc_report_path, client=supabase)
                 uploaded_documents.append("Catatan Pemeriksaan Bahan Baku")
             except Exception as e:
                 print(f"Gagal quick-upload QC Report: {e}")

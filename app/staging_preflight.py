@@ -20,7 +20,18 @@ STAGING_REF = "odtfppboyjlbatajncgj"
 PROD_REF = "dytuprmoorvrugutozwv"
 STAGING_HOST = STAGING_REF + ".supabase.co"
 PROD_HOST = PROD_REF + ".supabase.co"
-REQUIRED_KEYS = ("DIP_APP_ENV", "SUPABASE_URL", "SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+REQUIRED_KEYS = (
+    "DIP_APP_ENV",
+    "SUPABASE_URL",
+    "SUPABASE_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "STORAGE_BACKEND",
+    "R2_ACCOUNT_ID",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_PUBLIC_BASES",
+    "R2_BUCKET_SUFFIX",
+)
 KEY_BINDING_KEYS = ("SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY")
 
 
@@ -165,12 +176,7 @@ def validate_staging_file(file_vals, caller="preflight"):
 
 
 def validate_effective_env(env, caller="preflight"):
-    mapping = {
-        "DIP_APP_ENV": env.get("DIP_APP_ENV", ""),
-        "SUPABASE_URL": env.get("SUPABASE_URL", ""),
-        "SUPABASE_KEY": env.get("SUPABASE_KEY", ""),
-        "SUPABASE_SERVICE_ROLE_KEY": env.get("SUPABASE_SERVICE_ROLE_KEY", ""),
-    }
+    mapping = {k: env.get(k, "") for k in REQUIRED_KEYS}
     return validate_mapping(mapping, source="effective-env", caller=caller)
 
 

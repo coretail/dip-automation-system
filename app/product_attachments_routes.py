@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from app import object_store
+
 LAMPIRAN_CATEGORIES = (
     "Form ACC Sample",
     "Catatan Formula R&D",
@@ -56,16 +58,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
         if not result:
             return result
         try:
-            response = supabase.storage.from_(BUCKET).create_signed_urls(list(result), 3600) or []
-            if isinstance(response, dict):
-                response = response.get("data") or response.get("signedURLs") or []
-            for item in response:
-                if not isinstance(item, dict):
-                    continue
-                path = item.get("path") or item.get("name")
-                url = item.get("signedURL") or item.get("signedUrl")
-                if path in result and isinstance(url, str) and url.startswith("https://") and not item.get("error"):
-                    result[path] = url
+            result.update(object_store.signed_urls(BUCKET, list(result), 3600, client=supabase))
         except Exception as exc:
             print(f"[PRODUCT ATTACHMENTS] signed URL batch gagal: {exc}")
         return result
@@ -156,8 +149,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
                 continue
             path = f"products/{product_id}/{datetime.now(WIB):%Y-%m-%d}/{uuid4().hex[:8]}_{_sanitize_filename(name)}"
             try:
-                supabase.storage.from_(BUCKET).upload(path=path, file=data,
-                    file_options={"content-type": "application/pdf", "upsert": "false"})
+                object_store.upload_pdf(BUCKET, path, data, upsert=False, client=supabase)
             except Exception as exc:
                 print(f"[PRODUCT ATTACHMENTS] storage upload gagal: {exc}")
                 failed.append({"name": name, "error": "Gagal mengunggah file lampiran ke storage."})
@@ -173,7 +165,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
                     raise RuntimeError("empty insert response")
             except Exception as exc:
                 try:
-                    supabase.storage.from_(BUCKET).remove([path])
+                    object_store.remove(BUCKET, path, client=supabase)
                 except Exception as rollback_exc:
                     print(f"[PRODUCT ATTACHMENTS] rollback gagal {path}: {rollback_exc}")
                 print(f"[PRODUCT ATTACHMENTS] insert gagal: {exc}")
@@ -230,16 +222,13 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
                 any(part in ("", ".", "..") for part in path.split("/"))):
             raise HTTPException(500, "Path lampiran tidak valid.")
         try:
-            removed = supabase.storage.from_(BUCKET).remove([path])
-            # Empty response is an idempotent no-op for an already missing object.
-        except Exception as exc:
-            text = str(exc).lower()
-            status_code = getattr(exc, "status", None)
-            code = str(getattr(exc, "code", "")).lower()
-            missing = status_code in (404, "404") and "bucket" not in text
-            missing = missing or code in {"not_found", "object_not_found", "notfound"}
-            if not missing and "object not found" not in text and "file not found" not in text:
-                raise HTTPException(500, "Gagal menghapus file lampiran dari storage.")
+            remove_result = object_store.primary_result(
+                object_store.remove(BUCKET, path, client=supabase)
+            )
+        except Exception:
+            remove_result = {"ok": False, "missing": False}
+        if not remove_result.get("ok") and not remove_result.get("missing"):
+            raise HTTPException(500, "Gagal menghapus file lampiran dari storage.")
         supabase.table("product_attachments").delete().eq("id", attachment_id).eq("product_id", product_id).execute()
         try:
             log_activity(current_user, "delete", "product_attachment", attachment_id, row.get("file_name"), request=request)

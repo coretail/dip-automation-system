@@ -15,6 +15,8 @@ from fastapi.responses import RedirectResponse
 from pypdf import PdfReader, PdfWriter
 from xhtml2pdf import pisa
 
+from app import object_store
+
 _EFEK_PERIOD_RE = re.compile(r"^(\d{4})-H([12])$")
 APT_SIGNATURE_URI = "/static/images/apt.png"
 WIB = ZoneInfo("Asia/Jakarta")
@@ -315,12 +317,8 @@ def register_efek_samping_routes(
 
         path = f"products/{product_id}/monitoring_efek_samping_{_slugify(product.get('nama_produk'))}.pdf"
         try:
-            supabase.storage.from_("raw-material-docs").upload(
-                path=path,
-                file=merged.getvalue(),
-                file_options={"content-type": "application/pdf", "upsert": "true"},
-            )
-            file_url = supabase.storage.from_("raw-material-docs").get_public_url(path)
+            object_store.upload_pdf("raw-material-docs", path, merged.getvalue(), client=supabase)
+            file_url = object_store.public_url("raw-material-docs", path, client=supabase)
         except Exception as e:
             print(f"[EFEK SAMPING] Gagal upload PDF: {e}")
             return _redirect("Gagal mengunggah PDF laporan ke storage.", error=True)
@@ -399,7 +397,11 @@ def register_efek_samping_routes(
                 path = file_url.split(marker, 1)[1]
                 if not path.startswith(f"products/{product_id}/"):
                     raise ValueError(f"Path {path!r} bukan milik produk {product_id}")
-                supabase.storage.from_("raw-material-docs").remove([path])
+                remove_result = object_store.primary_result(
+                    object_store.remove("raw-material-docs", path, client=supabase)
+                )
+                if not remove_result.get("ok") and not remove_result.get("missing"):
+                    print(f"[EFEK SAMPING] Gagal hapus file {file_url}: {remove_result.get('error')}")
             except ValueError as e:
                 # Path tidak valid: jangan hapus apa pun, tetap lanjut reset DB.
                 print(f"[EFEK SAMPING] URL file mencurigakan, tidak dihapus: {e}")

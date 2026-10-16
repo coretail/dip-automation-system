@@ -28,6 +28,8 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 
+from app import object_store
+
 # Zona waktu bisnis (WIB) — harus nilainya sama dengan main.py
 WIB = ZoneInfo("Asia/Jakarta")
 
@@ -70,8 +72,7 @@ def register_dip_public_routes(
         if not bucket or not path:
             return public_url
         try:
-            resp = supabase.storage.from_(bucket).create_signed_url(path, expires_in)
-            signed = resp.get("signedURL") or resp.get("signedUrl")
+            signed = object_store.signed_url(bucket, path, expires_in, client=supabase)
             return signed or public_url
         except Exception as e:
             print(f"Gagal generate signed URL ({bucket}/{path}): {e}")

@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from typing import List
 from app.database import supabase
 from app.config import settings
+from app import object_store
 from app.staging_guard import assert_allowed_target as _assert_allowed_target
 
 _assert_allowed_target("startup")
@@ -1348,12 +1349,8 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
         try:
             file_bytes = await msds_file.read()
             file_path = f"msds/msds_{clean_kode}_{company_slug}.pdf"
-            supabase.storage.from_("raw-material-docs").upload(
-                path=file_path,
-                file=file_bytes,
-                file_options={"content-type": "application/pdf", "upsert": "true"}
-            )
-            msds_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
+            object_store.upload_pdf("raw-material-docs", file_path, file_bytes, client=supabase)
+            msds_url = object_store.public_url("raw-material-docs", file_path, client=supabase)
             uploaded_documents.append("MSDS")
         except Exception as e:
             print(f"Gagal upload MSDS ({perusahaan}): {e}")
@@ -1363,12 +1360,8 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
         try:
             file_bytes = await spec_sheet_file.read()
             file_path = f"spec-sheets/specsheet_{clean_kode}_{company_slug}.pdf"
-            supabase.storage.from_("raw-material-docs").upload(
-                path=file_path,
-                file=file_bytes,
-                file_options={"content-type": "application/pdf", "upsert": "true"}
-            )
-            spec_sheet_url = supabase.storage.from_("raw-material-docs").get_public_url(file_path)
+            object_store.upload_pdf("raw-material-docs", file_path, file_bytes, client=supabase)
+            spec_sheet_url = object_store.public_url("raw-material-docs", file_path, client=supabase)
             uploaded_documents.append("Spesifikasi")
         except Exception as e:
             print(f"Gagal upload Spesifikasi Asli Supplier ({perusahaan}): {e}")
@@ -1611,12 +1604,8 @@ async def update_company_document(
             return response
 
         path = path_template.format(doc_type=doc_type, slug=company_slug)
-        supabase.storage.from_(bucket).upload(
-            path=path,
-            file=file_bytes,
-            file_options={"content-type": "application/pdf", "upsert": "true"}
-        )
-        file_url = supabase.storage.from_(bucket).get_public_url(path)
+        object_store.upload_pdf(bucket, path, file_bytes, client=supabase)
+        file_url = object_store.public_url(bucket, path, client=supabase)
 
         # Upsert 1 baris per perusahaan:
         # - 3 tabel pertama (nib_documents, sertifikat_cpkb_documents,
@@ -2210,21 +2199,15 @@ async def preview_finished_spec(product_id: str, current_user: dict = Depends(ge
 #  juga dipakai app/raw_materials_routes.py.
 # =====================================================================
 def _parse_storage_url(url: str):
-    """Ekstrak (bucket, path) dari public URL Supabase Storage.
-    Contoh:
+    """Ekstrak (bucket, path) dari public URL storage (Supabase ATAU R2).
+
+    Contoh Supabase:
       https://xxxx.supabase.co/storage/v1/object/public/raw-material-docs/products/123/a.pdf
       -> ('raw-material-docs', 'products/123/a.pdf')
-    Kalau formatnya bukan public storage URL, return (None, None)."""
-    if not url:
-        return None, None
-    marker = "/storage/v1/object/public/"
-    if marker not in url:
-        return None, None
-    rest = url.split(marker, 1)[1].split("?", 1)[0]
-    if "/" not in rest:
-        return None, None
-    bucket, path = rest.split("/", 1)
-    return bucket, path
+    Contoh R2 (base publik per bucket dari R2_PUBLIC_BASES):
+      https://pub-xxx.r2.dev/products/123/a.pdf -> ('raw-material-docs', 'products/123/a.pdf')
+    Kalau formatnya bukan URL storage yang dikenal, return (None, None)."""
+    return object_store.parse_storage_url(url)
 
 
 # 1. Halaman Form Edit Produk
@@ -2364,22 +2347,7 @@ async def edit_product_page(request: Request, product_id: str, current_user: dic
                 "can_manage": bool(_att.get("uploaded_by") and current_user.get("id") and str(_att.get("uploaded_by")) == str(current_user.get("id"))) or current_user.get("role") == "admin",
             })
         _paths = [_att.get("file_path") for _att in _attachment_rows if _att.get("file_path")]
-        try:
-            _signed_rows = supabase.storage.from_("product-attachments").create_signed_urls(_paths, 3600) if _paths else []
-            if isinstance(_signed_rows, dict):
-                _signed_rows = _signed_rows.get("data") or _signed_rows.get("signedURLs") or []
-        except Exception as _signed_exc:
-            print(f"Gagal membuat signed URL lampiran {product_id}: {_signed_exc}")
-            _signed_rows = []
-        _signed_map = {
-            x.get("path"): (x.get("signedURL") or x.get("signedUrl"))
-            for x in (_signed_rows or [])
-            if isinstance(x, dict)
-            and x.get("path")
-            and not x.get("error")
-            and isinstance(x.get("signedURL") or x.get("signedUrl"), str)
-            and (x.get("signedURL") or x.get("signedUrl")).startswith("https://")
-        }
+        _signed_map = object_store.signed_urls("product-attachments", _paths, 3600, client=supabase)
         for _items in lampiran_groups.values():
             for _item in _items:
                 _item["signed_url"] = _signed_map.get(_item.get("file_path"))
@@ -2506,12 +2474,8 @@ async def update_product(
                     )
                 
                 path = f"products/{product_id}/{path_suffix}.pdf"
-                supabase.storage.from_(bucket_name).upload(
-                    path=path,
-                    file=file_bytes,
-                    file_options={"content-type": "application/pdf", "upsert": "true"}
-                )
-                return supabase.storage.from_(bucket_name).get_public_url(path)
+                object_store.upload_pdf(bucket_name, path, file_bytes, client=supabase)
+                return object_store.public_url(bucket_name, path, client=supabase)
             except HTTPException:
                 raise
             except Exception as e:
@@ -3209,12 +3173,8 @@ async def update_brand_documents(
             file_bytes = await hak_lisensi_merk_file.read()
             # Path includes perusahaan_slug to avoid conflicts
             path = f"brands/hak_lisensi_merk_{brand_id}_{perusahaan_slug}.pdf"
-            supabase.storage.from_("legal-documents").upload(
-                path=path,
-                file=file_bytes,
-                file_options={"content-type": "application/pdf", "upsert": "true"}
-            )
-            update_data["hak_lisensi_merk_file_url"] = supabase.storage.from_("legal-documents").get_public_url(path)
+            object_store.upload_pdf("legal-documents", path, file_bytes, client=supabase)
+            update_data["hak_lisensi_merk_file_url"] = object_store.public_url("legal-documents", path, client=supabase)
 
         if update_data:
             # Check if row exists for this brand_id + perusahaan
