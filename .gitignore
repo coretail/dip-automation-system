@@ -78,6 +78,8 @@ skills-lock.json
 !/migration/*.sql
 # Skrip audit storage (report-only, tanpa secret).
 !/migration/audit_storage.py
+# Skrip backfill URL storage (idempoten, tanpa secret).
+!/migration/backfill_r2_urls.py
 
 # RLS backup dumps (local only, contains database data)
 /backup-rls/
