@@ -111,6 +111,9 @@ def main():
 
     check("r2 public_url",
           object_store.public_url("raw-material-docs", "coa/a.pdf") == "https://pub-rmd.r2.dev/coa/a.pdf")
+    check("r2 public_url encode spasi",
+          object_store.public_url("raw-material-docs", "brands/hak lisensi.pdf")
+          == "https://pub-rmd.r2.dev/brands/hak%20lisensi.pdf")
     try:
         object_store.public_url("product-attachments", "x.pdf")
         check("r2 public_url missing base raises", False, "tidak raise")

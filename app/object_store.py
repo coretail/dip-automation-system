@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -332,7 +333,8 @@ def _r2_public_url(bucket: str, path: str) -> str:
             f"[STORAGE] bucket '{bucket}' (suffix '{r2_bucket_suffix()}') tidak punya "
             "base publik di R2_PUBLIC_BASES."
         )
-    return base.rstrip("/") + "/" + str(path).lstrip("/")
+    # Encode path (spasi -> %20) agar konsisten dengan Supabase get_public_url.
+    return base.rstrip("/") + "/" + quote(str(path).lstrip("/"), safe="/")
 
 
 def _r2_signed_url(bucket: str, path: str, expires: int = 3600):
