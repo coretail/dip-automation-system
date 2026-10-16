@@ -1,6 +1,6 @@
 # Panduan Lengkap & Komprehensif: DIP Automation System
 
-**TL;DR:** DIP Automation System adalah aplikasi web untuk sentralisasi data bahan baku, manajemen formula, dan otomatisasi pembuatan Dokumen Informasi Produk (DIP) kosmetik sesuai pedoman BPOM dan ASEAN Cosmetic Directive (ACD). Mendukung dua entitas hukum (PT Erfi & PT Heka) dengan data terpisah per perusahaan, menerapkan RBAC (Admin/Staff), menyimpan berkas di Supabase Storage, dan menghasilkan output berupa PDF gabungan atau folder ZIP terstruktur untuk Bab II. Fitur penting: **tema tampilan 4 warna** (Light/Terra/Rose/Dark) dengan sidebar responsif, Formula Builder (total harus 100% w/w), manajemen batch & CoA, input produksi (PO & batch produk) beserta **halaman analitik PO**, catatan kerja tim (Notes dengan @mention dan token referensi), laporan monitoring efek samping (NIES) per semester, public permalink untuk verifikasi BPOM, audit trail (`activity_logs`), pembatasan unggah 10 MB per file, **toolkit migrasi data dari spreadsheet**, serta integrasi teknis dengan `xhtml2pdf`, `pypdf`, dan `openpyxl`.
+**TL;DR:** DIP Automation System adalah aplikasi web untuk sentralisasi data bahan baku, manajemen formula, dan otomatisasi pembuatan Dokumen Informasi Produk (DIP) kosmetik sesuai pedoman BPOM dan ASEAN Cosmetic Directive (ACD). Mendukung dua entitas hukum (PT Erfi & PT Heka) dengan data terpisah per perusahaan, menerapkan RBAC (Admin/Staff), menyimpan berkas di Supabase Storage, dan menghasilkan output berupa PDF gabungan atau folder ZIP terstruktur untuk Bab II. Fitur penting: **tema tampilan 4 warna** (Light/Terra/Rose/Dark) dengan sidebar responsif, Formula Builder (total harus 100% w/w), manajemen batch & CoA, lampiran produk privat non-DIP (`product-attachments`), input produksi (PO & batch produk) beserta **halaman analitik PO**, catatan kerja tim (Notes dengan @mention dan token referensi), laporan monitoring efek samping (NIES) per semester, public permalink untuk verifikasi BPOM, audit trail (`activity_logs`), pembatasan unggah 10 MB per file, **toolkit migrasi data dari spreadsheet**, serta integrasi teknis dengan `xhtml2pdf`, `pypdf`, dan `openpyxl`.
 
 ---
 
@@ -18,9 +18,9 @@ Dokumen ini merupakan panduan operasional dan dokumentasi teknis komprehensif un
 7. [FAQ & Troubleshooting](#7-faq--troubleshooting)
 8. [Panduan Pemeliharaan & Bantuan](#8-panduan-pemeliharaan--bantuan)
 
-> **Ringkasan isi Tahap 4 (section 4.x):** 4.1 Master Data Bahan Baku · 4.2 Manajemen Batch · 4.3 Brand · 4.4 Formula Builder · 4.5 Edit Produk Multi-Tab · 4.6 **Generasi & Ekspor Dokumen (PDF Gabungan vs ZIP)** · 4.7 Portal Public Link · 4.8 FSP · 4.9 **Input Produksi (PO & Batch)** · 4.10 **Analisis PO** · 4.11 **Notes Tim** · 4.12 **Monitoring Efek Samping (NIES)** · 4.13 **Sistem Tema & Tampilan** · 4.14 **Toolkit Migrasi Data**
+> **Ringkasan isi Tahap 4 (section 4.x):** 4.1 Master Data Bahan Baku · 4.2 Manajemen Batch · 4.3 Brand · 4.4 Formula Builder · 4.5 Edit Produk Multi-Tab · 4.5a **Lampiran Produk** · 4.6 **Generasi & Ekspor Dokumen (PDF Gabungan vs ZIP)** · 4.7 Portal Public Link · 4.8 FSP · 4.9 **Input Produksi (PO & Batch)** · 4.10 **Analisis PO** · 4.11 **Notes Tim** · 4.12 **Monitoring Efek Samping (NIES)** · 4.13 **Sistem Tema & Tampilan** · 4.14 **Toolkit Migrasi Data**
 
-> **Versi dokumen:** 5 Oktober 2026 · **Cakupan:** aplikasi web `D:\dip-app` (FastAPI + Jinja2 + Supabase)
+> **Versi dokumen:** 15 Oktober 2026 · **Cakupan:** aplikasi web `D:\dip-app` (FastAPI + Jinja2 + Supabase)
 
 ---
 
@@ -200,7 +200,7 @@ Setiap kedatangan bahan baku wajib dicatat sebagai batch, dan di-scope ke perusa
    - **CoA (Certificate of Analysis)** — wajib.
    - **Sertifikat Halal** — opsional.
 
-- **Edit Batch Kedatangan:** Fitur Edit Batch (`raw_material_batches`) memungkinkan pembaruan No Lot, Tanggal ED, Produsen, Asal Negara, dan lampiran COA.
+- **Edit Batch Kedatangan:** Fitur Edit Batch (`raw_material_batches`) memungkinkan pembaruan No Batch/No Lot, Supplier, Tanggal Terima, Tanggal ED, Kesimpulan, Produsen, Asal Negara, Quantity & Satuan, Keterangan, serta lampiran CoA, Sertifikat Halal, dan Laporan Pemeriksaan (QC Report).
 - **Pengurutan Log:** Log kedatangan batch diurutkan berdasarkan `created_at DESC` (terbaru di baris paling atas).
 - **Status Batch:** pada log batch tersedia aksi **"Dipakai"** (produk sudah digunakan/CONDOH) dan **"Dimusnahkan"**, lengkap dengan input tanggal serta alasan. Status ini terpisah dari `kesimpulan` kelulusan QC.
    - **Laporan Pemeriksaan Aktual** — opsional; kalau ada dokumen fisik/scan hasil pemeriksaan, upload di sini. PDF ini dipakai sebagai sumber **Catatan Pemeriksaan di PDF gabungan maupun ZIP**; kalau tidak ada, PDF gabungan tetap menampilkannya dari data batch (§4.6).
@@ -232,7 +232,7 @@ Setiap kedatangan bahan baku wajib dicatat sebagai batch, dan di-scope ke perusa
 
 ### 4.5 Tahap 5 — Penyusunan Dokumen Bab I – IV (Edit Produk Multi-Tab)
 
-Halaman **Edit Informasi & Dokumen Produk** (`/products/{product_id}/edit`) menggabungkan semua pengaturan produk dalam **5 tab**: *Informasi Dasar*, *Bab 1*, *Bab 2*, *Bab 3*, *Bab 4* — sehingga tidak perlu berpindah-pindah halaman.
+Halaman **Edit Informasi & Dokumen Produk** (`/products/{product_id}/edit`) menggabungkan semua pengaturan produk dalam **6 tab**: *Informasi Dasar*, *Bab 1*, *Bab 2*, *Bab 3*, *Bab 4*, *Lampiran* — sehingga tidak perlu berpindah-pindah halaman.
 
 **Tab Informasi Dasar** — data umum produk, Nomor Notifikasi BPOM (No. NA), dan Tanggal Aktif NA. Status legalitas NA (Aktif / Akan Expired / Expired / Belum Terdaftar) dihitung & diperbarui otomatis dari tanggal ini.
 
@@ -250,9 +250,21 @@ Halaman **Edit Informasi & Dokumen Produk** (`/products/{product_id}/edit`) meng
 
 **Tab Bab 4 (Keamanan Produk)** — laporan *safety assessment*, CV *safety assessor*, data klaim, monitoring efek samping (NIES), desain kemasan primer/sekunder, dan rancangan teks kemasan. Tersedia *Preview* & *Download PDF*, serta **generate laporan Monitoring Efek Samping** (lihat [§4.12](#412-monitoring-efek-samping-nies)).
 
+**Tab Lampiran (Dokumen Pendukung Non-DIP)** — unggah PDF pendukung yang **bukan** bagian dokumen DIP (Form ACC Sample, Catatan Formula R&D, Catatan Formula Trial & Perubahan, Surat Pengajuan Uji Sample, Lain-lain). Detail aturan lengkapnya ada di [§4.5a](#45a-lampiran-produk-dokumen-pendukung-non-dip).
+
 > ⚠️ Setiap dokumen yang belum diunggah ditandai badge **"PDF belum terisi"**. Upload PDF dibatasi maksimal **10 MB per file**; validasi dilakukan di sisi browser (agar terasa cepat) *dan* di sisi server (sebagai jaring pengaman terakhir yang tidak bisa dilewati).
 
 ---
+
+### 4.5a Lampiran Produk (Dokumen Pendukung Non-DIP)
+
+Selain dokumen DIP Bab I–IV, setiap produk punya **Lampiran Produk** (tab **Lampiran** di halaman Edit Produk, rute `/products/{id}/lampiran`) untuk PDF pendukung yang **tidak** masuk dokumen DIP:
+
+1. **5 kategori tetap** — Form ACC Sample, Catatan Formula R&D, Catatan Formula Trial & Perubahan, Surat Pengajuan Uji Sample, dan Lain-lain.
+2. **Batas** — maksimal 10 file × 10 MB per produk; hanya PDF yang diterima (validasi ukuran, magic bytes `%PDF`, dan `CHECK` ukuran di level database).
+3. **Penyimpanan** — bucket privat `product-attachments` (`migration/004_create_product_attachments.sql`); preview memakai *signed URL* yang kedaluwarsa otomatis (1 jam), bukan URL publik.
+4. **Izin** — lampiran hanya bisa diedit/dihapus oleh pengunggahnya atau Admin; pengguna lain hanya melihat dan mengunduh.
+5. **Dashboard** — jumlah lampiran per produk tampil sebagai badge pada kartu produk (view `product_attachment_counts`).
 
 ### 4.6 Tahap 6 — Generasi & Ekspor Dokumen DIP (PDF Gabungan vs Folder ZIP)
 
@@ -341,7 +353,7 @@ Modul khusus pengelolaan **Formulir Pengajuan Sample Produk (FSP)** (`/sample-su
 
 1. **Pembuatan FSP Baru** — menu **Pengajuan Sample**, klik **+ Form Baru**.
 2. **Auto-Generate Kode FSP** — format `FSP/DD-MM-YYYY/X.Y`, di mana `X` = nomor urut pengajuan pada hari itu, `Y` = nomor revisi (dimulai dari `1` untuk pengajuan awal).
-3. **Manajemen Revisi** — saat FSP yang sudah ada diedit & disimpan ulang, nomor revisi (`Y`) naik otomatis.
+3. **Manajemen Revisi** — kode `FSP/DD-MM-YYYY/X.Y` di-generate otomatis saat pembuatan (`X` = urutan pengajuan produk pada hari itu, `Y` = pengajuan ke-i untuk produk yang sama pada hari itu). Mengedit FSP yang sudah ada **mempertahankan** suffix `X.Y` lama dan **tidak** menaikkan nomor revisi.
 4. **Preview & Cetak** — FSP bisa dipreview dengan tampilan siap cetak/simpan ke PDF (`/sample-submissions/preview/{id}`).
 
 ---
@@ -381,9 +393,9 @@ Halaman `/purchase-orders` punya empat lapis kontrol:
 
 > ℹ️ **Mengapa ada opsi "Tanpa item"?** Tabel `purchase_orders` **tidak punya kolom perusahaan** — perusahaan suatu PO ditentukan dari produknya lewat `purchase_order_items`. Akibatnya, saat filter PT aktif, PO yang belum punya item otomatis ikut tersaring. Opsi **"Tanpa item"** disediakan supaya PO tersebut **tidak hilang diam-diam**. Nilainya hanya muncul di dropdown bila jumlahnya lebih dari 0, dan tercatat pada badge `pt_counts` dengan kunci kosong.
 
-- Pilihan tersimpan di **cookie `po_filter`** dengan format `tahun|kuartal|perusahaan`, sehingga filter bertahan saat berpindah halaman dan saat membuka halaman dari notifikasi.
+- Pilihan tersimpan di **cookie `po_filter`** dengan format `tahun:kuartal:perusahaan`, sehingga filter bertahan saat berpindah halaman dan saat membuka halaman dari notifikasi.
 - **Interaksi antar filter:** mengganti tahun **mempertahankan** kuartal dan perusahaan; mengganti perusahaan **menghapus** PO terpilih (karena PO itu mungkin tidak ada di hasil saringan) tetapi **mempertahankan** kuartal; "Tanpa item" dikirim sebagai string kosong pada form pencarian supaya tidak dianggap filter.
-- **Endpoint `GET /api/po/search`** tersedia untuk pencarian No. PO + nama produk dan dipakai integrasi; antarmuka `/purchase-orders` sendiri memfilter di sisi klien.
+- **Endpoint `GET /api/po/search`** tersedia untuk pencarian No. PO + nama produk dan dipakai integrasi; antarmuka `/purchase-orders` sendiri memfilter di sisi klien. Endpoint ini memerlukan sesi login (cookie `access_token`) — panggilan tanpa sesi ditolak 401.
 - **Pengurutan** tanggal PO dengan nilai `null` selalu diletakkan **terakhir**, supaya PO yang belum bertanggal tidak menggeser PO tertua ke posisi teratas.
 - Batas pengambilan baris (`_PO_LIST_LIMIT`) bersifat **jaring pengaman**, **bukan batas tampilan** — seluruh daftar ditampilkan, dan halaman menampilkan catatan bila jumlah baris yang diambil menyentuh batas tersebut.
 
@@ -461,7 +473,7 @@ Modul **Notes** (`/notes`) untuk catatan kerja & koordinasi antar tim, mengganti
    - `!` → merk
 3. **Notifikasi** — masing-masing mention tercatat di `team_note_mentions` dan memunculkan **badge merah pada navbar** untuk penerima mention yang belum membacanya.
 4. **Status Pengerjaan** — note dapat ditandai **selesai** atau **dibuka kembali**; halaman menyediakan tampilan "all" atau "pending".
-5. **Hapus** — hanya penulis note yang dapat menghapus note-nya sendiri.
+5. **Hapus** — penulis dapat menghapus note-nya sendiri, dan **Admin** dapat menghapus note siapa pun.
 
 ---
 
@@ -476,7 +488,7 @@ Modul **cosmetovigilance** untuk pencatatan keluhan efek samping produk. Dijalan
 5. **Hapus Laporan** — aksi hapus tersedia bila laporan memang keliru dan perlu dibuat ulang dari awal.
 6. **Penyimpanan** — PDF disimpan di bucket `raw-material-docs` pada path `products/{id}/monitoring_efek_samping_{slug_produk}.pdf`, dan tautannya dipakai sebagai lampiran di dokumen Bab IV.
 
-> ⚠️ **Bedakan dari dokumen statis perusahaan:** di halaman `/admin/company-documents` ada dokumen bernama serupa, yaitu **"Monitoring Efek Samping"** yang merupakan dokumen/SOP perusahaan. Itu dokumen yang diunggah manual, **berbeda** dari laporan NIES yang di-generate per produk di sini. Keduanya dapat dipakai sebagai lampiran Bab IV, dan checklist Bab IV membaca keduanya.
+> ⚠️ **Bedakan dari dokumen statis perusahaan:** halaman `/admin/company-documents` saat ini mengelola **7 jenis** dokumen statis perusahaan dan **tidak** menyediakan jenis "Monitoring Efek Samping". Lampiran Bab IV untuk monitoring efek samping memakai **laporan NIES per-produk** yang di-generate di sini. Baris checklist Bab IV juga menerima kolom `monitoring_efek_samping_file_url` pada tabel `company_sop_documents`, tetapi kolom itu hanya bisa diisi langsung lewat Supabase — bukan lewat halaman admin.
 
 ---
 
@@ -497,7 +509,7 @@ Seluruh halaman aplikasi mewarisi satu shell, `app/templates/base.html`, yang me
 
 #### B. Arsitektur CSS dua lapis
 
-`app/static/theme.css` (±1.100 baris) sengaja dibangun berlapis:
+`app/static/theme.css` (±1.050 baris) sengaja dibangun berlapis:
 
 1. **Lapisan token** — satu blok CSS per tema yang mendefinisikan semua custom property. Nilai warna di sini **literal**.
 2. **Lapisan mapping** — utility class Tailwind dipetakan ke token, ditulis **sekali**, **tanpa literal warna**, dan setiap aturan memakai `!important` supaya mengalahkan utility Tailwind CDN tanpa bergantung pada urutan `@layer`.
@@ -548,7 +560,7 @@ Keempat path tersebut juga disaring dari access log server agar terminal tetap t
 
 ### 4.14 Toolkit Migrasi Data (`migration/`)
 
-Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadsheet ke Supabase. **Folder ini sengaja tidak di-commit ke git** (lihat `.gitignore`) karena berisi data operasional perusahaan.
+Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadsheet ke Supabase. **Hanya file SQL skema (`*.sql`) yang di-commit ke git** (lihat `.gitignore`); skrip impor/rollback dan data spreadsheet/CSV tetap tidak di-commit karena berisi data operasional perusahaan.
 
 #### A. Konvensi yang dipatuhi seluruh skrip
 
@@ -565,6 +577,7 @@ Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadshee
 | `001_create_purchase_orders.sql` | Membuat **`purchase_orders`** dan **`purchase_order_items`** beserta FK dan UNIQUE. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada sebelumnya, dan file ini hanya mereferensikannya dengan FK `RESTRICT` |
 | `002_add_jenis_po.sql` | Menambah kolom `purchase_orders.jenis_po` untuk PO Rework |
 | `003_activity_log_audit_hardening.sql` | Menambah 7 kolom konteks request & verdict ke `activity_logs`, 4 index investigasi, 2 `CHECK`, `REVOKE` dari `anon`/`authenticated`, dan memperbaiki FK `actor_id` ke `ON DELETE SET NULL` |
+| `004_create_product_attachments.sql` | Membuat tabel `product_attachments` (lampiran produk privat non-DIP, lihat §4.5a) + view `product_attachment_counts`, RLS aktif & `REVOKE` dari `anon`/`authenticated`, `CHECK` ukuran file ≤ 10 MB |
 
 > ⚠️ Skema produksi **tidak dikelola otomatis** — jalankan file SQL ini manual melalui Supabase SQL Editor.
 
@@ -642,7 +655,7 @@ Di Dashboard, tiap produk punya indikator kelengkapan (`progress_pct`) dihitung 
 
 Tambahan: **Data Pendukung Klaim** dihitung sebagai **nilai tambah di pembilang tanpa ditambah ke pembagi**, sehingga persentase dapat naik di atas 100% bila semua item dasar sudah lengkap. Pada tampilan dashboard, kondisi ini ditandai warna **amber** dan panjang bar dibatasi 100% supaya tidak melebihi layar.
 
-> ℹ️ **Perbedaan lapisan dokumen Bab IV:** checklist PDF Bab IV menampilkan lebih banyak baris daripada rasio dashboard, karena checklist juga memuat dokumen dari sumber lain — **CV / Kualifikasi Safety Assessor** dan **Monitoring Efek Samping** dari dokumen perusahaan (`company_sop_documents`), serta **Rancangan Teks Kemasan**. Angka rasio dashboard di atas mengacu pada dokumen produk, bukan seluruh baris checklist.
+> ℹ️ **Perbedaan lapisan dokumen Bab IV:** checklist PDF Bab IV menampilkan lebih banyak baris daripada rasio dashboard, karena checklist juga memuat dokumen dari sumber lain — **CV / Kualifikasi Safety Assessor** dari dokumen perusahaan (`company_sop_documents`), **Laporan Monitoring Efek Samping** yang utamanya laporan NIES per-produk (baris checklist juga menerima kolom `monitoring_efek_samping_file_url` di `company_sop_documents` bila diisi langsung lewat Supabase), serta **Rancangan Teks Kemasan**. Angka rasio dashboard di atas mengacu pada dokumen produk, bukan seluruh baris checklist.
 
 ### 5.3 Aturan Proteksi Penghapusan Data
 - **Perlindungan Bahan Baku** — sistem **melarang** penghapusan bahan baku yang masih dipakai di formula produk aktif. Bahan baku harus dilepas dari formula dulu sebelum dihapus dari master data. Penghapusan bahan baku sekaligus ikut menghapus batch, dokumen per perusahaan, komponen, dan varian komposisinya.
@@ -724,7 +737,7 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
 
 ### 6.2 Integrasi Supabase Storage & PostgreSQL Database
 - **Database:** Supabase PostgreSQL. Aplikasi memakai **satu klien Supabase global** yang dibangun dari *service role key* sehingga melewati RLS untuk seluruh request. Tabel yang dipakai aplikasi:
-  - **Master & Produk:** `profiles` (user, role, `is_protected`, data presence), `products`, `brands`, `producers`, `product_formula_lines`, `product_finished_specs`, `product_batches`.
+  - **Master & Produk:** `profiles` (user, role, `is_protected`, data presence), `products`, `brands`, `producers`, `product_formula_lines`, `product_finished_specs`, `product_batches`, `product_attachments` (lampiran produk non-DIP, lihat §4.5a).
   - **Bahan Baku:** `raw_materials`, `raw_material_components`, `raw_material_composition_variants` (varian komposisi), `raw_material_batches`, `raw_material_company_docs` (dokumen per perusahaan).
   - **Produksi:** `purchase_orders`, `purchase_order_items`.
   - **Kolaborasi:** `team_notes`, `team_note_mentions`.
@@ -733,7 +746,7 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
   - **Dokumen legal/statis per perusahaan:** `nib_documents`, `sertifikat_cpkb_documents`, `surat_tidak_pidana_documents`, `company_sop_documents`, `cpkb_raw_material`, `brand_legal_documents`.
   - > Daftar di atas adalah tabel yang **dipanggil oleh kode**. Untuk rincian kolom dan relasi, rujuk ke skema/migrasi resmi di repository.
 - **Object Storage:** file PDF (MSDS, CoA, Halal, NIB, CPKB, dst) disimpan di Supabase Storage. Sebagian besar diakses lewat public URL; khusus di halaman Public Hub verifikator BPOM, tautan file memakai *signed URL* sementara (kedaluwarsa otomatis) sebagai lapisan keamanan tambahan — **dengan fallback ke public URL mentah bila pembuatan signed URL gagal**, agar halaman tidak ikut mati.
-  - Bucket yang dipakai: `legal-documents` (dokumen perusahaan), `raw-material-docs` (SOP CPKB, dokumen bahan baku, serta laporan Monitoring Efek Samping per produk), dan bucket unggahan dokumen produk.
+  - Bucket yang dipakai: `legal-documents` (dokumen perusahaan), `raw-material-docs` (SOP CPKB, dokumen bahan baku, serta laporan Monitoring Efek Samping per produk), dan `product-attachments` (lampiran produk privat non-DIP, lihat §4.5a).
 
 #### Skema Modul Produksi
 
@@ -754,11 +767,11 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
 - **Penyaringan access log:** empat endpoint poller berfrekuensi tinggi (`/health`, `/api/presence/heartbeat`, `/api/notes/mentions/unread-count`, `/api/admin/users/presence`) disaring dari access log agar terminal tetap terbaca.
 
 ### 6.4 Manajemen Dokumen Perusahaan (`/admin/company-documents`)
-Sebelum September 2026, 8 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, Monitoring Efek Samping, serta **SOP CPKB Pemeriksaan Bahan Baku**) hanya bisa diubah lewat Supabase Dashboard langsung (atau dari halaman bahan baku untuk SOP CPKB). Kini tersedia halaman admin khusus (`/admin/company-documents`) yang memungkinkan admin mengunggah dan mengganti file-file tersebut langsung dari aplikasi.
+Sebelum September 2026, 7 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, serta **SOP CPKB Pemeriksaan Bahan Baku**) hanya bisa diubah lewat Supabase Dashboard langsung (atau dari halaman bahan baku untuk SOP CPKB). Kini tersedia halaman admin khusus (`/admin/company-documents`) yang memungkinkan admin mengunggah dan mengganti file-file tersebut langsung dari aplikasi. Laporan Monitoring Efek Samping (NIES) **bukan** bagian dari halaman ini — itu dokumen per-produk yang di-generate (lihat §4.12).
 - **Akses:** Admin-only (`/admin/company-documents`), link tersedia di dashboard.
-- **8 Dokumen × 2 Perusahaan:** Tabel matriks menampilkan status (ada/tidak) + tombol "Upload"/"Ganti" untuk masing-masing. Satu modal upload dipakai bersama, hidden input diisi via JS.
+- **7 Dokumen × 2 Perusahaan:** Tabel matriks menampilkan status (ada/tidak) + tombol "Upload"/"Ganti" untuk masing-masing. Satu modal upload dipakai bersama, hidden input diisi via JS.
 - **Storage:** Dokumen disimpan di 2 bucket berbeda:
-  - `legal-documents` (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, Monitoring Efek Samping) — path `company-docs/{doc_type}_{erfi|heka}.pdf`
+  - `legal-documents` (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor) — path `company-docs/{doc_type}_{erfi|heka}.pdf`
   - `raw-material-docs` (SOP CPKB Pemeriksaan Bahan Baku) — path `sop-cpkb/sop_cpkb_{erfi|heka}.pdf`
 - **Upsert:** 4 tabel pertama (`nib_documents`, `sertifikat_cpkb_documents`, `surat_tidak_pidana_documents`, `cpkb_raw_material`) masing-masing 1 baris per perusahaan, kolom `file_url`. Untuk `company_sop_documents` (4 kolom berbeda dalam 1 tabel), update hanya kolom spesifik — tidak overwrite seluruh baris atau bikin duplikat.
 - **Audit Trail:** Setiap upload tercatat di `activity_logs` dengan detail jenis dokumen & perusahaan.
@@ -778,11 +791,19 @@ Sebelum September 2026, 8 jenis dokumen statis per-perusahaan (NIB, Sertifikat C
 Dua paket diimpor tapi tidak terdaftar. Semuanya sudah dibungkus fallback, kecuali satu:
 
 - **Pillow** (`PIL`) — dipakai untuk mengukur lebar logo dan me-*flatten* PNG RGBA ke latar putih (file PNG RGBA tidak bisa dirender `xhtml2pdf` tanpa itu). Kedua pemanggilannya dibungkus `try/except` dan jatuh ke lebar logo tetap, jadi fiturnya boleh tidak terpasang.
-- **python-dotenv** (`dotenv`) — dipanggil `load_dotenv()` di `main.py` **tanpa penjaga**, padahal `pydantic-settings` sudah membaca `.env` sendiri. Akibatnya lingkungan yang benar-benar belum memasangnya akan gagal saat start.
+- **python-dotenv** (`dotenv`) — dipanggil `load_dotenv()` di `app/config.py` **tanpa penjaga** (hanya pada jalur produksi; mode staging tidak memanggil dotenv sama sekali), padahal `pydantic-settings` sudah membaca `.env` sendiri. Akibatnya lingkungan produksi yang benar-benar belum memasangnya akan gagal saat start.
 
 ### 6.7 Ketergantungan Sisi Browser
 
 Dimuat via CDN, **tanpa atribut `integrity`/`crossorigin`**: `@tailwindcss/browser` v4, Font Awesome 6.4.0, dan Chart.js 4.4.3 (hanya di `/po-analytics`). Aplikasi memang tidak memasang header CSP — konsisten dengan skrip inline dan Tailwind browser build. Detail pola escaping ada di [§4.13.E](#e-keyboard--aksesibilitas).
+
+### 6.8 Mode Staging & Guard Fail-Closed
+
+Mode staging diaktifkan lewat `DIP_APP_ENV=staging` + file `.env.staging` (contoh tersedia: `.env.staging.example`), diluncurkan lewat `python scripts/run_staging_8017.py` (melayani di `127.0.0.1:8017`).
+
+- **Pemisahan konfigurasi:** saat staging, `.env` produksi **bukan** sumber konfigurasi — `app/config.py` memakai kelas settings khusus staging yang hanya membaca env proses dan `.env.staging`.
+- **Guard fail-closed:** `app/staging_guard.py` + `app/staging_preflight.py` menolak startup bila `SUPABASE_URL` tidak menunjuk project staging yang eksak (hostname divalidasi; JWT dicek klaim `ref` secara lokal, tanpa cetak secret), sehingga staging mustahil salah-sasaran ke database produksi. Guard yang sama dipakai setiap kali client Supabase dibuat ulang (login, hapus user) dan saat `app/database.py` di-import.
+- **Bedanya dengan produksi:** env proses divalidasi lebih dulu (preflight), dotenv tidak dipanggil sama sekali, dan **`SUPABASE_KEY` (anon) wajib** diisi — guard menolak start bila kosong. Di mode produksi, `SUPABASE_KEY` tetap opsional dan tidak dipakai kode aplikasi.
 
 
 ---

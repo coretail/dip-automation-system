@@ -12,17 +12,17 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 
 ---
 
-## 📌 Status Pengembangan Sistem (Update: 5 Oktober 2026)
+## 📌 Status Pengembangan Sistem (Update: 15 Oktober 2026)
 
 | Modul / Fase | Fitur & Cakupan | Status |
 | :--- | :--- | :---: |
-| **Tema Tampilan (Theme System)** | Empat tema — **Light**, **Terra**, **Rose**, **Dark** — berbasis CSS token (`app/static/theme.css`, ±1.100 baris). Dibiarkan lewat `data-theme` di `<html>`, disimpan di `localStorage: heka-theme`, dan skrip anti-flash inline di `<head>` menerapkannya sebelum stylesheet termuat. Warna native form control (`<select>`, `<option>`, scrollbar, checkbox, date picker) mengikuti tema — bagian yang paling sering terlewat pada sistem tema berbasis Tailwind. `beforeprint`/`afterprint` memaksa tema light saat print lalu memulihkannya. Keyboard support penuh di menu tema (`Esc`, `↑`/`↓`, `Home`/`End`), `prefers-reduced-motion` dihormati. | ✅ **Selesai** |
+| **Tema Tampilan (Theme System)** | Empat tema — **Light**, **Terra**, **Rose**, **Dark** — berbasis CSS token (`app/static/theme.css`, ±1.050 baris). Dibiarkan lewat `data-theme` di `<html>`, disimpan di `localStorage: heka-theme`, dan skrip anti-flash inline di `<head>` menerapkannya sebelum stylesheet termuat. Warna native form control (`<select>`, `<option>`, scrollbar, checkbox, date picker) mengikuti tema — bagian yang paling sering terlewat pada sistem tema berbasis Tailwind. `beforeprint`/`afterprint` memaksa tema light saat print lalu memulihkannya. Keyboard support penuh di menu tema (`Esc`, `↑`/`↓`, `Home`/`End`), `prefers-reduced-motion` dihormati. | ✅ **Selesai** |
 | **Sidebar Navigasi** | Shell navigasi terpusat di `app/templates/_sidebar.html` + `app/static/sidebar.js` + `sidebar.css`. 10 menu, submenu **Administration** yang bisa dilipat, mode **collapsed** (persist ke `localStorage: sidebarCollapsed`) dengan tooltip, dan **drawer off-canvas** di mobile (≤767px). Auto-collapsed pada layar 768–1023px. Menu admin (Sampah, Administration) hilang total untuk non-admin. Badge merah jumlah mention di menu Notes. | ✅ **Selesai** |
 | **Analisis PO** (`/po-analytics`) | Halaman analitik terpisah dari modul Produksi. KPI Total PO/qty, komposisi per kuartal, grafik donat proporsi per perusahaan, **grafik kombinasi batang + garis jumlah PO & qty pcs per kuartal per perusahaan** (dua sumbu), Top 5 produk menurut PO/qty, Top 5 produk belum ada Laporan Uji SIG, serta tabel rincian qty per produk dan per merek dengan selector 5/10/25/100 client-side. Filter **tahun**, **kuartal**, **urutan**, dan **tab per perusahaan** (`Semua` / `PT Erfi` / `PT Heka`). Banner amber "PO belum punya item" yang menyebutkan jumlahnya dan daftar nomor PO-nya — pemisahan eksplisit antara *PO tanpa item* dan *PO tidak ada*. | ✅ **Selesai** |
 | **Filter & Pencarian Produksi** | `/purchase-orders` punya filter **tahun** (termasuk "Semua Tahun"), **kuartal** (Q1–Q4, default = kuartal berjalan WIB, dinaikkan ke kuartal tertinggi yang benar-benar berisi data), dan **perusahaan** — termasuk opsi **"Tanpa item"** untuk PO yang belum punya item, karena `purchase_orders` tidak punya kolom perusahaan. Disimpan di cookie `po_filter`. Pencarian realtime No. PO + nama produk. Pengurutan tanggal null diletakkan terakhir. | ✅ **Selesai** |
 | **PO Rework** | Kolom `purchase_orders.jenis_po` (`migration/002_add_jenis_po.sql`) untuk menandai PO perbaikan/rework. Di `/po-analytics`, PO Rework **tetap dihitung sebagai jumlah PO** tetapi **qty pcs-nya tidak ikut dijumlahkan** — sehingga KPI PO dan qty tidak sama-sama naik. Diberi tanda lewat `migration/tag_rework_po.py`. Banner di analisis memberi tahu bila kolom ini belum ada di database. | ✅ **Selesai** |
-| **Toolkit Migrasi Data** | Folder `migration/` berisi 2 file SQL skema + **9 skrip migrasi data** + skrip rollback-nya, semuanya mengikuti pola yang sama: **read-only secara default**, hanya menulis dengan `--execute --yes`, `--dry-run` menulis laporan CSV/JSON tanpa menyentuh database, dan **manifest** berisi id baris yang tertulis untuk keperluan rollback. Lihat §Migrasi Data. | ✅ **Selesai** |
-| **Manajemen Dokumen Perusahaan** | Halaman admin khusus (`/admin/company-documents`) untuk mengelola 8 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, Monitoring Efek Samping, **SOP CPKB Pemeriksaan Bahan Baku**) yang dipakai lintas Bab I, III, dan IV saat generate PDF DIP. Upload file via UI (bucket `legal-documents` & `raw-material-docs`), upsert otomatis ke 5 tabel terkait, tercatat di `activity_logs`. | ✅ **Selesai** |
+| **Toolkit Migrasi Data** | Folder `migration/` berisi 4 file SQL skema + **9 skrip migrasi data** + skrip rollback-nya, semuanya mengikuti pola yang sama: **read-only secara default**, hanya menulis dengan `--execute --yes`, `--dry-run` menulis laporan CSV/JSON tanpa menyentuh database, dan **manifest** berisi id baris yang tertulis untuk keperluan rollback. Lihat §Migrasi Data. | ✅ **Selesai** |
+| **Manajemen Dokumen Perusahaan** | Halaman admin khusus (`/admin/company-documents`) untuk mengelola **7 jenis dokumen statis per-perusahaan** (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, **SOP CPKB Pemeriksaan Bahan Baku**) yang dipakai lintas Bab I, III, dan IV saat generate PDF DIP. Upload file via UI (bucket `legal-documents` & `raw-material-docs`), upsert otomatis ke 5 tabel terkait, tercatat di `activity_logs`. Laporan Monitoring Efek Samping (NIES) adalah dokumen per-produk yang di-generate dari Tab Bab 4 — bukan dokumen statis perusahaan. | ✅ **Selesai** |
 | **Spesifikasi Produk Jadi (PT Erfi)** | Form input spesifikasi QC produk jadi dengan template default 5 section, auto-fill dari Informasi Dasar (`no_na_produk`, `netto`, `acc_sampel`), generate PDF meniru format dokumen QC resmi PT Erfi. Tabel `product_finished_specs`. Hanya untuk `PT Erfi`; produk PT Heka mendapat 303 ke halaman edit. | ✅ **Selesai** |
 | **Field Peringatan & Penyimpanan** | Field `peringatan` & `penyimpanan` di form Tambah/Edit Produk, otomatis muncul di dokumen Bab IV (Text Design), Formula Kualitatif & Kuantitatif, dan Export Excel — **hanya bila diisi** (bukan NULL, kosong, atau `-`). | ✅ **Selesai** |
 | **Export Excel via Backend (openpyxl)** | Export Qualitative-Quantitative Formula (3 sheet: "Formula Nama Dagang", "Formula INCI Murni", "Text Design") di-generate di server. Warna header mengikuti perusahaan (`#FFCC99` Erfi / `#DCE6F1` Heka). Baris total memakai formula `=SUM()` asli, bukan angka statis. Bahan aktif disorot kuning. Kolom INCI hanya boleh melebar, tidak pernah menyempit. | ✅ **Selesai** |
@@ -54,7 +54,9 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 | **Manajemen Brand** | Tambah brand, upload dokumen Hak & Lisensi Merk per brand, plus quick-add via modal. | ✅ **Selesai** |
 | **Hardening Audit Trail** | Tutup 7 operasi berisiko tinggi yang sebelumnya **tidak tercatat sama sekali**: buat/hapus user, ganti role, reset password, tambah merk, upload dokumen merk, dan create/edit/delete FSP. Migration `003_activity_log_audit_hardening.sql` menambah 7 kolom konteks (`outcome`, `source`, `ip_address`, `user_agent`, `route`, `http_method`, `request_id`), 4 index investigasi (sebelumnya tabel hanya punya primary key), dan 2 `CHECK`. Perilaku **fail-open** — kegagalan audit tidak membatalkan operasi bisnis. | ✅ **Selesai** |
 | **Activity Log & Uptime Monitor** | Riwayat aktivitas di tabel `activity_logs` + log terminal; endpoint `/health` (GET & HEAD). | ✅ **Selesai** |
-| **Edit Produk Multi-Tab (Bab 1–4)** | Halaman Edit Produk 5 tab: Informasi Dasar, Bab 1, Bab 2, Bab 3, Bab 4. | ✅ **Selesai** |
+| **Edit Produk Multi-Tab (Bab 1–4)** | Halaman Edit Produk **6 tab**: Informasi Dasar, Bab 1, Bab 2, Bab 3, Bab 4, dan **Lampiran** (PDF pendukung non-DIP per produk). | ✅ **Selesai** |
+| **Lampiran Produk (Non-DIP)** | Menu Lampiran di halaman Edit Produk: unggah PDF pendukung yang **bukan** bagian dokumen DIP — 5 kategori (Form ACC Sample, Catatan Formula R&D, Catatan Formula Trial & Perubahan, Surat Pengajuan Uji Sample, Lain-lain), maks 10 file × 10 MB per produk, tersimpan di bucket privat `product-attachments` (`migration/004_create_product_attachments.sql`). Hanya pengunggah atau Admin yang boleh mengubah/menghapus; preview via signed URL 1 jam; badge jumlah lampiran pada kartu Dashboard. | ✅ **Selesai** |
+| **Isolasi Staging (Fail-Closed)** | Mode `DIP_APP_ENV=staging` dengan `.env.staging` terpisah + guard `app/staging_guard.py` & `app/staging_preflight.py`: startup ditolak bila target koneksi bukan project staging yang eksak, sehingga staging mustahil salah-sasaran ke database produksi. Peluncur khusus `scripts/run_staging_8017.py` (127.0.0.1:8017). | ✅ **Selesai** |
 
 ---
 
@@ -69,7 +71,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 * **Status Batch:** Tombol **"Dipakai"** / **"Dimusnahkan"** pada log kedatangan batch. Batch dengan `kesimpulan = "lab"` tidak pernah dijadikan batch referensi.
 * **Tab Cek Kelengkapan Dokumen:** Matriks status kelengkapan dokumen per perusahaan dengan preview PDF inline.
 * **Formula Builder:** Kalkulasi otomatis persentase bahan (pembulatan presisi via `Decimal`) dan pemeriksaan batasan regulasi.
-* **Edit Produk Multi-Tab:** 5 tab (**Informasi Dasar, Bab 1, Bab 2, Bab 3, Bab 4**). Tab **Bab 2** memuat form susunan formula, status dokumen pendukung tiap bahan baku, dan lampiran SOP CPKB perusahaan.
+* **Edit Produk Multi-Tab:** 6 tab (**Informasi Dasar, Bab 1, Bab 2, Bab 3, Bab 4, Lampiran**). Tab **Bab 2** memuat form susunan formula, status dokumen pendukung tiap bahan baku, dan lampiran SOP CPKB perusahaan. Tab **Lampiran** mengelola PDF pendukung non-DIP per produk (lihat §8).
 
 ### 2. Antarmuka, Tema & Navigasi
 * **Shell terpusat:** Seluruh halaman aplikasi mewarisi `base.html`, yang menyediakan 4 block (`html_class`, `title`, `head_extra`, `content`) dan menyertakan `_sidebar.html`.
@@ -110,6 +112,7 @@ Bab I, III, dan IV di-generate dengan satu pendekatan: halaman cover/checklist d
 ### 8. Manajemen Brand, Produksi & Ekspor
 * Tambah brand, update dokumen **Hak & Lisensi Merk** per brand per perusahaan, quick-add via modal.
 * **Modul Produksi** (`/purchase-orders`), **Modul Analitik PO** (`/po-analytics`), dan **Modul Notes Tim** (`/notes`).
+* **Lampiran Produk** (`/products/{id}/lampiran`): unggah PDF pendukung non-DIP per kategori (maks 10 file × 10 MB) ke bucket privat `product-attachments`; izin ubah/hapus hanya untuk pengunggah atau Admin, preview via signed URL 1 jam, dan badge jumlah lampiran di kartu Dashboard.
 * Export laporan Qualitative-Quantitative Formula ke Excel (3 sheet, generate di server via `openpyxl`) dan cetak ke PDF lewat `window.print()`.
 
 ### 9. Activity Log & Monitoring
@@ -151,7 +154,7 @@ Semua dipin dengan versi exact:
 > ⚠️ **Dua paket yang diimpor tapi tidak tercantum di `requirements.txt`:**
 >
 > * **Pillow** (`PIL`) — dipakai untuk mengukur lebar logo dan me-*flatten* PNG RGBA ke latar putih (file PNG RGBA tidak bisa dirender `xhtml2pdf` tanpa itu). Kedua pemanggilannya dibungkus `try/except` dan jatuh ke lebar logo tetap, jadi fiturnya boleh tidak terpasang.
-> * **python-dotenv** (`dotenv`) — dipanggil `load_dotenv()` di `main.py` **tanpa penjaga**, padahal `pydantic-settings` sudah membaca `.env` sendiri. Akibatnya lingkungan yang benar-benar belum memasangnya akan gagal saat start.
+> * **python-dotenv** (`dotenv`) — dipanggil `load_dotenv()` di `app/config.py` **tanpa penjaga** (hanya pada jalur produksi; mode staging tidak memanggil dotenv sama sekali), padahal `pydantic-settings` sudah membaca `.env` sendiri. Akibatnya lingkungan produksi yang benar-benar belum memasangnya akan gagal saat start.
 >
 > Tambahkan keduanya bila ingin instalasi bersih.
 
@@ -196,20 +199,24 @@ pip install -r requirements.txt
 SUPABASE_URL=https://your-supabase-project-id.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 
-# Opsional — tidak dipakai kode aplikasi (seluruh akses database lewat service role).
+# Opsional di mode produksi (tidak dipakai kode aplikasi) — WAJIB diisi saat mode staging.
 SUPABASE_KEY=your-supabase-anon-key
 
 # Opsional — hanya untuk fitur sapaan AI di halaman login.
 GEMINI_API_KEY=your-google-gemini-api-key
 ```
 
-> Catatan: `SUPABASE_KEY` (anon/public) bersifat opsional dan **tidak dipakai kode aplikasi**; seluruh akses database memakai `SUPABASE_SERVICE_ROLE_KEY` (melewati RLS), termasuk login dan pencarian username. Service role key punya hak penuh — **jangan pernah** ditaruh di sisi browser atau di-commit ke repository.
+> Catatan: `SUPABASE_KEY` (anon/public) bersifat opsional **di mode produksi** dan tidak dipakai kode aplikasi; seluruh akses database memakai `SUPABASE_SERVICE_ROLE_KEY` (melewati RLS), termasuk login dan pencarian username. Service role key punya hak penuh — **jangan pernah** ditaruh di sisi browser atau di-commit ke repository. Di **mode staging**, `SUPABASE_KEY` wajib diisi (guard menolak startup bila kosong).
 
 ### 4. Jalankan Aplikasi
 
 ```bash
 uvicorn app.main:app --reload
 ```
+
+### 4a. Lingkungan Staging (opsional)
+
+Mode staging diaktifkan dengan `DIP_APP_ENV=staging` + file `.env.staging` (contoh: `.env.staging.example`), diluncurkan lewat `python scripts/run_staging_8017.py` (melayani di `127.0.0.1:8017`). Dua guard fail-closed (`app/staging_guard.py`, `app/staging_preflight.py`) menolak startup bila `SUPABASE_URL` tidak menunjuk project staging yang eksak — sehingga staging mustahil salah-sasaran ke database produksi. Bedanya dengan produksi: `.env` produksi bukan sumber konfigurasi (hanya env proses + `.env.staging`), dotenv tidak dipanggil, dan **`SUPABASE_KEY` wajib** diisi.
 
 ### 5. Skema Database Awal
 
@@ -220,6 +227,7 @@ Skema produksi tidak dikelola otomatis. Jalankan file SQL di folder `migration/`
 | `migration/001_create_purchase_orders.sql` | Membuat `purchase_orders` + `purchase_order_items`. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada, dan hanya direferensikan dengan FK `RESTRICT` |
 | `migration/002_add_jenis_po.sql` | Menambah kolom `purchase_orders.jenis_po` untuk PO Rework |
 | `migration/003_activity_log_audit_hardening.sql` | Menambah 7 kolom konteks request & verdict ke `activity_logs`, 4 index investigasi, 2 `CHECK`, `REVOKE` dari `anon`/`authenticated`, dan memperbaiki FK `actor_id` ke `ON DELETE SET NULL` |
+| `migration/004_create_product_attachments.sql` | Membuat tabel `product_attachments` (lampiran produk privat non-DIP) + view `product_attachment_counts`, RLS aktif & `REVOKE` dari `anon`/`authenticated`, `CHECK` ukuran file ≤ 10 MB |
 
 ---
 
@@ -241,6 +249,9 @@ dip-automation-system/
 │   ├── raw_materials_routes.py # CRUD bahan baku, batch, varian komposisi, usage badge
 │   ├── po_routes.py            # Produksi: PO, batch produk, item PO, + halaman analitik PO
 │   ├── notes_routes.py         # Notes tim, @mention, token referensi
+│   ├── product_attachments_routes.py # Lampiran produk privat non-DIP (bucket product-attachments)
+│   ├── staging_guard.py        # Guard fail-closed isolasi staging (DIP_APP_ENV=staging)
+│   ├── staging_preflight.py    # Validasi env-efektif untuk mode staging
 │   ├── static/
 │   │   ├── theme.css           # Sistem token 4 tema (light / terra / rose / dark)
 │   │   ├── sidebar.css         # Layout app, drawer mobile, collapsed mode
@@ -249,10 +260,13 @@ dip-automation-system/
 │   │   ├── presence.js         # Heartbeat status online/idle (25 detik)
 │   │   ├── po-analytics.js     # Chart.js: 5 grafik Analisis PO + palet per tema
 │   │   ├── efek_samping.js     # Helper form NIES
+│   │   ├── lampiran.js         # Uploader & daftar lampiran produk (signed URL)
 │   │   └── images/             # logo_erfi, logo_heka, kop_erfi, kop_heka, apt, favicon
 │   └── templates/              # 17 halaman extend base.html + template PDF/partial tersendiri
-├── migration/                  # Toolkit migrasi data (LIHAT DI BAWAH — tidak di-commit)
-├── tests/                      # Skrip verifikasi (tidak di-commit)
+├── migration/                  # Toolkit migrasi data (SQL skema di-commit; skrip & data tidak)
+├── tests/                      # Skrip verifikasi (di-commit hanya verify_product_attachments.py & verify_po_analytics_detail.py)
+├── scripts/                    # Launcher staging (run_staging_8017.py) & util pendukung
+├── tools/                      # Util pemeriksaan (kontras tema)
 ├── requirements.txt            # 14 dependensi, semua dipin exact
 ├── README.md                   # Dokumen ini
 └── panduan_dip_automation_system.md  # Panduan operasional & teknis lengkap
@@ -268,7 +282,7 @@ dip-automation-system/
 
 ## 🗄️ Migrasi Data
 
-Folder `migration/` berisi toolkit bermigrasi data historis (spreadsheet → Supabase). **Folder ini sengaja tidak di-commit ke git** (lihat `.gitignore`) karena berisi data operasional perusahaan; salin dan simpan di luar repository bila perlu dipertahankan.
+Folder `migration/` berisi toolkit bermigrasi data historis (spreadsheet → Supabase). **Hanya file SQL skema (`*.sql`) yang di-commit ke git** (lihat `.gitignore`); skrip impor/rollback dan data spreadsheet/CSV tetap tidak di-commit karena berisi data operasional perusahaan — salin dan simpan di luar repository bila perlu dipertahankan.
 
 ### Konvensi yang dipatuhi seluruh skrip
 
@@ -285,6 +299,7 @@ Folder `migration/` berisi toolkit bermigrasi data historis (spreadsheet → Sup
 | `001_create_purchase_orders.sql` | Membuat `purchase_orders` + `purchase_order_items`. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada, dan hanya direferensikan dengan FK `RESTRICT` |
 | `002_add_jenis_po.sql` | Kolom `purchase_orders.jenis_po` untuk PO Rework |
 | `003_activity_log_audit_hardening.sql` | Konteks request & verdict (`outcome`, `source`, `ip_address`, `user_agent`, `route`, `http_method`, `request_id`) + index + constraint pada `activity_logs` |
+| `004_create_product_attachments.sql` | Membuat `product_attachments` (lampiran produk privat non-DIP) + view `product_attachment_counts`, RLS aktif & `REVOKE` dari `anon`/`authenticated`, `CHECK` ukuran file ≤ 10 MB |
 
 ### Skrip migrasi & rollback
 
