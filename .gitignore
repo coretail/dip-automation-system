@@ -76,6 +76,8 @@ skills-lock.json
 /migration/*
 !/migration/
 !/migration/*.sql
+# Skrip audit storage (report-only, tanpa secret).
+!/migration/audit_storage.py
 
 # RLS backup dumps (local only, contains database data)
 /backup-rls/
