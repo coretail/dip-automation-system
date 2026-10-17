@@ -36,6 +36,12 @@ def _sanitize_filename(name: str) -> str:
     return stem + ".pdf"
 
 
+def _product_slug(nama_produk: str | None) -> str:
+    value = unicodedata.normalize("NFKD", nama_produk or "").encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^A-Za-z0-9]+", "_", value)
+    return (re.sub(r"_+", "_", value).strip("_")[:80] or "produk").lower()
+
+
 def _validate_pdf_bytes(data: bytes, filename: str) -> str | None:
     if not (filename or "").lower().endswith(".pdf"):
         return f"File '{filename}' bukan PDF."
@@ -129,7 +135,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
                                           files: List[UploadFile] = File(...),
                                           kategori: str = Form(...), catatan: str = Form(""),
                                           current_user: dict = Depends(get_current_user)):
-        _, error = _load_active_product(product_id)
+        product, error = _load_active_product(product_id)
         if error:
             raise HTTPException(status_code=error[0], detail=error[1])
         if len(files) > MAX_FILES_PER_REQUEST:
@@ -139,6 +145,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
         validation = _validation_error(kategori, catatan)
         if validation:
             raise HTTPException(400, validation)
+        product_slug = _product_slug(product.get("nama_produk"))
         uploaded, failed = [], []
         for file_obj in files:
             name = file_obj.filename or "lampiran.pdf"
@@ -147,7 +154,10 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
             if validation:
                 failed.append({"name": name, "error": validation})
                 continue
-            path = f"products/{product_id}/{datetime.now(WIB):%Y-%m-%d}/{uuid4().hex[:8]}_{_sanitize_filename(name)}"
+            now = datetime.now(WIB)
+            uid = uuid4().hex[:8]
+            new_name = f"{product_slug}_attachment_{now:%Y-%m-%d}_{uid[:4]}.pdf"
+            path = f"products/{product_id}/{now:%Y-%m-%d}/{uid}_{new_name}"
             try:
                 object_store.upload_pdf(BUCKET, path, data, upsert=False, client=supabase)
             except Exception as exc:
@@ -156,7 +166,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
                 continue
             try:
                 response = supabase.table("product_attachments").insert({
-                    "product_id": product_id, "kategori": kategori, "file_name": name,
+                    "product_id": product_id, "kategori": kategori, "file_name": new_name,
                     "file_path": path, "file_size": len(data), "catatan": catatan or None,
                     "uploaded_by": current_user.get("id"), "uploaded_by_name": current_user.get("full_name"),
                 }).execute()

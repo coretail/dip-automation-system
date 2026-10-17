@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.product_attachments_routes import (
-    MAX_SIZE, _can_manage_attachment, _sanitize_filename, _validate_pdf_bytes,
+    MAX_SIZE, _can_manage_attachment, _product_slug, _sanitize_filename, _validate_pdf_bytes,
 )
 
 
@@ -30,6 +30,15 @@ def main():
     assert _can_manage_attachment({'uploaded_by': None}, {'id': None, 'role': 'admin'})
     assert not _can_manage_attachment({'uploaded_by': None}, {'id': 'staff', 'role': 'staff'})
     assert not _can_manage_attachment({'uploaded_by': None}, {'id': None, 'role': 'staff'})
+    assert _product_slug('Kopi Lurik') == 'kopi_lurik'
+    assert _product_slug('R\u00e9sum\u00e9 Produk') == 'resume_produk'
+    assert _product_slug('a---b   c!') == 'a_b_c'
+    assert _product_slug('') == 'produk'
+    assert _product_slug(None) == 'produk'
+    assert _product_slug('\u4e2d\u6587') == 'produk'
+    assert len(_product_slug('x' * 200)) <= 80
+    slug = _product_slug('Kopi Lurik')
+    assert slug + '_attachment_2026-10-17_a1b2.pdf' == 'kopi_lurik_attachment_2026-10-17_a1b2.pdf'
     print('Product attachment helper checks passed.')
 
 
