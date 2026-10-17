@@ -7,7 +7,8 @@ Fase 3 migrasi = backend R2 + mode ``dual``. Perilaku dipilih via
 - ``dual``: TULIS ke Supabase dan R2; BACA tetap dari Supabase (URL di kolom DB
   tetap Supabase sampai cutover Fase 5). Kegagalan tulis/hapus R2 TIDAK
   menggagalkan request -- hanya dicatat sebagai log ``storage_repair`` supaya
-  ``rclone sync`` final bisa merekonsiliasi.
+  ``rclone sync`` final bisa merekonsiliasi. Tulis R2 yang sukses di-log
+  ``storage_r2_ok`` (sinyal positif pemantauan, level WARNING).
 - ``r2``: hanya R2 (dipakai saat cutover Fase 5). URL publik dibangun dari
   ``R2_PUBLIC_BASES``; presigned memakai endpoint S3 R2 (tak butuh domain).
 
@@ -87,6 +88,19 @@ def _log_storage_repair(op: str, bucket: str, path: str, backend: str, error) ->
     logger.warning(
         "storage_repair op=%s bucket=%s path=%s backend=%s error=%s",
         op, bucket, path, backend, error,
+    )
+
+
+def _log_r2_ok(op: str, bucket: str, physical: str, path: str) -> None:
+    """Sinyal positif tulis R2 sukses (pasangan token ``storage_repair``).
+
+    Sengaja level WARNING: root logger tanpa konfigurasi berlevel efektif
+    WARNING, jadi ``logger.info`` tidak akan terlihat di konsol staging/prod.
+    Token pencarian: ``storage_r2_ok``.
+    """
+    logger.warning(
+        "storage_r2_ok op=%s bucket=%s physical=%s path=%s",
+        op, bucket, physical, path,
     )
 
 
@@ -285,6 +299,7 @@ def _r2_upload(bucket: str, path: str, data: bytes, upsert: bool = True):
 
     ``upsert=False`` memakai conditional put ``IfNoneMatch='*'``; bila botocore
     tidak mendukung parameter itu, fallback memeriksa ``head_object`` dulu.
+    Sukses di-log ``storage_r2_ok`` (sinyal positif pemantauan).
     """
     s3 = _r2_client()
     physical = _r2_physical_bucket(bucket)
@@ -297,21 +312,24 @@ def _r2_upload(bucket: str, path: str, data: bytes, upsert: bool = True):
     if _r2_public_base(bucket):
         kwargs["CacheControl"] = R2_PUBLIC_CACHE_CONTROL
     if upsert:
-        return s3.put_object(**kwargs)
-    try:
-        return s3.put_object(IfNoneMatch="*", **kwargs)
-    except Exception as exc:
+        resp = s3.put_object(**kwargs)
+    else:
         try:
-            from botocore.exceptions import ParamValidationError
-        except Exception:
-            ParamValidationError = ()  # type: ignore[assignment]
-        if not isinstance(exc, ParamValidationError):
-            raise
-        if _r2_object_exists(s3, physical, path):
-            raise RuntimeError(
-                f"[STORAGE] objek sudah ada (upsert=False): {physical}/{path}"
-            )
-        return s3.put_object(**kwargs)
+            resp = s3.put_object(IfNoneMatch="*", **kwargs)
+        except Exception as exc:
+            try:
+                from botocore.exceptions import ParamValidationError
+            except Exception:
+                ParamValidationError = ()  # type: ignore[assignment]
+            if not isinstance(exc, ParamValidationError):
+                raise
+            if _r2_object_exists(s3, physical, path):
+                raise RuntimeError(
+                    f"[STORAGE] objek sudah ada (upsert=False): {physical}/{path}"
+                )
+            resp = s3.put_object(**kwargs)
+    _log_r2_ok("upload", bucket, physical, path)
+    return resp
 
 
 def _r2_remove(bucket: str, path: str) -> dict:

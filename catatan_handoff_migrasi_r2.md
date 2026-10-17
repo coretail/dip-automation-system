@@ -34,7 +34,8 @@ _Update terakhir: 2026-10-17._
 - `app/object_store.py` — satu-satunya jalur storage. `upload_pdf / public_url /
   signed_url(s) / remove` + dispatch `supabase|dual|r2`. `dual` = tulis Supabase
   (otoritatif) + R2 best-effort (gagal → log `storage_repair`, request tetap sukses);
-  **baca tetap Supabase**. `_r2_public_url` meng-encode path (`%20`).
+  **baca tetap Supabase**. Tulis R2 sukses → log `storage_r2_ok` (level WARNING).
+  `_r2_public_url` meng-encode path (`%20`).
   `_r2_physical_bucket` = nama logis + `R2_BUCKET_SUFFIX`.
 - `app/config.py` — field `storage_backend`, `r2_account_id/access_key_id/
   secret_access_key/public_bases/bucket_suffix`. Preflight **hanya** saat `DIP_APP_ENV=staging`.
@@ -55,9 +56,8 @@ _Update terakhir: 2026-10-17._
 ## Commit (main, sudah di-push)
 `79d38a8` docs catatan → `bd97419` r2_live_smoke → `26fba31` encode public_url R2 →
 `d207c89` backfill_r2_urls → `7bed4a7` 005 legacy null → `560225d` audit_storage →
-`e4a1879` unit test → `77e688e` object_store + R2/dual. Working tree bersih, kecuali
-`catatan_handoff_migrasi_r2.md` (file handoff ini) yang masih untracked — commit
-bersama perubahan berikutnya (pola `catatan_*.md` lain ter-track) atau gitignore-kan.
+`e4a1879` unit test → `77e688e` object_store + R2/dual. Working tree bersih; file
+handoff ini kini ikut ter-track (commit `c2b4933`).
 
 ## Kondisi saat ini
 - **staging** `.env.staging`: `STORAGE_BACKEND=dual`, `R2_BUCKET_SUFFIX=-stg`. App staging
@@ -71,8 +71,10 @@ bersama perubahan berikutnya (pola `catatan_*.md` lain ter-track) atau gitignore
 ## Yang dipantau selama soak (≥3 hari)
 1. **Log `storage_repair`** dari app staging → target **kosong** (token pencarian
    `storage_repair`).
-2. **Gunakan staging**: upload/hapus/preview PDF, beberapa `dip_public`, bahan baku/produk.
-3. **Spot-check** objek baru muncul di bucket `…-stg` (mis. `rclone lsf r2stg:raw-material-docs-stg`).
+2. **Log `storage_r2_ok`** → setiap upload staging harus memunculkan token ini
+   (pasangan positif `storage_repair`; lihat §1a `catatan_migrasi_storage_r2.md`).
+3. **Gunakan staging**: upload/hapus/preview PDF, beberapa `dip_public`, bahan baku/produk.
+4. **Spot-check** objek baru muncul di bucket `…-stg` (mis. `rclone lsf r2stg:raw-material-docs-stg`).
 
 > Proses app staging ber-umur **sesi** (mati saat sesi ditutup) — untuk soak 3 hari
 > sungguhan, jalankan/host-kan staging terus.

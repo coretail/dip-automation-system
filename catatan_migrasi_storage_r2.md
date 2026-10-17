@@ -20,6 +20,23 @@ TIDAK ditulis di sini — hanya nama/scope dan perilaku.
   ```
 - Kriteria cutover: baris `storage_repair` **kosong** ≥7 hari sejak `dual` aktif di PROD.
 
+### 1a. Log sinyal positif: `storage_r2_ok`
+
+- Ditulis oleh `logger.warning` pada `_r2_upload` (`app/object_store.py`) **setiap
+  tulis R2 sukses** (mode `dual` maupun `r2`). Level WARNING disengaja: root logger
+  tanpa konfigurasi berlevel efektif WARNING, jadi `logger.info` tidak terlihat
+  di konsol — token sukses harus selevel `storage_repair` agar bisa dicari di
+  alur log yang sama.
+- Format satu baris:
+  ```
+  storage_r2_ok op=upload bucket=<logical_bucket> physical=<physical_bucket> path=<key>
+  ```
+- Pemantauan soak/prod-`dual`: setiap upload harus memunculkan `storage_r2_ok`
+  (jumlah baris = jumlah tulisan R2; `physical` cocok untuk spot-check
+  `rclone lsf r2stg:<bucket>-stg`), dan `storage_repair` tetap **kosong**.
+- Hanya menyangkut tulis (upload). Hapus yang sukses tidak punya token —
+  cukup dipastikan lewat ketiadaan `storage_repair op=remove`.
+
 ## 2. CORS diverifikasi lewat probe `Origin` dari luar (bukan `GetBucketCors`)
 
 - Token R2 berscope **Object Read & Write** (data-plane) **tidak bisa** `GetBucketCors`

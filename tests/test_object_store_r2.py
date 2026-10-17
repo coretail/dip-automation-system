@@ -1,4 +1,4 @@
-"""Unit test object_store: dispatch supabase/dual/r2 + log storage_repair.
+"""Unit test object_store: dispatch supabase/dual/r2 + log storage_repair/storage_r2_ok.
 
 Tanpa jaringan: klien R2 dan transport Supabase di-fake. Jalankan:
 `py tests/test_object_store_r2.py`.
@@ -138,6 +138,10 @@ def main():
     out = object_store.upload_pdf("raw-material-docs", "coa/a.pdf", b"%PDF-")
     check("dual upload supabase authoritative", out == "SB_UPLOAD", out)
     check("dual upload also writes r2", len(s3.puts) == 1, s3.puts)
+
+    cap.records.clear()
+    object_store.upload_pdf("raw-material-docs", "coa/a2.pdf", b"%PDF-")
+    check("dual upload r2 sukses -> storage_r2_ok", any("storage_r2_ok" in m for m in cap.records), cap.records)
 
     cap.records.clear()
     s3.fail_put = True
