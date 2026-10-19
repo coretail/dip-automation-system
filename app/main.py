@@ -549,20 +549,23 @@ async def get_current_user(request: Request):
             )
         
         # 4. Tarik info nama & role dari tabel profiles
-        profile_res = supabase.table("profiles").select("full_name", "role").eq("id", user_data.id).execute()
+        profile_res = supabase.table("profiles").select("full_name", "role", "perusahaan").eq("id", user_data.id).execute()
         
         user_role = "staff"
         full_name = "User Lab"
         
+        user_perusahaan = None
         if profile_res.data:
             user_role = profile_res.data[0].get("role", "staff")
             full_name = profile_res.data[0].get("full_name", "User Lab")
-            
+            user_perusahaan = profile_res.data[0].get("perusahaan")
+
         return {
             "id": user_data.id,
             "email": user_data.email,
             "full_name": full_name,
-            "role": user_role
+            "role": user_role,
+            "perusahaan": user_perusahaan,
         }
         
     except Exception as e:
@@ -1683,11 +1686,21 @@ async def add_product(
         "cara_pakai": cara_pakai,
         "peringatan": peringatan,
         "penyimpanan": penyimpanan,
-        "brand_id": brand_id if brand_id else None
+        "brand_id": brand_id if brand_id else None,
+        # Capability token terpisah dari UUID (opsional sampai migration 007 diterapkan)
+        "public_access_enabled": True,
+        "public_access_token": __import__("secrets").token_urlsafe(32),
+        "bpom_registered_link": False,
     }
     
     try:
-        new_product_resp = supabase.table("products").insert(product_data).execute()
+        try:
+            new_product_resp = supabase.table("products").insert(product_data).execute()
+        except Exception:
+            # Fallback bila kolom capability belum ada di database
+            for _k in ("public_access_enabled", "public_access_token", "bpom_registered_link", "public_access_revoked_at"):
+                product_data.pop(_k, None)
+            new_product_resp = supabase.table("products").insert(product_data).execute()
         new_product_id = new_product_resp.data[0]["id"] if new_product_resp.data else None
         if not new_product_id:
             raise Exception("Insert produk tidak mengembalikan data")
@@ -2441,6 +2454,15 @@ async def update_product(
         return RedirectResponse(url="/", status_code=303)
 
     old_product = old_product_resp.data
+
+    # Lapisan authz tenant: non-admin hanya boleh edit produk perusahaannya sendiri
+    # dan tidak boleh memindahkan produk ke perusahaan lain.
+    if current_user.get("role") != "admin":
+        _user_company = (current_user.get("perusahaan") or "").strip().lower()
+        _old_company = (old_product.get("perusahaan") or "").strip().lower()
+        _new_company = (perusahaan or "").strip().lower()
+        if _user_company and (_old_company != _user_company or _new_company != _user_company):
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
 
     update_payload = {
         "nama_produk": nama_produk,

@@ -144,13 +144,16 @@ def register_dip_public_routes(
             print(f"[AUDIT PUBLIC LINK] Gagal simpan ke activity_logs: {e}")
 
     @app.get("/dip/{slug_id}", response_class=HTMLResponse)
-    async def dip_public_hub(request: Request, slug_id: str):
+    async def dip_public_hub(request: Request, slug_id: str, access: str = None):
         """Landing page/hub publik khusus verifikator BPOM untuk 1 produk.
 
         Format URL: /dip/[slug-nama-produk]-[id]
         Contoh: /dip/sunscreen-serum-spf-50-e623d2e4-...
         """
         product_id = extract_id_from_slug(slug_id)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
 
         try:
             prod_resp = supabase.table("products") \
@@ -261,17 +264,44 @@ def register_dip_public_routes(
             }
         )
 
-    def _dip_public_check_product(product_id: str) -> bool:
-        """Validasi UUID produk eksis (buat route publik /dip/[slug]-[id])."""
-        try:
-            check = supabase.table("products").select("id").eq("id", product_id).eq("is_deleted", False).single().execute()
-            return bool(check.data)
-        except Exception:
-            return False
+    def _dip_public_check_product(product_id: str, provided_token: str = None) -> bool:
+        """Validasi produk untuk akses publik /dip/.
 
-    async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool):
+        UUID tetap dipakai sebagai identifier/routing. Capability token (jika ada)
+        menjadi lapisan otorisasi terpisah. Produk lama tanpa token tetap diizinkan
+        (legacy mode), termasuk produk yang sudah terdaftar di BPOM.
+        """
+        try:
+            check = supabase.table("products").select(
+                "id, is_deleted, public_access_enabled, public_access_token, bpom_registered_link"
+            ).eq("id", product_id).single().execute()
+            product = check.data if check.data else None
+            if not product or product.get("is_deleted"):
+                return False
+            if product.get("public_access_enabled") is False:
+                return False
+            token = product.get("public_access_token")
+            registered = bool(product.get("bpom_registered_link"))
+            if token:
+                if provided_token == token:
+                    return True
+                # Produk terdaftar BPOM: izinkan akses legacy tanpa token agar
+                # link yang sudah masuk registrasi tetap berfungsi.
+                if registered and not provided_token:
+                    return True
+                return False
+            return True
+        except Exception:
+            # Fallback legacy bila kolom capability belum ada di DB.
+            try:
+                check = supabase.table("products").select("id").eq("id", product_id).eq("is_deleted", False).single().execute()
+                return bool(check.data)
+            except Exception:
+                return False
+
+    async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool, provided_token: str = None):
         """Stream PDF gabungan Bab I-IV lewat backend (proxy), tanpa login."""
-        if not _dip_public_check_product(product_id):
+        if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
         gen = bab_generators.get(bab_num)
         if not gen:
@@ -292,50 +322,75 @@ def register_dip_public_routes(
         return resp
 
     @app.get("/dip/{slug_id}/bab1")
-    async def dip_public_bab1(slug_id: str):
+    async def dip_public_bab1(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
-        return await _dip_stream_bab(product_id, "1", False)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+        return await _dip_stream_bab(product_id, "1", False, provided_token)
 
     @app.get("/dip/{slug_id}/bab1/download")
-    async def dip_public_bab1_download(slug_id: str):
+    async def dip_public_bab1_download(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
-        return await _dip_stream_bab(product_id, "1", True)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+        return await _dip_stream_bab(product_id, "1", True, provided_token)
 
     @app.get("/dip/{slug_id}/bab2")
-    async def dip_public_bab2(slug_id: str):
+    async def dip_public_bab2(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
-        return await _dip_stream_bab(product_id, "2", False)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+        return await _dip_stream_bab(product_id, "2", False, provided_token)
 
     @app.get("/dip/{slug_id}/bab2/download")
-    async def dip_public_bab2_download(slug_id: str):
+    async def dip_public_bab2_download(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
-        return await _dip_stream_bab(product_id, "2", True)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+        return await _dip_stream_bab(product_id, "2", True, provided_token)
 
     @app.get("/dip/{slug_id}/bab3")
-    async def dip_public_bab3(slug_id: str):
+    async def dip_public_bab3(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
-        return await _dip_stream_bab(product_id, "3", False)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+        return await _dip_stream_bab(product_id, "3", False, provided_token)
 
     @app.get("/dip/{slug_id}/bab3/download")
-    async def dip_public_bab3_download(slug_id: str):
+    async def dip_public_bab3_download(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
-        return await _dip_stream_bab(product_id, "3", True)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+        return await _dip_stream_bab(product_id, "3", True, provided_token)
 
     @app.get("/dip/{slug_id}/bab4")
-    async def dip_public_bab4(slug_id: str):
+    async def dip_public_bab4(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
-        return await _dip_stream_bab(product_id, "4", False)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+        return await _dip_stream_bab(product_id, "4", False, provided_token)
 
     @app.get("/dip/{slug_id}/bab4/download")
-    async def dip_public_bab4_download(slug_id: str):
+    async def dip_public_bab4_download(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
-        return await _dip_stream_bab(product_id, "4", True)
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
+            raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
+        return await _dip_stream_bab(product_id, "4", True, provided_token)
 
     @app.get("/dip/{slug_id}/bab2/zip")
-    async def dip_public_bab2_zip(slug_id: str):
+    async def dip_public_bab2_zip(slug_id: str, request: Request, access: str = None):
         """Stream ZIP Bab II (folder per bahan baku) lewat backend, tanpa login."""
         product_id = extract_id_from_slug(slug_id)
-        if not _dip_public_check_product(product_id):
+        provided_token = access or request.query_params.get("access")
+        if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
         try:
             return await download_bab2_zip(product_id, None)

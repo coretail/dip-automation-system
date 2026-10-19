@@ -660,6 +660,12 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         current_user: dict = Depends(get_current_user),
     ):
         try:
+            # Validasi note ada & otorisasi (hanya penulis atau admin).
+            note_res = supabase.table("team_notes").select("author_id").eq("id", note_id).execute()
+            if not note_res.data:
+                return RedirectResponse(url="/notes?error=not_found", status_code=303)
+            if note_res.data[0].get("author_id") != current_user["id"] and current_user.get("role") != "admin":
+                raise HTTPException(status_code=403, detail="Hanya penulis atau admin yang boleh menyelesaikan note.")
             # Update status
             supabase.table("team_notes").update({
                 "is_completed": True,
@@ -671,6 +677,8 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             
             # Log
             log_activity(current_user, "complete", "note", note_id, "Selesai", request=request)
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"[NOTES] Gagal menyelesaikan note: {e}")
             return RedirectResponse(url="/notes?error=complete_failed", status_code=303)
@@ -680,6 +688,12 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
     async def reopen_note(request: Request, note_id: str,
                           current_user: dict = Depends(get_current_user)):
         try:
+            # Validasi note ada & otorisasi (hanya penulis atau admin).
+            note_res = supabase.table("team_notes").select("author_id").eq("id", note_id).execute()
+            if not note_res.data:
+                return RedirectResponse(url="/notes?error=not_found", status_code=303)
+            if note_res.data[0].get("author_id") != current_user["id"] and current_user.get("role") != "admin":
+                raise HTTPException(status_code=403, detail="Hanya penulis atau admin yang boleh membuka kembali note.")
             # Reopen
             supabase.table("team_notes").update({
                 "is_completed": False,
@@ -691,6 +705,8 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             
             # Log
             log_activity(current_user, "reopen", "note", note_id, "Reopened", request=request)
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"[NOTES] Gagal membuka kembali note: {e}")
             return RedirectResponse(url="/notes?error=reopen_failed", status_code=303)

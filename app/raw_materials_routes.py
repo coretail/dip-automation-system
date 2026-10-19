@@ -899,6 +899,8 @@ def register_raw_materials_routes(
         if coa_file and coa_file.filename:
             try:
                 coa_bytes = await coa_file.read()
+                if len(coa_bytes) > 10 * 1024 * 1024 or not coa_bytes.startswith(b"%PDF"):
+                    raise ValueError("File CoA harus PDF dan <= 10MB")
                 coa_path = f"coa/coa_{clean_batch}.pdf"
 
                 object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
@@ -911,6 +913,8 @@ def register_raw_materials_routes(
         if halal_file and halal_file.filename:
             try:
                 halal_bytes = await halal_file.read()
+                if len(halal_bytes) > 10 * 1024 * 1024 or not halal_bytes.startswith(b"%PDF"):
+                    raise ValueError("File Halal harus PDF dan <= 10MB")
                 halal_path = f"halal/halal_{clean_batch}.pdf"
 
                 object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
@@ -925,6 +929,8 @@ def register_raw_materials_routes(
         if qc_report_file and qc_report_file.filename:
             try:
                 qc_report_bytes = await qc_report_file.read()
+                if len(qc_report_bytes) > 10 * 1024 * 1024 or not qc_report_bytes.startswith(b"%PDF"):
+                    raise ValueError("File Laporan Pemeriksaan harus PDF dan <= 10MB")
                 qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
 
                 object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
@@ -1006,6 +1012,8 @@ def register_raw_materials_routes(
         if coa_file and coa_file.filename:
             try:
                 coa_bytes = await coa_file.read()
+                if len(coa_bytes) > 10 * 1024 * 1024 or not coa_bytes.startswith(b"%PDF"):
+                    raise ValueError("File CoA harus PDF dan <= 10MB")
                 coa_path = f"coa/coa_{clean_batch}.pdf"
                 object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
                 update_data["coa_file_url"] = object_store.public_url("raw-material-docs", coa_path, client=supabase)
@@ -1015,6 +1023,8 @@ def register_raw_materials_routes(
         if halal_file and halal_file.filename:
             try:
                 halal_bytes = await halal_file.read()
+                if len(halal_bytes) > 10 * 1024 * 1024 or not halal_bytes.startswith(b"%PDF"):
+                    raise ValueError("File Halal harus PDF dan <= 10MB")
                 halal_path = f"halal/halal_{clean_batch}.pdf"
                 object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
                 update_data["halal_batch_file_url"] = object_store.public_url("raw-material-docs", halal_path, client=supabase)
@@ -1024,6 +1034,8 @@ def register_raw_materials_routes(
         if qc_report_file and qc_report_file.filename:
             try:
                 qc_report_bytes = await qc_report_file.read()
+                if len(qc_report_bytes) > 10 * 1024 * 1024 or not qc_report_bytes.startswith(b"%PDF"):
+                    raise ValueError("File Laporan Pemeriksaan harus PDF dan <= 10MB")
                 qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
                 object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
                 update_data["qc_report_file_url"] = object_store.public_url("raw-material-docs", qc_report_path, client=supabase)
@@ -1072,6 +1084,8 @@ def register_raw_materials_routes(
         if coa_file and coa_file.filename:
             try:
                 coa_bytes = await coa_file.read()
+                if len(coa_bytes) > 10 * 1024 * 1024 or not coa_bytes.startswith(b"%PDF"):
+                    raise ValueError("File CoA harus PDF dan <= 10MB")
                 coa_path = f"coa/coa_{clean_batch}.pdf"
                 object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
                 update_data["coa_file_url"] = object_store.public_url("raw-material-docs", coa_path, client=supabase)
@@ -1082,6 +1096,8 @@ def register_raw_materials_routes(
         if halal_file and halal_file.filename:
             try:
                 halal_bytes = await halal_file.read()
+                if len(halal_bytes) > 10 * 1024 * 1024 or not halal_bytes.startswith(b"%PDF"):
+                    raise ValueError("File Halal harus PDF dan <= 10MB")
                 halal_path = f"halal/halal_{clean_batch}.pdf"
                 object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
                 update_data["halal_batch_file_url"] = object_store.public_url("raw-material-docs", halal_path, client=supabase)
@@ -1092,6 +1108,8 @@ def register_raw_materials_routes(
         if qc_report_file and qc_report_file.filename:
             try:
                 qc_report_bytes = await qc_report_file.read()
+                if len(qc_report_bytes) > 10 * 1024 * 1024 or not qc_report_bytes.startswith(b"%PDF"):
+                    raise ValueError("File Laporan Pemeriksaan harus PDF dan <= 10MB")
                 qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
                 object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
                 update_data["qc_report_file_url"] = object_store.public_url("raw-material-docs", qc_report_path, client=supabase)

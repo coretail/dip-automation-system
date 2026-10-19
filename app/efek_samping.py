@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import io
+import ipaddress
 import os
 import re
 from datetime import date, datetime
 from typing import List
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -293,19 +295,40 @@ def register_efek_samping_routes(
         writer = PdfWriter()
         existing_url = product.get("monitoring_efek_samping_file_url")
         if existing_url:
-            try:
-                async with httpx.AsyncClient() as client:
-                    res = await client.get(existing_url, timeout=30.0)
-                if res.status_code == 200 and res.content[:4] == b"%PDF":
-                    old_reader = PdfReader(io.BytesIO(res.content))
-                    for page in old_reader.pages:
-                        writer.add_page(page)
-                else:
-                    print(
-                        f"[EFEK SAMPING] PDF lama tidak terbaca (status {res.status_code}), generate blok baru saja."
+            # SSRF guard: hanya ambil PDF lama dari host storage yang sah (HTTPS,
+            # bukan localhost/private/link-local). URL dari DB tetap divalidasi.
+            parsed_url = urlparse(existing_url)
+            _host = (parsed_url.hostname or "").lower()
+            _safe_host = (
+                parsed_url.scheme == "https"
+                and bool(_host)
+                and _host not in {"localhost", "127.0.0.1", "::1"}
+            )
+            if _safe_host:
+                try:
+                    _ip = ipaddress.ip_address(_host)
+                    _safe_host = not (
+                        _ip.is_private or _ip.is_loopback or _ip.is_link_local or _ip.is_reserved
                     )
-            except Exception as e:
-                print(f"[EFEK SAMPING] Gagal unduh PDF lama, lanjut blok baru: {e}")
+                except ValueError:
+                    _safe_host = True
+            if not _safe_host:
+                print(f"[EFEK SAMPING] URL PDF lama tidak aman, dilewati: {existing_url}")
+                existing_url = None
+            else:
+                try:
+                    async with httpx.AsyncClient() as client:
+                        res = await client.get(existing_url, timeout=30.0)
+                    if res.status_code == 200 and res.content[:4] == b"%PDF":
+                        old_reader = PdfReader(io.BytesIO(res.content))
+                        for page in old_reader.pages:
+                            writer.add_page(page)
+                    else:
+                        print(
+                            f"[EFEK SAMPING] PDF lama tidak terbaca (status {res.status_code}), generate blok baru saja."
+                        )
+                except Exception as e:
+                    print(f"[EFEK SAMPING] Gagal unduh PDF lama, lanjut blok baru: {e}")
         try:
             new_reader = PdfReader(io.BytesIO(new_pdf))
             for page in new_reader.pages:
