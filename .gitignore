@@ -99,3 +99,6 @@ backup-rls/
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log
 /_e2e_upload_tmp.pdf
+
+# Contoh surat pengantar pengujian air (dokumen lokal, jangan di-commit).
+/excel-example/air/
