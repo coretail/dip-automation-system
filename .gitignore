@@ -93,3 +93,9 @@ backup-rls/
 # Unit test murni migrasi storage (tanpa secret/koneksi).
 !/tests/test_parse_storage_url.py
 !/tests/test_object_store_r2.py
+# E2E upload UI -> R2 staging (tanpa secret; kredensial via env vars saat dijalankan).
+!/tests/e2e_upload_staging.py
+
+# Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
+/staging.log
+/_e2e_upload_tmp.pdf
