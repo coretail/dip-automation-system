@@ -25,15 +25,25 @@
         }
       })();
 
-      // Helper untuk menangani session expired
-      window.handleSessionRedirect = function (response, onRedirectCallback) {
-        if (response.redirected && response.url.includes("/login")) {
-          if (onRedirectCallback) onRedirectCallback();
-          window.location.href = response.url;
-          return true;
-        }
-        return false;
-      };
+       // Helper untuk menangani session expired
+       window.handleSessionRedirect = function (response, onRedirectCallback) {
+         if (response.redirected && response.url.includes("/login")) {
+           if (onRedirectCallback) onRedirectCallback();
+           window.location.href = response.url;
+           return true;
+         }
+         return false;
+       };
+
+       // Centralized session-expired handler
+       window.handleSessionExpired = function () {
+         if (window.__sessionExpiredHandled) return;
+         window.__sessionExpiredHandled = true;
+         try { if (typeof stopPresenceHeartbeat === "function") stopPresenceHeartbeat(); } catch (e) {}
+         try { if (window.__notesInterval) clearInterval(window.__notesInterval); } catch (e) {}
+         try { if (window.__adminPresenceInterval) clearInterval(window.__adminPresenceInterval); } catch (e) {}
+         window.location.href = "/login?warning=session_expired";
+       };
     </script>
     <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
@@ -157,6 +167,7 @@
                                 <p class="text-xs text-gray-500 capitalize">{{ _nav_user.role if _nav_user else '-' }}</p>
                             </div>
                             <a href="/logout" data-logout
+                               onclick="if (typeof window.stopPresenceHeartbeat === 'function') window.stopPresenceHeartbeat();"
                                class="flex items-center gap-2 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 transition">
                                 <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Logout
                             </a>
@@ -239,9 +250,13 @@
 
             fetchEDNotifications();
 
+            let edInFlight = false;
             async function fetchEDNotifications() {
+                if (edInFlight) return;
+                edInFlight = true;
                 try {
-                    const response = await fetch('/api/ed-notifications');
+                    const response = await fetch('/api/ed-notifications', { credentials: 'same-origin' });
+                    if (window.handleSessionRedirect(response, () => {})) return;
                     if (!response.ok) throw new Error('Failed to fetch');
                     const data = await response.json();
                     
@@ -305,6 +320,8 @@
                     console.error('Error fetching ED notifications:', error);
                     listContainer.innerHTML = '<div class="px-4 py-6 text-center text-red-500 text-sm">Gagal memuat notifikasi</div>';
                     badge.classList.add('hidden');
+                } finally {
+                    edInFlight = false;
                 }
             }
 
@@ -340,7 +357,10 @@
                 }
             }
 
+            let notesInFlight = false;
             async function fetchNotesMentionCount() {
+                if (notesInFlight) return;
+                notesInFlight = true;
                 try {
                     const response = await fetch('/api/notes/mentions/unread-count', { credentials: 'same-origin' });
                     if (window.handleSessionRedirect(response, () => {
@@ -352,13 +372,19 @@
                     applyCount(data.count);
                 } catch (error) {
                     // silent — badge stays as-is
+                } finally {
+                    notesInFlight = false;
                 }
             }
 
             fetchNotesMentionCount();
             let notesInterval = setInterval(fetchNotesMentionCount, 30000);
+            window.__notesInterval = notesInterval;
+            let notesVisibilityTimer = null;
             document.addEventListener('visibilitychange', function() {
-                if (document.visibilityState === 'visible') fetchNotesMentionCount();
+                if (document.visibilityState !== 'visible') return;
+                clearTimeout(notesVisibilityTimer);
+                notesVisibilityTimer = setTimeout(fetchNotesMentionCount, 300);
             });
         });
     </script>

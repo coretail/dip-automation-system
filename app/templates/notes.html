@@ -302,9 +302,12 @@
         if (hiddenBrandIds) hiddenBrandIds.value = JSON.stringify(collectIds(ta.value, BRAND_TOKEN_RE));
     }
 
+    let loadListController = null;
     async function loadList(url) {
+        loadListController?.abort();
+        loadListController = new AbortController();
         try {
-            const res = await fetch(url, { credentials: 'same-origin' });
+            const res = await fetch(url, { credentials: 'same-origin', signal: loadListController.signal });
             if (!res.ok) return [];
             const data = await res.json();
             return data.items || [];

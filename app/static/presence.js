@@ -18,7 +18,9 @@
 
   function stopHeartbeat() {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
     if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
   }
   window.stopPresenceHeartbeat = stopHeartbeat;
 
@@ -36,6 +38,12 @@
         isRedirecting = true;
         stopHeartbeat();
         window.location.href = response.url;
+        return;
+      }
+      if (response.status === 401) {
+        isRedirecting = true;
+        stopHeartbeat();
+        if (typeof window.handleSessionExpired === "function") window.handleSessionExpired();
       }
     }).catch(function () {});
   }
@@ -76,6 +84,9 @@
     if (document.visibilityState === "hidden") return;
     ping(isActive());
   }, HEARTBEAT_MS);
+
+  window.addEventListener("beforeunload", stopHeartbeat);
+  window.addEventListener("pagehide", stopHeartbeat);
 
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible") {

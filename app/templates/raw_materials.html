@@ -2151,7 +2151,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Trigger notification badge fetch (will refresh from API)
-    fetchEDNotifications();
+    // ED notifications are handled globally by base.html.
 });
 
 // ==================== MODAL PRODUK PEMAKAI BAHAN BAKU ====================
@@ -2206,52 +2206,6 @@ function closeUsedInProductsModal() {
     document.getElementById('usedInProductsModal').classList.add('hidden');
 }
 
-function fetchEDNotifications() {
-    fetch('/api/ed-notifications')
-        .then(response => response.json())
-        .then(data => {
-            const badge = document.getElementById('ed-notification-badge');
-            if (!badge) return;
-            
-            if (data.count > 0) {
-                badge.textContent = data.count > 99 ? '99+' : data.count;
-                badge.classList.remove('hidden');
-                
-                // Render list items
-                const list = document.getElementById('ed-notification-list');
-                if (list) {
-                    list.innerHTML = data.items.map(item => {
-                        const statusEd = item.status_ed || 'Active';
-                        let badgeClass = 'bg-gray-100 text-gray-800';
-                        if (statusEd === 'Dimusnahkan' || statusEd === 'Expired') {
-                            badgeClass = 'bg-red-100 text-red-800';
-                        } else if (statusEd.includes('Kritis')) {
-                            badgeClass = 'bg-amber-100 text-amber-800';
-                        } else if (statusEd === 'ACC Dipakai') {
-                            badgeClass = 'bg-green-100 text-green-800';
-                        }
-                        
-                        return `
-                            <a href="/raw-materials?tab=ed-tab" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-100">
-                                <div class="flex items-start justify-between">
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-sm font-medium text-gray-900 truncate">${umEscapeHtml(item.nama_dagang || 'Unknown')}</p>
-                                        <p class="text-xs text-gray-500">Batch: ${umEscapeHtml(item.no_batch || '-')} | ${umEscapeHtml(item.perusahaan || '-')}</p>
-                                        <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}">
-                                            ${item.days_remaining <= 0 ? 'EXPIRED' : `Sisa ${item.days_remaining} hari`} (ED: ${umEscapeHtml(item.tanggal_ed)})
-                                        </p>
-                                    </div>
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badgeClass} whitespace-nowrap">${umEscapeHtml(statusEd)}</span>
-                                </div>
-                            </a>
-                        `;
-                    }).join('');
-                }
-            } else {
-                badge.classList.add('hidden');
-            }
-        })
-        .catch(err => console.error('Failed to fetch ED notifications:', err));
-}
+// ED notifications are handled globally by base.html to avoid duplicate fetches.
 </script>
 {% endblock %}

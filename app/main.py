@@ -291,6 +291,7 @@ class _QuietAccessLogFilter(logging.Filter):
         "/api/presence/heartbeat",
         "/api/notes/mentions/unread-count",
         "/api/admin/users/presence",
+        "/api/ed-notifications",
     })
 
     def filter(self, record: logging.LogRecord) -> bool:
