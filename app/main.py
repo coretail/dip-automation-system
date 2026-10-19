@@ -1354,6 +1354,8 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
     if msds_file and msds_file.filename:
         try:
             file_bytes = await msds_file.read()
+            if len(file_bytes) > 10 * 1024 * 1024 or not file_bytes.startswith(b"%PDF"):
+                raise ValueError("File MSDS harus PDF dan <= 10MB")
             file_path = f"msds/msds_{clean_kode}_{company_slug}.pdf"
             object_store.upload_pdf("raw-material-docs", file_path, file_bytes, client=supabase)
             msds_url = object_store.public_url("raw-material-docs", file_path, client=supabase)
@@ -1365,6 +1367,8 @@ async def _upload_msds_and_upsert_company_doc(rm_id: str, kode_bahan_baku: str, 
     if spec_sheet_file and spec_sheet_file.filename:
         try:
             file_bytes = await spec_sheet_file.read()
+            if len(file_bytes) > 10 * 1024 * 1024 or not file_bytes.startswith(b"%PDF"):
+                raise ValueError("File Spesifikasi harus PDF dan <= 10MB")
             file_path = f"spec-sheets/specsheet_{clean_kode}_{company_slug}.pdf"
             object_store.upload_pdf("raw-material-docs", file_path, file_bytes, client=supabase)
             spec_sheet_url = object_store.public_url("raw-material-docs", file_path, client=supabase)
@@ -1607,6 +1611,10 @@ async def update_company_document(
         if len(file_bytes) > max_size:
             response = RedirectResponse(url="/admin/company-documents", status_code=303)
             response.set_cookie("error_msg", "Ukuran file melebihi batas 10 MB.")
+            return response
+        if file_bytes[:4] != b"%PDF":
+            response = RedirectResponse(url="/admin/company-documents", status_code=303)
+            response.set_cookie("error_msg", "File harus berupa PDF yang valid.")
             return response
 
         path = path_template.format(doc_type=doc_type, slug=company_slug)
@@ -2497,6 +2505,8 @@ async def update_product(
                         status_code=413,
                         detail=f"Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu."
                     )
+                if file_bytes[:4] != b"%PDF":
+                    raise HTTPException(status_code=400, detail="File harus berupa PDF yang valid.")
                 
                 path = f"products/{product_id}/{path_suffix}.pdf"
                 object_store.upload_pdf(bucket_name, path, file_bytes, client=supabase)
@@ -3200,6 +3210,8 @@ async def update_brand_documents(
 
         if hak_lisensi_merk_file and hak_lisensi_merk_file.filename:
             file_bytes = await hak_lisensi_merk_file.read()
+            if len(file_bytes) > 10 * 1024 * 1024 or not file_bytes.startswith(b"%PDF"):
+                raise ValueError("File Hak & Lisensi Merk harus PDF dan <= 10MB")
             # Path includes perusahaan_slug to avoid conflicts
             path = f"brands/hak_lisensi_merk_{brand_id}_{perusahaan_slug}.pdf"
             object_store.upload_pdf("legal-documents", path, file_bytes, client=supabase)
