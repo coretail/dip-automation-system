@@ -3672,13 +3672,31 @@ async def dashboard(request: Request, current_user: dict = Depends(get_current_u
         response_prod = supabase.table("products").select("*, brands(name)").eq("is_deleted", False).order("created_at", desc=True).execute()
         products = response_prod.data or []
 
-        # 2. Ambil ID produk yang udah punya formula (Bab 2)
+        # 2. Ambil ID produk yang udah punya formula (Bab 2) lewat view agregat
+        #    product_formula_presence (1 baris per produk, lihat migration/006).
+        #    Fetch full-table product_formula_lines bisa dipotong diam-diam sama
+        #    batas PostgREST db.max-rows=1000, bikin Bab II salah tampil "Kosong".
+        #    Kalau view-nya belum kepasang, fallback ke fetch berhalaman (.range).
         prods_with_formula = set()
         try:
-            formula_prods_resp = supabase.table("product_formula_lines").select("product_id").execute()
+            formula_prods_resp = supabase.table("product_formula_presence").select("product_id").execute()
             prods_with_formula = set([item["product_id"] for item in (formula_prods_resp.data or []) if item.get("product_id")])
         except Exception as e:
-            print(f"Gagal tarik formula lines: {e}")
+            print(f"Gagal tarik product_formula_presence, fallback fetch berhalaman: {e}")
+            try:
+                page_size, offset = 1000, 0
+                while True:
+                    lines_resp = supabase.table("product_formula_lines").select("product_id") \
+                        .range(offset, offset + page_size - 1).execute()
+                    lines_data = lines_resp.data or []
+                    if not lines_data:
+                        break
+                    prods_with_formula.update(item["product_id"] for item in lines_data if item.get("product_id"))
+                    if len(lines_data) < page_size:
+                        break
+                    offset += page_size
+            except Exception as e2:
+                print(f"Gagal tarik formula lines: {e2}")
 
         # Data pendukung Bab I: NIB, CPKB, Tidak Pidana itu per-perusahaan (bukan per-produk),
         # Hak & Lisensi Merk itu per-brand+perusahaan. Ambil sekali di luar loop biar efisien.
