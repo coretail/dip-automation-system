@@ -61,8 +61,10 @@ handoff ini kini ikut ter-track (commit `c2b4933`).
 
 ## Kondisi saat ini
 - **staging** `.env.staging`: `STORAGE_BACKEND=dual`, `R2_BUCKET_SUFFIX=-stg`. App staging
-  dijalankan lokal (`python scripts/run_staging_8017.py`, 127.0.0.1:8017) —
-  **soak dimulai 2026-10-16T08:24Z**.
+  dijalankan lokal (127.0.0.1:8017) — **soak di-restart 2026-10-19** (soak pertama
+  2026-10-16T08:24Z terputus saat proses mati bersama sesi; estimasi lulus ≈ 2026-10-22).
+  Log konsol kini di-append ke `staging.log` (persisten antar restart). Launcher WAJIB
+  via `venv\Scripts\python.exe` — `py` global tidak punya uvicorn.
 - **prod**: Render env masih `GEMINI_API_KEY`, `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
   `SUPABASE_URL` saja; `STORAGE_BACKEND` **tidak di-set → default `supabase`** →
   perilaku prod tak berubah. Jangan set `DIP_APP_ENV` di prod.
@@ -80,7 +82,8 @@ handoff ini kini ikut ter-track (commit `c2b4933`).
 > sungguhan, jalankan/host-kan staging terus.
 
 ## Langkah selanjutnya
-1. **Soak staging ≥3 hari**. Estimasi lulus ≈ 2026-10-19.
+1. **Soak staging ≥3 hari**. Estimasi lulus ≈ 2026-10-22 (jam soak di-reset 2026-10-19;
+   soak pertama 10-16 terputus). Bukti awal: E2E UI→R2 8/8 PASS (2026-10-19).
 2. **Prod `dual`** — tambah 6 env di Render **bersamaan**: `STORAGE_BACKEND=dual`,
    `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
    `R2_PUBLIC_BASES={"raw-material-docs":"…","legal-documents":"…"}`,
@@ -96,8 +99,11 @@ handoff ini kini ikut ter-track (commit `c2b4933`).
 
 ## Perintah penting
 ```
-# staging (dual)
-python scripts/run_staging_8017.py
+# staging (dual) — konsol; untuk log persisten bungkus launcher dengan
+# redirect stdout+stderr ke staging.log (pola wrapper subprocess append)
+venv\Scripts\python.exe scripts\run_staging_8017.py
+# E2E upload UI -> R2 (staging hidup + --log staging.log; env: STAGING_ADMIN_EMAIL/PASSWORD)
+py tests/e2e_upload_staging.py --log staging.log
 # live smoke R2 (staging-only)
 python scripts/r2_live_smoke.py
 # audit (report-only)
