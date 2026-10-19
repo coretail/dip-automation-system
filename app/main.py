@@ -1003,10 +1003,13 @@ async def login_submit(
                 # Kalo username ketemu, ambil email aslinya via admin auth service
                 user_id = profile_query.data[0]["id"]
                 user_auth_data = supabase_admin.auth.admin.get_user_by_id(user_id)
+                if not user_auth_data or not getattr(user_auth_data, "user", None) or not getattr(user_auth_data.user, "email", None):
+                    return RedirectResponse(url="/login?error=invalid_credentials", status_code=303)
                 login_identifier = user_auth_data.user.email
             else:
-                # Kalo ga ketemu di profiles, fallback otomatis pake domain kantor
-                login_identifier = f"{login_identifier.lower()}@erfi.com"
+                # Username tidak terdaftar di profiles: jangan fallback ke domain kantor
+                # (bisa menarget akun auth yang ada). Tolak login.
+                return RedirectResponse(url="/login?error=invalid_credentials", status_code=303)
             
         # 2. Authenticate user
         auth_response = supabase_admin.auth.sign_in_with_password({
@@ -2619,9 +2622,13 @@ async def update_product(
 @app.post("/products/delete/{product_id}")
 async def delete_product(request: Request, product_id: str,
                          current_user: dict = Depends(get_current_user)):
+    # Hanya admin yang boleh menghapus (soft delete) produk.
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Admin.")
+
     # Ambil nama-nya dulu sebelum dihapus, biar activity log masih kebaca gak "id doang"
-    product_before = supabase.table("products").select("nama_produk").eq("id", product_id).single().execute()
-    nama_sebelum_hapus = product_before.data.get("nama_produk") if product_before.data else product_id
+    product_before = supabase.table("products").select("nama_produk").eq("id", product_id).execute()
+    nama_sebelum_hapus = product_before.data[0].get("nama_produk") if product_before.data else product_id
 
     try:
         # Soft Delete: cuma tandai is_deleted=True + deleted_at, JANGAN hapus formula
@@ -3578,8 +3585,18 @@ async def admin_reset_password(
             )
             return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
 
+    # Validasi target user ada (cegah operasi pada UID tidak valid).
+    target_exists = supabase.table("profiles").select("id").eq("id", target_uid).execute()
+    if not target_exists.data:
+        log_activity(
+            current_user, "reset_password", "user", target_uid,
+            f"User {target_uid}",
+            changes=[{"field": "Proteksi", "note": "target user tidak ditemukan"}],
+            request=request, outcome="rejected",
+        )
+        return RedirectResponse(url="/admin/users?error=user_not_found", status_code=303)
+
     try:
-        # Ambil nama user target buat activity log
         target_res = supabase.table("profiles").select("full_name").eq("id", target_uid).execute()
         target_name = target_res.data[0].get("full_name") if target_res.data else None
 
@@ -3608,7 +3625,7 @@ async def admin_reset_password(
             current_user, "reset_password", "user", target_uid,
             _user_label(target_uid),
             changes=[{"field": "Password", "note": "reset gagal"},
-                     {"field": "Error", "note": str(e)[:300]}],
+                     {"field": "Error", "note": "reset password gagal (detail di log server)"}],
             request=request, outcome="failed",
         )
         return RedirectResponse(url="/admin/users?error=reset_failed", status_code=303)
@@ -3623,6 +3640,27 @@ async def update_user_role(
 ):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Akses ditolak!")
+
+    # Validasi role yang boleh diberikan.
+    if new_role not in {"admin", "staff"}:
+        log_activity(
+            current_user, "update", "user", target_uid,
+            _user_label(target_uid),
+            changes=[{"field": "Role", "note": "role tidak valid"}],
+            request=request, outcome="rejected",
+        )
+        return RedirectResponse(url="/admin/users?error=invalid_role", status_code=303)
+
+    # Validasi target user ada.
+    target_exists = supabase.table("profiles").select("id").eq("id", target_uid).execute()
+    if not target_exists.data:
+        log_activity(
+            current_user, "update", "user", target_uid,
+            f"User {target_uid}",
+            changes=[{"field": "Proteksi", "note": "target user tidak ditemukan"}],
+            request=request, outcome="rejected",
+        )
+        return RedirectResponse(url="/admin/users?error=user_not_found", status_code=303)
 
     # Cek apakah target akun terproteksi -- kalau iya dan yang minta bukan akun itu sendiri, tolak
     if target_uid != current_user["id"]:
@@ -3655,7 +3693,7 @@ async def update_user_role(
         log_activity(
             current_user, "update", "user", target_uid, target_label,
             changes=[{"field": "Role", "old": old_role, "new": new_role},
-                     {"field": "Error", "note": str(e)[:300]}],
+                     {"field": "Error", "note": "update role gagal (detail di log server)"}],
             request=request, outcome="failed",
         )
         return RedirectResponse(url="/admin/users?error=update_failed", status_code=303)
@@ -3912,6 +3950,10 @@ async def delete_user(
 
     target_label = (target_snapshot.get("full_name") or f"User {target_uid}")
 
+    # Validasi target user ada (cegah operasi pada UID tidak valid).
+    if not target_snapshot:
+        return RedirectResponse(url="/admin/users?error=user_not_found", status_code=303)
+
     # Cek apakah target akun terproteksi (dan bukan dirinya sendiri -- walau baris di atas
     # sudah menangkap kasus itu, ini sebagai lapis proteksi tambahan)
     if target_snapshot.get("is_protected"):
@@ -3954,7 +3996,7 @@ async def delete_user(
         log_activity(
             current_user, "delete", "user", target_uid, target_label,
             changes=[{"field": "Username", "old": target_snapshot.get("full_name")},
-                     {"field": "Error", "note": str(e)[:300]}],
+                     {"field": "Error", "note": "hapus user gagal (detail di log server)"}],
             request=request, outcome="failed",
         )
         return RedirectResponse(url="/admin/users?error=delete_failed", status_code=303)

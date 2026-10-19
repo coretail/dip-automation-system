@@ -63,20 +63,19 @@ def register_dip_public_routes(
 
     def _storage_signed_url(public_url: str, expires_in: int = 3600):
         """Generate short-lived signed URL dari public URL Supabase Storage.
-        URL asli storage tidak dibocorkan ke browser; yang dikirim cuma signed URL
-        sementara (default 1 jam). Kalau parsing/generate gagal, fallback ke URL
-        asli supaya link tetap jalan di halaman publik."""
+        Fail-closed: kalau parsing/generate gagal, kembalikan None agar URL storage
+        asli tidak bocor ke halaman publik."""
         if not public_url:
             return None
         bucket, path = parse_storage_url(public_url)
         if not bucket or not path:
-            return public_url
+            return None
         try:
             signed = object_store.signed_url(bucket, path, expires_in, client=supabase)
-            return signed or public_url
+            return signed
         except Exception as e:
             print(f"Gagal generate signed URL ({bucket}/{path}): {e}")
-            return public_url
+            return None
 
     def _get_audit_username(request: Request) -> str:
         """Best-effort ambil username (full_name) user yang sedang login, buat log audit

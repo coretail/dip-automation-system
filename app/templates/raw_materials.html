@@ -2235,13 +2235,13 @@ function fetchEDNotifications() {
                             <a href="/raw-materials?tab=ed-tab" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-100">
                                 <div class="flex items-start justify-between">
                                     <div class="flex-1 min-w-0">
-                                        <p class="text-sm font-medium text-gray-900 truncate">${item.nama_dagang || 'Unknown'}</p>
-                                        <p class="text-xs text-gray-500">Batch: ${item.no_batch || '-'} | ${item.perusahaan || '-'}</p>
+                                        <p class="text-sm font-medium text-gray-900 truncate">${umEscapeHtml(item.nama_dagang || 'Unknown')}</p>
+                                        <p class="text-xs text-gray-500">Batch: ${umEscapeHtml(item.no_batch || '-')} | ${umEscapeHtml(item.perusahaan || '-')}</p>
                                         <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}">
-                                            ${item.days_remaining <= 0 ? 'EXPIRED' : `Sisa ${item.days_remaining} hari`} (ED: ${item.tanggal_ed})
+                                            ${item.days_remaining <= 0 ? 'EXPIRED' : `Sisa ${item.days_remaining} hari`} (ED: ${umEscapeHtml(item.tanggal_ed)})
                                         </p>
                                     </div>
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badgeClass} whitespace-nowrap">${statusEd}</span>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badgeClass} whitespace-nowrap">${umEscapeHtml(statusEd)}</span>
                                 </div>
                             </a>
                         `;
