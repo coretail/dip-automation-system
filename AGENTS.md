@@ -61,8 +61,8 @@
 ## 8. Dokumen sumber
 - `README.md`: orientasi dan perintah; tabel migrasi hanya mencantumkan 001–004 dan inventaris test sudah tidak lengkap.
 - `panduan_dip_automation_system.md`: panduan operasional/teknis utama dan detail tema, PDF, keamanan, serta migrasi.
-- `catatan_investigasi_auth500_staging.md`: investigasi Auth staging historis; hasil live belum diverifikasi ulang.
-- `catatan_handoff_migrasi_r2.md` dan `catatan_migrasi_storage_r2.md`: handoff/status R2 historis; jangan dianggap status live tanpa verifikasi.
-- `catatan_batch_plan.md`: rencana lama yang bertentangan dengan PO yang sudah ada; bukan sumber kebenaran saat ini.
-- `rencana_fitur_input_po_qc.md`: rencana lama; klaim “belum ada perubahan code” tidak cocok dengan `app/po_routes.py` saat ini.
+- `catatan/catatan_investigasi_auth500_staging.md`: investigasi Auth staging historis; hasil live belum diverifikasi ulang.
+- `catatan/catatan_handoff_migrasi_r2.md` dan `catatan/catatan_migrasi_storage_r2.md`: handoff/status R2 historis; jangan dianggap status live tanpa verifikasi.
+- `catatan/catatan_batch_plan.md`: rencana lama yang bertentangan dengan PO yang sudah ada; bukan sumber kebenaran saat ini.
+- `.kilo/plans/rencana_fitur_input_po_qc.md`: rencana lama; klaim “belum ada perubahan code” tidak cocok dengan `app/po_routes.py` saat ini.
 - `migration/001`–`007`: urutan SQL bernomor; bukti repo menunjukkan manual SQL Editor, tetapi status eksekusi aktual tidak dapat diverifikasi tanpa akses database.

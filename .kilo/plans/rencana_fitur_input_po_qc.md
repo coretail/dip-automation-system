@@ -3,7 +3,7 @@
 ## Status
 
 **Approved — siap masuk tahap implementasi. Belum ada perubahan code.** Dokumen ini lanjutan dari
-`catatan_batch_plan.md` (migrasi data historis, sudah LOCKED & sudah dieksekusi
+`catatan/catatan_batch_plan.md` (migrasi data historis, sudah LOCKED & sudah dieksekusi
 25 Sep 2026 — tabel `purchase_orders` & `purchase_order_items` sudah ada di
 Supabase). Plan ini khusus untuk fitur baru: **halaman live-input** supaya tim
 QC mencatat PO/batch produksi langsung ke sistem, menggantikan pencatatan
@@ -117,7 +117,7 @@ Langkah:
 
 ### 6.3 Modal "Tambah Batch Baru"
 Dipicu dari step 3 di atas. Minimal field yang perlu (ikut kolom
-`product_batches` yang sudah ada — lihat catatan_batch_plan.md Bagian 5):
+`product_batches` yang sudah ada — lihat catatan/catatan_batch_plan.md Bagian 5):
 `no_batch`, `tanggal_produksi` (default hari ini kalau kosong, atau isi dari
 `tanggal_catatan_batch` yang sudah diketik di form utama), `tanggal_ed`
 (opsional saat input awal — **NEEDS VERIFICATION**, lihat Bagian 10),
