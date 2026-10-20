@@ -487,3 +487,19 @@ def remove(bucket: str, path: str, client=None) -> dict:
         if backend == "dual" and not r2_result["ok"] and not r2_result["missing"]:
             _log_storage_repair("remove", bucket, path, "r2", r2_result["error"])
     return result
+
+
+def remove_from_all_backends(bucket: str, path: str, client=None) -> dict:
+    """Hapus objek dari Supabase dan R2 tanpa mengikuti STORAGE_BACKEND.
+
+    Dipakai untuk cleanup manual (mis. hapus file produk) agar objek tidak
+    tertinggal di backend yang tidak aktif. Kegagalan R2 dicatat sebagai
+    storage_repair dan tidak menggagalkan pemanggil.
+    """
+    result: dict = {}
+    result["supabase"] = _remove_supabase(bucket, path, client=client)
+    r2_result = _r2_remove(bucket, path)
+    result["r2"] = r2_result
+    if not r2_result.get("ok") and not r2_result.get("missing"):
+        _log_storage_repair("remove", bucket, path, "r2", r2_result.get("error"))
+    return result

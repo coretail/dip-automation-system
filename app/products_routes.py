@@ -1121,7 +1121,7 @@ def register_products_routes(
 
         storage_failed = False
         if file_url and bucket and path:
-            result = object_store.remove(bucket, path, client=supabase)
+            result = object_store.remove_from_all_backends(bucket, path, client=supabase)
             primary = object_store.primary_result(result)
             if not (primary.get("ok") or primary.get("missing")):
                 storage_failed = True
