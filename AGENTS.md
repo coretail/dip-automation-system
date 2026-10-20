@@ -18,7 +18,7 @@
 - E2E `e2e_*.py` membutuhkan server staging, kredensial env `STAGING_ADMIN_EMAIL`/`STAGING_ADMIN_PASSWORD`, dependency Playwright, dan menulis/cleanup data staging; bukan unit test.
 
 ## 3. Aturan keras
-- Jangan membaca, mencetak, atau commit secret dari `.env*`; `.env.staging.example` hanya template.
+- Jangan membaca, mencetak, atau commit secret dari `.env*`, termasuk `.env.staging`; `.env.staging.example` hanya template dan tidak boleh diisi secret lalu di-commit.
 - Jangan pernah mengarahkan staging ke produksi. `DIP_APP_ENV=staging` wajib; guard menolak URL selain host staging eksak, ref produksi, shell env yang tercampur, key JWT yang terikat bukan staging, dan konfigurasi wajib yang hilang.
 - Validasi key lokal tidak membuktikan key aktif: JWT hanya dicek klaim `ref` tanpa signature; key opaque hanya dicek keberadaan.
 - Launcher membaca `.env.staging` sebagai sumber tunggal, memvalidasi sebelum import app, dan tidak mencetak secret. Contoh env saat ini belum memuat seluruh `STORAGE_BACKEND`/R2 key yang diwajibkan preflight; isi lengkap secara lokal, jangan commit.
