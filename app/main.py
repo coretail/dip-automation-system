@@ -826,7 +826,7 @@ def _user_role_and_label(uid: str):
 def log_activity(current_user: dict, action: str, entity_type: str, entity_id: str,
                  entity_label: str, changes: list = None, *, request=None,
                  outcome: str = "success", request_id: str = None,
-                 source: str = "app"):
+                 source: str = "app", storage_note: str = None):
     """Catat activity log ke DB Supabase + cetak log rapi ke terminal Render.
 
     Parameter baru (semua opsional & keyword-only) dipakai sejak hardening audit
@@ -845,6 +845,11 @@ def log_activity(current_user: dict, action: str, entity_type: str, entity_id: s
     outcome = outcome if outcome in ("success", "rejected", "failed") else "success"
     source = source if source in ("app", "public", "migration") else "app"
 
+    # Normalisasi changes + catat status storage R2 bila diberikan.
+    final_changes = list(changes or [])
+    if storage_note:
+        final_changes.append({"field": "Storage (R2)", "note": storage_note})
+
     # 1. Cetak log ke terminal Render
     print_activity_terminal(
         current_user=current_user,
@@ -852,7 +857,7 @@ def log_activity(current_user: dict, action: str, entity_type: str, entity_id: s
         entity_type=entity_type,
         entity_label=entity_label,
         entity_id=entity_id,
-        changes=changes,
+        changes=final_changes,
         outcome=outcome,
     )
 
@@ -864,7 +869,7 @@ def log_activity(current_user: dict, action: str, entity_type: str, entity_id: s
         "entity_type": entity_type,
         "entity_id": entity_id,
         "entity_label": entity_label,
-        "changes": changes or [],
+        "changes": final_changes,
         "outcome": outcome,
         "source": source,
     }

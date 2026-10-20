@@ -1132,13 +1132,12 @@ def register_products_routes(
                     storage_note = "objek berhasil dihapus dari R2"
 
         changes = [{"field": label, "note": "File dihapus"}]
-        if storage_note:
-            changes.append({"field": "Storage", "note": storage_note})
 
         outcome = "partial" if storage_failed else "success"
         log_activity(
             current_user, "delete", "product_file", product_id, entity_label,
             changes=changes, request=request, outcome=outcome,
+            storage_note=storage_note,
         )
 
         def _tab_for_field(name: str) -> str:
