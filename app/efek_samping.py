@@ -420,11 +420,15 @@ def register_efek_samping_routes(
                 path = file_url.split(marker, 1)[1]
                 if not path.startswith(f"products/{product_id}/"):
                     raise ValueError(f"Path {path!r} bukan milik produk {product_id}")
-                remove_result = object_store.primary_result(
-                    object_store.remove("raw-material-docs", path, client=supabase)
+                remove_result = object_store.remove_from_all_backends(
+                    "raw-material-docs", path, client=supabase
                 )
-                if not remove_result.get("ok") and not remove_result.get("missing"):
-                    print(f"[EFEK SAMPING] Gagal hapus file {file_url}: {remove_result.get('error')}")
+                failed = object_store.failed_backends(remove_result)
+                if failed:
+                    print(
+                        f"[EFEK SAMPING] Gagal hapus file {file_url}; "
+                        f"backend: {', '.join(failed)}"
+                    )
             except ValueError as e:
                 # Path tidak valid: jangan hapus apa pun, tetap lanjut reset DB.
                 print(f"[EFEK SAMPING] URL file mencurigakan, tidak dihapus: {e}")

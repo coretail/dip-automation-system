@@ -724,11 +724,15 @@ def register_raw_materials_routes(
                     continue
                 bucket, path = _parse_storage_url(url)
                 if bucket and path:
-                    remove_result = object_store.primary_result(
-                        object_store.remove(bucket, path, client=supabase)
+                    remove_result = object_store.remove_from_all_backends(
+                        bucket, path, client=supabase
                     )
-                    if not remove_result.get("ok") and not remove_result.get("missing"):
-                        print(f"Gagal hapus file storage {path}: {remove_result.get('error')}")
+                    failed = object_store.failed_backends(remove_result)
+                    if failed:
+                        print(
+                            f"Gagal hapus file storage {path}; "
+                            f"backend: {', '.join(failed)}"
+                        )
 
             # Hapus baris-baris dependent dulu, baru bahan bakunya sendiri
             supabase.table("raw_material_batches").delete().eq("raw_material_id", rm_id).execute()

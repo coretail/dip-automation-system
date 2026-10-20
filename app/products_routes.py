@@ -1122,18 +1122,29 @@ def register_products_routes(
         storage_failed = False
         if file_url and bucket and path:
             result = object_store.remove_from_all_backends(bucket, path, client=supabase)
-            primary = object_store.primary_result(result)
-            if not (primary.get("ok") or primary.get("missing")):
+            failed = object_store.failed_backends(result)
+            if failed:
                 storage_failed = True
-                storage_note = f"objek gagal dihapus, perlu dibersihkan manual ({bucket}/{path})"
-            else:
-                r2_result = result.get("r2") if isinstance(result, dict) else None
-                if r2_result and (r2_result.get("ok") or r2_result.get("missing")):
-                    storage_note = "objek berhasil dihapus dari R2"
+                details = []
+                for backend in failed:
+                    backend_result = result.get(backend) or {}
+                    details.append(
+                        f"{backend}: {backend_result.get('error') or 'gagal'}"
+                    )
+                storage_note = (
+                    f"penghapusan gagal pada {', '.join(details)}; "
+                    f"perlu dibersihkan manual ({bucket}/{path})"
+                )
+            elif result:
+                statuses = []
+                for backend, backend_result in result.items():
+                    status = "sudah tidak ada" if backend_result.get("missing") else "berhasil"
+                    statuses.append(f"{backend}: {status}")
+                storage_note = "; ".join(statuses)
 
         changes = [{"field": label, "note": "File dihapus"}]
 
-        outcome = "partial" if storage_failed else "success"
+        outcome = "failed" if storage_failed else "success"
         log_activity(
             current_user, "delete", "product_file", product_id, entity_label,
             changes=changes, request=request, outcome=outcome,

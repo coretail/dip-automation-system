@@ -4,11 +4,10 @@ Fase 3 migrasi = backend R2 + mode ``dual``. Perilaku dipilih via
 ``STORAGE_BACKEND`` (``app/config.py``):
 
 - ``supabase`` (default): hanya Supabase Storage; perilaku lama tak berubah.
-- ``dual``: TULIS ke Supabase dan R2; BACA tetap dari Supabase (URL di kolom DB
-  tetap Supabase sampai cutover Fase 5). Kegagalan tulis/hapus R2 TIDAK
-  menggagalkan request -- hanya dicatat sebagai log ``storage_repair`` supaya
-  ``rclone sync`` final bisa merekonsiliasi. Tulis R2 yang sukses di-log
-  ``storage_r2_ok`` (sinyal positif pemantauan, level WARNING).
+- ``dual``: TULIS ke R2 lalu Supabase dan BACA tetap dari Supabase (URL di kolom
+  DB tetap Supabase sampai cutover Fase 5). Kegagalan provider menggagalkan
+  operasi dan memicu kompensasi best-effort agar tidak meninggalkan objek baru
+  hanya di satu provider. Tulis R2 yang sukses di-log ``storage_r2_ok``.
 - ``r2``: hanya R2 (dipakai saat cutover Fase 5). URL publik dibangun dari
   ``R2_PUBLIC_BASES``; presigned memakai endpoint S3 R2 (tak butuh domain).
 
@@ -83,8 +82,28 @@ def primary_result(result) -> dict:
     return result.get(_primary_backend()) or {}
 
 
+def all_results_ok(result) -> bool:
+    """True bila setiap provider yang dicoba berhasil atau sudah missing."""
+    if not isinstance(result, dict) or not result:
+        return False
+    return all(
+        isinstance(item, dict) and (item.get("ok") or item.get("missing"))
+        for item in result.values()
+    )
+
+
+def failed_backends(result) -> list[str]:
+    """Nama provider yang gagal, tidak termasuk objek yang sudah missing."""
+    if not isinstance(result, dict):
+        return []
+    return [
+        backend for backend, item in result.items()
+        if isinstance(item, dict) and not (item.get("ok") or item.get("missing"))
+    ]
+
+
 def _log_storage_repair(op: str, bucket: str, path: str, backend: str, error) -> None:
-    """Log terstruktur untuk kegagalan R2 yang tidak menggagalkan request."""
+    """Log terstruktur untuk kegagalan provider yang perlu direkonsiliasi."""
     logger.warning(
         "storage_repair op=%s bucket=%s path=%s backend=%s error=%s",
         op, bucket, path, backend, error,
@@ -373,19 +392,38 @@ def _r2_signed_url(bucket: str, path: str, expires: int = 3600):
 def upload_pdf(bucket: str, path: str, data: bytes, upsert: bool = True, client=None):
     """Upload PDF (ContentType=application/pdf).
 
-    ``supabase``: hanya Supabase (exception naik). ``dual``: Supabase dulu
-    (otoritatif, exception naik), lalu R2 best-effort (kegagalan -> log
-    ``storage_repair``, request tetap sukses). ``r2``: hanya R2 (exception naik).
+    ``supabase``: hanya Supabase (exception naik). ``dual`` menulis R2 lebih
+    dulu lalu Supabase; bila provider kedua gagal, provider pertama dihapus
+    sebagai kompensasi best-effort dan exception diteruskan. ``r2`` hanya R2.
     """
     backend = _active_backend()
     if backend == "r2":
         return _r2_upload(bucket, path, data, upsert)
-    result = _supabase_upload(bucket, path, data, upsert, client=client)
     if backend == "dual":
         try:
-            _r2_upload(bucket, path, data, upsert)
+            r2_result = _r2_upload(bucket, path, data, upsert)
         except Exception as exc:
             _log_storage_repair("upload", bucket, path, "r2", exc)
+            raise
+        try:
+            result = _supabase_upload(bucket, path, data, upsert, client=client)
+        except Exception:
+            # Never delete an existing upserted object: without a read/restore
+            # transaction, deletion would destroy the previous R2 version.
+            if not upsert:
+                rollback = _r2_remove(bucket, path)
+                if not (rollback.get("ok") or rollback.get("missing")):
+                    _log_storage_repair(
+                        "rollback_upload", bucket, path, "r2", rollback.get("error")
+                    )
+            else:
+                _log_storage_repair(
+                    "upload_reconcile", bucket, path, "r2",
+                    "Supabase upload failed after R2 upsert",
+                )
+            raise
+        return result
+    result = _supabase_upload(bucket, path, data, upsert, client=client)
     return result
 
 
@@ -484,8 +522,12 @@ def remove(bucket: str, path: str, client=None) -> dict:
     if backend in ("r2", "dual"):
         r2_result = _r2_remove(bucket, path)
         result["r2"] = r2_result
-        if backend == "dual" and not r2_result["ok"] and not r2_result["missing"]:
-            _log_storage_repair("remove", bucket, path, "r2", r2_result["error"])
+    if backend == "dual":
+        for provider, provider_result in result.items():
+            if not provider_result.get("ok") and not provider_result.get("missing"):
+                _log_storage_repair(
+                    "remove", bucket, path, provider, provider_result.get("error")
+                )
     return result
 
 
@@ -493,13 +535,17 @@ def remove_from_all_backends(bucket: str, path: str, client=None) -> dict:
     """Hapus objek dari Supabase dan R2 tanpa mengikuti STORAGE_BACKEND.
 
     Dipakai untuk cleanup manual (mis. hapus file produk) agar objek tidak
-    tertinggal di backend yang tidak aktif. Kegagalan R2 dicatat sebagai
-    storage_repair dan tidak menggagalkan pemanggil.
+    tertinggal di backend yang tidak aktif. Penghapusan bersifat idempoten:
+    objek yang sudah hilang dianggap sukses, sedangkan setiap provider yang
+    gagal dicatat sebagai ``storage_repair`` agar dapat dicoba ulang.
     """
     result: dict = {}
     result["supabase"] = _remove_supabase(bucket, path, client=client)
     r2_result = _r2_remove(bucket, path)
     result["r2"] = r2_result
-    if not r2_result.get("ok") and not r2_result.get("missing"):
-        _log_storage_repair("remove", bucket, path, "r2", r2_result.get("error"))
+    for backend, backend_result in result.items():
+        if not backend_result.get("ok") and not backend_result.get("missing"):
+            _log_storage_repair(
+                "remove", bucket, path, backend, backend_result.get("error")
+            )
     return result

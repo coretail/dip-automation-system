@@ -145,8 +145,11 @@ def main():
 
     cap.records.clear()
     s3.fail_put = True
-    out = object_store.upload_pdf("raw-material-docs", "coa/b.pdf", b"%PDF-")
-    check("dual upload r2 failure tidak raise", out == "SB_UPLOAD", out)
+    try:
+        object_store.upload_pdf("raw-material-docs", "coa/b.pdf", b"%PDF-", upsert=False)
+        check("dual upload r2 failure raises", False, "tidak raise")
+    except RuntimeError:
+        check("dual upload r2 failure raises", True)
     check("dual upload r2 failure -> storage_repair", any("storage_repair" in m for m in cap.records), cap.records)
 
     check("dual public_url tetap Supabase",
@@ -160,6 +163,26 @@ def main():
     check("dual remove punya dua key", set(res) == {"supabase", "r2"}, res)
     check("dual remove r2 gagal -> storage_repair", any("storage_repair" in m for m in cap.records), cap.records)
     check("dual primary_result -> supabase ok", object_store.primary_result(res).get("ok") is True, res)
+
+    # A cross-backend cleanup must report both providers, not only the active
+    # primary provider. The Supabase failure also gets a repair record.
+    cap.records.clear()
+    object_store._supabase_remove = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("supabase delete boom"))
+    s3.fail_delete = False
+    res = object_store.remove_from_all_backends("raw-material-docs", "coa/leftover.pdf")
+    check("all-backends cleanup has both results", set(res) == {"supabase", "r2"}, res)
+    check("all-backends cleanup detects supabase failure",
+          object_store.failed_backends(res) == ["supabase"], res)
+    check("all-backends cleanup is not successful",
+          not object_store.all_results_ok(res), res)
+    check("supabase cleanup failure -> storage_repair",
+          any("backend=supabase" in m for m in cap.records), cap.records)
+
+    object_store._supabase_remove = lambda *a, **k: None
+    s3.fail_delete = True
+    res = object_store.remove_from_all_backends("raw-material-docs", "coa/leftover.pdf")
+    check("all-backends cleanup detects r2 failure",
+          object_store.failed_backends(res) == ["r2"], res)
 
     # ---------------- mode supabase (tak berubah) ----------------
     s3 = FakeS3()

@@ -232,12 +232,10 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
                 any(part in ("", ".", "..") for part in path.split("/"))):
             raise HTTPException(500, "Path lampiran tidak valid.")
         try:
-            remove_result = object_store.primary_result(
-                object_store.remove(BUCKET, path, client=supabase)
-            )
+            remove_result = object_store.remove(BUCKET, path, client=supabase)
         except Exception:
-            remove_result = {"ok": False, "missing": False}
-        if not remove_result.get("ok") and not remove_result.get("missing"):
+            remove_result = {}
+        if not object_store.all_results_ok(remove_result):
             raise HTTPException(500, "Gagal menghapus file lampiran dari storage.")
         supabase.table("product_attachments").delete().eq("id", attachment_id).eq("product_id", product_id).execute()
         try:
