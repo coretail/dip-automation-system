@@ -8,23 +8,25 @@
 
 ## 2. Perintah yang diaudit
 - Instal dependensi: `pip install -r requirements.txt` (15 paket dipin; `pyflakes`, `pytest`, Playwright, dan `python-dotenv` tidak dipin di sana).
-- Lokal: `uvicorn app.main:app --reload`.
+- Pengembangan lokal hanya lewat `python scripts/run_staging_8017.py`; `uvicorn app.main:app` langsung memakai `.env` produksi dan dilarang untuk pengembangan/tes karena `app/config.py` memilih `.env` saat tidak ada mode staging.
 - Staging: dari root repo, `python scripts/run_staging_8017.py`; launcher bind ke `127.0.0.1:8017`, tanpa reload.
 - Static check: `python scripts/check_undefined_names.py`; exit 0 bersih, 1 temuan blocking, 2 pyflakes tidak tersedia.
 - Hook: `git config core.hooksPath .githooks`; `.githooks/pre-push` menjalankan static check.
 - Unit/verification adalah skrip standalone: `python tests/test_parse_storage_url.py`, `python tests/test_object_store_r2.py`, dan skrip `verify_*.py`.
 - Tidak ada pytest config (`pytest.ini`, `pyproject.toml`, `setup.cfg`, `tox.ini`, `conftest.py`) yang ditemukan.
-- Audit awal dengan `python` dari PATH gagal karena Python tidak tersedia. Venv repo tersedia di `venv\Scripts\python.exe`; dengan interpreter itu, `--version` menghasilkan Python 3.11.0, static check lulus (24 file), dua unit test standalone lulus (19 kasus parser; seluruh kasus dispatch R2/dual), dan compileall `app scripts` lulus. Pytest tidak dijalankan karena tidak ada konfigurasi/dependensi pytest yang diaudit.
+- Jika `python` tidak ada di PATH, gunakan interpreter venv repo: `venv\Scripts\python.exe` di Windows atau `venv/bin/python` di Linux/macOS; `venv/` di-ignore Git.
 - E2E `e2e_*.py` membutuhkan server staging, kredensial env `STAGING_ADMIN_EMAIL`/`STAGING_ADMIN_PASSWORD`, dependency Playwright, dan menulis/cleanup data staging; bukan unit test.
 
 ## 3. Aturan keras
 - Jangan membaca, mencetak, atau commit secret dari `.env*`, termasuk `.env.staging`; `.env.staging.example` hanya template dan tidak boleh diisi secret lalu di-commit.
 - Jangan pernah mengarahkan staging ke produksi. `DIP_APP_ENV=staging` wajib; guard menolak URL selain host staging eksak, ref produksi, shell env yang tercampur, key JWT yang terikat bukan staging, dan konfigurasi wajib yang hilang.
+- Pengembangan/tes di mesin lokal hanya melalui `python scripts/run_staging_8017.py`; tanpa mode staging, `app/config.py` mengambil `.env` produksi dan `uvicorn app.main:app` langsung dilarang.
 - Validasi key lokal tidak membuktikan key aktif: JWT hanya dicek klaim `ref` tanpa signature; key opaque hanya dicek keberadaan.
 - Launcher membaca `.env.staging` sebagai sumber tunggal, memvalidasi sebelum import app, dan tidak mencetak secret. Contoh env saat ini belum memuat seluruh `STORAGE_BACKEND`/R2 key yang diwajibkan preflight; isi lengkap secara lokal, jangan commit.
 - `STORAGE_BACKEND` hanya `supabase`, `dual`, atau `r2`; `R2_BUCKET_SUFFIX` memisahkan bucket fisik staging (dokumen E2E mensyaratkan `-stg`).
 - Migrasi SQL tidak otomatis. Jalankan manual, berurutan, lewat Supabase SQL Editor setelah review; jangan menjalankan migrasi dari agen.
-- Sebelum mulai pekerjaan bersama, `git pull` dulu. Jangan push dari agen.
+- Sebelum mulai pekerjaan bersama, `git pull` dulu.
+- Agen hanya commit atau push bila diminta eksplisit oleh pemilik repo di sesi itu; tidak pernah `--force` atau push ke prod/deploy dengan cara lain.
 - Render auto-deploy dari `main`, Build/Start command, dan status env tidak dapat diverifikasi dari repo; jangan menganggapnya fakta.
 
 ## 4. Arsitektur & menambah route
