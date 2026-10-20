@@ -99,6 +99,10 @@ backup-rls/
 !/tests/e2e_activity_request_id.py
 # E2E smoke pasca-refactor route (halaman GET + alur sample/brand; kredensial via env vars).
 !/tests/e2e_smoke_refactor.py
+# Unit tests security (pure logic, tanpa koneksi/secret).
+!/tests/test_security_helpers.py
+!/tests/test_upload_validation.py
+!/tests/test_auth_matrix.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log
