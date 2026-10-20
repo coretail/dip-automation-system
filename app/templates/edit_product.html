@@ -34,13 +34,18 @@
 
     <div class="flex items-center gap-2">
         <input type="file" name="{{ field_name }}" id="{{ field_name }}" accept=".pdf" class="flex-1 text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700" onchange="validateFileSize(this)">
-        {% if file_url %}
-        <button type="button"
-                onclick="deleteProductFile('{{ field_name }}', this)"
-                class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition">
-            <i class="fa-solid fa-trash-can"></i> Hapus
-        </button>
-        {% endif %}
+    {% if file_url %}
+    <button type="submit"
+            formaction="/products/{{ product.id }}/delete-file"
+            formmethod="post"
+            formnovalidate
+            name="field_name"
+            value="{{ field_name }}"
+            onclick="return confirm('Yakin hapus PDF ini? File akan dihapus permanen.')"
+            class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition">
+        <i class="fa-solid fa-trash-can"></i> Hapus
+    </button>
+    {% endif %}
     </div>
     <p class="text-[11px] text-gray-400 mt-1">(Maksimal ukuran file: 10 MB, Format: PDF)</p>
 </div>
@@ -597,15 +602,16 @@ function deleteProductFile(fieldName, btn) {
     fetch('/products/{{ product.id }}/delete-file', {
         method: 'POST',
         body: formData,
-        credentials: 'same-origin'
+        credentials: 'same-origin',
+        redirect: 'follow'
     }).then(function (res) {
-        if (res.ok || res.redirected) {
+        if (res.ok || res.status === 303 || res.redirected) {
             window.location.reload();
         } else {
             showFileToast('Gagal menghapus file. Silakan coba lagi.');
             if (btn) btn.disabled = false;
         }
-    }).catch(function () {
+    }).catch(function (err) {
         showFileToast('Gagal menghapus file. Silakan coba lagi.');
         if (btn) btn.disabled = false;
     });

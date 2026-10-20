@@ -1050,26 +1050,28 @@ def register_products_routes(
         current_user: dict = Depends(get_current_user),
     ):
         ALLOWED_FIELDS = {
-            "no_notifikasi_file_url",
-            "cara_pembuatan_file_url",
-            "sistem_penomoran_batch_file_url",
-            "spek_produk_jadi_file_url",
-            "spek_pengemas_file_url",
-            "laporan_uji_sig_file_url",
-            "protokol_stabilitas_file_url",
-            "hasil_stabilitas_file_url",
-            "laporan_keamanan_file_url",
-            "monitoring_efek_samping_file_url",
-            "data_klaim_file_url",
-            "desain_primer_file_url",
-            "desain_sekunder_file_url",
+            "no_notifikasi_file",
+            "cara_pembuatan_file",
+            "sistem_penomoran_batch_file",
+            "spek_produk_jadi_file",
+            "spek_pengemas_file",
+            "laporan_uji_sig_file",
+            "protokol_stabilitas_file",
+            "hasil_stabilitas_file",
+            "laporan_keamanan_file",
+            "monitoring_efek_samping_file",
+            "data_klaim_file",
+            "desain_primer_file",
+            "desain_sekunder_file",
         }
         if field_name not in ALLOWED_FIELDS:
             raise HTTPException(status_code=400, detail="Field file tidak valid.")
 
+        db_field = field_name + "_url"
+
         try:
             prod_resp = supabase.table("products").select(
-                "id, perusahaan, " + field_name
+                "id, perusahaan, " + db_field
             ).eq("id", product_id).eq("is_deleted", False).single().execute()
         except Exception as e:
             print(f"Produk {product_id} tidak ditemukan saat hapus file: {e}")
@@ -1087,7 +1089,7 @@ def register_products_routes(
             if _user_company and _prod_company and _user_company != _prod_company:
                 raise HTTPException(status_code=403, detail="Akses ditolak! File bukan milik perusahaan Anda.")
 
-        file_url = product.get(field_name)
+        file_url = product.get(db_field)
         if file_url:
             bucket, path = object_store.parse_storage_url(file_url)
             if bucket and path:
@@ -1097,32 +1099,32 @@ def register_products_routes(
                     print(f"Gagal hapus object storage ({bucket}/{path}): {e}")
 
         try:
-            supabase.table("products").update({field_name: None}).eq("id", product_id).execute()
+            supabase.table("products").update({db_field: None}).eq("id", product_id).execute()
         except Exception as e:
-            print(f"Gagal update DB hapus file {field_name} produk {product_id}: {e}")
+            print(f"Gagal update DB hapus file {db_field} produk {product_id}: {e}")
             response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
             response.set_cookie("error_msg", "Gagal menghapus file. Silakan coba lagi.")
             return response
 
         tab_map = {
-            "no_notifikasi_file_url": "bab1",
-            "cara_pembuatan_file_url": "bab3",
-            "sistem_penomoran_batch_file_url": "bab3",
-            "spek_produk_jadi_file_url": "bab3",
-            "spek_pengemas_file_url": "bab3",
-            "laporan_uji_sig_file_url": "bab3",
-            "protokol_stabilitas_file_url": "bab3",
-            "hasil_stabilitas_file_url": "bab3",
-            "laporan_keamanan_file_url": "bab4",
-            "monitoring_efek_samping_file_url": "bab4",
-            "data_klaim_file_url": "bab4",
-            "desain_primer_file_url": "bab4",
-            "desain_sekunder_file_url": "bab4",
+            "no_notifikasi_file": "bab1",
+            "cara_pembuatan_file": "bab3",
+            "sistem_penomoran_batch_file": "bab3",
+            "spek_produk_jadi_file": "bab3",
+            "spek_pengemas_file": "bab3",
+            "laporan_uji_sig_file": "bab3",
+            "protokol_stabilitas_file": "bab3",
+            "hasil_stabilitas_file": "bab3",
+            "laporan_keamanan_file": "bab4",
+            "monitoring_efek_samping_file": "bab4",
+            "data_klaim_file": "bab4",
+            "desain_primer_file": "bab4",
+            "desain_sekunder_file": "bab4",
         }
         tab = tab_map.get(field_name, "bab1")
 
         log_activity(current_user, "delete", "product_file", product_id,
-                     f"Hapus {field_name}", request=request)
+                     f"Hapus {db_field}", request=request)
 
         response = RedirectResponse(url=f"/products/{product_id}/edit?tab={tab}", status_code=303)
         response.set_cookie("success_msg", "File PDF berhasil dihapus.")
