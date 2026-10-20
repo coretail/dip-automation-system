@@ -1042,6 +1042,92 @@ def register_products_routes(
         response.set_cookie("success_msg", f"Data & dokumen DIP produk '{nama_produk}' berhasil diperbarui!")
         return response
 
+    @app.post("/products/{product_id}/delete-file")
+    async def delete_product_file(
+        request: Request,
+        product_id: str,
+        field_name: str = Form(...),
+        current_user: dict = Depends(get_current_user),
+    ):
+        ALLOWED_FIELDS = {
+            "no_notifikasi_file_url",
+            "cara_pembuatan_file_url",
+            "sistem_penomoran_batch_file_url",
+            "spek_produk_jadi_file_url",
+            "spek_pengemas_file_url",
+            "laporan_uji_sig_file_url",
+            "protokol_stabilitas_file_url",
+            "hasil_stabilitas_file_url",
+            "laporan_keamanan_file_url",
+            "monitoring_efek_samping_file_url",
+            "data_klaim_file_url",
+            "desain_primer_file_url",
+            "desain_sekunder_file_url",
+        }
+        if field_name not in ALLOWED_FIELDS:
+            raise HTTPException(status_code=400, detail="Field file tidak valid.")
+
+        try:
+            prod_resp = supabase.table("products").select(
+                "id, perusahaan, " + field_name
+            ).eq("id", product_id).eq("is_deleted", False).single().execute()
+        except Exception as e:
+            print(f"Produk {product_id} tidak ditemukan saat hapus file: {e}")
+            return RedirectResponse(url="/", status_code=303)
+
+        if not prod_resp.data:
+            return RedirectResponse(url="/", status_code=303)
+
+        product = prod_resp.data
+
+        # Tenant check: non-admin hanya boleh menghapus file produk perusahaannya sendiri.
+        if current_user.get("role") != "admin":
+            _user_company = (current_user.get("perusahaan") or "").strip().lower()
+            _prod_company = (product.get("perusahaan") or "").strip().lower()
+            if _user_company and _prod_company and _user_company != _prod_company:
+                raise HTTPException(status_code=403, detail="Akses ditolak! File bukan milik perusahaan Anda.")
+
+        file_url = product.get(field_name)
+        if file_url:
+            bucket, path = object_store.parse_storage_url(file_url)
+            if bucket and path:
+                try:
+                    object_store.remove(bucket, path, client=supabase)
+                except Exception as e:
+                    print(f"Gagal hapus object storage ({bucket}/{path}): {e}")
+
+        try:
+            supabase.table("products").update({field_name: None}).eq("id", product_id).execute()
+        except Exception as e:
+            print(f"Gagal update DB hapus file {field_name} produk {product_id}: {e}")
+            response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+            response.set_cookie("error_msg", "Gagal menghapus file. Silakan coba lagi.")
+            return response
+
+        tab_map = {
+            "no_notifikasi_file_url": "bab1",
+            "cara_pembuatan_file_url": "bab3",
+            "sistem_penomoran_batch_file_url": "bab3",
+            "spek_produk_jadi_file_url": "bab3",
+            "spek_pengemas_file_url": "bab3",
+            "laporan_uji_sig_file_url": "bab3",
+            "protokol_stabilitas_file_url": "bab3",
+            "hasil_stabilitas_file_url": "bab3",
+            "laporan_keamanan_file_url": "bab4",
+            "monitoring_efek_samping_file_url": "bab4",
+            "data_klaim_file_url": "bab4",
+            "desain_primer_file_url": "bab4",
+            "desain_sekunder_file_url": "bab4",
+        }
+        tab = tab_map.get(field_name, "bab1")
+
+        log_activity(current_user, "delete", "product_file", product_id,
+                     f"Hapus {field_name}", request=request)
+
+        response = RedirectResponse(url=f"/products/{product_id}/edit?tab={tab}", status_code=303)
+        response.set_cookie("success_msg", "File PDF berhasil dihapus.")
+        return response
+
     @app.post("/products/delete/{product_id}")
     async def delete_product(request: Request, product_id: str,
                              current_user: dict = Depends(get_current_user)):

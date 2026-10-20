@@ -32,7 +32,16 @@
     </div>
     {% endif %}
 
-    <input type="file" name="{{ field_name }}" id="{{ field_name }}" accept=".pdf" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700" onchange="validateFileSize(this)">
+    <div class="flex items-center gap-2">
+        <input type="file" name="{{ field_name }}" id="{{ field_name }}" accept=".pdf" class="flex-1 text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700" onchange="validateFileSize(this)">
+        {% if file_url %}
+        <button type="button"
+                onclick="deleteProductFile('{{ field_name }}', this)"
+                class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition">
+            <i class="fa-solid fa-trash-can"></i> Hapus
+        </button>
+        {% endif %}
+    </div>
     <p class="text-[11px] text-gray-400 mt-1">(Maksimal ukuran file: 10 MB, Format: PDF)</p>
 </div>
 {% endmacro %}
@@ -580,6 +589,28 @@
     <span></span>
 </div>
 <script>
+function deleteProductFile(fieldName, btn) {
+    if (!confirm('Yakin hapus PDF ini? File akan dihapus permanen.')) return;
+    if (btn) btn.disabled = true;
+    const formData = new FormData();
+    formData.append('field_name', fieldName);
+    fetch('/products/{{ product.id }}/delete-file', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin'
+    }).then(function (res) {
+        if (res.ok || res.redirected) {
+            window.location.reload();
+        } else {
+            showFileToast('Gagal menghapus file. Silakan coba lagi.');
+            if (btn) btn.disabled = false;
+        }
+    }).catch(function () {
+        showFileToast('Gagal menghapus file. Silakan coba lagi.');
+        if (btn) btn.disabled = false;
+    });
+}
+
 function validateFileSize(input) {
     const file = input.files[0];
     const maxSize = 10 * 1024 * 1024; // 10 MB
