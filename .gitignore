@@ -104,3 +104,28 @@ backup-rls/
 
 # Contoh surat pengantar pengujian air (dokumen lokal, jangan di-commit).
 /excel-example/air/
+
+# One-off refactor helper scripts
+scripts/refactor/
+
+# Temporary files and build artifacts
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+dist/
+build/
+*.egg-info/
+.cleanup/
+scripts/cleanup_repo.py
