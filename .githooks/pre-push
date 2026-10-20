@@ -1,0 +1,8 @@
+#!/bin/sh
+# Pre-push: blokir push bila ada nama tak terdefinisi / syntax error di app/.
+# Aktifkan sekali per clone:  git config core.hooksPath .githooks
+# Lewati darurat:             git push --no-verify
+cd "$(git rev-parse --show-toplevel)" || exit 1
+PY=python3
+command -v "$PY" >/dev/null 2>&1 || PY=python
+exec "$PY" scripts/check_undefined_names.py
