@@ -14,7 +14,7 @@
 - Hook: `git config core.hooksPath .githooks`; `.githooks/pre-push` menjalankan static check.
 - Unit/verification adalah skrip standalone: `python tests/test_parse_storage_url.py`, `python tests/test_object_store_r2.py`, dan skrip `verify_*.py`.
 - Tidak ada pytest config (`pytest.ini`, `pyproject.toml`, `setup.cfg`, `tox.ini`, `conftest.py`) yang ditemukan.
-- Audit ini mencoba `python --version`, static check, unit test, dan compileall; semuanya tidak berjalan karena Python tidak tersedia pada PATH Windows ini. Jangan klaim lulus.
+- Audit awal dengan `python` dari PATH gagal karena Python tidak tersedia. Venv repo tersedia di `venv\Scripts\python.exe`; dengan interpreter itu, `--version` menghasilkan Python 3.11.0, static check lulus (24 file), dua unit test standalone lulus (19 kasus parser; seluruh kasus dispatch R2/dual), dan compileall `app scripts` lulus. Pytest tidak dijalankan karena tidak ada konfigurasi/dependensi pytest yang diaudit.
 - E2E `e2e_*.py` membutuhkan server staging, kredensial env `STAGING_ADMIN_EMAIL`/`STAGING_ADMIN_PASSWORD`, dependency Playwright, dan menulis/cleanup data staging; bukan unit test.
 
 ## 3. Aturan keras
