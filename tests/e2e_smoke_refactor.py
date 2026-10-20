@@ -245,26 +245,37 @@ def sample_flow(page, db, marker: str) -> None:
     page.fill("#product_name", marker)
     page.fill("input[name=qc_signer]", "E2E QC")
     page.fill("input[name=rd_signer]", "E2E RD")
+    # create me-redirect ke /sample-submissions/preview/{id} (BUKAN ke daftar).
+    preview_re = re.compile(r"/sample-submissions/preview/([^/?#]+)")
     try:
-        with page.expect_navigation(url=lambda u: "/sample-submissions" in u, timeout=20000):
+        with page.expect_navigation(url=lambda u: bool(preview_re.search(u)), timeout=20000):
             page.click("form[action='/sample-submissions/create'] button[type=submit]")
     except PWTimeout:
-        record("UI: buat sample -> redirect ke daftar", False, f"masih di {page.url}")
+        record("UI: buat sample -> redirect ke preview", False, f"masih di {page.url}")
         return
-    row = page.locator("tr", has_text=marker)
-    if not record("UI: sample baru muncul di daftar", row.count() == 1, f"count={row.count()}"):
+    submission_id = preview_re.search(page.url).group(1)
+    body = page.content()
+    record("UI: buat sample -> redirect ke preview tanpa error",
+           not any(m in body[:20000] for m in ERROR_MARKERS), f"id={submission_id}")
+
+    # Tepat 1 baris DB (bukan duplikat insert) dan tepat 1 baris di daftar.
+    n_db = len(db.table("sample_submissions").select("id")
+               .eq("product_name", marker).execute().data or [])
+    record("DB: sample terbuat tepat 1 baris", n_db == 1, f"count={n_db}")
+    page.goto("/sample-submissions")
+    row = page.locator("table tbody tr", has_text=marker)
+    if not record("UI: sample baru muncul 1x di daftar", row.count() == 1, f"count={row.count()}"):
         return
 
     # --- edit (jalur yang memakai _build_diff_changes / FSP_FIELD_LABELS) ---
-    edit_href = row.locator("a[href^='/sample-submissions/edit/']").first.get_attribute("href")
-    submission_id = edit_href.rsplit("/", 1)[-1]
-    page.goto(edit_href)
+    # edit juga me-redirect ke preview/{id}.
+    page.goto(f"/sample-submissions/edit/{submission_id}")
     page.fill("input[name=hero_ingredient]", "Niacinamide 5% (e2e)")
     try:
-        with page.expect_navigation(timeout=20000):
+        with page.expect_navigation(url=lambda u: bool(preview_re.search(u)), timeout=20000):
             page.click(f"form[action='/sample-submissions/edit/{submission_id}'] button[type=submit]")
     except PWTimeout:
-        record("UI: simpan edit sample", False, f"masih di {page.url}")
+        record("UI: simpan edit sample -> redirect ke preview", False, f"masih di {page.url}")
         return
     body = page.content()
     record("UI: simpan edit sample tanpa error",
