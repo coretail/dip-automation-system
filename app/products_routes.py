@@ -1126,6 +1126,10 @@ def register_products_routes(
             if not (primary.get("ok") or primary.get("missing")):
                 storage_failed = True
                 storage_note = f"objek gagal dihapus, perlu dibersihkan manual ({bucket}/{path})"
+            else:
+                r2_result = result.get("r2") if isinstance(result, dict) else None
+                if r2_result and (r2_result.get("ok") or r2_result.get("missing")):
+                    storage_note = "objek berhasil dihapus dari R2"
 
         changes = [{"field": label, "note": "File dihapus"}]
         if storage_note:
