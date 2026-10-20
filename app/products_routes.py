@@ -1049,29 +1049,36 @@ def register_products_routes(
         field_name: str = Form(...),
         current_user: dict = Depends(get_current_user),
     ):
-        ALLOWED_FIELDS = {
-            "no_notifikasi_file",
-            "cara_pembuatan_file",
-            "sistem_penomoran_batch_file",
-            "spek_produk_jadi_file",
-            "spek_pengemas_file",
-            "laporan_uji_sig_file",
-            "protokol_stabilitas_file",
-            "hasil_stabilitas_file",
-            "laporan_keamanan_file",
-            "monitoring_efek_samping_file",
-            "data_klaim_file",
-            "desain_primer_file",
-            "desain_sekunder_file",
+        FIELD_LABELS = {
+            "no_notifikasi_file": "Surat No. Notifikasi BPOM",
+            "cara_pembuatan_file": "Ringkasan Cara Pembuatan Kosmetik",
+            "sistem_penomoran_batch_file": "Sistem Penomoran Batch Spesifik",
+            "spek_produk_jadi_file": "SAPJ dan Spesifikasi Produk Jadi",
+            "spek_pengemas_file": "Spesifikasi Bahan Pengemas",
+            "laporan_uji_sig_file": "Laporan Hasil Uji Lab Eksternal / SIG",
+            "protokol_stabilitas_file": "Pemantauan Stabilitas",
+            "hasil_stabilitas_file": "Hasil Studi Stabilitas",
+            "laporan_keamanan_file": "Laporan Penilaian Keamanan Kosmetik (Safety Assessment)",
+            "monitoring_efek_samping_file": "Laporan / Data Monitoring Efek Samping (Cosmetovigilance)",
+            "data_klaim_file": "Data Pendukung Klaim Kosmetik (Claim Substantiation)",
+            "desain_primer_file": "Desain Kemasan Primer (Penandaan)",
+            "desain_sekunder_file": "Desain Kemasan Sekunder (Penandaan)",
         }
-        if field_name not in ALLOWED_FIELDS:
+
+        if field_name not in FIELD_LABELS:
+            log_activity(
+                current_user, "delete", "product_file", product_id, product_id,
+                changes=[{"field": field_name, "note": "field tidak valid"}],
+                request=request, outcome="rejected",
+            )
             raise HTTPException(status_code=400, detail="Field file tidak valid.")
 
         db_field = field_name + "_url"
+        label = FIELD_LABELS[field_name]
 
         try:
             prod_resp = supabase.table("products").select(
-                "id, perusahaan, " + db_field
+                "id, perusahaan, nama_produk, " + db_field
             ).eq("id", product_id).eq("is_deleted", False).single().execute()
         except Exception as e:
             print(f"Produk {product_id} tidak ditemukan saat hapus file: {e}")
@@ -1081,22 +1088,28 @@ def register_products_routes(
             return RedirectResponse(url="/", status_code=303)
 
         product = prod_resp.data
+        entity_label = product.get("nama_produk") or product_id
 
-        # Tenant check: non-admin hanya boleh menghapus file produk perusahaannya sendiri.
         if current_user.get("role") != "admin":
             _user_company = (current_user.get("perusahaan") or "").strip().lower()
             _prod_company = (product.get("perusahaan") or "").strip().lower()
             if _user_company and _prod_company and _user_company != _prod_company:
+                log_activity(
+                    current_user, "delete", "product_file", product_id, entity_label,
+                    changes=[{"field": label, "note": "ditolak: bukan milik perusahaan"}],
+                    request=request, outcome="rejected",
+                )
                 raise HTTPException(status_code=403, detail="Akses ditolak! File bukan milik perusahaan Anda.")
 
         file_url = product.get(db_field)
+        storage_note = None
+        bucket = None
+        path = None
+
         if file_url:
             bucket, path = object_store.parse_storage_url(file_url)
-            if bucket and path:
-                try:
-                    object_store.remove(bucket, path, client=supabase)
-                except Exception as e:
-                    print(f"Gagal hapus object storage ({bucket}/{path}): {e}")
+            if not bucket or not path:
+                storage_note = "URL bukan storage internal, objek tidak dihapus"
 
         try:
             supabase.table("products").update({db_field: None}).eq("id", product_id).execute()
@@ -1106,51 +1119,41 @@ def register_products_routes(
             response.set_cookie("error_msg", "Gagal menghapus file. Silakan coba lagi.")
             return response
 
-        tab_map = {
-            "no_notifikasi_file": "bab1",
-            "cara_pembuatan_file": "bab3",
-            "sistem_penomoran_batch_file": "bab3",
-            "spek_produk_jadi_file": "bab3",
-            "spek_pengemas_file": "bab3",
-            "laporan_uji_sig_file": "bab3",
-            "protokol_stabilitas_file": "bab3",
-            "hasil_stabilitas_file": "bab3",
-            "laporan_keamanan_file": "bab4",
-            "monitoring_efek_samping_file": "bab4",
-            "data_klaim_file": "bab4",
-            "desain_primer_file": "bab4",
-            "desain_sekunder_file": "bab4",
-        }
-        tab = tab_map.get(field_name, "bab1")
+        storage_failed = False
+        if file_url and bucket and path:
+            result = object_store.remove(bucket, path, client=supabase)
+            primary = object_store.primary_result(result)
+            if not (primary.get("ok") or primary.get("missing")):
+                storage_failed = True
+                storage_note = f"objek gagal dihapus, perlu dibersihkan manual ({bucket}/{path})"
 
-        log_activity(current_user, "delete", "product_file", product_id,
-                     f"Hapus {db_field}", request=request)
+        changes = [{"field": label, "note": "File dihapus"}]
+        if storage_note:
+            changes.append({"field": "Storage", "note": storage_note})
 
+        outcome = "partial" if storage_failed else "success"
+        log_activity(
+            current_user, "delete", "product_file", product_id, entity_label,
+            changes=changes, request=request, outcome=outcome,
+        )
+
+        def _tab_for_field(name: str) -> str:
+            if name == "no_notifikasi_file":
+                return "bab1"
+            if name in {
+                "cara_pembuatan_file", "sistem_penomoran_batch_file", "spek_produk_jadi_file",
+                "spek_pengemas_file", "laporan_uji_sig_file", "protokol_stabilitas_file",
+                "hasil_stabilitas_file",
+            }:
+                return "bab3"
+            return "bab4"
+
+        if storage_failed:
+            response = RedirectResponse(url=f"/products/{product_id}/edit?tab={_tab_for_field(field_name)}", status_code=303)
+            response.set_cookie("warning_msg", "File dilepas dari produk, tetapi objek di storage gagal dihapus; hubungi admin.")
+            return response
+
+        tab = _tab_for_field(field_name)
         response = RedirectResponse(url=f"/products/{product_id}/edit?tab={tab}", status_code=303)
         response.set_cookie("success_msg", "File PDF berhasil dihapus.")
         return response
-
-    @app.post("/products/delete/{product_id}")
-    async def delete_product(request: Request, product_id: str,
-                             current_user: dict = Depends(get_current_user)):
-        # Hanya admin yang boleh menghapus (soft delete) produk.
-        if current_user.get("role") != "admin":
-            raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Admin.")
-
-        # Ambil nama-nya dulu sebelum dihapus, biar activity log masih kebaca gak "id doang"
-        product_before = supabase.table("products").select("nama_produk").eq("id", product_id).execute()
-        nama_sebelum_hapus = product_before.data[0].get("nama_produk") if product_before.data else product_id
-
-        try:
-            # Soft Delete: cuma tandai is_deleted=True + deleted_at, JANGAN hapus formula
-            # Baru hapus produknya (Soft Delete) - set deleted_at ke waktu sekarang (WIB)
-            deleted_at = datetime.now(WIB).isoformat()
-            supabase.table("products").update({"is_deleted": True, "deleted_at": deleted_at}).eq("id", product_id).execute()
-        except Exception as e:
-            print(f"Gagal hapus produk {product_id}: {e}")
-            return RedirectResponse(url="/", status_code=303)
-
-        log_activity(current_user, "delete", "product", product_id, nama_sebelum_hapus,
-                     request=request)
-        return RedirectResponse(url="/", status_code=303)
-

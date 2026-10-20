@@ -36,9 +36,7 @@
         <input type="file" name="{{ field_name }}" id="{{ field_name }}" accept=".pdf" class="flex-1 text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700" onchange="validateFileSize(this)">
     {% if file_url %}
     <button type="submit"
-            formaction="/products/{{ product.id }}/delete-file"
-            formmethod="post"
-            formnovalidate
+            form="delete-file-form"
             name="field_name"
             value="{{ field_name }}"
             onclick="return confirm('Yakin hapus PDF ini? File akan dihapus permanen.')"
@@ -584,6 +582,7 @@
             <button type="submit" class="bg-indigo-600 text-white px-6 py-2.5 rounded-md hover:bg-indigo-700 text-sm font-semibold shadow-xs">Simpan Semua Perubahan</button>
         </div>
     </form>
+    <form id="delete-file-form" method="post" action="/products/{{ product.id }}/delete-file"></form>
 </div>
 
 
@@ -594,28 +593,6 @@
     <span></span>
 </div>
 <script>
-function deleteProductFile(fieldName, btn) {
-    if (!confirm('Yakin hapus PDF ini? File akan dihapus permanen.')) return;
-    if (btn) btn.disabled = true;
-    const formData = new FormData();
-    formData.append('field_name', fieldName);
-    fetch('/products/{{ product.id }}/delete-file', {
-        method: 'POST',
-        body: formData,
-        credentials: 'same-origin',
-        redirect: 'follow'
-    }).then(function (res) {
-        if (res.ok || res.status === 303 || res.redirected) {
-            window.location.reload();
-        } else {
-            showFileToast('Gagal menghapus file. Silakan coba lagi.');
-            if (btn) btn.disabled = false;
-        }
-    }).catch(function (err) {
-        showFileToast('Gagal menghapus file. Silakan coba lagi.');
-        if (btn) btn.disabled = false;
-    });
-}
 
 function validateFileSize(input) {
     const file = input.files[0];
