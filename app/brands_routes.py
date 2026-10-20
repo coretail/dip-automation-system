@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from app.file_validation import validate_pdf_bytes
+from app import object_store
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 WIB = ZoneInfo("Asia/Jakarta")

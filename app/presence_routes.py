@@ -19,8 +19,7 @@ def register_presence_routes(
     get_ed_notification_count,
     touch_user_presence,
     compute_user_presence,
-    get_company_info=None,
-    format_date_id=None,
+    compute_status_na,
 ):
     @app.post("/api/presence/heartbeat")
     async def presence_heartbeat(request: Request, current_user: dict = Depends(get_current_user)):

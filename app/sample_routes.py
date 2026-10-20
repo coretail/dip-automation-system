@@ -1,6 +1,7 @@
 """Sample submission (FSP) routes (extracted from main.py)."""
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,11 @@ def register_sample_routes(
     get_company_info,
     format_date_id,
     mask_email,
+    get_ed_notification_count,
+    _build_diff_changes,
+    _fsp_notes_changes,
+    FSP_FIELD_LABELS,
+    FSP_NOTES_LABELS,
 ):
     # 1. PROSES POST CREATION SAMPLE (Kode FSP Manual)
     @app.post("/sample-submissions/create")

@@ -28,6 +28,7 @@ def register_dashboard_routes(
     _resolve_variant_components,
     _flag_bahan_aktif,
     _build_diff_changes,
+    get_time_greeting,
 ):
     @app.get("/admin/trash", response_class=HTMLResponse)
     async def admin_trash_page(request: Request, current_user: dict = Depends(get_current_user)):

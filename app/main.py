@@ -1387,6 +1387,7 @@ register_dashboard_routes(
     _resolve_variant_components=_resolve_variant_components,
     _flag_bahan_aktif=_flag_bahan_aktif,
     _build_diff_changes=_build_diff_changes,
+    get_time_greeting=get_time_greeting,
 )
 
 from app.company_docs_routes import register_company_docs_routes
@@ -1442,6 +1443,11 @@ register_sample_routes(
     get_company_info=get_company_info,
     format_date_id=format_date_id,
     mask_email=mask_email,
+    get_ed_notification_count=get_ed_notification_count,
+    _build_diff_changes=_build_diff_changes,
+    _fsp_notes_changes=_fsp_notes_changes,
+    FSP_FIELD_LABELS=FSP_FIELD_LABELS,
+    FSP_NOTES_LABELS=FSP_NOTES_LABELS,
 )
 
 from app.presence_routes import register_presence_routes
@@ -1454,6 +1460,7 @@ register_presence_routes(
     get_ed_notification_count=get_ed_notification_count,
     touch_user_presence=touch_user_presence,
     compute_user_presence=compute_user_presence,
+    compute_status_na=compute_status_na,
 )
 
 from app.admin_users_routes import register_admin_users_routes
