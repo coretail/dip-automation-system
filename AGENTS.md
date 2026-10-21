@@ -24,7 +24,11 @@
 - Validasi key lokal tidak membuktikan key aktif: JWT hanya dicek klaim `ref` tanpa signature; key opaque hanya dicek keberadaan.
 - Launcher membaca `.env.staging` sebagai sumber tunggal, memvalidasi sebelum import app, dan tidak mencetak secret. Contoh env saat ini belum memuat seluruh `STORAGE_BACKEND`/R2 key yang diwajibkan preflight; isi lengkap secara lokal, jangan commit.
 - `STORAGE_BACKEND` hanya `supabase`, `dual`, atau `r2`; `R2_BUCKET_SUFFIX` memisahkan bucket fisik staging (dokumen E2E mensyaratkan `-stg`).
-- Migrasi SQL tidak otomatis. Jalankan manual, berurutan, lewat Supabase SQL Editor setelah review; jangan menjalankan migrasi dari agen.
+- Migrasi SQL tetap **tidak otomatis**: tidak pernah lewat pipeline otomatis (mis. `supabase db push`), dan tidak boleh dijalankan pada langkah baru tanpa otorisasi eksplisit pemilik repo pada sesi tersebut.
+  - Jalur baku: manual oleh pemilik repo lewat Supabase SQL Editor, berurutan; staging lebih dulu dan hasil staging dibaca sebelum lanjut ke produksi.
+  - Jalur tambahan yang diizinkan: atas otorisasi eksplisit pemilik repo per-jalur, agen boleh mengeksekusi migrasi lewat Supabase Management API (`POST /v1/projects/{ref}/database/query`) dengan syarat: jalankan **staging lebih dulu** dan baca hasilnya sebelum produksi; tidak pernah menyentuh produksi sebelum staging terverifikasi hijau; sertakan pre-check SELECT dan probe enforcement pasca-migrasi; file SQL dieksekusi **apa adanya** (byte-identik), tanpa modifikasi; token Management API diekstrak secara programatik dan tidak pernah dicetak atau ditulis ke file.
+  - Tanpa otorisasi eksplisit tersebut, migrasi tidak boleh dieksekusi oleh agen; menyiapkan environment baru wajib lewat `scripts/run_staging_8017.py`.
+  - Nomor migrasi berurutan dan unik: `migration/008_products_soft_delete_contract.sql` sudah dipakai, jadi DDL `public_link_audits` berikutnya harus bernomor `009`.
 - Sebelum mulai pekerjaan bersama, `git pull` dulu.
 - Agen hanya commit atau push bila diminta eksplisit oleh pemilik repo di sesi itu; tidak pernah `--force` atau push ke prod/deploy dengan cara lain.
 - Render auto-deploy dari `main`, Build/Start command, dan status env tidak dapat diverifikasi dari repo; jangan menganggapnya fakta.
@@ -56,7 +60,7 @@
 ## 7. Definisi selesai
 - `python scripts/check_undefined_names.py` exit 0 dan unit/verification standalone yang relevan exit 0 (di lingkungan yang memiliki Python/dependency).
 - Jika menyentuh route, upload, auth, atau storage, jalankan E2E staging yang relevan setelah guard lokal dan kredensial staging tersedia; jangan jalankan terhadap prod.
-- Untuk perubahan SQL, file sudah direview dan eksekusi manual dilakukan oleh operator berwenang di Supabase SQL Editor, bukan oleh agen.
+- Untuk perubahan SQL, file sudah direview dan eksekusinya manual lewat Supabase SQL Editor oleh pemilik repo, atau oleh agen hanya atas otorisasi eksplisit pemilik repo per-jalur lewat Supabase Management API (staging lebih dulu, hasil staging dibaca sebelum produksi).
 
 ## 8. Dokumen sumber
 - `README.md`: orientasi dan perintah; tabel migrasi hanya mencantumkan 001–004 dan inventaris test sudah tidak lengkap.
