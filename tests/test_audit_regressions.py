@@ -1,0 +1,1489 @@
+"""Regresi audit codebase DIP Automation (catatan 2026-10-21).
+
+File ini mengunci hasil audit read-only `catatan/catatan_audit_codebase_2026-10-21.md`
+menjadi assertion yang bisa dijalankan mesin. Tujuannya: setiap temuan yang
+sudah CONFIRMED punya satu baris executable yang berubah dari [KNOWN] jadi
+[PASS] begitu perbaikannya masuk, dan jadi [FAIL] kalau perilakunya mundur lagi.
+
+Cakupan (ID audit yang dilindungi):
+  - Inventaris route       : SEC-01, SEC-09, SEC-16, SEC-17
+  - Header & flag cookie   : SEC-04, SEC-07
+  - Kontrak error jujur    : BE-01, BE-02, BE-03, BE-08, BE-21
+  - Dead code & duplikasi  : SEC-02, BE-04, BE-07, SEC-14, SEC-18
+  - Template & escaping    : SEC-14, FE-05
+  - Polling frontend       : FE-05, FE-06, FE-07
+  - Doc-drift audit trail  : U6 (tabel entitas audit di panduan)
+  - Unit pure-module       : SEC-02 (helper tenant), file_validation, object_store
+
+Perubahan status:
+  - 2026-10-21: SEC-01 (route POST /products/delete/{id} hilang di commit
+    5f82f94) DIPERBAIKI - route dipulihkan di app/products_routes.py, form
+    dashboard di-gate untuk admin, teks konfirmasi diperbaiki (soft delete
+    tidak menghapus formula). SEC-01 keluar dari KNOWN_ISSUES; registry
+    KNOWN_ISSUES sekarang berisi 18 entri.
+
+Sifat wajib file ini:
+  - READ-ONLY. Tidak pernah menyentuh database, jaringan, atau server.
+  - Tidak pernah membaca/mencetak isi .env / .env.staging.
+  - Tidak mengimpor app.main (membuat FastAPI app + Supabase client saat import).
+    Hanya app.security, app.file_validation, app.object_store yang diimpor
+    opsional, dan semuanya dibungkus try/except -> SKIP kalau tidak tersedia.
+  - Tidak butuh pytest. Semua pemeriksaan murni assert + fungsi biasa.
+
+Prasyarat:
+    pip install -r requirements.txt   (atau pakai venv repo)
+
+Jalankan:
+    python tests/test_audit_regressions.py
+    python tests/test_audit_regressions.py --strict
+
+Exit code:
+    0 = tidak ada FAIL (KNOWN tetap boleh, itu baseline yang diharapkan)
+    1 = ada minimal satu FAIL
+    1 juga bila dijalankan dengan --strict dan ada temuan KNOWN
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+APP_DIR = ROOT / "app"
+TPL_DIR = APP_DIR / "templates"
+STATIC_DIR = APP_DIR / "static"
+TESTS_DIR = ROOT / "tests"
+PANDUAN_PATH = ROOT / "panduan_dip_automation_system.md"
+
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+HTTP_VERBS = ("get", "post", "put", "delete", "patch", "head", "options")
+
+# ---------------------------------------------------------------------------
+# Registry temuan yang saat ini DIHARAPKAN masih gagal.
+# Entri di sini = baseline yang disengaja, BUKAN kegagalan suite.
+# Key = id audit, value = ringkasan singkat temuan.
+# ---------------------------------------------------------------------------
+KNOWN_ISSUES: dict[str, str] = {
+    "SEC-02": "assert_same_tenant tidak di-import modul mana pun; isolasi tenant praktis tidak terpasang.",
+    "BE-07": "Isolasi tenant hanya sebagian; helper app/security.py masih dead code produksi.",
+    "SEC-04": "Cookie access_token tanpa secure=True (main.py:1121-1134) dan tanpa middleware security header (main.py:339).",
+    "SEC-07": "Nol security header: tidak ada CSP/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/HSTS.",
+    "SEC-14": "escapeHtml punya 4 implementasi terpisah; target audit: satu helper global.",
+    "SEC-16": "Logout masih dipicu via GET sehingga bisa dipaksa CSRF (main.py:1143); target: POST.",
+    "SEC-18": "Artefak teks 'omniroute' masih ada di brands.html:1 sebelum blok extends.",
+    "BE-01": "Kegagalan simpan formula Bab 2 hanya di-print; user tetap dapat cookie 'berhasil diperbarui'.",
+    "BE-02": "Kegagalan insert batch bahan baku hanya di-print; tidak ada cookie error_msg.",
+    "BE-03": "Kegagalan update batch bahan baku hanya di-print; tidak ada cookie error_msg.",
+    "BE-04": "Query .single() di luar try -> baris tidak ada jadi HTTP 500 (bukan 'tidak ditemukan').",
+    "BE-08": "str(e) bocor ke browser dan dipersistensi ke activity_logs (PostgREST message/hint/details).",
+    "BE-21": "Cookie warning_msg tidak pernah dirender template mana pun.",
+    "DUPL-01": "compute_status_na() dipanggil dua kali berturut-turut (sisa bad merge di dashboard_routes.py).",
+    "FE-05": "Link logout di sidebar tidak menghentikan heartbeat presence.",
+    "FE-06": "window.__adminPresenceInterval tidak pernah di-assign di admin_users.html.",
+    "FE-07": "Countdown lockout tidak menjaga submit form login (submit via Enter menembus limiter).",
+    "U6": "Tabel entitas audit (panduan:699-713) belum menyebut 5 nilai entity_type: "
+          "product_attachment, product_file, product_batch, purchase_order, purchase_order_item.",
+}
+
+RESULTS: list[tuple[str, str, str]] = []
+
+
+# ---------------------------------------------------------------------------
+# Helper pelaporan
+# ---------------------------------------------------------------------------
+def check(name: str, ok: bool, detail: str = "", known: str | None = None) -> bool:
+    """Catat satu hasil pemeriksaan dan cetak baris statusnya.
+
+    ok=True -> [PASS]
+    ok=False + `known` ada di KNOWN_ISSUES -> [KNOWN] (baseline yang diharapkan)
+    ok=False + `known` tidak dikenal        -> [FAIL] (regresi / tak terduga)
+    """
+    if ok:
+        status = "PASS"
+    elif known and known in KNOWN_ISSUES:
+        status = "KNOWN"
+        detail = f"{detail} | {KNOWN_ISSUES[known]}" if detail else KNOWN_ISSUES[known]
+    else:
+        status = "FAIL"
+    RESULTS.append((status, name, detail))
+    if status == "PASS":
+        print(f"[PASS] {name}")
+    elif status == "KNOWN":
+        print(f"[KNOWN] {name} - {detail} ({known})")
+    else:
+        print(f"[FAIL] {name} - {detail}")
+    return ok
+
+
+def skip(name: str, reason: str) -> None:
+    """Tandai pemeriksaan yang tidak dijalankan (sudah diuji di file lain)."""
+    RESULTS.append(("SKIP", name, reason))
+    print(f"[SKIP] {name} - {reason}")
+
+
+def section(title: str) -> None:
+    print()
+    print("=" * 74)
+    print(title)
+    print("=" * 74)
+
+
+# ---------------------------------------------------------------------------
+# Helper parsing (murni lokal, tanpa import modul aplikasi)
+# ---------------------------------------------------------------------------
+ROUTE_RE = re.compile(
+    r"^[ \t]*@app\.(get|post|put|delete|patch|head|options)\(\s*[\"']([^\"']+)[\"']",
+    re.MULTILINE,
+)
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def app_py_files() -> list[Path]:
+    return sorted(APP_DIR.glob("*.py"))
+
+
+def template_files() -> list[Path]:
+    return sorted(TPL_DIR.glob("*.html"))
+
+
+def static_files() -> list[Path]:
+    return sorted(STATIC_DIR.glob("*.js"))
+
+
+def extract_call(text: str, open_paren: int) -> str:
+    """Ambil teks panggilan fungsi mulai '(' sampai ')' pasangannya.
+
+    Menghormati string literal supaya tanda kurung di dalam teks tidak
+    menggeser pencocokan.
+    """
+    depth = 0
+    i = open_paren
+    quote = None
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_paren:i + 1]
+        i += 1
+    return text[open_paren:]
+
+
+def split_top_level_args(args_text: str) -> list[str]:
+    """Pecah argumen panggilan fungsi pada koma level teratas."""
+    parts: list[str] = []
+    depth = 0
+    quote = None
+    current: list[str] = []
+    for ch in args_text:
+        if quote is not None:
+            current.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+            current.append(ch)
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(ch)
+    parts.append("".join(current))
+    return [p.strip() for p in parts]
+
+
+def route_signature(text: str, search_from: int) -> str:
+    """Ambil signature fungsi handler yang mengikuti sebuah dekorator route."""
+    m = re.compile(
+        r"^[ \t]*(?:async[ \t]+)?def[ \t]+\w+[ \t]*\(", re.MULTILINE
+    ).search(text, search_from)
+    if not m:
+        return ""
+    open_paren = text.index("(", m.start())
+    return extract_call(text, open_paren)
+
+
+def collect_routes() -> list[dict]:
+    """Parse dekorator @app.<verb> dari seluruh app/*.py tanpa meng-import modul."""
+    routes: list[dict] = []
+    for path in app_py_files():
+        text = read_text(path)
+        for m in ROUTE_RE.finditer(text):
+            routes.append({
+                "method": m.group(1).upper(),
+                "path": m.group(2),
+                "file": path.name,
+                "line": text.count("\n", 0, m.start()) + 1,
+                "text": text,
+                "match_end": m.end(),
+            })
+    return routes
+
+
+def is_route_decorator(node: ast.AST) -> bool:
+    """True bila node punya dekorator @app.get/@app.post/... (bukan @app.mount)."""
+    for dec in getattr(node, "decorator_list", []) or []:
+        func = dec.func if isinstance(dec, ast.Call) else dec
+        if isinstance(func, ast.Attribute) and func.attr in HTTP_VERBS:
+            value = func.value
+            if isinstance(value, ast.Name) and value.id == "app":
+                return True
+    return False
+
+
+def registration_functions() -> dict[str, list[str]]:
+    """Map file -> nama fungsi yang mendaftarkan route di dalamnya.
+
+    Fungsi registrasi = fungsi level modul yang MEMBungkus handler route
+    (handler-nya adalah FunctionDef bersarang dengan dekorator @app.<verb>).
+    """
+    found: dict[str, list[str]] = {}
+    for path in app_py_files():
+        try:
+            tree = ast.parse(read_text(path))
+        except SyntaxError:
+            continue
+        names: list[str] = []
+        for node in tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            nested = [
+                child for child in ast.walk(node)
+                if child is not node
+                and isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and is_route_decorator(child)
+            ]
+            if nested:
+                names.append(node.name)
+        if names:
+            found[path.name] = names
+    return found
+
+
+# ---------------------------------------------------------------------------
+# Helper doc-drift audit trail (U6) - bandingkan entity_type kode vs dokumen
+# ---------------------------------------------------------------------------
+def collect_entity_types_from_code() -> tuple[set[str], set[str]]:
+    """Nilai `entity_type` yang dipancarkan kode.
+
+    Sumber: setiap panggilan `log_activity(...)` di app/*.py. entity_type
+    adalah argumen positional ke-3 ATAU keyword `entity_type=`.
+
+    Return (statis, dinamis):
+      statis  -> nilai string literal, mis. "product_attachment"
+      dinamis -> nama variabel, mis. "doc_type" (nilainya himpunan whitelist)
+    """
+    static: set[str] = set()
+    dynamic: set[str] = set()
+    for path in app_py_files():
+        try:
+            tree = ast.parse(read_text(path))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Name) and func.id == "log_activity"):
+                continue
+            value = None
+            if len(node.args) >= 3:
+                value = node.args[2]
+            for kw in node.keywords:
+                if kw.arg == "entity_type":
+                    value = kw.value
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                static.add(value.value)
+            elif isinstance(value, ast.Name):
+                dynamic.add(value.id)
+    return static, dynamic
+
+
+def resolve_dynamic_entity_types(dynamic_names: set[str]) -> set[str]:
+    """Nilai konkret untuk `entity_type` yangdinamis.
+
+    Untuk nama variabel (mis. `doc_type` di app/company_docs_routes.py) nilai
+    sebenarnya adalah himpunan kunci whitelist di modul yang sama, mis.
+    `COMPANY_DOC_MAP` di app/company_docs_routes.py:19-27. Modul yang memakai
+    nama dinamis itu searched, lalu semua dict level-modul di dalamnya dibaca
+    key-nya (hanya key berbentuk identifier lowercase, mis. "nib").
+    """
+    resolved: set[str] = set()
+    if not dynamic_names:
+        return resolved
+    key_re = re.compile(r"^[a-z][a-z0-9_]*$")
+    for path in app_py_files():
+        try:
+            tree = ast.parse(read_text(path))
+        except SyntaxError:
+            continue
+        uses_dynamic = any(
+            isinstance(node, ast.Name) and node.id in dynamic_names
+            for node in ast.walk(tree)
+        )
+        if not uses_dynamic:
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Dict):
+                continue
+            for key in node.value.keys:
+                if (
+                    isinstance(key, ast.Constant)
+                    and isinstance(key.value, str)
+                    and key_re.match(key.value)
+                ):
+                    resolved.add(key.value)
+    return resolved
+
+
+def documented_entity_types() -> tuple[set[str], bool]:
+    """Nilai `entity_type` yang didokumentasikan di panduan.
+
+    Membaca tabel "Cakupan Detail dalam Audit Trail"
+    (panduan_dip_automation_system.md, kolom pertama berisi identifier
+    backtick). Baris generik `{doc_type}` perusahaan dicatat terpisah lewat
+    flag kedua: baris itu menutupi semua nilai doc_type dinamis.
+    """
+    documented: set[str] = set()
+    generic = False
+    if not PANDUAN_PATH.exists():
+        return documented, generic
+    lines = read_text(PANDUAN_PATH).splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if "Jenis entitas" in line and line.strip().startswith("|"):
+            start = i + 1
+            break
+    if start is None:
+        return documented, generic
+    for line in lines[start:]:
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            break
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if not cells:
+            continue
+        m = re.fullmatch(r"`([^`]+)`", cells[0])
+        if not m:
+            continue
+        token = m.group(1)
+        if "doc_type" in token:
+            generic = True
+            continue
+        documented.add(token)
+    return documented, generic
+
+
+def strip_jinja_comments(text: str) -> str:
+    return re.sub(r"\{#.*?#\}", "", text, flags=re.S)
+
+
+def strip_js_comments(text: str) -> str:
+    """Buang komentar blok dan komentar baris (hanya yang di awal baris)."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return re.sub(r"(?m)^[ \t]*//[^\n]*", "", text)
+
+
+def line_of(text: str, index: int) -> int:
+    return text.count("\n", 0, index) + 1
+
+# ---------------------------------------------------------------------------
+# Section 1 - Inventaris route (parse statis, tanpa import)
+# ---------------------------------------------------------------------------
+def section_routes() -> None:
+    section("SECTION 1 - INVENTARIS ROUTE (parse statis app/*.py, tanpa import)")
+
+    routes = collect_routes()
+    pairs = {(r["method"], r["path"]) for r in routes}
+
+    # SEC-01 - tombol "Hapus Produk" di dashboard.html mem-post ke
+    # /products/delete/{id}. Route-nya sempat hilang (commit 5f82f94) ->
+    # tombol selalu 404. Perbaikan (2026-10-21): route HARUS terdaftar,
+    # form harus admin-gated, dan teks konfirmasi harus jujur (soft delete
+    # memindahkan produk ke Sampah, formula TIDAK ikut terhapus).
+    delete_product = sorted(
+        f"{r['method']} {r['path']} ({r['file']}:{r['line']})"
+        for r in routes
+        if r["method"] == "POST" and re.match(r"^/products/delete/", r["path"])
+    )
+
+    dash_text = read_text(TPL_DIR / "dashboard.html")
+    gate_m = re.search(
+        r"\{%-?\s*if\s+current_user\.role\s*==\s*'admin'\s*-?%\}", dash_text
+    )
+    form_m = re.search(r"<form[^>]*action=\"/products/delete/", dash_text)
+    form_admin_gated = False
+    if gate_m and form_m:
+        endif_m = re.search(r"\{%-?\s*endif\s*-?%\}", dash_text[gate_m.end():])
+        form_admin_gated = bool(
+            endif_m and gate_m.end() <= form_m.start() < gate_m.end() + endif_m.end()
+        )
+
+    form_tag = ""
+    if form_m:
+        tag_end = dash_text.find(">", form_m.start())
+        form_tag = dash_text[form_m.start(): tag_end if tag_end != -1 else len(dash_text)]
+    claims_formula_deleted = "bakal ikut kehapus" in form_tag
+    confirm_mentions_sampah = "Sampah" in form_tag
+    confirm_mentions_restore = ("dikembalikan" in form_tag) or ("restore" in form_tag.lower())
+
+    sec01_problems = []
+    if not delete_product:
+        sec01_problems.append(
+            "tidak ada POST /products/delete/* di app/*.py (tombol dashboard masih broken)"
+        )
+    if not form_admin_gated:
+        sec01_problems.append(
+            "form /products/delete/ di dashboard.html tidak berada di dalam "
+            "{% if current_user.role == 'admin' %}"
+        )
+    if claims_formula_deleted:
+        sec01_problems.append(
+            "teks konfirmasi masih mengklaim formula ikut terhapus (soft delete tidak menghapus formula)"
+        )
+    if not (confirm_mentions_sampah and confirm_mentions_restore):
+        sec01_problems.append(
+            "teks konfirmasi tidak menjelaskan perpindahan ke Sampah + kembalikan dari Sampah"
+        )
+
+    check(
+        "SEC-01 route soft-delete produk + form hapus dashboard (admin-gated, teks jujur)",
+        not sec01_problems,
+        ("route soft-delete: " + ", ".join(delete_product))
+        if delete_product and not sec01_problems
+        else "; ".join(sec01_problems),
+    )
+
+    # SEC-01 (lanjutan) - parser harus tetap bisa membedakan route delete-file.
+    check(
+        "SEC-01 parser route membedakan /products/{id}/delete-file",
+        ("POST", "/products/{product_id}/delete-file") in pairs,
+        "route /products/{product_id}/delete-file tidak ditemukan di app/*.py",
+    )
+
+    # SEC-16 - /logout harusnya POST (anti CSRF); GET = forced logout.
+    has_get_logout = ("GET", "/logout") in pairs
+    has_post_logout = ("POST", "/logout") in pairs
+    # SEC-16: /logout via GET bisa dipicu CSRF (forced logout). Perbaikannya
+    # memindahkan /logout ke POST, jadi yang diminta adalah POST ada.
+    check(
+        "SEC-16 logout dipindah dari GET ke POST (main.py:1143)",
+        has_post_logout and not has_get_logout,
+        "GET /logout: %s, POST /logout: %s" % (has_get_logout, has_post_logout),
+        known="SEC-16",
+    )
+
+    # SEC-09 - set route publik /dip/{slug_id} harus tetap ada TANPA auth
+    # dependency. Bila auth dependency ditambahkan diam-diam, portal publik
+    # untuk verifier BPOM ikut mati; minimal 8 route jadi jaring pengaman.
+    public_routes = []
+    for r in routes:
+        if not r["path"].startswith("/dip/"):
+            continue
+        sig = route_signature(r["text"], r["match_end"])
+        if "get_current_user" not in sig and "Depends(" not in sig:
+            public_routes.append(f"{r['method']} {r['path']}")
+    check(
+        "SEC-09 route publik /dip/{slug_id} tetap tanpa auth dependency",
+        len(public_routes) >= 8,
+        "route publik tanpa auth: %d (%s)" % (len(public_routes), ", ".join(sorted(public_routes))),
+    )
+
+    # SEC-17 - rate limit hanya di /login (main.py:1051). Audit: endpoint
+    # admin/upload/heartbeat belum dilimit.
+    limit_hits: list[str] = []
+    for path in app_py_files():
+        text = read_text(path)
+        for m in re.finditer(r"^[ \t]*@limiter\.limit\(", text, re.MULTILINE):
+            before = text[:m.start()]
+            route_m = None
+            for rm in re.finditer(ROUTE_RE.pattern, before, re.MULTILINE):
+                route_m = rm
+            method = route_m.group(1).upper() if route_m else "?"
+            target = route_m.group(2) if route_m else "?"
+            limit_hits.append(
+                "%s:%d -> %s %s" % (path.name, line_of(text, m.start()), method, target)
+            )
+    check(
+        "SEC-17 rate limit login tetap ada (main.py:1051)",
+        len(limit_hits) == 1 and "POST /login" in limit_hits[0],
+        "dekorator @limiter.limit: %s" % ("; ".join(limit_hits) if limit_hits else "tidak ada"),
+    )
+
+    # ARCH - fungsi registrasi route harus bernama register_*_routes.
+    reg = registration_functions()
+    bad_names = sorted(
+        f"{fname}:{name}"
+        for fname, names in reg.items()
+        for name in names
+        if not re.match(r"^register_\w+_routes$", name)
+    )
+    total_reg = sum(len(v) for v in reg.values())
+    check(
+        "ARCH-01 semua fungsi registrasi route bernama register_*_routes",
+        not bad_names,
+        ("nama yang tidak sesuai: %s" % ", ".join(bad_names))
+        if bad_names
+        else "%d fungsi registrasi route" % total_reg,
+    )
+
+    # ARCH - setiap register_*_routes harus dipanggil dari app/main.py, kalau
+    # tidak route-nya diam-diam hilang (kelas bug yang sama dengan SEC-01).
+    main_text = read_text(APP_DIR / "main.py")
+    not_called = sorted(
+        name
+        for names in reg.values()
+        for name in names
+        if not re.search(r"^[^#\n]*\b%s\s*\(" % re.escape(name), main_text, re.MULTILINE)
+    )
+    check(
+        "ARCH-02 setiap register_*_routes dipanggil dari app/main.py",
+        not not_called,
+        ("tidak dipanggil: %s" % ", ".join(not_called))
+        if not_called
+        else "semua %d fungsi registrasi terpanggil dari main.py" % total_reg,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Section 2 - Security header & flag cookie
+# ---------------------------------------------------------------------------
+def section_security_headers() -> None:
+    section("SECTION 2 - SECURITY HEADER & FLAG COOKIE (parse statis app/main.py)")
+
+    main_path = APP_DIR / "main.py"
+    main_text = read_text(main_path)
+
+    # SEC-04 (bagian middleware) - audit: app/main.py:339 tidak punya middleware.
+    middleware_calls = re.findall(r"^[ \t]*app\.add_middleware\(", main_text, re.MULTILINE)
+    check(
+        "SEC-04 middleware security header terpasang (main.py:339)",
+        bool(middleware_calls),
+        "tidak ada app.add_middleware() di app/main.py (nol security header)",
+        known="SEC-04",
+    )
+
+    # SEC-07 - header defensif yang harusnya dikirim.
+    headers = (
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Strict-Transport-Security",
+        "Content-Security-Policy",
+    )
+    missing = [h for h in headers if h not in main_text]
+    check(
+        "SEC-07 header keamanan defensif dikirim (main.py:339)",
+        not missing,
+        ("header yang tidak ada: %s" % ", ".join(missing))
+        if missing
+        else "semua header keamanan terpasang",
+        known="SEC-07",
+    )
+
+    # SEC-04 (bagian cookie) - parsing pemanggilan set_cookie untuk access_token.
+    cookie_calls: list[tuple[str, int]] = []
+    for m in re.finditer(r"\.set_cookie\(", main_text):
+        call = extract_call(main_text, m.end() - 1)
+        cookie_calls.append((call, line_of(main_text, m.start())))
+    access_cookie = ""
+    access_line = 0
+    for call, ln in cookie_calls:
+        if '"access_token"' in call or "'access_token'" in call:
+            access_cookie = call
+            access_line = ln
+            break
+    if not access_cookie:
+        check(
+            "SEC-04 cookie access_token memakai secure=True (main.py:1121-1134)",
+            False,
+            "pemanggilan set_cookie untuk access_token tidak ditemukan di app/main.py",
+            known="SEC-04",
+        )
+    else:
+        check(
+            "SEC-04 cookie access_token memakai secure=True (main.py:1121-1134)",
+            "secure=True" in access_cookie.replace(" ", ""),
+            "set_cookie access_token (main.py:%d) tidak memuat secure=True" % access_line,
+            known="SEC-04",
+        )
+
+    # httponly + samesite saat ini sudah benar -> harus PASS dan menjaga regresi.
+    check(
+        "SEC-04 cookie access_token tetap httponly=True (main.py:1124)",
+        "httponly=True" in access_cookie.replace(" ", ""),
+        "set_cookie access_token (main.py:%d) kehilangan httponly=True" % access_line,
+    )
+    check(
+        "SEC-04 cookie access_token tetap samesite=lax (main.py:1126)",
+        re.search(r"""samesite\s*=\s*["']lax["']""", access_cookie) is not None,
+        "set_cookie access_token (main.py:%d) kehilangan samesite=lax" % access_line,
+    )
+
+# ---------------------------------------------------------------------------
+# Section 3 - Kejujuran error handling
+# ---------------------------------------------------------------------------
+# Aturan diskriminasi BE-08: yang dihitung sebagai bocor HANYA str() atas
+# variabel yang benar-benar di-bind sebagai exception (`except ... as <nama>`),
+# karena str(e)/str(err)/str(exc) bisa memuat pesan error mentah (PostgREST
+# message/hint/details) yang bocor ke browser atau dipersistensi ke
+# activity_logs. str() atas variabel lain - misalnya str(old_deleted_at) yang
+# merender timestamp - BUKAN bocor dan tidak boleh dihitung, kalau tidak
+# pemakaian str() yang sah akan menaikkan hitungan bocor secara palsu.
+#
+# Fallback berbasis nama dipakai hanya kalau file gagal di-parse (SyntaxError),
+# supaya deteksi bocor tidak ikut melemah.
+FALLBACK_EXCEPTION_NAMES = {"e", "err", "exc", "ex", "error", "exception"}
+
+LEAK_PATTERNS = (
+    re.compile(r"JSONResponse\([^)]*?str\(([A-Za-z_]\w*)\)"),
+    re.compile(r"set_cookie\([^)]*?str\(([A-Za-z_]\w*)\)"),
+    re.compile(r"[\"']note[\"']\s*:\s*str\(([A-Za-z_]\w*)\)"),
+)
+
+
+def exception_names(text: str) -> set[str] | None:
+    """Nama variabel yang di-bind sebagai exception di sebuah file.
+
+    Sumber: `except ... as <nama>` (ast.ExceptHandler). Mengembalikan None
+    kalau file tidak bisa di-parse -> pemakai memakai fallback berbasis nama.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    return {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ExceptHandler) and node.name
+    }
+
+
+def find_str_leaks() -> list[str]:
+    """Lokasi str(<exception>) yang bocor ke browser, cookie flash, atau activity_logs."""
+    hits: list[str] = []
+    for path in app_py_files():
+        text = read_text(path)
+        exc_names = exception_names(text)
+        for pat in LEAK_PATTERNS:
+            for m in pat.finditer(text):
+                name = m.group(1)
+                if exc_names is None:
+                    if name not in FALLBACK_EXCEPTION_NAMES:
+                        continue
+                elif name not in exc_names:
+                    continue
+                hits.append("%s:%d" % (path.name, line_of(text, m.start())))
+    return sorted(hits)
+
+
+def block_after(lines: list[str], idx: int) -> list[str]:
+    """Blok terindentasi yang mengikuti baris ke-idx (idx = baris except/try)."""
+    base = len(lines[idx]) - len(lines[idx].lstrip())
+    out: list[str] = []
+    for line in lines[idx + 1:]:
+        if not line.strip():
+            out.append(line)
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent <= base:
+            break
+        out.append(line)
+    return out
+
+
+def find_line(lines: list[str], needle: str, start: int = 0) -> int:
+    for i in range(start, len(lines)):
+        if needle in lines[i]:
+            return i
+    return -1
+
+
+def section_error_honesty() -> None:
+    section("SECTION 3 - KEJUJURAN ERROR HANDLING (parse statis app/*.py)")
+
+    # BE-08 - str(e) bocor ke user / dipersistensi ke activity_logs.
+    leaks = find_str_leaks()
+    check(
+        "BE-08 tidak ada bocor str(e) ke user atau activity_logs",
+        not leaks,
+        "%d lokasi bocor str(e) (target: 0) - %s" % (len(leaks), ", ".join(leaks)),
+        known="BE-08",
+    )
+
+    # BE-01 - simpan formula Bab 2 (delete + insert) ditelan except, lalu user
+    # tetap dapat cookie "berhasil diperbarui" (products_routes.py:963-1042).
+    prod_path = APP_DIR / "products_routes.py"
+    prod_lines = read_text(prod_path).splitlines()
+    del_idx = find_line(prod_lines, 'product_formula_lines").delete()')
+    success_idx = find_line(prod_lines, 'set_cookie("success_msg"', del_idx)
+    be01_ok = False
+    be01_detail = "blok formula tidak ditemukan di app/products_routes.py"
+    if del_idx >= 0 and success_idx > del_idx:
+        region = prod_lines[del_idx:success_idx]
+        exc_idx = next(
+            (i for i, l in enumerate(region) if l.strip().startswith("except Exception")),
+            -1,
+        )
+        if exc_idx >= 0:
+            handler = "\n".join(block_after(region, exc_idx))
+            be01_ok = (
+                'set_cookie("error_msg"' in "\n".join(region)
+                or "raise" in handler
+            )
+            be01_detail = (
+                "kegagalan simpan formula hanya di-print lalu tetap set success_msg "
+                "(products_routes.py:%d)" % (del_idx + 1)
+            )
+        else:
+            be01_detail = (
+                "blok formula tidak punya except Exception (products_routes.py:%d)" % (del_idx + 1)
+            )
+    check(
+        "BE-01 kegagalan simpan formula tidak dilaporkan sebagai sukses",
+        be01_ok,
+        be01_detail,
+        known="BE-01",
+    )
+
+    # BE-02 / BE-03 - insert & update batch bahan baku tidak set error_msg.
+    rm_path = APP_DIR / "raw_materials_routes.py"
+    rm_lines = read_text(rm_path).splitlines()
+
+    def batch_failure_reported(needle: str, label: str) -> tuple[bool, str]:
+        idx = find_line(rm_lines, needle)
+        if idx < 0:
+            return False, "%s: pemanggilan %s tidak ditemukan" % (label, needle)
+        exc_idx = next(
+            (i for i in range(idx, min(idx + 40, len(rm_lines)))
+             if rm_lines[i].strip().startswith("except Exception")),
+            -1,
+        )
+        if exc_idx < 0:
+            return False, (
+                "%s: tidak ada except Exception setelah %s (raw_materials_routes.py:%d)"
+                % (label, needle, idx + 1)
+            )
+        handler = "\n".join(block_after(rm_lines, exc_idx))
+        ok = 'set_cookie("error_msg"' in handler or "raise" in handler
+        return ok, "%s: handler gagal (raw_materials_routes.py:%d) tidak set error_msg" % (
+            label, exc_idx + 1)
+
+    be02_ok, be02_detail = batch_failure_reported('raw_material_batches").insert(', "BE-02")
+    check(
+        "BE-02 kegagalan insert batch bahan baku dilaporkan ke user",
+        be02_ok,
+        be02_detail,
+        known="BE-02",
+    )
+
+    be03_ok, be03_detail = batch_failure_reported('raw_material_batches").update(', "BE-03")
+    check(
+        "BE-03 kegagalan update batch bahan baku dilaporkan ke user",
+        be03_ok,
+        be03_detail,
+        known="BE-03",
+    )
+
+    # BE-21 - cookie warning_msg harus dibaca minimal satu template.
+    readers = []
+    for path in template_files():
+        if "warning_msg" in read_text(path):
+            readers.append(path.name)
+    check(
+        "BE-21 cookie warning_msg dirender minimal satu template",
+        bool(readers),
+        "tidak ada template yang membaca warning_msg (produsennya products_routes.py:1167)",
+        known="BE-21",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Section 4 - Dead code & duplikasi
+# ---------------------------------------------------------------------------
+def section_dead_code() -> None:
+    section("SECTION 4 - DEAD CODE & DUPILIKASI (parse statis app/*.py)")
+
+    # SEC-02 / BE-07 - assert_same_tenant harus punya call site di app/.
+    call_sites = []
+    for path in app_py_files():
+        if path.name == "security.py":
+            continue
+        text = read_text(path)
+        for m in re.finditer(r"\bassert_same_tenant\b", text):
+            call_sites.append("%s:%d" % (path.name, line_of(text, m.start())))
+    check(
+        "SEC-02 / BE-07 assert_same_tenant dipakai di route mutating",
+        bool(call_sites),
+        "0 call site di app/ (helper app/security.py:9 masih dead code produksi)"
+        if not call_sites
+        else "call site: %s" % ", ".join(call_sites),
+        known="SEC-02",
+    )
+
+    # BE-04 - .single() di luar try -> HTTP 500 saat baris tidak ada.
+    # Dipakai AST supaya tahan geser baris: yang dicek adalah panggilan
+    # di dalam blok try/except, bukan nomor baris.
+    rm_path = APP_DIR / "raw_materials_routes.py"
+    rm_text = read_text(rm_path)
+    try:
+        tree = ast.parse(rm_text)
+    except SyntaxError as exc:
+        check(
+            "BE-04 tidak ada .single() di luar try (raw_materials_routes.py:313,533,703,1003)",
+            False,
+            "gagal parse AST app/raw_materials_routes.py: %s" % exc,
+        )
+    else:
+        guarded: list[tuple[int, int]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Try):
+                for stmt in list(node.body) + list(node.handlers):
+                    guarded.append((stmt.lineno, stmt.end_lineno or stmt.lineno))
+        unguarded: list[int] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Attribute) and func.attr == "single"):
+                continue
+            ln = node.lineno
+            if not any(lo <= ln <= hi for lo, hi in guarded):
+                unguarded.append(ln)
+        unguarded.sort()
+        check(
+            "BE-04 tidak ada .single() di luar try (raw_materials_routes.py:313,533,703,1003)",
+            not unguarded,
+            "%d pemanggilan .single() tanpa try/except (baris %s) -> HTTP 500, bukan 'tidak ditemukan'"
+            % (len(unguarded), ", ".join(str(x) for x in unguarded)),
+            known="BE-04",
+        )
+
+    # Duplikasi - compute_status_na() dua kali berturut-turut.
+    dash_path = APP_DIR / "dashboard_routes.py"
+    dash_calls = [
+        " ".join(line.split())
+        for line in read_text(dash_path).splitlines()
+        if "compute_status_na(" in line and not line.strip().startswith("def ")
+    ]
+    dup_pairs = [
+        (dash_calls[i], dash_calls[i + 1])
+        for i in range(len(dash_calls) - 1)
+        if dash_calls[i] == dash_calls[i + 1]
+    ]
+    check(
+        "DUPL-01 tidak ada compute_status_na() ganda berturut-turut (dashboard_routes.py:168-169)",
+        not dup_pairs,
+        "%d pasangan panggilan identik berturut-turut" % len(dup_pairs),
+        known="DUPL-01",
+    )
+
+    # SEC-18 - artefak teks sebelum blok extends di brands.html.
+    brands = read_text(TPL_DIR / "brands.html")
+    first_line = next((l for l in brands.splitlines() if l.strip()), "")
+    check(
+        "SEC-18 brands.html bersih dari artefak teks sebelum extends (brands.html:1)",
+        "omniroute" not in first_line,
+        "baris pertama brands.html masih memuat 'omniroute'",
+        known="SEC-18",
+    )
+
+# ---------------------------------------------------------------------------
+# Section 5 - Invarian template & escaping
+# ---------------------------------------------------------------------------
+SAFE_ALLOWLIST = {
+    ("notes.html", "n.body_html"),
+    ("notes.html", "n.completion_note_html"),
+    ("raw_materials.html", "tojson"),
+    ("finished_spec_form.html", "tojson"),
+}
+
+DANGEROUS_JS = ("eval(", "new Function(", "document.write(", "insertAdjacentHTML(", "outerHTML")
+
+
+def section_templates() -> None:
+    section("SECTION 5 - INVARIAN TEMPLATE & ESCAPING (parse statis templates + static)")
+
+    # Autoescape global harus tetap menyala.
+    offenders = []
+    for path in template_files():
+        text = strip_jinja_comments(read_text(path))
+        if re.search(r"\{%-?\s*autoescape\s+false\s*-?%\}", text):
+            offenders.append(path.name)
+    check(
+        "XSS-01 tidak ada blok autoescape false di template",
+        not offenders,
+        ("autoescape false dipakai di: %s" % ", ".join(offenders))
+        if offenders
+        else "0 autoescape false di seluruh template",
+    )
+
+    # | safe hanya boleh di allowlist (4 lokasi terverifikasi aman oleh audit).
+    unsafe = []
+    safe_hits = 0
+    for path in template_files():
+        text = strip_jinja_comments(read_text(path))
+        for i, line in enumerate(text.splitlines(), start=1):
+            if not re.search(r"\|\s*safe\b", line):
+                continue
+            safe_hits += 1
+            allowed = any(
+                fname == path.name and frag in line
+                for (fname, frag) in SAFE_ALLOWLIST
+            )
+            if not allowed:
+                unsafe.append("%s:%d" % (path.name, i))
+    check(
+        "XSS-02 setiap filter safe ada di allowlist terverifikasi (notes/raw_materials/finished_spec)",
+        not unsafe,
+        ("filter safe di luar allowlist: %s" % ", ".join(unsafe))
+        if unsafe
+        else "%d pemakaian filter safe, semuanya di allowlist" % safe_hits,
+    )
+
+    # SEC-14 - helper escaping harus satu global, bukan 4 implementasi terpisah.
+    esc_defs: list[str] = []
+    esc_re = re.compile(r"function\s+((?:um)?[Ee]scapeHtml\w*)\s*\(")
+    for path in template_files() + static_files():
+        text = strip_jinja_comments(read_text(path))
+        for m in esc_re.finditer(text):
+            esc_defs.append("%s:%d (%s)" % (path.name, line_of(text, m.start()), m.group(1)))
+    check(
+        "SEC-14 helper escaping tunggal (audit: 4 implementasi terpisah)",
+        len(esc_defs) <= 1,
+        "%d implementasi terpisah: %s | target: 1 helper global"
+        % (len(esc_defs), ", ".join(esc_defs)),
+        known="SEC-14",
+    )
+
+    # po_analytics.html harus mengirim data chart lewat script type application/json.
+    pa = read_text(TPL_DIR / "po_analytics.html")
+    pa_clean = strip_jinja_comments(pa)
+    has_json_block = re.search(
+        r"""<script[^>]*type=["']application/json["']""", pa_clean
+    ) is not None
+    has_tojson = "|tojson" in pa_clean.replace("| tojson", "|tojson")
+    check(
+        "XSS-03 po_analytics.html kirim data chart via script application/json + tojson",
+        has_json_block and has_tojson,
+        "json block: %s, tojson: %s" % (has_json_block, has_tojson),
+    )
+
+    # JS berbahaya di template + static.
+    dangerous = []
+    for path in template_files() + static_files():
+        text = strip_jinja_comments(strip_js_comments(read_text(path)))
+        for token in DANGEROUS_JS:
+            if token in text:
+                dangerous.append("%s (%s)" % (path.name, token))
+    check(
+        "XSS-04 tidak ada eval/new Function/document.write/insertAdjacentHTML/outerHTML",
+        not dangerous,
+        ("ditemukan: %s" % ", ".join(dangerous))
+        if dangerous
+        else "0 pola berbahaya di template dan app/static/*.js",
+    )
+
+    # Konvensi textContent-only untuk file yang sudah diaudit.
+    for filename in ("lampiran.js", "po-analytics.js"):
+        path = STATIC_DIR / filename
+        if not path.exists():
+            skip("XSS-05 %s 100%% textContent" % filename, "file %s tidak ada" % filename)
+            continue
+        code = strip_js_comments(read_text(path))
+        count = code.count("innerHTML")
+        check(
+            "XSS-05 %s 100%% textContent (nol innerHTML)" % filename,
+            count == 0,
+            "%s masih punya %d pemakaian innerHTML" % (filename, count),
+        )
+
+    # Semua rujukan /static/... harus benar-benar ada di disk.
+    broken = []
+    refs = 0
+    for path in template_files() + [APP_DIR / "main.py"]:
+        text = read_text(path)
+        for m in re.finditer(r"/static/[A-Za-z0-9_./-]+", text):
+            ref = m.group(0)
+            if "..." in ref:
+                continue
+            rel = ref[len("/static/"):].split("?")[0].split("#")[0]
+            if not rel:
+                continue
+            refs += 1
+            if not (STATIC_DIR / rel).exists():
+                broken.append("%s -> %s" % (path.name, ref))
+    check(
+        "ASSET-01 semua rujukan /static/... resolve ke file yang ada",
+        not broken,
+        ("rusak: %s" % ", ".join(broken))
+        if broken
+        else "%d rujukan /static/... semuanya ada" % refs,
+    )
+
+    # FE-05 - link logout di sidebar harus menghentikan heartbeat.
+    def logout_link_stops_heartbeat(path: Path) -> bool:
+        lines = read_text(path).splitlines()
+        for i, line in enumerate(lines):
+            if "/logout" not in line:
+                continue
+            window = "\n".join(lines[max(0, i - 5):i + 12])
+            if "stopPresenceHeartbeat" in window:
+                return True
+        return False
+
+    base_ok = logout_link_stops_heartbeat(TPL_DIR / "base.html")
+    sidebar_ok = logout_link_stops_heartbeat(TPL_DIR / "_sidebar.html")
+    sidebar_js = STATIC_DIR / "sidebar.js"
+    sidebar_js_ok = sidebar_js.exists() and "stopPresenceHeartbeat" in read_text(sidebar_js)
+    check(
+        "FE-05 link logout sidebar menghentikan heartbeat (base.html:169 vs _sidebar.html:115)",
+        base_ok and (sidebar_ok or sidebar_js_ok),
+        "base.html: %s, _sidebar.html: %s, sidebar.js: %s"
+        % (base_ok, sidebar_ok, sidebar_js_ok),
+        known="FE-05",
+    )
+
+    # U6 - doc-drift tabel entitas audit: setiap entity_type yang dipancarkan
+    # kode harus ada di tabel entitas audit panduan (sekitar baris 699-713).
+    # Nilai doc_type dinamis (company_docs_routes.py:124) dihitung dari
+    # whitelist COMPANY_DOC_MAP (company_docs_routes.py:19-27) dan ditutupi
+    # baris generik `{doc_type}` perusahaan -> tidak boleh jadi false positive.
+    code_static, code_dynamic = collect_entity_types_from_code()
+    dynamic_values = resolve_dynamic_entity_types(code_dynamic)
+    documented, generic_doc_type_row = documented_entity_types()
+    missing = sorted(
+        value
+        for value in (code_static | dynamic_values)
+        if value not in documented
+        and not (generic_doc_type_row and value in dynamic_values)
+    )
+    check(
+        "U6 setiap entity_type di kode terdokumentasi di tabel entitas audit "
+        "(panduan:699-713)",
+        not missing,
+        ("%d entity_type belum terdokumentasi: %s"
+         % (len(missing), ", ".join(missing)))
+        if missing
+        else ("%d entity_type statis + %d nilai doc_type dinamis semuanya "
+              "terdokumentasi" % (len(code_static), len(dynamic_values))),
+        known="U6",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Section 6 - Invarian polling frontend
+# ---------------------------------------------------------------------------
+def resolve_interval(args_text: str, source: str) -> int | None:
+    """Nilai milidetik dari argumen terakhir setInterval (literal atau konstanta)."""
+    parts = split_top_level_args(args_text)
+    if not parts:
+        return None
+    last = parts[-1].strip()
+    if re.fullmatch(r"\d+", last):
+        return int(last)
+    m = re.fullmatch(r"([A-Za-z_]\w*)", last)
+    if m:
+        const = re.search(
+            r"(?:var|let|const)\s+%s\s*=\s*(\d+)" % re.escape(m.group(1)), source
+        )
+        if const:
+            return int(const.group(1))
+    return None
+
+
+def collect_intervals() -> list[tuple[str, int | None]]:
+    """Kumpulkan semua setInterval di template + static beserta intervalnya."""
+    found: list[tuple[str, int | None]] = []
+    for path in template_files() + static_files():
+        text = read_text(path)
+        for m in re.finditer(r"\bsetInterval\s*\(", text):
+            call = extract_call(text, m.end() - 1)
+            args = call[1:-1] if call.startswith("(") else call
+            found.append((
+                "%s:%d" % (path.name, line_of(text, m.start())),
+                resolve_interval(args, text),
+            ))
+    return found
+
+
+def extract_js_function(text: str, name: str) -> str:
+    """Ambil isi badan fungsi JS dengan nama tertentu (brace matching)."""
+    m = re.search(r"function\s+%s\s*\(" % re.escape(name), text)
+    if not m:
+        return ""
+    try:
+        open_brace = text.index("{", m.end())
+    except ValueError:
+        return ""
+    depth = 0
+    for i in range(open_brace, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_brace:i + 1]
+    return text[open_brace:]
+
+def section_frontend() -> None:
+    section("SECTION 6 - INVARIAN POLLING FRONTEND (parse statis template + static)")
+
+    intervals = collect_intervals()
+    values = [v for _, v in intervals]
+    unknown = [loc for loc, v in intervals if v is None]
+
+    # Tidak boleh ada interval ganda (audit 5.1: tidak ada interval ganda).
+    seen: dict[int, list[str]] = {}
+    for loc, value in intervals:
+        if value is not None:
+            seen.setdefault(value, []).append(loc)
+    duplicates = {v: locs for v, locs in seen.items() if len(locs) > 1}
+    check(
+        "FRONTEND-01 tidak ada interval setInterval ganda",
+        not duplicates and not unknown,
+        ("interval ganda: %s" % "; ".join(
+            "%d ms -> %s" % (v, ", ".join(l)) for v, l in duplicates.items()))
+        if duplicates
+        else (("interval tidak bisa diresolve: %s" % ", ".join(unknown)) if unknown else ""),
+    )
+
+    # Matriks interval harus sesuai audit: 30000/15000/1000 + heartbeat 25000.
+    expected = {1000, 15000, 25000, 30000}
+    actual = {v for v in values if v is not None}
+    check(
+        "FRONTEND-02 matriks interval polling sesuai audit (30000/15000/1000 + 25000)",
+        actual == expected,
+        "interval yang ditemukan: %s" % ", ".join(
+            "%d ms (%s)" % (v, ", ".join(seen.get(v, []))) for v in sorted(actual)
+        ),
+    )
+
+    # presence.js harus skip heartbeat saat tab hidden.
+    presence_path = STATIC_DIR / "presence.js"
+    presence_text = read_text(presence_path) if presence_path.exists() else ""
+    presence_calls = [
+        extract_call(presence_text, m.end() - 1)
+        for m in re.finditer(r"\bsetInterval\s*\(", presence_text)
+    ]
+    heartbeat_call = next(
+        (c for c in presence_calls if "HEARTBEAT_MS" in c),
+        presence_calls[0] if presence_calls else "",
+    )
+    hidden_guard = "visibilityState" in heartbeat_call and "hidden" in heartbeat_call
+    check(
+        "FRONTEND-03 presence.js skip heartbeat saat tab hidden (presence.js:84)",
+        hidden_guard,
+        "guard document.visibilityState hidden tidak ada di blok setInterval heartbeat",
+    )
+
+    # presence.js harus menghentikan heartbeat saat 401.
+    ping_body = extract_js_function(presence_text, "ping")
+    handles_401 = "401" in ping_body and "stopHeartbeat" in ping_body
+    check(
+        "FRONTEND-04 presence.js stop heartbeat saat respons 401 (presence.js:43-47)",
+        handles_401,
+        "penanganan 401 di fungsi ping() tidak memanggil stopHeartbeat()",
+    )
+
+    # FE-06 - window.__adminPresenceInterval harus pernah di-assign.
+    admin_users = read_text(TPL_DIR / "admin_users.html")
+    assigned = re.search(r"window\.__adminPresenceInterval\s*=", admin_users) is not None
+    check(
+        "FE-06 window.__adminPresenceInterval di-assign di admin_users.html (base.html:44)",
+        assigned,
+        "hanya di-clear di base.html:44, tidak pernah di-assign di admin_users.html",
+        known="FE-06",
+    )
+
+    # FE-07 - submit form login harus ditahan selama countdown lockout.
+    login_text = read_text(TPL_DIR / "login.html")
+    handler = extract_js_function(login_text, "handleLoginSubmit")
+    blocks_submit = ("return false" in handler) or ("preventDefault" in handler)
+    check(
+        "FE-07 submit form login ditahan saat countdown lockout (login.html:64,128)",
+        blocks_submit,
+        "handleLoginSubmit() tidak pernah mengembalikan false / preventDefault",
+        known="FE-07",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Section 7 - Unit pure-module (import opsional, tanpa DB)
+# ---------------------------------------------------------------------------
+def security_fail_open_covered() -> bool:
+    """True kalau test_security_helpers.py sudah menguji fail-open + new_company."""
+    path = TESTS_DIR / "test_security_helpers.py"
+    if not path.exists():
+        return False
+    try:
+        tree = ast.parse(read_text(path))
+    except SyntaxError:
+        return False
+
+    # Analisis per fungsi: nama variabel bisa di-shadow antar fungsi, jadi
+    # pemetaan "user tanpa perusahaan" harus dicek per scope fungsi.
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        none_company_names: set[str] = set()
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, ast.Name) or not isinstance(node.value, ast.Dict):
+                continue
+            for k, v in zip(node.value.keys, node.value.values):
+                if (
+                    isinstance(k, ast.Constant) and k.value == "perusahaan"
+                    and isinstance(v, ast.Constant) and v.value is None
+                ):
+                    none_company_names.add(target.id)
+
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Name) and func.id == "assert_same_tenant"):
+                continue
+            if not node.args:
+                continue
+            user = node.args[0]
+            fail_open_user = False
+            if isinstance(user, ast.Dict):
+                fail_open_user = any(
+                    isinstance(k, ast.Constant) and k.value == "perusahaan"
+                    and isinstance(v, ast.Constant) and v.value is None
+                    for k, v in zip(user.keys, user.values)
+                )
+            elif isinstance(user, ast.Name):
+                fail_open_user = user.id in none_company_names
+            if fail_open_user and any(kw.arg == "new_company" for kw in node.keywords):
+                return True
+    return False
+
+
+def section_pure_modules() -> None:
+    section("SECTION 7 - UNIT PURE-MODULE (import lokal, tanpa DB/jaringan)")
+
+    # --- SEC-02: helper tenant --------------------------------------------
+    try:
+        from app.security import assert_same_tenant  # noqa: PLC0415
+    except Exception as exc:
+        skip(
+            "SEC-02 helper assert_same_tenant fail-open",
+            "app.security tidak bisa diimpor: %s" % exc,
+        )
+    else:
+        if security_fail_open_covered():
+            skip(
+                "SEC-02 helper assert_same_tenant fail-open",
+                "sudah diuji di tests/test_security_helpers.py",
+            )
+        else:
+            # Menempelkan perilaku fail-open yang MASIH berlaku: user tanpa
+            # `perusahaan` lolos ke data badan hukum lain, termasuk saat
+            # new_company justru bertentangan. Ini RISIKO DESAIN yang sengaja
+            # dipin di sini, BUKAN end state yang desirable: mengubahnya jadi
+            # penolakan = perubahan merusak, butuh migrasi user lama.
+            fail_open = assert_same_tenant(
+                {"role": "staff", "perusahaan": None},
+                {"perusahaan": "PT Heka"},
+                new_company="PT Erfi",
+            )
+            check(
+                "SEC-02 helper assert_same_tenant fail-open untuk user tanpa perusahaan",
+                fail_open is True,
+                "perilaku fail-open berubah: user tanpa perusahaan kini ditolak (perlu migrasi user legacy)",
+            )
+
+    # --- Validasi upload PDF ----------------------------------------------
+    up_path = TESTS_DIR / "test_upload_validation.py"
+    up_text = read_text(up_path) if up_path.exists() else ""
+    covers = {
+        "kosong": 'b""' in up_text,
+        "bukan PDF": ('b"not a pdf"' in up_text or 'b"XPDF"' in up_text),
+        "lebih 10 MB": "MAX_PDF_SIZE + 1" in up_text,
+    }
+    if up_path.exists() and all(covers.values()):
+        skip(
+            "VAL-01 validate_pdf_bytes tolak non-PDF/kosong/lebih 10MB",
+            "sudah diuji di tests/test_upload_validation.py",
+        )
+    else:
+        try:
+            from app.file_validation import MAX_PDF_SIZE, validate_pdf_bytes  # noqa: PLC0415
+        except Exception as exc:
+            skip(
+                "VAL-01 validate_pdf_bytes tolak non-PDF/kosong/lebih 10MB",
+                "app.file_validation tidak bisa diimpor: %s" % exc,
+            )
+        else:
+            if not covers["kosong"]:
+                check(
+                    "VAL-01a validate_pdf_bytes menolak data kosong",
+                    validate_pdf_bytes(b"", "doc.pdf") is not None,
+                    "file kosong tidak ditolak",
+                )
+            if not covers["bukan PDF"]:
+                check(
+                    "VAL-01b validate_pdf_bytes menolak magic bytes non-PDF",
+                    validate_pdf_bytes(b"not a pdf", "doc.pdf") is not None,
+                    "file non-PDF tidak ditolak",
+                )
+            if not covers["lebih 10 MB"]:
+                check(
+                    "VAL-01c validate_pdf_bytes menolak file lebih dari 10 MB",
+                    validate_pdf_bytes(
+                        b"%PDF-1.4\n" + b"x" * (MAX_PDF_SIZE + 1), "doc.pdf"
+                    ) is not None,
+                    "file lebih dari 10 MB tidak ditolak",
+                )
+
+    # Celah nyata yang belum ditutup test_upload_validation.py: is_pdf_bytes.
+    try:
+        from app.file_validation import is_pdf_bytes  # noqa: PLC0415
+    except Exception as exc:
+        skip(
+            "VAL-02 is_pdf_bytes mencerminkan validate_pdf_bytes",
+            "app.file_validation tidak bisa diimpor: %s" % exc,
+        )
+    else:
+        ok = (
+            is_pdf_bytes(b"%PDF-1.4\n" + b"x" * 10) is True
+            and is_pdf_bytes(b"") is False
+            and is_pdf_bytes(b"not a pdf") is False
+        )
+        check(
+            "VAL-02 is_pdf_bytes mencerminkan validate_pdf_bytes",
+            ok,
+            "is_pdf_bytes tidak konsisten dengan validate_pdf_bytes",
+        )
+
+    # --- parse_storage_url -------------------------------------------------
+    ps_path = TESTS_DIR / "test_parse_storage_url.py"
+    ps_text = read_text(ps_path) if ps_path.exists() else ""
+    ps_covers = {
+        "sampah": "(None, None)" in ps_text,
+        "supabase": "storage/v1/object/public" in ps_text,
+    }
+    if ps_path.exists() and all(ps_covers.values()):
+        skip(
+            "STORAGE-01 parse_storage_url parsing URL Supabase dan input sampah",
+            "sudah diuji di tests/test_parse_storage_url.py",
+        )
+    else:
+        try:
+            from app.object_store import parse_storage_url  # noqa: PLC0415
+        except Exception as exc:
+            skip(
+                "STORAGE-01 parse_storage_url parsing URL Supabase dan input sampah",
+                "app.object_store tidak bisa diimpor: %s" % exc,
+            )
+        else:
+            if not ps_covers["sampah"]:
+                garbage = parse_storage_url("https://contoh.example.com/bukan-storage.pdf", {})
+                check(
+                    "STORAGE-01a parse_storage_url mengembalikan (None, None) untuk input sampah",
+                    garbage == (None, None),
+                    "hasil: %r" % (garbage,),
+                )
+            if not ps_covers["supabase"]:
+                url = (
+                    "https://dytuprmoorvrugutozwv.supabase.co/storage/v1/object/public/"
+                    "raw-material-docs/coa/coa_B1.pdf"
+                )
+                check(
+                    "STORAGE-01b parse_storage_url parsing URL publik Supabase",
+                    parse_storage_url(url, {}) == ("raw-material-docs", "coa/coa_B1.pdf"),
+                    "URL publik Supabase tidak ter-parse jadi (bucket, path)",
+                )
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Regresi audit codebase DIP Automation (2026-10-21).",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Perlakukan temuan KNOWN sebagai FAIL (untuk CI setelah perbaikan selesai).",
+    )
+    args = parser.parse_args(argv)
+
+    print("Regresi audit codebase DIP Automation - baseline 2026-10-21")
+    print("READ-ONLY: tanpa database, tanpa jaringan, tanpa membaca .env*")
+
+    section_routes()
+    section_security_headers()
+    section_error_honesty()
+    section_dead_code()
+    section_templates()
+    section_frontend()
+    section_pure_modules()
+
+    counts = {"PASS": 0, "KNOWN": 0, "FAIL": 0, "SKIP": 0}
+    for status, _, _ in RESULTS:
+        counts[status] = counts.get(status, 0) + 1
+
+    print()
+    print("=" * 74)
+    print("RINGKASAN")
+    print("=" * 74)
+    print("  PASS  : %d" % counts["PASS"])
+    print("  KNOWN : %d  (temuan audit yang belum diperbaiki)" % counts["KNOWN"])
+    print("  FAIL  : %d" % counts["FAIL"])
+    print("  SKIP  : %d" % counts["SKIP"])
+
+    fails = [r for r in RESULTS if r[0] == "FAIL"]
+    if fails:
+        print()
+        print("Temuan FAIL (wajib beres):")
+        for _, name, detail in fails:
+            print("  - %s - %s" % (name, detail))
+
+    knowns = [r for r in RESULTS if r[0] == "KNOWN"]
+    if knowns and args.strict:
+        print()
+        print("Temuan KNOWN (diperlakukan sebagai FAIL karena --strict):")
+        for _, name, detail in knowns:
+            print("  - %s - %s" % (name, detail))
+
+    hard_fail = bool(fails) or (args.strict and bool(knowns))
+    print()
+    if hard_fail:
+        print("Exit code 1 (ada FAIL%s)." % (" atau KNOWN dengan --strict" if args.strict else ""))
+    else:
+        print("Exit code 0 (tidak ada FAIL).")
+    return 1 if hard_fail else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
