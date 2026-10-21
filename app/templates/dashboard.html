@@ -229,11 +229,13 @@
                             </a>
 
                             <!-- 4. Tombol Hapus Produk (Merah) -->
-                            <form action="/products/delete/{{ product.id }}" method="POST" style="display: inline;" onsubmit='return confirm("Yakin mau hapus produk " + {{ (product.nama_produk or "TANPA NAMA") | tojson }} + "? Semua formula di dalamnya bakal ikut kehapus men.")'>
+                            {% if current_user.role == 'admin' %}
+                            <form action="/products/delete/{{ product.id }}" method="POST" style="display: inline;" onsubmit='return confirm("Yakin mau hapus produk " + {{ (product.nama_produk or "TANPA NAMA") | tojson }} + "? Produk ini dipindahkan ke Sampah, jadi tidak lagi muncul di dashboard maupun dokumen DIP. Formula di dalamnya TIDAK ikut terhapus, dan produk masih bisa dikembalikan dari menu Sampah.")'>
                                 <button type="submit" class="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 cursor-pointer" title="Hapus Produk">
                                     <i class="fa-solid fa-trash-can text-xs"></i>
                                 </button>
                             </form>
+                            {% endif %}
                         </div>
                     </td>
                 </tr>

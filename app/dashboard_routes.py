@@ -59,10 +59,19 @@ def register_dashboard_routes(
             raise HTTPException(status_code=403, detail="Akses ditolak")
 
         try:
+            # Baca deleted_at SEBELUM update, supaya jejak audit masih bisa
+            # merekonstruksi lama produk berada di Sampah.
+            old_row = (supabase.table("products")
+                       .select("id, nama_produk, deleted_at")
+                       .eq("id", product_id).limit(1).execute().data or [None])[0]
+            old_deleted_at = (old_row or {}).get("deleted_at")
+
             supabase.table("products").update({"is_deleted": False, "deleted_at": None}).eq("id", product_id).execute()
             # Perlu fungsi log_activity yang sudah ada di main.py
             log_activity(current_user, "restore", "product", product_id,
-                         "Restore produk dari sampah", request=request)
+                         "Restore produk dari sampah",
+                         changes=[{"field": "deleted_at", "note": str(old_deleted_at)}],
+                         request=request)
             return RedirectResponse(url="/admin/trash?success=Produk berhasil dikembalikan", status_code=303)
         except Exception as e:
             print(f"Gagal restore produk: {e}")

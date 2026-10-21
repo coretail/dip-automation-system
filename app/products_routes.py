@@ -116,7 +116,102 @@ def register_products_routes(
             response.set_cookie("error_msg", f"Gagal menyimpan produk '{nama_produk}'. Silakan coba lagi.")
             return response
 
+    @app.post("/products/delete/{product_id}")
+    async def delete_product(request: Request, product_id: str,
+                             current_user: dict = Depends(get_current_user)):
+        # Hanya admin yang boleh menghapus (soft delete) produk.
+        if current_user.get("role") != "admin":
+            log_activity(
+                current_user, "delete", "product", product_id, product_id,
+                changes=[{"field": "is_deleted", "note": "ditolak: bukan admin"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Admin.")
 
+        # Ambil data produk dulu: perlu nama (biar activity log terbaca, bukan id doang)
+        # dan perlu tahu produknya sudah ada di Sampah atau belum.
+        try:
+            product_before = supabase.table("products").select(
+                "id, nama_produk, is_deleted, deleted_at"
+            ).eq("id", product_id).execute()
+        except Exception as e:
+            print(f"Gagal baca produk {product_id} saat hapus: {e}")
+            log_activity(
+                current_user, "delete", "product", product_id, product_id,
+                changes=[{"field": "is_deleted", "note": "gagal membaca data produk"}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url="/", status_code=303)
+            response.set_cookie("error_msg", "Gagal memuat produk. Silakan coba lagi.")
+            return response
+
+        product_row = (product_before.data or [None])[0]
+        if not product_row:
+            log_activity(
+                current_user, "delete", "product", product_id, product_id,
+                changes=[{"field": "is_deleted", "note": "ditolak: produk tidak ditemukan"}],
+                request=request, outcome="rejected",
+            )
+            response = RedirectResponse(url="/", status_code=303)
+            response.set_cookie("error_msg", "Produk tidak ditemukan.")
+            return response
+
+        nama_produk = product_row.get("nama_produk") or product_id
+        if product_row.get("is_deleted"):
+            # Sudah ada di Sampah -> jangan timpa deleted_at lama dan jangan buat
+            # baris audit "delete sukses" kedua untuk produk yang sama.
+            log_activity(
+                current_user, "delete", "product", product_id, nama_produk,
+                changes=[{"field": "is_deleted", "note": "ditolak: produk sudah ada di Sampah"}],
+                request=request, outcome="rejected",
+            )
+            response = RedirectResponse(url="/", status_code=303)
+            response.set_cookie("error_msg", "Produk sudah ada di Sampah.")
+            return response
+
+        try:
+            # Soft Delete: cuma tandai is_deleted=True + deleted_at, JANGAN hapus formula.
+            # Guard is_deleted=False mencegah produk yang sudah di sampah (atau di-restore
+            # berbarengan) ikut tertimpa, sehingga deleted_at tidak dobel dan tidak ada
+            # baris audit "delete sukses" yang palsu.
+            deleted_at = datetime.now(WIB).isoformat()
+            update_resp = (
+                supabase.table("products")
+                .update({"is_deleted": True, "deleted_at": deleted_at})
+                .eq("id", product_id)
+                .eq("is_deleted", False)
+                .execute()
+            )
+        except Exception as e:
+            print(f"Gagal hapus produk {product_id}: {e}")
+            log_activity(
+                current_user, "delete", "product", product_id, nama_produk,
+                changes=[{"field": "is_deleted", "note": "gagal memindahkan ke Sampah"}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url="/", status_code=303)
+            response.set_cookie("error_msg", "Gagal memindahkan produk ke Sampah. Silakan coba lagi.")
+            return response
+
+        # Guard 0 baris ter-update: status produk berubah di antara SELECT dan UPDATE.
+        if not (getattr(update_resp, "data", None) or []):
+            log_activity(
+                current_user, "delete", "product", product_id, nama_produk,
+                changes=[{"field": "is_deleted", "note": "ditolak: status produk berubah sebelum update"}],
+                request=request, outcome="rejected",
+            )
+            response = RedirectResponse(url="/", status_code=303)
+            response.set_cookie("error_msg", "Produk sudah ada di Sampah.")
+            return response
+
+        log_activity(
+            current_user, "delete", "product", product_id, nama_produk,
+            changes=[{"field": "is_deleted", "note": "dipindahkan ke sampah"}],
+            request=request, outcome="success",
+        )
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie("success_msg", f"Produk '{nama_produk}' dipindahkan ke Sampah.")
+        return response
 
     @app.get("/products/{product_id}/inci-breakdown/report", response_class=HTMLResponse)
     async def generate_inci_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
