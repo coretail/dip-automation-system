@@ -36,10 +36,13 @@
 --     sudah dibaca dan diverifikasi: fungsi terdaftar di pg_proc, hak
 --     EXECUTE hanya untuk service_role, dan PostgREST sudah memuat
 --     /rpc/replace_product_formula.
---   - Di PRODUKSI file ini BELUM DIEKSEKUSI. Yang harus menjalankannya:
---     pemilik repo, manual lewat Supabase SQL Editor, memakai file yang
---     sama ini tanpa mengubah isinya, dan hasil eksekusi staging WAJIB
---     dibaca lebih dulu sebelum lanjut ke produksi.
+--   - File ini SUDAH dieksekusi juga di PRODUKSI (ref dytuprmoorvrugutozwv)
+--     pada 22 Oktober 2026. Slice DDL yang dipakai di kedua environment
+--     identik byte per byte (sha256 de7f8d33...), blok pre-check dibaca
+--     lebih dulu, dan tidak ada satu baris pun data aplikasi yang berubah.
+--   - Untuk environment BARU nanti, file ini tetap harus dijalankan manual
+--     oleh pemilik repo lewat Supabase SQL Editor: STAGING lebih dulu, hasil
+--     eksekusi staging WAJIB dibaca sebelum lanjut ke produksi.
 --   - Eksekusi TIDAK BOLEH lewat pipeline otomatis (mis. supabase db
 --     push).
 --   - Nomor file 010 TIDAK boleh diubah atau ditukar dengan 009: angka 009

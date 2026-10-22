@@ -2114,7 +2114,7 @@ def section_write_honesty() -> None:
         "atau file yang gagal tidak disebut di changes",
     )
 
-    # --- MIG-010: file migrasi prepared, TIDAK dieksekusi ------------------
+    # --- MIG-010: kontrak fungsi transaksi + status eksekusi terdokumentasi -----
     wajib_mig = [
         "abs(v_total - 100) > 0.0001",
         "v_pct < 0",
@@ -2122,7 +2122,7 @@ def section_write_honesty() -> None:
         "REVOKE ALL ON FUNCTION public.replace_product_formula(uuid, jsonb) FROM PUBLIC;",
         "REVOKE ALL ON FUNCTION public.replace_product_formula(uuid, jsonb) FROM anon, authenticated;",
         "GRANT EXECUTE ON FUNCTION public.replace_product_formula(uuid, jsonb) TO service_role;",
-        "BELUM DIEKSEKUSI",
+        "STATUS EKSEKUSI",
         "DELETE FROM public.product_formula_lines",
         "DROP FUNCTION IF EXISTS public.replace_product_formula(uuid, jsonb);",
         "CREATE FUNCTION public.replace_product_formula(",
@@ -2156,7 +2156,7 @@ def section_write_honesty() -> None:
             % (", ".join(app_rpc_refs) or "tidak ada")
         )
     check(
-        "MIG-010 migration/010_replace_product_formula.sql prepared (belum dieksekusi, dipakai aplikasi)",
+        "MIG-010 migration/010_replace_product_formula.sql di-harden, status eksekusi terdokumentasi, dipakai lewat fungsi transaksi",
         h_mig_ok,
         "; ".join(mig_catatan) or "isi migrasi 010 lengkap dan aplikasi memakainya",
     )
