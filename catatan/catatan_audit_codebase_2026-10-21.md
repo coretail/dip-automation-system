@@ -95,11 +95,34 @@ amendemen ini:
   * **Kode aplikasi berubah** — `app/products_routes.py`,
     `app/raw_materials_routes.py`, `app/sample_routes.py`,
     `app/notes_routes.py`, dan `app/templates/base.html`.
-  * **Tidak ada migrasi yang dieksekusi.** `migration/010_replace_product_formula.sql`
-    hanya **disiapkan** — belum pernah dijalankan di staging maupun produksi.
+  * **Tidak ada migrasi yang dieksekusi pada sesi ini.**
+    `migration/010_replace_product_formula.sql` hanya **disiapkan** — file
+    yang sama itu baru dieksekusi di staging lalu produksi **pada sesi
+    berikutnya di hari yang sama** (lihat §13.9.7).
   * **Tidak ada perubahan skema database** dan tidak ada data yang ditulis.
   * **Tidak ada** `git add`, `git commit`, maupun `git push` yang dijalankan —
-    seluruh perubahan hanya di working tree.
+    seluruh perubahan hanya di working tree **pada sesi itu**; changeset ini
+    kemudian di-commit pada 22 Oktober 2026 (`25ede7f`, `9ca4041`).
+
+* **Tambahan 22 Oktober 2026 (sesi eksekusi migrasi 010 + uji produksi).**
+  Batas dari sesi ini:
+  * **Migrasi `010` dieksekusi** — di **staging** (2×, idempoten) pada
+    21 Oktober 2026 lalu **produksi** pada 22 Oktober 2026, dengan potongan
+    DDL yang **byte-identik** dan **nol dampak data** di kedua environment
+    (§13.9.7).
+  * **Jalur tulis formula Bab 2 dipindah** ke fungsi transaksi
+    `public.replace_product_formula(uuid, jsonb)` — mekanisme snapshot +
+    rollback **dihapus**, dan **tidak ada fallback** (§13.9.7).
+  * **Uji fungsional produksi** pada produk "tes log 12" lewat server dev
+    milik owner di `127.0.0.1:8000` → 6 baris audit baru, 1 baris formula
+    sisa dibersihkan (§13.11).
+  * **Dua bug diperbaiki** — placeholder `RAISE` `%s` → `%` di migrasi 010,
+    dan harness E2E yang salah menganggap gagal saat Supabase Management API
+    menjawab **HTTP 201** (§13.9.7).
+  * **Perubahan masih di working tree** — `migration/010_replace_product_formula.sql`
+    versi final + tiga modul aplikasi yang berubah + **perubahan** pada dua
+    file test **belum di-commit**; `HEAD` masih memuat versi fungsi yang lebih
+    lemah (§10, P0 #7).
 
 ### Keputusan pemilik (21 Oktober 2026)
 
@@ -523,12 +546,15 @@ berhasil, sehingga terlihat hanya pada jalur exception.
 
 ### 8.2 Koreksi tambahan: hitungan dan daftar temuan
 
-Tiga belas koreksi berikut **salah pada laporan audit** dan sudah
-diverifikasi ulang di repo pada 21 Oktober 2026. Tidak ada satu pun yang
-mengubah kode aplikasi — hanya laporan ini yang dikoreksi. K1–K9 berasal dari
-saat suite test dibangun; **K10–K13 berasal dari verifikasi read-only
-produksi lanjutan dan investigasi histori git (§13.7)** — semuanya
-membalikkan kesimpulan yang sebelumnya tercetak di §4, §10, dan §14.2.
+Sembilan belas koreksi berikut **salah pada laporan audit** dan sudah
+diverifikasi ulang di repo. Tidak ada satu pun yang mengubah kode aplikasi —
+hanya laporan ini yang dikoreksi. K1–K9 berasal dari saat suite test
+dibangun; **K10–K13 berasal dari verifikasi read-only produksi lanjutan dan
+investigasi histori git (§13.7)** — semuanya membalikkan kesimpulan yang
+sebelumnya tercetak di §4, §10, dan §14.2; **K14–K16 berasal dari
+implementasi H3 dan peninjauan ulang jalur tulis formula (§13.9.7)** — ketiganya
+mencatat klaim yang menjadi **usang** setelah jalur tulis formula dipindah ke
+fungsi transaksi.
 
 K1 khususnya **membatalkan** angka "13× `register_*_routes`" dan "13 modul
 route" yang masih tertulis di §3.1 dan §3.2 — angka itu tidak diubah
@@ -549,6 +575,9 @@ di tempatnya, melainkan dicatat di sini sebagai koreksi.
 | K11 | §4 SEC-01 diberi label "KRITIS (fungsional)" | Tetap kritis, tapi **sifatnya berubah**: **regresi** yang broke tombol yang sebelumnya bekerja. Form `dashboard.html:232` sekarang **dangling**. | `git grep -n 'products/delete' HEAD`; `git blame app/templates/dashboard.html`; §13.7.1 |
 | K12 | §11 / F-19 "privat/publik bucket tidak dapat diverifikasi" | **Terbukti salah asumsi aman.** `raw-material-docs` dan `legal-documents` **public=true** di produksi dan path-nya enumerable dari field bisnis ⇒ **eksposur tanpa autentikasi** (§13.7.2). | `storage.buckets` (read-only); `app/raw_materials_routes.py:910, 925, 942`; `app/main.py:45, 56`; §13.7.2 |
 | K13 | §4 A13 / BE-07 "tenant check hanya sebagian" | Root cause ditemukan: `profiles.perusahaan` NULL untuk 7/7 profil produksi ⇒ guard fail-open ⇒ **tidak pernah menolak** (§13.7.3). Bukan sekadar "helper tidak dipakai". | `app/security.py:21-22`; `app/products_routes.py:863-864, 1093-1096`; `app/main.py:617, 626, 633`; §13.7.3 |
+| K14 | §2.1 "Integritas data", §6.3 BE-09, dan §7.1 O2 — "validasi total 100% formula hanya client-side" | **Kini divalidasi di server, dua lapis**: aplikasi memvalidasi total sebelum write, lalu fungsi database memvalidasinya lagi di dalam transaksi. Penggantian baris formula juga **atomik** (satu transaksi + kunci baris induk), bukan lagi DELETE+INSERT dengan rollback | `app/products_routes.py:1143-1167, 1257-1300`; `migration/010_replace_product_formula.sql:134-306`; §13.9.7 |
+| K15 | §13.9.1 (H3.1) — "snapshot baris lama + rollback sudah cukup" | **Tidak cukup**: snapshot/rollback **tidak atomik** (pembaca lain bisa melihat formula kosong di antara DELETE dan INSERT), dua edit bersamaan bisa saling menyela, dan kegagalan yang tidak pasti bisa membuat rollback menyalin baris jadi dobel. Diganti **fungsi transaksi** dengan kunci baris induk `FOR UPDATE` | `migration/010_replace_product_formula.sql:1-20, 155-168`; `app/products_routes.py:1257-1300`; §13.9.7 |
+| K16 | Klaim audit bahwa validasi 3-state (persentase tidak valid / negatif / varian asing) cukup di sisi server aplikasi | Review menemukan ketiga kasus itu **ditolak di sisi database**, bukan hanya di server aplikasi — database menjadi sumber kebenaran terakhir | `migration/010_replace_product_formula.sql:187-259`; §13.9.7 |
 
 Daftar 14 modul route yang didaftarkan di `app/main.py` (semuanya dipanggil):
 
@@ -603,16 +632,25 @@ Daftar 14 modul route yang didaftarkan di `app/main.py` (semuanya dipanggil):
 > Satu item digeser ke daftar **"Selesai pada 21 Oktober 2026"** di bawah tabel:
 > **P0 #3** (restore route soft-delete) — route sudah dipulihkan dan 6 gap sudah
 > ditutup (§13.8.1). Jejak item lama **dijaga**, tidak dihapus.
+>
+> **Tambahan 22 Oktober 2026.** Tiga item baru masuk (satu **P0**, dua
+> **P1**) setelah migrasi `010` dieksekusi di staging lalu produksi (§13.9.7):
+> commit dulu sebelum deploy apa pun, satu uji penggantian formula yang valid
+> di produksi, dan pelonggaran check `MIG-010` yang masih meng-hardcode
+> string `BELUM DIEKSEKUSI`.
 
 | Prioritas | Tindakan | Rujukan |
 | :--- | :--- | :--- |
 | **P0 #1 (BARU)** | **Privatkan bucket `raw-material-docs` + `legal-documents` di produksi.** Keduanya `public = true` dan path-nya dapat dikonstruksi dari field bisnis biasa (nomor batch / kode bahan baku) ⇒ MSDS, CoA, Halal, QC Report, hak-lisensi merk, dan dokumen legal perusahaan dapat diunduh **tanpa login**. DDL oleh owner (`UPDATE storage.buckets SET public=false ...`), lalu alihkan seluruh pembacaan ke `object_store.signed_url()` (`app/object_store.py:440-479` sudah ada). **[Menggantikan]** observasi F-19 yang tadinya "tidak dapat diverifikasi" (§11.2 → §11.1) | §13.7.2, §8.2 K12 |
 | **P0 #2 (BARU)** | **Isi `profiles.perusahaan` untuk seluruh akun (khususnya PT Heka) — atau ubah `assert_same_tenant` jadi fail-closed.** Di produksi `perusahaan` NULL untuk 7/7 profil ⇒ `_user_company` = `""` ⇒ cabang penolakan tenant **tidak pernah dieksekusi**. Tanpa ini seluruh guard tenant diam-diam mengizinkan akses lintas badan hukum | §13.7.3, §8.2 K13, SEC-02, BE-07 |
+| **P0 #7 (BARU)** | **Commit `migration/010_replace_product_formula.sql` beserta tiga modul aplikasi yang berubah — SEBELUM push/deploy apa pun.** `HEAD` masih memuat **versi fungsi yang lebih lemah**: tanpa kunci baris induk, tanpa validasi per baris, tanpa syarat total 100,0000%, tanpa `SET search_path`, dan tanpa `REVOKE`/`GRANT` — sedangkan **produksi sudah menjalankan versi final** yang dieksekusi lewat Supabase Management API. Produksi **wajib** di-deploy dari byte yang sama, dan commit harus mendahului deploy | §13.9.7 |
 | **P1 #4 (BARU)** | **Codified `public_link_audits`** sebagai `migration/008_create_public_link_audits.sql`. Tabel sudah ada di produksi (93 baris) tetapi DDL-nya tidak ada di repo ⇒ fallback `app/dip_public.py:128-144` menjadi **fail-open di environment baru** | §13.7.4 |
 | **P1 #5 (BARU)** | **Tambahkan marker versi/build di respons** (atau `RENDER_GIT_COMMIT`) agar deploy bisa diikat ke commit. Saat ini build ter-deploy **tidak bisa dibuktikan** identik dengan repo | §13.7.7 |
 | **P1 #6 (BARU)** | **[SELESAI 21 Okt 2026]** Jalankan `ALTER COLUMN is_deleted SET NOT NULL` pada `public.products` **bila belum** — kolom itu pre-existed migrasi 008 sehingga `ADD COLUMN IF NOT EXISTS` jadi no-op dan clause `NOT NULL` tidak pernah berlaku ⇒ baris `is_deleted = NULL` **lolos** dari CHECK (three-valued logic). Sudah dieksekusi di **staging** lalu **produksi**: `is_nullable` `YES` → `NO` di keduanya, hitungan baris tidak berubah | §13.8.2 |
+| **P1 #8 (BARU)** | Jalankan **satu** round-trip penggantian formula yang valid di **produksi** pada satu produk berisiko rendah. Jalur "valid replacement" **belum pernah** diuji di produksi — yang sudah diuji hanya **5 kasus nol-tulis** (total 90 / negatif / `"abc"` / array kosong / UUID tak ada), dan semuanya berakhir dengan baris lama utuh. Sasarannya: satu produk uji milik owner dengan isi formula sah (total 100,0000%), lalu verifikasi baris benar-benar tersimpan dan jejak audit `success` | §13.11.2, §13.9.7 |
+| **P1 #9 (BARU)** | Perbarui check `MIG-010` di `tests/test_audit_regressions.py` agar **tidak lagi meng-hardcode** string `BELUM DIEKSEKUSI` dari header migrasi. Header itu **akan diubah lagi** (status eksekusi produksi belum dicatat di header file), jadi check sekarang akan gagal sendiri begitu header diperbarui — check yang gagal karena string, bukan karena perilaku, adalah check rapuh | §13.9.7, §12.5 |
 | **P0** | Pasang `assert_same_tenant` di seluruh route tulis + filter tenant di route baca; jadikan helper itu satu-satunya sumber kebenaran. **[Dalam]** P0 #2 — helper sudah ada dan sudah dipakai, tetapi tidak menolak karena `profiles.perusahaan` kosong | SEC-02, BE-07, §13.7.3 |
-| **P0** | **[SELESAI 22 Okt 2026]** Ubah "sukses palsu" jadi pesan jujur: BE-01 (formula), BE-02/BE-03 (batch), BE-15 (sample), BE-16 (mention) — kelima item dikerjakan di §13.9 (pesan user + `outcome` audit yang jujur) | BE-01→03, 15, 16; §13.9 |
+| **P0** | **[SELESAI 22 Okt 2026]** Ubah "sukses palsu" jadi pesan jujur: BE-01 (formula), BE-02/BE-03 (batch), BE-15 (sample), BE-16 (mention) — kelima item dikerjakan di §13.9 (pesan user + `outcome` audit yang jujur). Jalur tulis formula lalu **dipindah lagi** ke fungsi transaksi `public.replace_product_formula(uuid, jsonb)` di §13.9.7 | BE-01→03, 15, 16; §13.9, §13.9.7 |
 | **P0** | Validasi `brand_id` (UUID + eksistensi) + cek tenant pada `POST /brands/{id}/update-documents` | SEC-03 |
 | **P1** | `secure=True` + prefix `__Host-` pada `access_token`; ambil IP **terakhir** dari `X-Forwarded-For` untuk rate limit | SEC-04, SEC-05 |
 | **P1** | Satu middleware untuk header defensif + same-origin check pada POST; token CSRF double-submit | SEC-06, SEC-07 |
@@ -695,8 +733,11 @@ Statusnya **bukan PASS dan bukan FAIL** — statusnya *tidak dapat diverifikasi*
 > **Status file.** Ketiga file di bawah **sudah di-commit** pada 21 Oktober
 > 2026 di `8a70435` (dokumen ini di `6e1ceeb`); `.gitignore` **sudah**
 > di-whitelist untuk ketiganya sejak sebelum commit tersebut. Perubahan
-> lanjutan — implementasi H3 (§13.9) beserta check `H3.*` — **masih hanya
-> di working tree**: belum ada `git add`, `git commit`, atau `git push` untuknya.
+> lanjutan — implementasi H3 (§13.9) beserta check `H3.*` — **sudah di-commit**
+> pada 22 Oktober 2026 (`25ede7f`, `9ca4041`); pembaruan terakhir (§13.9.7:
+> jalur tulis formula lewat fungsi transaksi, check `H3.6a`–`H3.6h`, grup E2E
+> `G1`–`G11`) **masih hanya di working tree**: belum ada `git add`, `git commit`,
+> atau `git push` untuknya.
 >
 > **Fungsi suite: mendeteksi, bukan memperbaiki.** Suite ini mengunci setiap
 > temuan audit menjadi assertion yang bisa dijalankan mesin. **Tidak ada satu
@@ -765,6 +806,7 @@ di CI setelah perbaikan benar-benar land.
 | :--- | :--- |
 | Registry `KNOWN_ISSUES` | **14 entri** (per 22 Oktober 2026): SEC-02, SEC-04, SEC-07, SEC-14, SEC-16, SEC-18, BE-04, BE-07, BE-08, DUPL-01, FE-05, FE-06, FE-07, U6 — BE-01, BE-02, BE-03, dan BE-21 **keluar** dari registry karena sudah diperbaiki (§13.9) |
 | Check baru H3 (22 Oktober 2026) | **16 check baru** di `tests/test_audit_regressions.py` Section 8 (KEJUJURAN HASIL WRITE): `H3.1a`–`H3.1f`, `H3.2a`–`H3.2b`, `H3.3a`–`H3.3b`, `H3.4`, `H3.5a`–`H3.5c`, `MIG-010`, `UNIT-01` → §13.9 |
+| Check yang ditulis ulang + check baru H3.6 (22 Oktober 2026) | **12 check** di `tests/test_audit_regressions.py` berubah: `H3.1c`, `H3.1d`, `H3.1f`, `MIG-010` **ditulis ulang** (4) + **8 check baru** `H3.6a`–`H3.6h`; ditambah **grup E2E baru** `G1`–`G11` (**13 check**) di `tests/e2e_audit_staging.py` → §13.9.7 |
 | Audit ID baru (grup G9) | 6 ID baru di `tests/verify_audit_db_state.py`: **PROD-01** (privasi bucket storage), **PROD-02** (kelengkapan `profiles.perusahaan`), **PROD-03** (keberadaan `public_link_audits` + DDL-nya), **PROD-04** (cakupan detail storage di audit trail), **PROD-05** (distribusi `outcome`/`source`), **PROD-06** (konsistensi soft-delete produk vs jejak audit) → §13.7 |
 | Check yang sengaja SKIP | Validasi PDF (`file_validation`) dan parsing storage URL — sudah diuji file lain; pendeteksiannya otomatis dari isi file tsb |
 | Interaksi dengan pytest | Ketiga file **tidak** di-collect pytest (tidak punya fungsi `test_*`) → total pytest tidak berubah |
@@ -795,6 +837,7 @@ staging. Tidak ada eksekusi terhadap produksi.
 | `tests/test_audit_regressions.py --strict` | 18 KNOWN dipromosikan jadi FAIL, exit 1 | — |
 | `tests/test_audit_regressions.py` (re-run 22 Oktober 2026, sesi H3) | **PASS 41 / KNOWN 14 / FAIL 0 / SKIP 2**, exit 0 — +16 check baru (`H3.1a`–`H3.5c`, `MIG-010`, `UNIT-01`) dan BE-01/BE-02/BE-03/BE-21 naik dari `[KNOWN]` ke `[PASS]` (§13.9) | — |
 | `tests/test_audit_regressions.py --strict` (re-run 22 Oktober 2026) | 14 KNOWN dipromosikan jadi FAIL, exit 1 | — |
+| `tests/test_audit_regressions.py` (re-run 22 Oktober 2026, sesi migrasi 010) | **PASS 49 / KNOWN 14 / FAIL 0 / SKIP 2**, exit 0 — 12 check berubah (4 ditulis ulang + 8 baru `H3.6a`–`H3.6h`) dan 13 check grup E2E baru (§13.9.7) | — |
 | `pytest tests/ -q` | **79 passed, 0 failed** (baseline sebelum = 79 → tanpa regresi) | 5,8 dtk |
 | `tests/verify_audit_db_state.py` | 43 check: PASS 15 / FAIL 3 / WARN 2 / INFO 23, exit 1 → setelah migrasi 004 + 007: **PASS 20 / FAIL 0 / WARN 1 / INFO 22**, exit 0 (§13.5) | — |
 | `tests/e2e_audit_staging.py --full` | **PASS 22 / KNOWN 5 / FAIL 0 / SKIP 1**, exit 0 | 189,5 dtk |
@@ -1475,6 +1518,44 @@ Check regresi baru (16 check, di `tests/test_audit_regressions.py` Section 8 —
 > di-bind sebagai exception), **bukan angka hard-coded** di dalam check —
 > jadi angkanya ikut bergerak sendiri bila kodenya berubah.
 
+#### 13.9.7 Yang benar-benar land: jalur tulis formula pindah ke fungsi transaksi (22 Oktober 2026)
+
+> **Status.** Sub-bagian ini adalah **penutup** §13.9. Ia mencatat apa yang
+> berubah setelah §13.9.1–§13.9.6 ditulis: jalur tulis formula Bab 2
+> **tidak lagi** memakai snapshot/rollback, melainkan **hanya** fungsi
+> transaksi Postgres — dan fungsi itu **sudah dieksekusi** di staging lalu
+> produksi. Bagian-bagian §13.9 yang menyebut snapshot/rollback
+> **ketinggalan zaman**, dan sengaja tidak diubah di tempatnya.
+
+| Fakta | Keterangan |
+| :--- | :--- |
+| Jalur tulis formula Bab 2 | **Hanya** `public.replace_product_formula(uuid, jsonb)`. Mekanisme DELETE+INSERT + snapshot/rollback **dihapus** dari aplikasi, dan **tidak ada fallback**: kalau fungsi belum terpasang, penyimpanan gagal dengan pesan yang jelas, sementara formula lama **tetap utuh** |
+| Yang dikerjakan fungsi | Mengunci baris induk produk (`SELECT ... FROM public.products ... FOR UPDATE`), memvalidasi tiap baris (format UUID, literal numerik, tidak negatif, `variant_id` milik bahan baku pada baris itu), mensyaratkan total **100.0000** (toleransi **0.0001**), menolak array kosong, lalu mengganti baris dalam **satu transaksi** |
+| Pola hak akses | `REVOKE ALL ... FROM PUBLIC` + `REVOKE ... FROM anon, authenticated` + `GRANT EXECUTE ... TO service_role`; `SET search_path = public, pg_temp` |
+| Eksekusi | `migration/010_replace_product_formula.sql` dieksekusi di **staging** (2×, idempoten) pada **21 Oktober 2026** lalu **produksi** pada **22 Oktober 2026**; potongan DDL sha256 `de7f8d338ed05453accc7287f2953172915ea7524a6261308726e2418ac1d1e6` **identik** di kedua environment |
+| Pre-check produksi | **97** produk punya baris formula dan **setiap** total tepat **100.000** ⇒ **tidak ada** produk yang perlu diperbaiki |
+| Dampak data | **Nol** di kedua environment — produksi: `products` 136, `product_formula_lines` 1.362, `activity_logs` 1.317 **tetap**; staging: 2 / 2 / 67 **tetap** |
+
+**Dua bug yang ditemukan dan diperbaiki di sesi ini.**
+
+1. **Placeholder `RAISE` PL/pgSQL salah.** Placeholder ditulis `%s` (gaya
+   printf) alih-alih `%` (gaya PL/pgSQL) ⇒ huruf "s" bocor ke pesan pengguna
+   ("90.0000s", "baris ke-1s"). Diperbaiki di file migrasi (**9 kemunculan**;
+   `%%` dibiarkan apa adanya) lalu dieksekusi ulang (idempoten) — pesan yang
+   tampil sekarang **bersih**.
+2. **Bug harness E2E.** `tests/e2e_audit_staging.py` menganggap respons
+   non-`200` dari Supabase Management API sebagai kegagalan, padahal endpoint
+   itu menjawab **HTTP 201 Created** untuk kueri yang berhasil ⇒ hasil valid
+   dibuang dan **dua check** melaporkan kegagalan palsu. Sekarang menerima
+   **200 dan 201**.
+
+**Yang masih belum di-commit.** `migration/010_replace_product_formula.sql`
+versi final dan tiga modul aplikasi yang berubah hanya ada di **working
+tree**; `HEAD` masih memuat **versi fungsi yang lebih lemah** (tanpa kunci
+baris induk, tanpa validasi per baris, tanpa syarat total 100,0000%, tanpa
+`REVOKE`/`GRANT`). Produksi **wajib** di-deploy dari byte yang sama, dan
+**commit harus terjadi sebelum redeploy apa pun** (§10, P0 #7).
+
 ### 13.10 Eksposur bucket R2 produksi dan status eksekusi H1b (22 Oktober 2026)
 
 > **Cakupan.** Sub-bagian ini mencatat **verifikasi read-only** terhadap bucket
@@ -1631,6 +1712,94 @@ terhapus); S3 API dan presigned URL harus tetap berfungsi; dan
 * Dengan sisi Supabase masih publik, **menutup R2 saja** kira-kira
   **setengah** permukaan dokumen yang bisa dijangkau anonim: dari **±1.511**
   objek menjadi **±759** — berkurang, tetapi **belum hilang**.
+### 13.11 Uji fungsional produksi pada produk "tes log 12" (22 Oktober 2026)
+
+> **Cakupan.** Sub-bagian ini mencatat **uji fungsional di produksi** atas
+> jalur baru (fungsi transaksi formula + soft delete + restore) pada satu
+> produk uji milik owner sendiri. Uji ini **bukan** bagian dari suite test
+> (§12) dan **tidak** memakai launcher staging `scripts/run_staging_8017.py` —
+> ia memakai server dev milik owner yang memang terikat ke `.env` produksi.
+
+#### 13.11.1 Setup
+
+Uji berjalan di server dev milik owner sendiri: `http://127.0.0.1:8000/`
+(`uvicorn app.main:app --reload`, `DIP_APP_ENV` **tidak diset** ⇒
+`app/config.py` memuat `.env` **produksi**). Jadi server itu menyajikan **kode
+working tree terkini** di atas **database produksi** — kode baru di atas data
+nyata.
+
+Bukti bahwa jalur kode baru benar-benar hidup:
+
+* proses reload `--reload` **nyala lagi setelah** perubahan terakhir pada dua
+  modul yang berubah;
+* catatan audit `tidak diubah (tidak ada baris formula untuk disimpan)`
+  **hanya ada** di kode baru;
+* catatan audit `1 baris formula tersimpan lewat fungsi transaksi
+  replace_product_formula`;
+* semantik `rejected` yang baru pada route hapus.
+
+Proses server **tidak pernah dihentikan** atau direstart oleh test.
+
+#### 13.11.2 Hasil per skenario
+
+| Skenario | Harapan | Hasil | Status |
+| :--- | :--- | :--- | :--- |
+| Restore lewat `POST /admin/products/{id}/restore` | 303 → `/admin/trash?success=…`, `is_deleted=false`, `deleted_at` NULL, audit `action=restore` dengan `deleted_at` sebelumnya di dalam `changes` | sesuai | LULUS |
+| Produk tampil di dashboard | ada di `/` | ada | LULUS |
+| Produk absen dari Sampah | tidak ada di `/admin/trash` | tidak ada | LULUS |
+| Halaman edit memuat | form edit terbuka | terbuka | LULUS |
+| Simpan formula lewat app | sukses | sukses | LULUS |
+| **Total 90% lewat app** | **DITOLAK** dengan pesan `Total persentase formula Bab 2 harus tepat 100.0000%. Total saat ini: 90%. Formula tidak disimpan dan tidak ada data lain yang diubah.` + audit `outcome=rejected` + baris formula **tidak berubah** | sesuai | LULUS |
+| Panggil RPC secara langsung (setara app) | sukses, 1 baris | sukses, 1 baris | LULUS |
+| 4 kasus penolakan RPC: total 90 / negatif / `"abc"` / array kosong | error `22023`, baris lama **utuh** | sesuai | LULUS |
+| UUID produk tidak ada | error `P0002` | sesuai | LULUS |
+| Konkurensi dua thread | hasil akhir tepat **salah satu** set, bukan campuran | sesuai | LULUS |
+| Soft delete | 303 + `success_msg` ``"Produk 'tes log `12' dipindahkan ke Sampah."`` + `is_deleted=true` + `deleted_at` baru + audit `action=delete` `outcome=success` dengan `changes` "dipindahkan ke sampah" | sesuai | LULUS |
+| Delete kedua | **DITOLAK** dengan `error_msg` "Produk sudah ada di Sampah." + audit `outcome=rejected` + **`deleted_at` tidak berubah** | sesuai | LULUS |
+| Keadaan akhir | produk ada di Sampah, absen dari dashboard | sesuai | LULUS |
+
+#### 13.11.3 Jejak audit yang dibuat test (6 baris)
+
+| `action` | `outcome` | `created_at` | `changes` |
+| :--- | :--- | :--- | :--- |
+| `restore` | `success` | 22 Okt 2026 (WIB) | `deleted_at` sebelumnya (`None` — produk belum pernah di Sampah) |
+| `update` | `success` | 22 Okt 2026 (WIB) | "tidak diubah (tidak ada baris formula untuk disimpan)" |
+| `update` | `success` | 22 Okt 2026 (WIB) | "1 baris formula tersimpan lewat fungsi transaksi replace_product_formula" |
+| `update` | `rejected` | 22 Okt 2026 (WIB) | "ditolak: total persentase bukan 100.0000% - tidak ada data yang diubah" |
+| `delete` | `success` | 22 Okt 2026 (WIB) | "dipindahkan ke sampah" |
+| `delete` | `rejected` | 22 Okt 2026 (WIB) | "ditolak: produk sudah ada di Sampah" |
+
+`activity_logs` 1.317 → **1.323** (+6). Urutan baris = urutan skenario, dan
+semua `created_at` jatuh pada 22 Oktober 2026 (WIB).
+
+#### 13.11.4 Deviasi dan pembenahan
+
+Migrasi `010` **mendarat di produksi di tengah test**, sehingga satu probe yang
+dirancang untuk **ditolak** justru **berhasil** dan menulis **satu baris
+formula** (bahan baku `Water`, 100%) — produk itu sebelumnya **tidak pernah**
+punya formula. Baris tersebut kemudian **dihapus** dengan `DELETE` yang
+**sempit**: dikunci pada **id baris** *dan* **id produk** sekaligus, jadi tidak
+bisa menyasar baris lain. Penghapusan itu sendiri **dicatat** di
+`activity_logs` dengan `source='migration'`.
+
+Kendala yang membuat penghapusan itu perlu: aplikasi **tidak pernah** menghapus
+baris formula (formula kosong adalah *no-op*), dan fungsi **menolak** array
+kosong — jadi **tidak ada jalur aplikasi** yang bisa membersihkannya.
+
+#### 13.11.5 Catatan operasional
+
+* **`P0002` dipetakan PostgREST ke HTTP 500, bukan 404.** Kode aplikasi tidak
+  boleh bercabang pada kode HTTP itu — penolakan harus dibaca dari isi pesan.
+* **Setiap penggantian formula meregenerasi `id` dan `created_at`.** Tiga id
+  berbeda untuk isi yang sama itu **normal** (baris lama dihapus, baris baru
+  ditulis), tapi penting saat membandingkan data.
+* **`deleted_at` ditulis dengan offset `+07:00` (WIB)** ke kolom `timestamptz`
+  ⇒ tersimpan dengan benar.
+* **Satu kegagalan yang harus jujur dicatat:** nama produk ter-trash tetap
+  muncul di HTML dashboard, karena dashboard merender flash `success_msg`.
+  Diverifikasi dengan cara yang benar — pencarian **berdasarkan `id`** dan link
+  `/products/{id}/edit` dengan flash cookie dibersihkan: **keduanya absen**.
+
 ## 14. Rekomendasi Perbaikan (Poin 1–3)
 
 > **Status §14.** Isi bagian ini **rekomendasi**, bukan temuan baru. Semua
@@ -1970,3 +2139,4 @@ satu request, dan `source` yang benar. Empat catatan sementara:
 | 2026-10-21 (malam, implementasi) | **Implementasi §13.8.** Route `POST /products/delete/{product_id}` dipulihkan ke `app/products_routes.py` (dari `491d036`) dengan 6 gap G1–G6 ditutup; form dashboard di-gate admin + teks konfirmasi dikoreksi; jalur restore menyimpan `deleted_at` lama. `migration/008` dieksekusi di **staging** lalu **produksi** lewat Supabase Management API atas otorisasi eksplisit owner (constraint `products_soft_delete_consistency` + index `idx_products_is_deleted_deleted_at` terpasang, probe enforcement ditolak **SQLSTATE 23514**), lalu `ALTER COLUMN is_deleted SET NOT NULL` ditutup di kedua environment (`is_nullable` `YES` → `NO`, hitungan baris tidak berubah). Uji soft delete **produksi** pada ``tes log `12`` **LULUS** (+4 baris audit, `trashed` 8 → 9). **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan. |
 | 2026-10-22 | **Implementasi + verifikasi independen H3.1–H3.5** (§13.9). H3.1 — formula Bab 2: validasi total 100,0000% di server (helper murni `_validate_formula_total`), snapshot baris lama + rollback berflag `delete_done`, kegagalan tidak lagi dilaporkan "berhasil diperbarui". H3.2/H3.3 — path upload batch unik per operasi (`uuid4().hex[:8]`) + cleanup file yatim + audit sukses dipindah keluar dari `try` DB. H3.4 — hapus FSP: flash `error_msg`, `str(e)` keluar dari payload audit. H3.5 — simpan note / @mention / audit dipisah jadi 3 blok `try`; `warning_msg` kini **dirender** di `app/templates/base.html`. **File `migration/010_replace_product_formula.sql` disiapkan, BELUM dieksekusi** — tidak ada migrasi yang dijalankan, tidak ada perubahan skema, dan kode aplikasi tidak bergantung padanya. Angka suite diperbarui: `tests/test_audit_regressions.py` **PASS 41 / KNOWN 14 / FAIL 0 / SKIP 2** (sebelumnya 21/18/0/2; 16 check baru `H3.1a`–`H3.5c`, `MIG-010`, `UNIT-01`), `tests/verify_audit_db_state.py` 49 check PASS 21 / FAIL 0 / WARN 6 / INFO 22, `pytest tests/ -q` 79 passed, `scripts/check_undefined_names.py` exit 0. **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan — seluruh perubahan H3 dan amendemen dokumen ini **masih hanya di working tree**; ketiga file suite sendiri sudah ter-commit lebih dulu pada 21 Oktober 2026 di `8a70435`. |
 | 2026-10-22 (H1b) | **Verifikasi eksposur bucket R2 produksi + percobaan mematikan *Public Development URL*** (§13.10). Tiga bucket R2 produksi terverifikasi **publik** lewat `pub-*.r2.dev` — **752 objek** (643 + 105 + 4), HEAD anonim **200 + `application/pdf`**, prefix objek sama bisa ditebak dengan sisi Supabase. Gerbang pra-eksekusi **LOLOS** (9 tabel produksi: **0** baris memakai URL `r2.dev` ⇒ aplikasi produksi tidak pernah membaca R2). **Eksekusi GAGAL** — tidak ada kredensial Cloudflare di mesin ini yang dapat mengautentikasi (token MCP-gateway ditolak **401 code 1000**; `wrangler` ditolak **code 9109**; sesi OAuth terikat hanya pada `bindings.mcp.cloudflare.com` dan tidak punya tool dev-url) ⇒ **tidak ada yang berubah** (snapshot sesudah identik dengan snapshot sebelum: 643/105/4 objek, HEAD anonim tetap 200, `.env` byte-identical, `git status --short` identik, tanpa file sementara tersisa). Perintah manual + verifikasi pasca-jalankan tercatat di §13.10.4; bucket staging dan `product-attachments` produksi **belum disentuh** dan butuh keputusan terpisah. |
+| 2026-10-22 (migrasi 010 + uji produksi) | **Migrasi `010` dieksekusi di staging (2×, idempoten) pada 21 Oktober 2026 lalu produksi pada 22 Oktober 2026** — potongan DDL **byte-identik** di kedua environment (sha256 sama) dan **nol dampak data** (produksi: `products` 136, `product_formula_lines` 1.362, `activity_logs` 1.317 tetap; staging: 2 / 2 / 67 tetap). Pre-check produksi: **97** produk punya baris formula dan **setiap** total tepat **100.000** ⇒ tidak ada produk yang perlu diperbaiki. **Jalur tulis formula Bab 2 dipindah ke fungsi transaksi** `public.replace_product_formula(uuid, jsonb)` — snapshot/rollback **dihapus**, **tanpa fallback**. **Dua bug diperbaiki**: placeholder `RAISE` `%s` → `%` di migrasi 010 (pesan "90.0000s" dan "baris ke-1s" kini bersih) dan harness E2E yang menganggap respons Supabase Management API gagal padahal jawabannya **HTTP 201 Created** (kini menerima 200 dan 201). **Uji fungsional produksi** pada "tes log 12" lewat server dev owner di `127.0.0.1:8000` → **6 baris audit baru** (`activity_logs` 1.317 → 1.323) dan 1 baris formula sisa dibersihkan dengan `DELETE` sempit + catatan `source='migration'`. **13 check regresi baru/ditulis ulang dengan bukti non-vacuity (51 revert)**. **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan — seluruh perubahan masih **hanya di working tree**, dan `HEAD` masih memuat versi fungsi yang lebih lemah |
