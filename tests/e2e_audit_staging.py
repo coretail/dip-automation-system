@@ -19,6 +19,7 @@ Kredensial (JANGAN di-hardcode, JANGAN di-commit, JANGAN dicetak):
     STAGING_BASE_URL                               -> default http://127.0.0.1:8017
 Password tidak pernah dicetak; identitas ditampilkan tersamar (huruf pertama
 local-part + domain), password ditampilkan sebagai "***".
+Nilai kredensial admin ada di LOGIN.md di root repo (git-ignored): export jadi env var di shell yang menjalankan skrip ini, jangan di-hardcode; kredensial tenant opsional E2E_HEKA_* tidak ada di LOGIN.md.
 
 Exit code:
     0 = tidak ada FAIL (KNOWN yang masih diharapkan tidak dianggap kegagalan)

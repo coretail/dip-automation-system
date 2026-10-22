@@ -85,6 +85,9 @@ skills-lock.json
 /backup-rls/
 backup-rls/
 
+# Kredensial akun tes E2E staging (lokal saja, BERISI PASSWORD - jangan di-commit).
+/LOGIN.md
+
 # Test artifacts (local only), except source-controlled verification scripts.
 /tests/*
 !/tests/

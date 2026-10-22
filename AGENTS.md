@@ -15,10 +15,11 @@
 - Unit/verification adalah skrip standalone: `python tests/test_parse_storage_url.py`, `python tests/test_object_store_r2.py`, dan skrip `verify_*.py`.
 - Tidak ada pytest config (`pytest.ini`, `pyproject.toml`, `setup.cfg`, `tox.ini`, `conftest.py`) yang ditemukan.
 - Jika `python` tidak ada di PATH, gunakan interpreter venv repo: `venv\Scripts\python.exe` di Windows atau `venv/bin/python` di Linux/macOS; `venv/` di-ignore Git.
-- E2E `e2e_*.py` membutuhkan server staging, kredensial env `STAGING_ADMIN_EMAIL`/`STAGING_ADMIN_PASSWORD`, dependency Playwright, dan menulis/cleanup data staging; bukan unit test.
+- E2E `e2e_*.py` membutuhkan server staging, kredensial env `STAGING_ADMIN_EMAIL`/`STAGING_ADMIN_PASSWORD`, dependency Playwright, dan menulis/cleanup data staging; bukan unit test. Nilai kredensial itu hanya ada di `LOGIN.md` di root repo (git-ignored, tidak pernah di-commit): baca dari sana saat runtime lalu export jadi env var di shell yang sama; jangan pernah menyalinnya ke `.py`, `.md`, `.env`, log, atau output apa pun.
 
 ## 3. Aturan keras
 - Jangan membaca, mencetak, atau commit secret dari `.env*`, termasuk `.env.staging`; `.env.staging.example` hanya template dan tidak boleh diisi secret lalu di-commit.
+- Kredensial akun tes E2E staging hanya ada di `LOGIN.md` di root repo (git-ignored); agen membacanya dari sana lalu set sebagai environment variable untuk run, dan tidak boleh echoed, di-log, disalin ke file lain, atau di-commit. Kalau nilainya pernah masuk ke file yang ter-commit atau output publik, password staging wajib segera dirotasi karena menghapus file atau commit tidak cukup - riwayat git tetap menyimpannya.
 - Jangan pernah mengarahkan staging ke produksi. `DIP_APP_ENV=staging` wajib; guard menolak URL selain host staging eksak, ref produksi, shell env yang tercampur, key JWT yang terikat bukan staging, dan konfigurasi wajib yang hilang.
 - Pengembangan/tes di mesin lokal hanya melalui `python scripts/run_staging_8017.py`; tanpa mode staging, `app/config.py` mengambil `.env` produksi dan `uvicorn app.main:app` langsung dilarang.
 - Validasi key lokal tidak membuktikan key aktif: JWT hanya dicek klaim `ref` tanpa signature; key opaque hanya dicek keberadaan.

@@ -3,6 +3,7 @@
 HANYA untuk staging lokal. Menolak jalan bila base URL bukan localhost atau
 .env.staging gagal preflight (`app.staging_preflight.validate_staging_file`).
 TIDAK menyentuh prod. Tidak mencetak secret.
+Kredensial (STAGING_BASE_URL, STAGING_ADMIN_EMAIL, STAGING_ADMIN_PASSWORD) ada di LOGIN.md di root repo (git-ignored): export jadi env var di shell yang menjalankan skrip ini, jangan di-hardcode di skrip.
 
 Latar belakang: refactor memindahkan 31 route dari main.py ke 7 modul. Bug khas
 yang lolos dari "app tetap boot" adalah NameError saat route dijalankan

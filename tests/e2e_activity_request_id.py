@@ -4,6 +4,7 @@ HANYA untuk staging lokal. Menolak jalan bila base URL bukan localhost, atau
 .env.staging gagal di preflight (`app.staging_preflight.validate_staging_file`:
 DIP_APP_ENV=staging, SUPABASE_URL = project staging, key terikat staging).
 TIDAK menyentuh prod. Tidak mencetak secret.
+Kredensial (STAGING_BASE_URL, STAGING_ADMIN_EMAIL, STAGING_ADMIN_PASSWORD) ada di LOGIN.md di root repo (git-ignored): export jadi env var di shell yang menjalankan skrip ini, jangan di-hardcode di skrip.
 
 Yang diuji (lewat UI nyata, halaman /notes, akun admin staging):
   Satu siklus hidup note = 4 request HTTP terpisah:

@@ -3,6 +3,7 @@
 HANYA untuk staging lokal. Menolak jalan bila base URL bukan localhost atau
 .env.staging bukan DIP_APP_ENV=staging / R2_BUCKET_SUFFIX=-stg / STORAGE_BACKEND
 dual|r2. TIDAK menyentuh prod. Tidak mencetak secret.
+Kredensial (STAGING_BASE_URL, STAGING_ADMIN_EMAIL, STAGING_ADMIN_PASSWORD) ada di LOGIN.md di root repo (git-ignored): export jadi env var di shell yang menjalankan skrip ini, jangan di-hardcode di skrip.
 
 Alur (halaman /admin/company-documents, butuh akun role admin staging):
   1. login lewat form /login
