@@ -1800,6 +1800,177 @@ kosong — jadi **tidak ada jalur aplikasi** yang bisa membersihkannya.
   Diverifikasi dengan cara yang benar — pencarian **berdasarkan `id`** dan link
   `/products/{id}/edit` dengan flash cookie dibersihkan: **keduanya absen**.
 
+### 13.12 Perbaikan tiga temuan P2 pada alur upload batch (22 Oktober 2026)
+
+> **Cakupan.** Tiga temuan P2 pada alur unggah dokumen batch bahan baku
+> diperbaiki di `app/raw_materials_routes.py` saja. Tidak ada migrasi, tidak
+> ada tabel/trigger/worker baru, dan tidak ada perubahan pada
+> `app/products_routes.py` maupun `app/notes_routes.py`.
+
+#### 13.12.1 Temuan 1 - upload cepat mengabaikan URL lama
+
+Handler upload cepat membuat path baru yang unik per operasi, tetapi
+pre-read-nya hanya mengambil `no_batch` dan `nama_dagang`
+(`app/raw_materials_routes.py:1714`). Akibatnya **tidak ada** URL
+dokumen lama, dan `_cleanup_replaced_objects` - helper yang sudah ada dan
+dipakai handler ubah batch (`app/raw_materials_routes.py:98`) - tidak pernah
+dipanggil: objek lama yang digantikan **tertinggal** di storage.
+
+Perbaikan:
+
+* pre-read upload cepat kini mengambil tiga kolom URL
+  (`coa_file_url`, `halal_batch_file_url`, `qc_report_file_url`) dan
+  disimpan sebagai `old_doc_urls` (`app/raw_materials_routes.py:1714`,
+  `app/raw_materials_routes.py:1735`);
+* setelah update **terkonfirmasi sukses**, `_cleanup_replaced_objects` dipanggil
+  (`app/raw_materials_routes.py:1923`) dan hasilnya masuk ke `changes` audit
+  trail (`app/raw_materials_routes.py:1938`);
+* masalah pembersihan tidak pernah hilang diam-diam: kalau objek lama
+  **masih dirujuk** baris lain, atau **pemeriksaan referensinya tidak bisa
+  dilakukan**, atau **penghapusananya gagal**, pesan `warning_msg` yang
+  menyebut nomor batch dikirim ke user (`app/raw_materials_routes.py:1939`).
+
+Cakupan pemeriksaan referensi diperluas (`app/raw_materials_routes.py:72`,
+`app/raw_materials_routes.py:98`): URL lama kini dicek pada **ketiga** kolom
+dokumen `raw_material_batches` (bukan hanya kolom yang sama) **dan** pada
+`product_batches.coa_file_url` - path warisan bisa dipakai bersama dari sana.
+Objek lama yang masih dirujuk tidak boleh dihapus, dan tidak boleh
+dihapus juga bila pemeriksaan referensinya sendiri gagal.
+
+#### 13.12.2 Temuan 2 - pembersihan objek baru dapat menghapus URL yang tersimpan
+
+Tiga handler (tambah batch, ubah batch, upload cepat) menghapus objek yang
+baru diunggah begitu saja setelah menangkap exception dari pemanggilan
+database. Bila request sebenarnya **sudah ter-commit** tetapi responsnya
+hilang (timeout, koneksi putus), baris database sudah menunjuk file yang
+kemudian dihapus - baris dan objek jadi tidak cocok, dan gejalanya dokumen
+hilang diam-diam pada DIP hasil generate.
+
+Perbaikan: kegagalan diklasifikasikan dari **tipe exception**, bukan dari
+pencocokan teks pesan (`app/raw_materials_routes.py:207`). Tiga kemungkinan
+hasil:
+
+| Hasil | Pemicu | Objek baru | Audit | Flash |
+| :--- | :--- | :--- | :--- | :--- |
+| **Pasti ditolak** | `postgrest.exceptions.APIError` (server membalas HTTP error) atau `httpx.HTTPStatusError` | **dihapus** (path unik per operasi, jadi tidak mungkin menimpa file batch lain) | `outcome="failed"` | `error_msg` |
+| **Ambigu, tapi terkonfirmasi tersimpan** | exception transport (`httpx`: timeout/connect/read/write/protocol/network) **dan** query rekonsiliasi menemukan URL baru di database | **dipertahankan** | `outcome="success"` + catatan "respons database tidak diterima, tapi URL baru terverifikasi ada di database" | `success_msg` |
+| **Ambigu, tapi belum pasti** | exception transport **dan** URL baru tidak ditemukan (atau query rekonsiliasinya sendiri gagal) | **dipertahankan**, path-nya dicatat di activity log | `outcome="failed"` + catatan berisi daftar path objek | `error_msg` |
+
+Aturan penting: **hasil query rekonsiliasi yang kosong BUKAN bukti pasti
+gagal** - request-nya masih mungkin berjalan di server. Karena itu pada
+hasil ambigu objek **selalu** dipertahankan; hanya kegagalan yang pasti
+(margin atas) yang boleh menghapus objek baru
+(`app/raw_materials_routes.py:1349`, `app/raw_materials_routes.py:1601`,
+`app/raw_materials_routes.py:1856`).
+
+Rekonsiliasi memakai builder filter resmi `postgrest-py`, yaitu `.in_()`
+(`app/raw_materials_routes.py:227`) - bukan string PostgREST yang dirangkai
+tangan dan bukan `.or_(...)`. Alasannya: `.in_()` membungkus nilai yang memuat
+karakter khusus PostgREST (`,:()`) di dalam tanda kutip, sedangkan `.eq()`
+menempelkan nilai mentah ke string filter; pemanggilan yang sama juga
+dipakai untuk pemeriksaan referensi (`app/raw_materials_routes.py:72`).
+
+#### 13.12.3 Kenapa objek dipertahankan, dan kenapa tidak ada antrean tunda
+
+Repo ini **tidak punya** mekanisme rekonsiliasi tertunda (tidak ada tabel
+antrean, tidak ada trigger, tidak ada worker). Jadi pada hasil ambigu, objek
+yang baru diunggah **dipertahankan** dan **path-nya dicatat di
+`activity_logs`** (`app/raw_materials_routes.py:274`,
+`app/raw_materials_routes.py:324`) supaya administrator bisa merekonsiliasi
+manual. Menambahkan tabel atau trigger berarti migrasi baru - tidak dilakukan
+di sini. Catatan tambahan soal verifikasi ada di §13.12.4.
+
+Rekonsiliasi **hanya jalan di jalur error**: jalur sukses (happy path) tidak
+berubah sama sekali - tidak ada query tambahan, tidak ada latensi tambahan.
+Satu-satunya perubahan pada jalur sukses adalah upload cepat yang sekarang
+juga membersihkan objek lama yang digantikan (§13.12.1).
+
+#### 13.12.4 Dua temuan tambahan yang ditemukan saat verifikasi staging
+
+1. **Jejak audit "gagal" untuk tambah batch tidak pernah tersimpan.**
+   Kolom `activity_logs.entity_id` bertipe `uuid`, sedangkan jalur kegagalan
+   tambah batch mengirim literal `"-"`. Cast-nya gagal
+   (`invalid input syntax for type uuid: "-"`) dan `log_activity` bersifat
+   fail-open, jadi baris audit **tidak pernah masuk** `activity_logs` - yang
+   tertinggal hanya cetakan terminal. Akibatnya,wajarutan "audit
+   `outcome="failed"`" pada jalur pasti ditolak tidak berlaku untuk tambah
+   batch. Perbaikan: `entity_id=None` (`app/raw_materials_routes.py:1372`,
+   `app/raw_materials_routes.py:1400`).
+2. **Download storage masih dilayani setelah objek dihapus.** Endpoint
+   download Supabase Storage dilayani CDN, jadi `download()` masih berhasil
+   beberapa saat setelah `remove()` - listing bucket (`list()`) yang
+   mencerminkan keadaan sebenarnya. Ini penting untuk siapa pun yang mau
+   memverifikasi penghapusan objek: jangan memakai `download()` sebagai bukti
+   objek masih ada atau sudah hilang.
+
+#### 13.12.5 Jejak audit dan penguncian
+
+Semua jalur baru menulis `changes` dalam bentuk
+`[{"field": ..., "note": ...}]` (nilai teknis tetap lewat `print(...)`, tidak
+pernah exception mentah ke `activity_logs` atau ke flash message), dan nilai
+`outcome` tetap terbatas pada `success` / `rejected` / `failed` sesuai CHECK
+di database. Tujuh check baru `H3.7a`-`H3.7g` di
+`tests/test_audit_regressions.py` mengunci perilaku tersebut, masing-masing
+dibuktikan **non-vacuous** (tiap perbaikan yang dikembalikan membuat check
+yang sesuai berbalik jadi `FAIL`).
+
+#### 13.12.6 Temuan 3 - upload cepat tidak mengecek baris yang terpengaruh
+
+Route upload cepat **tidak punya** pemeriksaan jumlah baris yang terpengaruh,
+padahal route ubah batch sudah punya. `UPDATE` di PostgREST **tidak melempar
+error** kalau tidak ada baris yang cocok - server membalas sukses dengan
+daftar baris kosong. Kalau batch dihapus di antara pre-read dan update, handler
+upload cepat menganggap storage berhasil: objek yang baru diunggah **tertinggal**
+di storage sebagai objek yatim, dan `activity_logs` ditulis dengan
+`outcome="success"` untuk operasi yang **tidak mengubah apa pun**.
+
+Perbaikan: upload cepat memakai penanda exception yang **sama** dengan route ubah batch,
+`_BatchUpdateAffectedNoRow` (`app/raw_materials_routes.py:59`), sehingga kedua
+route berperilaku sama: `UPDATE` yang tidak menyentuh baris mana pun
+diperlakukan persis seperti penolakan dari server - yaitu **kegagalan pasti**,
+bukan hasil yang ambigu (`app/raw_materials_routes.py:1867`,
+`app/raw_materials_routes.py:1580`).
+
+Elemen hasil yang dilaporkan pada kasus itu:
+
+| Elemen | Nilai |
+| :--- | :--- |
+| Pesan ke user | "Batch tidak ditemukan. Perubahan tidak disimpan." |
+| Catatan audit | "batch tidak ditemukan atau terhapus saat dokumen disimpan" |
+| Baris audit | `outcome="failed"` |
+| Flash | `error_msg` |
+
+Pada kasus tanpa baris terpengaruh, **hanya objek yang dibuat operasi itu
+sendiri** yang dihapus (`_cleanup_uploaded_objects`,
+`app/raw_materials_routes.py:1903`). Path-nya unik per operasi (sufiks `uuid4`),
+jadi URL objek itu **tidak mungkin** dirujuk baris lain - aman dihapus
+(`app/raw_materials_routes.py:30`). Objek yang **sebelumnya** tersimpan
+**dibiarkan** apa adanya: `_cleanup_replaced_objects` tidak pernah terjangkau
+dari jalur gagal - kasus tanpa baris terpengaruh dan hasil yang belum pasti
+termasuk - dan hanya dipanggil ketika update terkonfirmasi sukses: baik
+langsung di jalur sukses (`app/raw_materials_routes.py:1958`) maupun lewat
+rekonsiliasi yang membuktikan tulisan tersimpan (hasilnya tetap sukses).
+
+Penanganan hasil ambigu **tidak berubah**: respons database yang hilang tetap
+menjalankan rekonsiliasi (§13.12.2), dan hasil yang belum pasti tetap
+mempertahankan objek baru serta mencatat path-nya untuk rekonsiliasi manual
+(§13.12.3).
+
+Penguncian: check regresi baru `H3.7h` di `tests/test_audit_regressions.py`
+mengunci keenam kontrak itu dan dibuktikan **non-vacuous**: mengembalikan
+perbaikan membuat check yang sesuai berbalik jadi `FAIL`, dan ketika route
+yang dicari tidak ditemukan, check tersebut juga berbalik jadi `FAIL`.
+
+Catatan tambahan: pembersihan objek yang **digantikan** juga bisa
+terjangkau secara **tidak langsung**, lewat fungsi pembantu bersama:
+blok `except` → `_balas_gagal_ambigu` → `_cleanup_replaced_objects`
+(`app/raw_materials_routes.py:356`). Jalur ini **benar** dan bukan celah:
+`_balas_gagal_ambigu` hanya memanggil pembersihan itu bila rekonsiliasi
+**membuktikan** tulisan sudah tersimpan (`outcome="success"`), jadi objek
+lama memang sudah digantikan dan boleh dihapus. Jalur kegagalan - termasuk
+kasus tanpa baris terpengaruh - **tidak pernah** mencapainya, sehingga
+dokumen lama tetap aman.
+
 ## 14. Rekomendasi Perbaikan (Poin 1–3)
 
 > **Status §14.** Isi bagian ini **rekomendasi**, bukan temuan baru. Semua
@@ -2140,3 +2311,5 @@ satu request, dan `source` yang benar. Empat catatan sementara:
 | 2026-10-22 | **Implementasi + verifikasi independen H3.1–H3.5** (§13.9). H3.1 — formula Bab 2: validasi total 100,0000% di server (helper murni `_validate_formula_total`), snapshot baris lama + rollback berflag `delete_done`, kegagalan tidak lagi dilaporkan "berhasil diperbarui". H3.2/H3.3 — path upload batch unik per operasi (`uuid4().hex[:8]`) + cleanup file yatim + audit sukses dipindah keluar dari `try` DB. H3.4 — hapus FSP: flash `error_msg`, `str(e)` keluar dari payload audit. H3.5 — simpan note / @mention / audit dipisah jadi 3 blok `try`; `warning_msg` kini **dirender** di `app/templates/base.html`. **File `migration/010_replace_product_formula.sql` disiapkan, BELUM dieksekusi** — tidak ada migrasi yang dijalankan, tidak ada perubahan skema, dan kode aplikasi tidak bergantung padanya. Angka suite diperbarui: `tests/test_audit_regressions.py` **PASS 41 / KNOWN 14 / FAIL 0 / SKIP 2** (sebelumnya 21/18/0/2; 16 check baru `H3.1a`–`H3.5c`, `MIG-010`, `UNIT-01`), `tests/verify_audit_db_state.py` 49 check PASS 21 / FAIL 0 / WARN 6 / INFO 22, `pytest tests/ -q` 79 passed, `scripts/check_undefined_names.py` exit 0. **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan — seluruh perubahan H3 dan amendemen dokumen ini **masih hanya di working tree**; ketiga file suite sendiri sudah ter-commit lebih dulu pada 21 Oktober 2026 di `8a70435`. |
 | 2026-10-22 (H1b) | **Verifikasi eksposur bucket R2 produksi + percobaan mematikan *Public Development URL*** (§13.10). Tiga bucket R2 produksi terverifikasi **publik** lewat `pub-*.r2.dev` — **752 objek** (643 + 105 + 4), HEAD anonim **200 + `application/pdf`**, prefix objek sama bisa ditebak dengan sisi Supabase. Gerbang pra-eksekusi **LOLOS** (9 tabel produksi: **0** baris memakai URL `r2.dev` ⇒ aplikasi produksi tidak pernah membaca R2). **Eksekusi GAGAL** — tidak ada kredensial Cloudflare di mesin ini yang dapat mengautentikasi (token MCP-gateway ditolak **401 code 1000**; `wrangler` ditolak **code 9109**; sesi OAuth terikat hanya pada `bindings.mcp.cloudflare.com` dan tidak punya tool dev-url) ⇒ **tidak ada yang berubah** (snapshot sesudah identik dengan snapshot sebelum: 643/105/4 objek, HEAD anonim tetap 200, `.env` byte-identical, `git status --short` identik, tanpa file sementara tersisa). Perintah manual + verifikasi pasca-jalankan tercatat di §13.10.4; bucket staging dan `product-attachments` produksi **belum disentuh** dan butuh keputusan terpisah. |
 | 2026-10-22 (migrasi 010 + uji produksi) | **Migrasi `010` dieksekusi di staging (2×, idempoten) pada 21 Oktober 2026 lalu produksi pada 22 Oktober 2026** — potongan DDL **byte-identik** di kedua environment (sha256 sama) dan **nol dampak data** (produksi: `products` 136, `product_formula_lines` 1.362, `activity_logs` 1.317 tetap; staging: 2 / 2 / 67 tetap). Pre-check produksi: **97** produk punya baris formula dan **setiap** total tepat **100.000** ⇒ tidak ada produk yang perlu diperbaiki. **Jalur tulis formula Bab 2 dipindah ke fungsi transaksi** `public.replace_product_formula(uuid, jsonb)` — snapshot/rollback **dihapus**, **tanpa fallback**. **Dua bug diperbaiki**: placeholder `RAISE` `%s` → `%` di migrasi 010 (pesan "90.0000s" dan "baris ke-1s" kini bersih) dan harness E2E yang menganggap respons Supabase Management API gagal padahal jawabannya **HTTP 201 Created** (kini menerima 200 dan 201). **Uji fungsional produksi** pada "tes log 12" lewat server dev owner di `127.0.0.1:8000` → **6 baris audit baru** (`activity_logs` 1.317 → 1.323) dan 1 baris formula sisa dibersihkan dengan `DELETE` sempit + catatan `source='migration'`. **13 check regresi baru/ditulis ulang dengan bukti non-vacuity (51 revert)**. **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan — seluruh perubahan masih **hanya di working tree**, dan `HEAD` masih memuat versi fungsi yang lebih lemah |
+| 2026-10-22 (P2 upload batch) | **Dua temuan P2 pada alur upload batch diperbaiki** di `app/raw_materials_routes.py` (§13.12). Temuan 1 - upload cepat mengabaikan URL lama sehingga objek yang diganti tertinggal: pre-read kini mengambil tiga kolom URL, `_cleanup_replaced_objects` dipanggil setelah update terkonfirmasi sukses, hasilnya masuk audit trail + `warning_msg` yang menyebut nomor batch, dan cakupan cek referensi diperluas ke semua kolom dokumen `raw_material_batches` **dan** `product_batches.coa_file_url`. Temuan 2 - pembersihan objek baru dapat menghapus URL yang sudah tersimpan bila respons database hilang setelah commit: kegagalan diklasifikasikan dari **tipe exception** (`APIError` = pasti ditolak -> file dihapus; `httpx` transport = ambigu -> file **dipertahankan**), hasil ambigu dicek ulang ke database, dan hasil query yang kosong **bukan** bukti pasti gagal sehingga path objek dicatat di `activity_logs` untuk rekonsiliasi manual (repo tidak punya antrean rekonsiliasi tertunda). Rekonsiliasi hanya jalan di jalur error; happy path tidak berubah. Filter memakai builder resmi `.in_()` dari `postgrest-py`, bukan string PostgREST yang dirangkai tangan. Tujuh check regresi baru `H3.7a`-`H3.7g` (PASS 56 / KNOWN 14 / FAIL 0 / SKIP 2, naik dari 49) dengan bukti non-vacuity 7/7. Dua temuan tambahan ikut diperbaiki (§13.12.4): jejak audit kegagalan tambah batch tidak pernah tersimpan karena `entity_id="-"` gagal di-cast ke kolom uuid (sekarang `None`), dan catatan bahwa `download()` storage masih dilayani CDN setelah objek dihapus sehingga verifikasi penghapusan harus memakai listing bucket. Verifikasi staging (14 skenario: 9 alur HTTP + 5 injeksi kegagalan) lulus semua; data uji dibersihkan dan port 8017 dikosongkan. **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan; tidak ada migrasi baru; `migration/010` tidak berubah. |
+| 2026-10-22 (H3.7h upload cepat) | **Route upload cepat dokumen batch sekarang mengecek jumlah baris yang terpengaruh** (§13.12.6). Temuan: route upload cepat tidak punya pemeriksaan jumlah baris terpengaruh yang sudah ada di route ubah batch, sehingga `UPDATE` tanpa baris yang cocok (batch terhapus di antara pre-read dan update) dilaporkan sebagai penyimpanan berhasil - objek baru tertinggal di storage dan `activity_logs` ditulis `outcome="success"` untuk operasi yang tidak mengubah apa pun. Perbaikan di `app/raw_materials_routes.py`: upload cepat memakai penanda exception yang sama (`_BatchUpdateAffectedNoRow`), jadi `UPDATE` tanpa baris diperlakukan seperti penolakan server (kegagalan pasti) di kedua route, dengan pesan "Batch tidak ditemukan. Perubahan tidak disimpan." dan catatan "batch tidak ditemukan atau terhapus saat dokumen disimpan"; pada kasus itu hanya objek yang dibuat operasi itu sendiri yang dihapus (path-nya unik per operasi, jadi tidak mungkin dirujuk), sedangkan objek lama dibiarkan - `_cleanup_replaced_objects` tidak pernah terjangkau dari jalur gagal (kasus tanpa baris terpengaruh dan hasil yang belum pasti termasuk) dan hanya dipanggil saat update terkonfirmasi sukses, baik di jalur sukses langsung maupun lewat rekonsiliasi yang membuktikan tulisan tersimpan. Penanganan hasil ambigu tidak berubah (respons hilang -> rekonsiliasi; hasil belum pasti -> objek dipertahankan dan path-nya dicatat). Satu check regresi baru `H3.7h` ditambahkan dengan bukti non-vacuity 2/2 di `tests/test_audit_regressions.py` (PASS 57 / KNOWN 14 / FAIL 0 / SKIP 2, naik dari 56). **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan; tidak ada migrasi baru; perbaikan upload cepat (pemeriksaan jumlah baris terpengaruh) **diterapkan di** `app/raw_materials_routes.py` - file itu **masih** menyimpan perubahan yang belum di-commit - lalu check regresi `H3.7h` dan catatan §13.12.6 ditambahkan setelahnya. |
