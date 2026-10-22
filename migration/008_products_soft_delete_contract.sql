@@ -102,7 +102,7 @@ COMMENT ON COLUMN public.products.deleted_at IS
 -- berlaku. Akibatnya kolom tetap NULLABLE, dan baris dengan is_deleted=NULL
 -- akan LOLOS dari CHECK constraint (SQL three-valued logic: NULL AND ... =
 -- NULL, yang dianggap tidak melanggar).
--- Pereirahan berikut menutup celah itu. Pratinjau jumlah baris bermasalah
+-- Pernyataan berikut menutup celah itu. Pratinjau jumlah baris bermasalah
 -- harus 0 sebelum statement ini dijalankan.
 --
 -- PERHATIAN: bila masih ada baris dengan is_deleted IS NULL, statement ini
