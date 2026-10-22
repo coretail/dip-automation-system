@@ -14,7 +14,7 @@ Cakupan (ID audit yang dilindungi):
   - Polling frontend       : FE-05, FE-06, FE-07
   - Doc-drift audit trail  : U6 (tabel entitas audit di panduan)
   - Unit pure-module       : SEC-02 (helper tenant), file_validation, object_store
-  - Kejujuran hasil write  : H3.1, H3.2, H3.3, H3.4, H3.5, H3.6, MIG-010
+  - Kejujuran hasil write  : H3.1, H3.2, H3.3, H3.4, H3.5, H3.6, H3.7, MIG-010
 
 Perubahan status:
   - 2026-10-21: SEC-01 (route POST /products/delete/{id} hilang di commit
@@ -48,6 +48,32 @@ Perubahan status:
     penanganan batch yang hilang, pemeriksaan referensi file lama, tiga
     kondisi upload cepat, nilai outcome yang dibatasi, dan penulisan sukses
     sebagian.
+
+  - 2026-10-22 (P2 alur upload batch): dua temuan P2 pada alur upload batch
+    diperbaiki di app/raw_materials_routes.py.
+      - Upload cepat sekarang mengambil tiga kolom URL lama pada pre-read dan
+        membersihkan objek yang digantikan SETELAH update terkonfirmasi sukses;
+        hasil pembersihan masuk ke audit trail dan dilaporkan lewat warning_msg
+        yang menyebut nomor batch.
+      - Kegagalan database diklasifikasikan dari TIPE exception, bukan dari
+        teks pesan: pasti ditolak (APIError dari PostgREST) -> file baru
+        dihapus; ambigu (timeout/transport) -> file baru DIPERTAHANKAN dan
+        dicek ulang ke database (rekonsiliasi). Hasil rekonsiliasi yang kosong
+        BUKAN bukti pasti gagal, jadi file tetap disimpan dan path-nya
+        dicatat di activity log untuk rekonsiliasi manual.
+    Ditambah 7 check baru H3.7a-H3.7g (klasifikasi, rekonsiliasi, dan
+    pembersihan objek lama).
+
+  - 2026-10-22 (upload cepat, jumlah baris terpengaruh): route upload cepat
+    dokumen batch sekarang memakai penanda exception yang sama dengan route ubah batch
+    (`_BatchUpdateAffectedNoRow`), jadi UPDATE yang tidak menyentuh baris
+    mana pun diperlakukan sebagai kegagalan pasti - bukan dilaporkan sukses.
+    Batch yang hilang di antara pre-read dan update tidak lagi meninggalkan
+    objek yatim di storage dan baris audit `outcome="success"` yang palsu.
+    Ditambah 1 check baru H3.7h yang mengunci rantai `.select("id")`,
+    pembacaan jumlah baris terpengaruh, cabang tanpa baris, klasifikasi
+    kegagalan pasti, pesan jujur, dan pembersihan objek lama yang hanya
+    boleh jalan di jalur sukses.
 
 Sifat wajib file ini:
   - READ-ONLY. Tidak pernah menyentuh database, jaringan, atau server.
@@ -519,6 +545,119 @@ def python_function_code(text: str, func_name: str) -> str:
             return "\n".join(lines[:doc.lineno - 1] + lines[doc.end_lineno:])
         return "\n".join(lines[node.lineno - 1:node.end_lineno])
     return ""
+
+
+def python_function_body(text: str, func_name: str) -> str:
+    """Kode sebuah fungsi level modul, TANPA docstring, dengan batas yang benar.
+
+    Dipakai untuk pemeriksaan yang harus benar-benarhanya isi fungsi. Helper
+    `python_function_code` mengembalikan seluruh file kalau fungsi punya
+    docstring, jadi helper ini dipakai untuk check yang butuh isi fungsi saja.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return ""
+    lines = text.splitlines()
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != func_name:
+            continue
+        awal = node.lineno - 1
+        akhir = node.end_lineno or node.lineno
+        doc = node.body[0] if node.body else None
+        if (
+            isinstance(doc, ast.Expr)
+            and isinstance(doc.value, ast.Constant)
+            and isinstance(doc.value.value, str)
+        ):
+            return "\n".join(lines[awal:doc.lineno - 1] + lines[doc.end_lineno:akhir])
+        return "\n".join(lines[awal:akhir])
+    return ""
+
+
+def module_dict_keys(text: str, name: str) -> list:
+    """Kunci dict konstanta di level modul (mis. DOC_FIELD_LABELS)."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            continue
+        if isinstance(node.value, ast.Dict):
+            return [
+                k.value
+                for k in node.value.keys
+                if isinstance(k, ast.Constant) and isinstance(k.value, str)
+            ]
+    return []
+
+
+def call_sites_with_guard(node, func_name: str, inside_except: bool = False, guard=None):
+    """Kumpulkan (baris, di_dalam_except, guard) untuk tiap pemanggilan fungsi.
+
+    `guard` adalah sumber kondisi `if` terdekat yang membungkus pemanggilan,
+    dipakai untuk memastikan cleanup hanya jalan di bawah penentu "kegagalan
+    pasti" - bukan di bawah handler exception umum.
+    """
+    out = []
+    if isinstance(node, ast.Call):
+        fname = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if fname == func_name:
+            out.append((node.lineno, inside_except, guard))
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.ExceptHandler):
+            # Handler exception = scope baru: guard di luar tidak berlaku.
+            out.extend(call_sites_with_guard(child, func_name, True, None))
+        elif isinstance(child, ast.If):
+            out.extend(
+                call_sites_with_guard(
+                    child, func_name, inside_except, ast.unparse(child.test)
+                )
+            )
+        else:
+            out.extend(call_sites_with_guard(child, func_name, inside_except, guard))
+    return out
+
+
+def module_call_sites(text: str, func_name: str):
+    """(baris, di_dalam_except, guard) untuk tiap pemanggilan di seluruh modul."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    return sorted(call_sites_with_guard(tree, func_name))
+
+
+def handler_call_sites(text: str, route_path: str, func_name: str):
+    """Panggilan func_name di dalam satu handler route.
+
+    Dipakai untuk memastikan call site tertentu ada di jalur yang benar
+    (mis. di luar blok except = jalur sukses).
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        route_ok = False
+        for dec in node.decorator_list:
+            if not isinstance(dec, ast.Call) or not dec.args:
+                continue
+            first = dec.args[0]
+            if isinstance(first, ast.Constant) and first.value == route_path:
+                route_ok = True
+        if not route_ok:
+            continue
+        out.extend(call_sites_with_guard(node, func_name))
+    return sorted(out)
 
 
 def python_function_span(text: str, func_name: str) -> tuple[int, int]:
@@ -2159,6 +2298,284 @@ def section_write_honesty() -> None:
         "MIG-010 migration/010_replace_product_formula.sql di-harden, status eksekusi terdokumentasi, dipakai lewat fungsi transaksi",
         h_mig_ok,
         "; ".join(mig_catatan) or "isi migrasi 010 lengkap dan aplikasi memakainya",
+    )
+
+    add_start, add_end = handler_region(rm_lines, '@app.post("/raw-materials/batches/add")')
+
+    # --- H3.7a: upload cepat ambil URL lama + cleanup setelah update sukses -
+    # Pre-read harus mengambil tiga kolom URL dokumen, dan objek lama yang
+    # digantikan harus dibersihkan SETELAH update terkonfirmasi sukses.
+    idx_preread_q = next(
+        (i for i, l in enumerate(quick_lines) if ".select(" in l), -1
+    )
+    jendela_preread_q = (
+        "\n".join(quick_lines[idx_preread_q:idx_preread_q + 6])
+        if idx_preread_q >= 0
+        else ""
+    )
+    idx_update_q = next(
+        (
+            i for i, l in enumerate(quick_lines)
+            if 'raw_material_batches").update(update_data)' in l
+        ),
+        -1,
+    )
+    idx_cleanup_q = next(
+        (i for i, l in enumerate(quick_lines) if "_cleanup_replaced_objects(" in l),
+        -1,
+    )
+    sites_cleanup_q = handler_call_sites(
+        rm_text,
+        "/raw-materials/batches/{batch_id}/quick-upload-doc",
+        "_cleanup_replaced_objects",
+    )
+    h37a_ok = (
+        idx_preread_q >= 0
+        and "coa_file_url" in jendela_preread_q
+        and "halal_batch_file_url" in jendela_preread_q
+        and "qc_report_file_url" in jendela_preread_q
+        and "old_doc_urls" in "\n".join(quick_lines)
+        and idx_update_q >= 0
+        and idx_cleanup_q > idx_update_q
+        and any(not di_except for _, di_except, _ in sites_cleanup_q)
+    )
+    check(
+        "H3.7a upload cepat: pre-read ambil tiga kolom URL lama + cleanup objek lama setelah update sukses",
+        h37a_ok,
+        "pre-read upload cepat tidak mengambil tiga kolom URL lama / cleanup "
+        "objek lama tidak dipanggil di jalur sukses",
+    )
+
+    # --- H3.7b: objek lama yang masih dirujuk tidak boleh dihapus ---------
+    # Pemeriksaan referensi harus menutup dua tabel (raw_material_batches dan
+    # product_batches) dan semua kolom dokumen, dan harus mendahului
+    # penghapusan objek.
+    label_dokumen = set(module_dict_keys(rm_text, "DOC_FIELD_LABELS"))
+    isi_cleanup = (
+        "\n".join(rm_lines[clean_start:clean_end]) if clean_start >= 0 else ""
+    )
+    isi_ref = "\n".join(rm_lines[ref_start:ref_end]) if ref_start >= 0 else ""
+    norma_cleanup = nows(isi_cleanup)
+    pos_ref_bahan = norma_cleanup.find('_count_url_references("raw_material_batches"')
+    pos_ref_produk = norma_cleanup.find('_count_url_references("product_batches"')
+    pos_simpan = norma_cleanup.find("ifrefs>0:")
+    pos_lewati = norma_cleanup.find("continue", pos_simpan) if pos_simpan >= 0 else -1
+    pos_hapus = norma_cleanup.find("remove_from_all_backends")
+    pos_gagal_cek = norma_cleanup.find("ifref_error:")
+    pos_lewati_gagal = (
+        norma_cleanup.find("continue", pos_gagal_cek) if pos_gagal_cek >= 0 else -1
+    )
+    h37b_ok = (
+        ref_start >= 0
+        and clean_start >= 0
+        and label_dokumen
+        == {"coa_file_url", "halal_batch_file_url", "qc_report_file_url"}
+        and "DOC_FIELD_LABELS" in isi_cleanup
+        and ".in_(column, [url])" in isi_ref
+        and pos_ref_bahan >= 0
+        and pos_ref_produk >= 0
+        and 'column=="coa_file_url"' in norma_cleanup
+        and pos_simpan > pos_ref_produk
+        and pos_lewati > pos_simpan
+        and pos_hapus > pos_lewati
+        and pos_gagal_cek >= 0
+        and pos_lewati_gagal > pos_gagal_cek
+        and pos_lewati_gagal < pos_hapus
+    )
+    check(
+        "H3.7b objek lama yang masih dirujuk tidak dihapus; cek referensi raw_material_batches + product_batches",
+        h37b_ok,
+        "pemeriksaan referensi tidak menutup semua kolom dokumen / tabel "
+        "product_batches / cabang 'masih dirujuk' atau 'cek gagal' tidak "
+        "mendahului penghapusan objek",
+    )
+
+    # --- H3.7c: respons hilang tapi URL baru ditemukan -> file dipertahankan -
+    isi_rek = python_function_body(rm_text, "_rekonsiliasi_setelah_gagal")
+    isi_balas = python_function_body(rm_text, "_balas_gagal_ambigu")
+    tambah_region = nows("\n".join(rm_lines[add_start:add_end])) if add_start >= 0 else ""
+    ubah_region = nows("\n".join(rm_lines[edit_start:edit_end])) if edit_start >= 0 else ""
+    cepat_region = nows("\n".join(quick_lines))
+    h37c_ok = (
+        "REKONSILIASI_DITEMUKAN" in isi_rek
+        and '"outcome": "success"' in isi_rek
+        and "respons database tidak diterima" in isi_rek
+        and "terverifikasi ada" in isi_rek
+        and "dipertahankan" in isi_rek
+        and 'outcome="success"' in isi_balas
+        and 'set_cookie("success_msg"' in isi_balas
+        and "_cleanup_uploaded_objects" not in isi_balas
+        and all(
+            "_rekonsiliasi_setelah_gagal(" in reg
+            and "_balas_gagal_ambigu(" in reg
+            for reg in (tambah_region, ubah_region, cepat_region)
+        )
+    )
+    check(
+        "H3.7c commit database dengan respons hilang: URL baru ditemukan -> file dipertahankan, outcome success",
+        h37c_ok,
+        "jalur 'respons hilang tapi URL ditemukan' tidak menulis outcome "
+        "success / tidak mempertahankan file / tidak dipakai di ketiga handler",
+    )
+
+    # --- H3.7d: query rekonsiliasi gagal -> file dipertahankan, path dicatat -
+    h37d_ok = (
+        "REKONSILIASI_GAGAL_CEK" in isi_rek
+        and "query rekonsiliasi juga gagal" in isi_rek
+        and "hasil penyimpanan belum pasti" in isi_rek
+        and "rekonsiliasi manual" in isi_rek
+        and "daftar_path" in isi_rek
+        and "uploaded_paths" in isi_rek
+        and 'outcome="failed"' in isi_balas
+        and 'set_cookie("error_msg"' in isi_balas
+        and "_cleanup_uploaded_objects" not in isi_balas
+    )
+    check(
+        "H3.7d query rekonsiliasi gagal: file dipertahankan, hasil belum pasti, path dicatat",
+        h37d_ok,
+        "kegagalan query rekonsiliasi tidak dilaporkan sebagai belum pasti / "
+        "path objek tidak dicatat / file ikut dihapus",
+    )
+
+    # --- H3.7e: hasil query kosong BUKAN bukti pasti gagal -----------------
+    isi_rek_url = python_function_body(rm_text, "_rekonsiliasi_url_baru")
+    h37e_ok = (
+        "REKONSILIASI_TIDAK_DITEMUKAN" in isi_rek_url
+        and "URL baru belum ditemukan di database" in isi_rek
+        and '"status": "belum_pasti"' in isi_rek
+        and '"outcome": "failed"' in isi_rek
+        and "_cleanup_uploaded_objects" not in isi_rek
+        and "_cleanup_uploaded_objects" not in isi_balas
+    )
+    check(
+        "H3.7e hasil query kosong setelah timeout bukan bukti pasti gagal: file dipertahankan",
+        h37e_ok,
+        "hasil rekonsiliasi yang kosong diperlakukan sebagai bukti gagal / "
+        "file baru ikut dihapus",
+    )
+
+    # --- H3.7f: kegagalan PASTI -> file baru dihapus, outcome failed -------
+    isi_klasifikasi = python_function_body(rm_text, "_klasifikasi_kegagalan_db")
+    h37f_ok = (
+        all(
+            '_cleanup_uploaded_objects(uploaded_paths)' in reg
+            and 'outcome="failed"' in reg
+            and 'set_cookie("error_msg"' in reg
+            for reg in (tambah_region, ubah_region, cepat_region)
+        )
+        and "isinstance(exc, (APIError, HTTPStatusError))" in isi_klasifikasi
+        and "KEGAGALAN_PASTI_DITOLAK" in isi_klasifikasi
+        and "str(exc)" not in isi_klasifikasi
+    )
+    check(
+        "H3.7f kegagalan pasti: file baru dihapus, outcome failed (klasifikasi dari tipe exception)",
+        h37f_ok,
+        "kegagalan pasti tidak menghapus file baru / outcome tidak failed / "
+        "klasifikasi tidak memakai tipe exception",
+    )
+
+    # --- H3.7g: tidak ada jalur ambigu yang langsung menghapus objek baru --
+    sites_cleanup = module_call_sites(rm_text, "_cleanup_uploaded_objects")
+    sites_dalam_except = [s for s in sites_cleanup if s[1]]
+    h37g_ok = (
+        bool(sites_cleanup)
+        and len(sites_dalam_except) >= 3
+        and all(
+            guard and "KEGAGALAN_PASTI_DITOLAK" in guard
+            for _, _, guard in sites_dalam_except
+        )
+        and all(
+            bool(guard)
+            for _, di_except, guard in sites_cleanup
+            if not di_except
+        )
+    )
+    check(
+        "H3.7g tidak ada jalur exception ambigu yang langsung menghapus objek baru",
+        h37g_ok,
+        "ada call site _cleanup_uploaded_objects yang tidak berada di bawah "
+        "penentu 'kegagalan pasti'",
+    )
+
+    # --- H3.7h: upload cepat wajib cek jumlah baris yang terpengaruh ----
+    # Rantai UPDATE upload cepat harus mengembalikan baris yang terpengaruh
+    # (.select("id")) dan jumlah baris itu dibaca dari respons. Kalau tidak
+    # ada baris yang terpengaruh (batch hilang di antara pre-read dan
+    # update), tulisan tidak terjadi -> harus diklasifikasikan sebagai
+    # kegagalan pasti, bukan dilaporkan sukses.
+    quick_teks = "\n".join(quick_lines)
+    chain_quick = (
+        'supabase.table("raw_material_batches").update(update_data)'
+        '.eq("id",batch_id).select("id").execute()'
+    )
+    idx_affected_quick = next(
+        (
+            i for i, l in enumerate(quick_lines)
+            if "affected_rows" in l and ".data" in l
+        ),
+        -1,
+    )
+    idx_nol_baris_quick = next(
+        (i for i, l in enumerate(quick_lines) if "if not affected_rows:" in l), -1
+    )
+    idx_raise_quick = next(
+        (
+            i for i, l in enumerate(quick_lines)
+            if "raise _BatchUpdateAffectedNoRow(" in l
+        ),
+        -1,
+    )
+    idx_sentinel_quick = next(
+        (
+            i for i, l in enumerate(quick_lines)
+            if "isinstance(e, _BatchUpdateAffectedNoRow)" in l
+        ),
+        -1,
+    )
+    sites_ganti_quick = handler_call_sites(
+        rm_text,
+        "/raw-materials/batches/{batch_id}/quick-upload-doc",
+        "_cleanup_replaced_objects",
+    )
+    sites_baru_quick = handler_call_sites(
+        rm_text,
+        "/raw-materials/batches/{batch_id}/quick-upload-doc",
+        "_cleanup_uploaded_objects",
+    )
+    h37h_ok = (
+        # Lokasi route wajib ditemukan: kalau route upload cepat hilang atau
+        # berubah nama, check ini harus FAIL - bukan lolos diam-diam
+        # karena bagian yang dibaca kosong.
+        quick_start >= 0
+        # 1. rantai UPDATE mengembalikan baris yang terpengaruh
+        and chain_quick in quick_norm
+        # 2. jumlah baris terpengaruh dibaca dari respons
+        and idx_affected_quick >= 0
+        # 3. cabang tanpa baris melempar penanda exception yang sama dengan route ubah batch
+        and idx_nol_baris_quick >= 0
+        and idx_raise_quick >= 0
+        and "_BatchUpdateAffectedNoRow" in quick_teks
+        # 4. penanda exception dikenali dan diklasifikasikan sebagai kegagalan pasti
+        and idx_sentinel_quick >= 0
+        and "KEGAGALAN_PASTI_DITOLAK" in quick_teks
+        # 5. pesan yang jujur untuk kasus batch hilang
+        and "Batch tidak ditemukan. Perubahan tidak disimpan." in quick_teks
+        # 6. pembersihan objek lama hanya boleh jalan di jalur sukses
+        and bool(sites_ganti_quick)
+        and not any(di_except for _, di_except, _ in sites_ganti_quick)
+        and any(
+            guard and "KEGAGALAN_PASTI_DITOLAK" in guard
+            for _, di_except, guard in sites_baru_quick
+            if di_except
+        )
+    )
+    check(
+        "H3.7h upload cepat: jumlah baris terpengaruh dicek, batch hilang jadi kegagalan pasti",
+        h37h_ok,
+        "rantai UPDATE upload cepat tidak mengembalikan id / jumlah baris "
+        "terpengaruh tidak dibaca dari respons / batch hilang tidak "
+        "diklasifikasikan sebagai kegagalan pasti / pesan tidak jujur / "
+        "pembersihan objek lama bisa jalan di jalur gagal",
     )
 
     # --- UNIT: helper validasi total 100% (murni, tanpa DB) ----------------
