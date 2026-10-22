@@ -651,8 +651,10 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
 
         # (c) Catat audit trail - terpisah dari penyimpanan catatan & mention
         #     supaya kegagalan audit tidak mengubah hasil operasi note.
+        #     Aksi utama (membuat catatan) SUDAH BERHASIL, jadi outcome tetap
+        #     "success". Kegagalan @mention hanya rincian di `changes`
+        #     (field "Mention") + peringatan (warning_msg) ke user.
         audit_changes = []
-        audit_outcome = "failed" if mention_failed else "success"
         if mention_failed:
             audit_changes.append({
                 "field": "Mention",
@@ -664,7 +666,7 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                 current_user, "create", "note", note_id or "-",
                 (text[:80] + ("…" if len(text) > 80 else "")) + extra,
                 changes=audit_changes or None, request=request,
-                outcome=audit_outcome,
+                outcome="success",
             )
         except Exception as audit_err:
             print(f"[NOTES] Gagal catat activity log note: {audit_err}")
