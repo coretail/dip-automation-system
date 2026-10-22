@@ -14,6 +14,7 @@ Cakupan (ID audit yang dilindungi):
   - Polling frontend       : FE-05, FE-06, FE-07
   - Doc-drift audit trail  : U6 (tabel entitas audit di panduan)
   - Unit pure-module       : SEC-02 (helper tenant), file_validation, object_store
+  - Kejujuran hasil write  : H3.1, H3.2, H3.3, H3.4, H3.5, MIG-010
 
 Perubahan status:
   - 2026-10-21: SEC-01 (route POST /products/delete/{id} hilang di commit
@@ -21,6 +22,22 @@ Perubahan status:
     dashboard di-gate untuk admin, teks konfirmasi diperbaiki (soft delete
     tidak menghapus formula). SEC-01 keluar dari KNOWN_ISSUES; registry
     KNOWN_ISSUES sekarang berisi 18 entri.
+  - 2026-10-22: H3.1-H3.5 (temuan "false success report" saat write gagal)
+    DIPERBAIKI:
+      - H3.1 formula Bab 2: validasi total 100.0000% di server (helper murni
+        _validate_formula_total di app/products_routes.py), snapshot baris lama
+        sebelum delete, rollback aman (dijaga flag delete selesai), jalur gagal
+        tidak menulis audit sukses.
+      - H3.2/H3.3 batch bahan baku: path upload unik per operasi (sufiks
+        uuid4), objek yang baru diupload dibersihkan saat DB gagal, flash
+        message + audit outcome yang jujur.
+      - H3.4 hapus FSP: flash error_msg + payload audit tanpa str(e).
+      - H3.5 simpan note: simpan note / mention / audit dipisah jadi tiga blok
+        try; kegagalan @mention memakai warning_msg (base.html sekarang
+        merender warning_msg).
+    BE-01, BE-02, BE-03, dan BE-21 keluar dari KNOWN_ISSUES karena sudah
+    diperbaiki; registry KNOWN_ISSUES sekarang berisi 14 entri.
+    Section 8 (KEJUJURAN HASIL WRITE) mengunci perbaikan tersebut.
 
 Sifat wajib file ini:
   - READ-ONLY. Tidak pernah menyentuh database, jaringan, atau server.
@@ -75,12 +92,8 @@ KNOWN_ISSUES: dict[str, str] = {
     "SEC-14": "escapeHtml punya 4 implementasi terpisah; target audit: satu helper global.",
     "SEC-16": "Logout masih dipicu via GET sehingga bisa dipaksa CSRF (main.py:1143); target: POST.",
     "SEC-18": "Artefak teks 'omniroute' masih ada di brands.html:1 sebelum blok extends.",
-    "BE-01": "Kegagalan simpan formula Bab 2 hanya di-print; user tetap dapat cookie 'berhasil diperbarui'.",
-    "BE-02": "Kegagalan insert batch bahan baku hanya di-print; tidak ada cookie error_msg.",
-    "BE-03": "Kegagalan update batch bahan baku hanya di-print; tidak ada cookie error_msg.",
     "BE-04": "Query .single() di luar try -> baris tidak ada jadi HTTP 500 (bukan 'tidak ditemukan').",
     "BE-08": "str(e) bocor ke browser dan dipersistensi ke activity_logs (PostgREST message/hint/details).",
-    "BE-21": "Cookie warning_msg tidak pernah dirender template mana pun.",
     "DUPL-01": "compute_status_na() dipanggil dua kali berturut-turut (sisa bad merge di dashboard_routes.py).",
     "FE-05": "Link logout di sidebar tidak menghentikan heartbeat presence.",
     "FE-06": "window.__adminPresenceInterval tidak pernah di-assign di admin_users.html.",
@@ -736,7 +749,8 @@ def section_error_honesty() -> None:
     )
 
     # BE-01 - simpan formula Bab 2 (delete + insert) ditelan except, lalu user
-    # tetap dapat cookie "berhasil diperbarui" (products_routes.py:963-1042).
+    # tetap dapat cookie "berhasil diperbarui" (blok simpan formula di
+    # app/products_routes.py; posisi baris dihitung saat runtime).
     prod_path = APP_DIR / "products_routes.py"
     prod_lines = read_text(prod_path).splitlines()
     del_idx = find_line(prod_lines, 'product_formula_lines").delete()')
@@ -814,10 +828,15 @@ def section_error_honesty() -> None:
     for path in template_files():
         if "warning_msg" in read_text(path):
             readers.append(path.name)
+    warn_idx = find_line(prod_lines, 'set_cookie("warning_msg"')
     check(
         "BE-21 cookie warning_msg dirender minimal satu template",
         bool(readers),
-        "tidak ada template yang membaca warning_msg (produsennya products_routes.py:1167)",
+        ("tidak ada template yang membaca warning_msg "
+         "(produsennya products_routes.py:%d)" % (warn_idx + 1))
+        if warn_idx >= 0
+        else "tidak ada template yang membaca warning_msg "
+             "(produsennya tidak ditemukan di app/products_routes.py)",
         known="BE-21",
     )
 
@@ -854,7 +873,7 @@ def section_dead_code() -> None:
         tree = ast.parse(rm_text)
     except SyntaxError as exc:
         check(
-            "BE-04 tidak ada .single() di luar try (raw_materials_routes.py:313,533,703,1003)",
+            "BE-04 tidak ada .single() di luar try pada handler POST raw_materials (AST-based)",
             False,
             "gagal parse AST app/raw_materials_routes.py: %s" % exc,
         )
@@ -876,7 +895,7 @@ def section_dead_code() -> None:
                 unguarded.append(ln)
         unguarded.sort()
         check(
-            "BE-04 tidak ada .single() di luar try (raw_materials_routes.py:313,533,703,1003)",
+            "BE-04 tidak ada .single() di luar try pada handler POST raw_materials (AST-based)",
             not unguarded,
             "%d pemanggilan .single() tanpa try/except (baris %s) -> HTTP 500, bukan 'tidak ditemukan'"
             % (len(unguarded), ", ".join(str(x) for x in unguarded)),
@@ -896,7 +915,7 @@ def section_dead_code() -> None:
         if dash_calls[i] == dash_calls[i + 1]
     ]
     check(
-        "DUPL-01 tidak ada compute_status_na() ganda berturut-turut (dashboard_routes.py:168-169)",
+        "DUPL-01 tidak ada compute_status_na() ganda berturut-turut (dashboard_routes.py:177-178)",
         not dup_pairs,
         "%d pasangan panggilan identik berturut-turut" % len(dup_pairs),
         known="DUPL-01",
@@ -1425,6 +1444,322 @@ def section_pure_modules() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Section 8 - Kontrak kejujuran hasil write (H3.1 - H3.5)
+# ---------------------------------------------------------------------------
+# Section ini mengunci perbaikan temuan audit H3.1-H3.5: aplikasi tidak boleh
+# lagi melaporkan "berhasil" padahal ada write yang gagal, dan file yang baru
+# diupload tidak boleh jadi yatim ketika database gagal menyimpan.
+# Semua check di sini READ-ONLY (hanya membaca source code repo).
+def section_write_honesty() -> None:
+    """Kunci kontrak kejujuran hasil write (H3.1 - H3.5)."""
+
+    def nows(text: str) -> str:
+        """Buang seluruh whitespace supaya pencarian needle multi-baris tetap cocok."""
+        return re.sub(r"\s+", "", text)
+
+    # Cookie flash boleh ditulis satu baris atau multi-baris -> dinormalisasi dulu.
+    cookie_error = nows('set_cookie("error_msg"')
+    cookie_warning = nows('set_cookie("warning_msg"')
+
+    prod_lines = read_text(APP_DIR / "products_routes.py").splitlines()
+    prod_text = "\n".join(prod_lines)
+    rm_lines = read_text(APP_DIR / "raw_materials_routes.py").splitlines()
+    rm_text = "\n".join(rm_lines)
+    sample_lines = read_text(APP_DIR / "sample_routes.py").splitlines()
+    notes_lines = read_text(APP_DIR / "notes_routes.py").splitlines()
+
+    # --- H3.1a: helper validasi total 100% (murni, Decimal, toleransi) -----
+    helper_idx = find_line(prod_lines, "def _validate_formula_total(")
+    register_idx = find_line(prod_lines, "def register_products_routes(")
+    h31a_ok = helper_idx >= 0 and (register_idx < 0 or helper_idx < register_idx)
+    h31a_detail = "def _validate_formula_total() tidak ditemukan di app/products_routes.py"
+    if h31a_ok:
+        helper_body = "\n".join(prod_lines[helper_idx:register_idx])
+        h31a_ok = (
+            "Decimal(" in helper_body
+            and 'FORMULA_TOTAL_TARGET = Decimal("100")' in prod_text
+            and 'FORMULA_TOTAL_TOLERANCE = Decimal("0.0001")' in prod_text
+        )
+        if not h31a_ok:
+            h31a_detail = (
+                "helper _validate_formula_total tidak memakai Decimal + target 100 + toleransi 0.0001"
+            )
+    check(
+        "H3.1a validasi total formula Bab 2 ada di server (helper murni, Decimal)",
+        h31a_ok,
+        h31a_detail,
+    )
+
+    # --- H3.1b: validasi total jalan SEBELUM update baris produk -------------
+    val_idx = find_line(prod_lines, "_validate_formula_total(formula_rows_pct)")
+    upd_idx = find_line(prod_lines, 'supabase.table("products").update(update_payload)')
+    h31b_ok = val_idx >= 0 and upd_idx > val_idx
+    check(
+        "H3.1b validasi total formula dijalankan sebelum update baris produk",
+        h31b_ok,
+        "validasi total tidak ditemukan / dijalankan setelah update produk",
+    )
+
+    # --- H3.1c: snapshot baris lama (kolom eksplisit) diambil sebelum delete -
+    snap_idx = find_line(
+        prod_lines,
+        '.select("product_id, raw_material_id, percent_in_formula, variant_id")',
+    )
+    del_idx = find_line(prod_lines, 'product_formula_lines").delete()')
+    h31c_ok = snap_idx >= 0 and del_idx > snap_idx
+    check(
+        "H3.1c snapshot formula lama diambil dengan kolom eksplisit sebelum delete",
+        h31c_ok,
+        "snapshot baris formula lama tidak ditemukan atau tidak mendahului delete",
+    )
+
+    # --- H3.1d: rollback hanya boleh jalan kalau delete benar-benar selesai -
+    set_true_idx = find_line(prod_lines, "delete_done = True")
+    guard_idx = find_line(prod_lines, "if not delete_done:")
+    restore_idx = find_line(prod_lines, '"percent_in_formula": row.get("percent_in_formula"),')
+    h31d_ok = 0 <= set_true_idx < guard_idx < restore_idx
+    h31d_detail = (
+        "urutan flag delete selesai / penjaga rollback tidak benar "
+        "(set=%d, guard=%d, restore=%d)" % (set_true_idx, guard_idx, restore_idx)
+    )
+    if h31d_ok:
+        restore_block = "\n".join(prod_lines[restore_idx - 6:restore_idx + 4])
+        h31d_ok = all(
+            key in restore_block
+            for key in ("product_id", "raw_material_id", "percent_in_formula", "variant_id")
+        )
+        if not h31d_ok:
+            h31d_detail = "rollback tidak memakai daftar kolom eksplisit (product_id/raw_material_id/percent_in_formula/variant_id)"
+    check(
+        "H3.1d rollback formula dijaga flag delete selesai (tidak menghasilkan duplikat)",
+        h31d_ok,
+        h31d_detail,
+    )
+
+    # --- H3.1e: kegagalan formula tidak boleh jatuh ke audit sukses ---------
+    fail_idx = find_line(prod_lines, "if formula_failed:")
+    fail_region = nows("\n".join(prod_lines[fail_idx:fail_idx + 25])) if fail_idx >= 0 else ""
+    prod_logs = [
+        i for i, l in enumerate(prod_lines)
+        if 'log_activity(current_user, "update", "product"' in l
+    ]
+    ok_log_idx = -1
+    for i in prod_logs:
+        if 'outcome="failed"' not in "\n".join(prod_lines[i:i + 4]):
+            ok_log_idx = i
+    h31e_ok = (
+        fail_idx >= 0
+        and 'outcome="failed"' in fail_region
+        and cookie_error in fail_region
+        and nows("return response") in fail_region
+        and ok_log_idx > fail_idx
+    )
+    check(
+        "H3.1e kegagalan formula tidak jatuh ke audit sukses (partial success)",
+        h31e_ok,
+        "cabang 'if formula_failed:' tidak menulis audit outcome=failed + error_msg lalu return",
+    )
+
+    # --- H3.1f: pesan partial success + eskalasi kalau rollback gagal -------
+    h31f_ok = (
+        "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan" in prod_text
+        and "TIDAK berhasil dipulihkan otomatis" in prod_text
+        and "admin harus memperbaiki data formula secara manual" in prod_text
+    )
+    check(
+        "H3.1f pesan kegagalan formula menyebut partial success & eskalasi admin",
+        h31f_ok,
+        "pesan partial success / eskalasi admin tidak ditemukan",
+    )
+
+    # --- H3.2a: path upload batch WAJIB unik per operasi -------------------
+    shared_paths = [
+        p for p in (
+            "coa/coa_{clean_batch}.pdf",
+            "halal/halal_{clean_batch}.pdf",
+            "qc-reports/qcreport_{clean_batch}.pdf",
+        ) if p in rm_text
+    ]
+    h32a_ok = (
+        not shared_paths
+        and "coa/coa_{clean_batch}_{upload_uid}.pdf" in rm_text
+        and "halal/halal_{clean_batch}_{upload_uid}.pdf" in rm_text
+        and "qc-reports/qcreport_{clean_batch}_{upload_uid}.pdf" in rm_text
+        and "uuid4().hex[:8]" in rm_text
+    )
+    check(
+        "H3.2a path upload batch punya sufiks unik per operasi (tidak menimpa file lama)",
+        h32a_ok,
+        "masih ada path upload bersama antar batch: %s" % ", ".join(shared_paths)
+        if shared_paths
+        else "sufiks uuid4 per operasi tidak ditemukan di path upload batch",
+    )
+
+    # --- H3.2b: DB gagal saat tambah batch -> file diupload dibersihkan -----
+    add_idx = find_line(rm_lines, 'raw_material_batches").insert(')
+    add_region = nows("\n".join(rm_lines[add_idx:add_idx + 45])) if add_idx >= 0 else ""
+    h32b_ok = (
+        add_idx >= 0
+        and "_cleanup_uploaded_objects(uploaded_paths)" in add_region
+        and cookie_error in add_region
+        and 'outcome="failed"' in add_region
+    )
+    check(
+        "H3.2b gagal simpan batch: file diupload dibersihkan + flash error + audit failed",
+        h32b_ok,
+        "jalur gagal insert batch tidak membersihkan file / tidak set error_msg",
+    )
+
+    # --- H3.3a: DB gagal saat ubah batch -> file diupload dibersihkan -------
+    upd_idx = find_line(rm_lines, 'raw_material_batches").update(update_data)')
+    exc_idx = next(
+        (i for i in range(upd_idx, min(upd_idx + 40, len(rm_lines)))
+         if rm_lines[i].strip().startswith("except Exception")),
+        -1,
+    )
+    edit_region = nows("\n".join(rm_lines[upd_idx:upd_idx + 60])) if upd_idx >= 0 else ""
+    h33a_ok = (
+        upd_idx >= 0
+        and exc_idx > upd_idx
+        and "_cleanup_uploaded_objects(uploaded_paths)" in edit_region
+        and cookie_error in edit_region
+        and 'outcome="failed"' in edit_region
+    )
+    check(
+        "H3.3a gagal ubah batch: file diupload dibersihkan + flash error + audit failed",
+        h33a_ok,
+        "jalur gagal update batch tidak membersihkan file / tidak set error_msg",
+    )
+
+    # --- H3.3b: audit sukses update batch ditulis DI LUAR try database ------
+    logs_after = [
+        i for i in range(exc_idx + 1, min(exc_idx + 120, len(rm_lines)))
+        if "log_activity(" in rm_lines[i]
+    ] if exc_idx >= 0 else []
+    ok_log = logs_after[1] if len(logs_after) > 1 else -1
+    h33b_ok = False
+    if ok_log >= 0:
+        base_indent = len(rm_lines[exc_idx]) - len(rm_lines[exc_idx].lstrip())
+        ok_indent = len(rm_lines[ok_log]) - len(rm_lines[ok_log].lstrip())
+        h33b_ok = ok_indent <= base_indent
+    check(
+        "H3.3b audit sukses update batch ditulis di luar try database (bukan hilang saat gagal)",
+        h33b_ok,
+        "log_activity sukses masih berada di dalam blok except database",
+    )
+
+    # --- H3.4: hapus FSP gagal -> flash error, TANPA str(e) ke audit -------
+    sample_idx = next(
+        (i for i, l in enumerate(sample_lines)
+         if 'print(f"Gagal hapus sample submission' in l),
+        -1,
+    )
+    sample_region = nows("\n".join(sample_lines[sample_idx:sample_idx + 20])) if sample_idx >= 0 else ""
+    h34_ok = (
+        sample_idx >= 0
+        and cookie_error in sample_region
+        and nows("str(e)") not in sample_region
+    )
+    check(
+        "H3.4 gagal hapus FSP: ada flash error_msg dan tidak ada str(e) di payload audit",
+        h34_ok,
+        "handler hapus FSP tidak set error_msg atau masih menaruh str(e) di activity_logs",
+    )
+
+    # --- H3.5a: simpan note / mention / audit dipisah ----------------------
+    note_idx = find_line(notes_lines, 'ins = supabase.table("team_notes").insert(')
+    note_region = nows("\n".join(notes_lines[note_idx:note_idx + 120])) if note_idx >= 0 else ""
+    h35a_ok = (
+        note_idx >= 0
+        and note_region.count(nows("except Exception")) >= 3
+        and cookie_error in note_region
+        and cookie_warning in note_region
+        and 'outcome="failed"' in note_region
+        and nows('"success"') in note_region
+    )
+    check(
+        "H3.5a simpan note / mention / audit dipisah jadi blok try terpisah",
+        h35a_ok,
+        "blok simpan note belum memisahkan note / mention / audit",
+    )
+
+    # --- H3.5b: kegagalan mention = warning, BUKAN error --------------------
+    mention_idxs = [
+        i for i, l in enumerate(notes_lines) if l.strip() == "if mention_failed:"
+    ]
+    mention_region = (
+        nows("\n".join(notes_lines[mention_idxs[-1]:mention_idxs[-1] + 15])) if mention_idxs else ""
+    )
+    h35b_ok = (
+        bool(mention_idxs)
+        and cookie_warning in mention_region
+        and cookie_error not in mention_region
+    )
+    check(
+        "H3.5b kegagalan @mention memakai warning_msg (note tetap tersimpan, bukan error)",
+        h35b_ok,
+        "jalur gagal @mention tidak memakai warning_msg atau bahkan set error_msg",
+    )
+
+    # --- H3.5c: base.html merender + membersihkan warning_msg --------------
+    base_text = read_text(TPL_DIR / "base.html")
+    h35c_ok = (
+        "request.cookies.get('warning_msg')" in base_text
+        and "warning_msg=;" in base_text
+        and "_warning_msg" in base_text
+    )
+    check(
+        "H3.5c base.html merender warning_msg dan membersihkannya setelah tampil",
+        h35c_ok,
+        "warning_msg belum dirender / belum dibersihkan di base.html",
+    )
+
+    # --- MIG-010: file migrasi prepared, TIDAK dieksekusi ------------------
+    mig_path = ROOT / "migration" / "010_replace_product_formula.sql"
+    mig_text = read_text(mig_path) if mig_path.exists() else ""
+    app_refs = []
+    for path in app_py_files():
+        if "replace_product_formula" in read_text(path):
+            app_refs.append(path.name)
+    h_mig_ok = (
+        mig_path.exists()
+        and "CREATE OR REPLACE FUNCTION public.replace_product_formula" in mig_text
+        and "BELUM DIEKSEKUSI" in mig_text
+        and "TIDAK bergantung" in mig_text
+        and not app_refs
+    )
+    check(
+        "MIG-010 migration/010_replace_product_formula.sql prepared (belum dieksekusi, app tidak bergantung)",
+        h_mig_ok,
+        "file migrasi 010 hilang / tidak ditandai belum dieksekusi / app sudah memakainya: %s"
+        % ", ".join(app_refs),
+    )
+
+    # --- UNIT: helper validasi total 100% (murni, tanpa DB) ----------------
+    try:
+        from app.products_routes import _validate_formula_total  # noqa: PLC0415
+    except Exception as exc:
+        skip(
+            "UNIT-01 helper _validate_formula_total menolak total != 100 & menerima total 100",
+            "app.products_routes tidak bisa diimpor: %s" % exc,
+        )
+    else:
+        unit_ok = (
+            _validate_formula_total(["50", "50"])[0] is True
+            and _validate_formula_total(["33.3333", "33.3333", "33.3334"])[0] is True
+            and _validate_formula_total(["50", "40"])[0] is False
+            and _validate_formula_total(["abc", "100"])[0] is False
+            and _validate_formula_total(["-1", "101"])[0] is False
+            and _validate_formula_total([])[0] is True
+        )
+        check(
+            "UNIT-01 helper _validate_formula_total menolak total != 100 & menerima total 100",
+            unit_ok,
+            "perilaku _validate_formula_total tidak sesuai kontrak (100 harus lolos, selain itu ditolak)",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
@@ -1448,6 +1783,7 @@ def main(argv: list[str] | None = None) -> int:
     section_templates()
     section_frontend()
     section_pure_modules()
+    section_write_honesty()
 
     counts = {"PASS": 0, "KNOWN": 0, "FAIL": 0, "SKIP": 0}
     for status, _, _ in RESULTS:
