@@ -185,6 +185,7 @@
 
         {% set _error_msg = error_msg if error_msg is defined and error_msg else request.cookies.get('error_msg') %}
         {% set _success_msg = success_msg if success_msg is defined and success_msg else request.cookies.get('success_msg') %}
+        {% set _warning_msg = warning_msg if warning_msg is defined and warning_msg else request.cookies.get('warning_msg') %}
 
         {% if _error_msg %}
         <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center" role="alert">
@@ -200,11 +201,19 @@
         </div>
         {% endif %}
 
-        {% if _error_msg or _success_msg %}
+        {% if _warning_msg %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-md mb-4 text-sm flex items-center" role="alert">
+            <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+            <span>{{ _warning_msg }}</span>
+        </div>
+        {% endif %}
+
+        {% if _error_msg or _success_msg or _warning_msg %}
         <script>
             document.addEventListener('DOMContentLoaded', function () {
                 document.cookie = 'error_msg=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
                 document.cookie = 'success_msg=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                document.cookie = 'warning_msg=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
             });
         </script>
         {% endif %}

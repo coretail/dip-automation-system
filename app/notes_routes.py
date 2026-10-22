@@ -587,6 +587,10 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             for bid in _parse_product_ids_field(brand_ids):
                 brand_refs.append({"id": bid, "name": bid})
 
+        # (a) Simpan catatan. Kegagalan di sini adalah kegagalan TOTAL:
+        #     catatan tidak tersimpan sama sekali, jadi user harus diberi tahu
+        #     dan tidak boleh pushed untuk menulis ulang.
+        note_id = None
         try:
             ins = supabase.table("team_notes").insert({
                 "author_id": current_user["id"],
@@ -603,8 +607,28 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                 )
                 note_row = (last.data or [None])[0]
             note_id = note_row["id"] if note_row else None
+        except Exception as e:
+            print(f"[NOTES] Gagal simpan note: {e}")
+            try:
+                log_activity(
+                    current_user, "create", "note", "-",
+                    (text[:80] + ("…" if len(text) > 80 else "")),
+                    changes=[{"field": "Catatan",
+                              "note": "catatan gagal disimpan; detail teknis ada di log server"}],
+                    request=request, outcome="failed",
+                )
+            except Exception as audit_err:
+                print(f"[NOTES] Gagal catat audit note gagal: {audit_err}")
+            response = RedirectResponse(url="/notes", status_code=303)
+            response.set_cookie("error_msg", "Gagal menyimpan catatan. Silakan coba lagi.")
+            return response
 
-            if note_id and mentions:
+        # (b) Simpan @mention. Kegagalan di sini TIDAK membatalkan catatan:
+        #     catatannya sudah tersimpan, jadi user tidak boleh disuruh
+        #     menulis ulang (bisa jadi duplikat).
+        mention_failed = False
+        if note_id and mentions:
+            try:
                 rows = [{
                     "note_id": note_id,
                     "mentioned_user_id": m["user_id"],
@@ -613,22 +637,48 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                     "created_at": datetime.now(WIB).isoformat(),
                 } for m in mentions]
                 supabase.table("team_note_mentions").insert(rows).execute()
+            except Exception as e:
+                mention_failed = True
+                print(f"[NOTES] Catatan tersimpan tapi @mention gagal: {e}")
 
-            extra = ""
-            if product_refs:
-                extra += " | produk: " + ", ".join(p.get("name") or p["id"] for p in product_refs[:5])
-            if rm_refs:
-                extra += " | rm: " + ", ".join(r.get("name") or r["id"] for r in rm_refs[:5])
-            if brand_refs:
-                extra += " | merk: " + ", ".join(b.get("name") or b["id"] for b in brand_refs[:5])
+        extra = ""
+        if product_refs:
+            extra += " | produk: " + ", ".join(p.get("name") or p["id"] for p in product_refs[:5])
+        if rm_refs:
+            extra += " | rm: " + ", ".join(p.get("name") or p["id"] for p in rm_refs[:5])
+        if brand_refs:
+            extra += " | merk: " + ", ".join(p.get("name") or p["id"] for p in brand_refs[:5])
+
+        # (c) Catat audit trail - terpisah dari penyimpanan catatan & mention
+        #     supaya kegagalan audit tidak mengubah hasil operasi note.
+        audit_changes = []
+        audit_outcome = "failed" if mention_failed else "success"
+        if mention_failed:
+            audit_changes.append({
+                "field": "Mention",
+                "note": "catatan tersimpan tetapi pemberitahuan (@mention) gagal disimpan; "
+                        "detail ada di log server",
+            })
+        try:
             log_activity(
                 current_user, "create", "note", note_id or "-",
                 (text[:80] + ("…" if len(text) > 80 else "")) + extra,
-                request=request,
+                changes=audit_changes or None, request=request,
+                outcome=audit_outcome,
             )
-        except Exception as e:
-            print(f"[NOTES] Gagal simpan note: {e}")
-            return RedirectResponse(url="/notes?error=save_failed", status_code=303)
+        except Exception as audit_err:
+            print(f"[NOTES] Gagal catat activity log note: {audit_err}")
+
+        if mention_failed:
+            # Catatan SUDAH tersimpan -> jangan tampilkan pesan gagal, tapi
+            # beri peringatan bahwa notifikasi @mention tidak terkirim.
+            response = RedirectResponse(url="/notes?status=created", status_code=303)
+            response.set_cookie(
+                "warning_msg",
+                "Catatan berhasil disimpan, tetapi pemberitahuan @mention gagal disimpan. "
+                "Pengguna yang disebut tidak menerima notifikasi.",
+            )
+            return response
 
         return RedirectResponse(url="/notes?status=created", status_code=303)
 

@@ -374,10 +374,21 @@ def register_sample_routes(
             log_activity(
                 current_user, "delete", "sample_submission", submission_id, old_code,
                 changes=[{"field": "Kode FSP", "old": old_row.get("sample_code")},
-                         {"field": "Error", "note": str(e)[:300]}],
+                         {"field": "Error",
+                          "note": "penghapusan gagal; detail teknis ada di log server"}],
                 request=request, outcome="failed",
             )
-        return RedirectResponse(url="/sample-submissions", status_code=303)
+            # Pesan aman untuk user: TIDAK boleh memuat pesan exception database.
+            response = RedirectResponse(url="/sample-submissions", status_code=303)
+            response.set_cookie(
+                "error_msg",
+                f"Gagal menghapus FSP '{old_code}'. Data tidak terhapus, silakan coba lagi.",
+            )
+            return response
+
+        response = RedirectResponse(url="/sample-submissions", status_code=303)
+        response.set_cookie("success_msg", f"FSP '{old_code}' berhasil dihapus.")
+        return response
 
     # =====================================================================
     @app.get("/sample-submissions", response_class=HTMLResponse)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import List
+from uuid import uuid4
 
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -22,6 +23,35 @@ def _is_deleted_product(embedded):
     if isinstance(embedded, list):
         embedded = embedded[0] if embedded else None
     return bool((embedded or {}).get("is_deleted"))
+
+
+def _cleanup_uploaded_objects(paths: list, bucket: str = "raw-material-docs") -> tuple[bool, list]:
+    """Hapus objek storage yang BARU dibuat satu operasi dari semua backend.
+
+    Aman hanya untuk path yang unik per operasi (sufiks uuid4): objek dengan
+    path seperti itu dijamin tidak ada sebelum operasi ini, jadi menghapus-nya
+    tidak mungkin menimpa file milik batch lain.
+
+    Return (semua_berhasil, daftar_path_yang_gagal).
+    """
+    failed: list = []
+    for path in paths:
+        try:
+            result = object_store.remove_from_all_backends(bucket, path, client=supabase)
+        except Exception as exc:
+            print(f"[RAW MATERIALS] Gagal hapus object {path}: {exc}")
+            failed.append(path)
+            continue
+        for backend, backend_result in (result or {}).items():
+            if backend_result.get("ok") or backend_result.get("missing"):
+                continue
+            print(
+                f"[RAW MATERIALS] Gagal hapus object {path} di backend {backend}: "
+                f"{backend_result.get('error')}"
+            )
+            failed.append(path)
+            break
+    return (not failed), failed
 
 
 def register_raw_materials_routes(
@@ -889,6 +919,12 @@ def register_raw_materials_routes(
         import json
 
         clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
+        # Sufiks unik per operasi. Path file WAJIB unik supaya:
+        #   - upload baru tidak menimpa file lama milik batch lain yang nomor
+        #     batch-nya sama (dulu path-nya cuma "coa/coa_{batch}.pdf"),
+        #   - objek yang dibuat operasi ini dijamin belum ada sebelumnya, jadi
+        #     aman dihapus kalau penyimpanan ke database gagal.
+        upload_uid = uuid4().hex[:8]
 
         # 1. Parse string data QC Aktual dari frontend ke Python list
         try:
@@ -899,6 +935,9 @@ def register_raw_materials_routes(
 
         coa_url = None
         halal_url = None
+        qc_report_url = None
+        uploaded_paths: list = []   # objek yang dibuat operasi ini saja
+        upload_errors: list = []    # nama dokumen yang gagal diunggah
 
         # 2. Proses Upload CoA jika ada filenya
         if coa_file and coa_file.filename:
@@ -907,13 +946,15 @@ def register_raw_materials_routes(
                 _err = validate_pdf_bytes(coa_bytes, "File CoA")
                 if _err:
                     raise ValueError(_err)
-                coa_path = f"coa/coa_{clean_batch}.pdf"
+                coa_path = f"coa/coa_{clean_batch}_{upload_uid}.pdf"
 
                 object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
+                uploaded_paths.append(coa_path)
                 coa_url = object_store.public_url("raw-material-docs", coa_path, client=supabase)
                 print("--> Sukses upload CoA.")
             except Exception as e:
                 print(f"Gagal upload CoA: {e}")
+                upload_errors.append("CoA")
 
         # 3. Proses Upload Halal Cert jika ada filenya
         if halal_file and halal_file.filename:
@@ -922,30 +963,33 @@ def register_raw_materials_routes(
                 _err = validate_pdf_bytes(halal_bytes, "File Halal")
                 if _err:
                     raise ValueError(_err)
-                halal_path = f"halal/halal_{clean_batch}.pdf"
+                halal_path = f"halal/halal_{clean_batch}_{upload_uid}.pdf"
 
                 object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
+                uploaded_paths.append(halal_path)
                 halal_url = object_store.public_url("raw-material-docs", halal_path, client=supabase)
                 print("--> Sukses upload Halal.")
             except Exception as e:
                 print(f"Gagal upload Halal Cert: {e}")
+                upload_errors.append("Halal")
 
         # 3b. Proses Upload Laporan Pemeriksaan Aktual (opsional) -- kalau QC punya dokumen
         # fisik/scan hasil pemeriksaan, ini dipake nanti jadi prioritas dibanding versi generate dari qc_results
-        qc_report_url = None
         if qc_report_file and qc_report_file.filename:
             try:
                 qc_report_bytes = await qc_report_file.read()
                 _err = validate_pdf_bytes(qc_report_bytes, "File Laporan Pemeriksaan")
                 if _err:
                     raise ValueError(_err)
-                qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
+                qc_report_path = f"qc-reports/qcreport_{clean_batch}_{upload_uid}.pdf"
 
                 object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
+                uploaded_paths.append(qc_report_path)
                 qc_report_url = object_store.public_url("raw-material-docs", qc_report_path, client=supabase)
                 print("--> Sukses upload Laporan Pemeriksaan Aktual.")
             except Exception as e:
                 print(f"Gagal upload Laporan Pemeriksaan Aktual: {e}")
+                upload_errors.append("Laporan Pemeriksaan")
 
         # 4. Simpan record data lengkap ke tabel raw_material_batches
         batch_data = {
@@ -972,13 +1016,80 @@ def register_raw_materials_routes(
         }
 
         try:
-            supabase.table("raw_material_batches").insert(batch_data).execute()
+            ins_resp = supabase.table("raw_material_batches").insert(batch_data).execute()
+            inserted = (ins_resp.data or [None])[0]
+            batch_id = (inserted or {}).get("id") if isinstance(inserted, dict) else None
             print("--> Data Batch berhasil masuk ke Database!")
         except Exception as e:
             print(f"Gagal insert ke DB: {e}")
+            # Database gagal -> objek yang barusan diunggah jadi yatim. Hapus
+            # HANYA objek yang dibuat operasi ini (path-nya unik per operasi),
+            # file milik batch lain tidak boleh disentuh.
+            cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
+            if cleanup_ok:
+                pesan = (
+                    f"Gagal menyimpan batch '{no_batch.strip()}'. File yang sudah diunggah "
+                    "sudah dihapus, silakan coba lagi."
+                )
+                catatan = (
+                    "penyimpanan batch gagal di database; file yang diunggah sudah dibersihkan"
+                )
+            else:
+                pesan = (
+                    f"Gagal menyimpan batch '{no_batch.strip()}'. File yang sudah diunggah "
+                    "juga gagal dihapus - administrator perlu memeriksa storage."
+                )
+                catatan = (
+                    "penyimpanan batch gagal di database; file yang diunggah juga gagal dibersihkan "
+                    f"({len(cleanup_failed)} objek) - admin harus memeriksa storage"
+                )
+            log_activity(
+                current_user, "create", "raw_material_batch", "-",
+                f"Batch {no_batch.strip()}",
+                changes=[{"field": "Batch", "note": catatan}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url="/raw-materials", status_code=303)
+            response.set_cookie("error_msg", pesan)
+            return response
+
+        # Batch tersimpan. Kalau ada file yang gagal diunggah, hasilnya sukses
+        # sebagian dan itu harus terlihat jelas di pesan maupun audit trail.
+        audit_changes = []
+        if upload_errors:
+            audit_changes.append({
+                "field": "File",
+                "note": "baris batch berhasil disimpan, tetapi file "
+                        + ", ".join(upload_errors)
+                        + " gagal diunggah. Detail teknis ada di log server.",
+            })
+            pesan = (
+                f"Batch '{no_batch.strip()}' berhasil ditambahkan, tetapi file "
+                + ", ".join(upload_errors)
+                + " gagal diunggah."
+            )
+            peringatan = (
+                f"Batch '{no_batch.strip()}' tersimpan, tetapi file "
+                + ", ".join(upload_errors)
+                + " gagal diunggah. Silakan unggah ulang lewat menu upload cepat."
+            )
+        else:
+            pesan = f"Batch '{no_batch.strip()}' berhasil ditambahkan."
+            peringatan = ""
+
+        log_activity(
+            current_user, "create", "raw_material_batch", batch_id or "-",
+            f"Batch {no_batch.strip()}",
+            changes=audit_changes or None, request=request,
+            outcome="failed" if upload_errors else "success",
+        )
 
         # Redirect balik ke halaman utama bahan baku
-        return RedirectResponse(url="/raw-materials", status_code=303)
+        response = RedirectResponse(url="/raw-materials", status_code=303)
+        response.set_cookie("success_msg", pesan)
+        if peringatan:
+            response.set_cookie("warning_msg", peringatan)
+        return response
 
     @app.post("/raw-materials/batches/edit/{batch_id}")
     async def edit_material_batch(
@@ -999,10 +1110,11 @@ def register_raw_materials_routes(
         keterangan: str = Form(None),
         current_user: dict = Depends(get_current_user)
     ):
-        # 1. Ambil data lama untuk handle file upload
-        old_batch = supabase.table("raw_material_batches").select("*").eq("id", batch_id).single().execute().data
-
         clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
+        # Sufiks unik per operasi (lihat add_material_batch): upload baru tidak
+        # boleh menimpa file lama, dan objek yang baru dibuat aman dihapus
+        # kalau UPDATE ke database gagal.
+        upload_uid = uuid4().hex[:8]
 
         update_data = {
             "no_batch": no_batch.strip(),
@@ -1016,6 +1128,9 @@ def register_raw_materials_routes(
             "keterangan": keterangan.strip() if keterangan else None
         }
 
+        uploaded_paths: list = []   # objek yang dibuat operasi ini saja
+        upload_errors: list = []    # nama dokumen yang gagal diunggah
+
         # 2. Update Files if provided
         if coa_file and coa_file.filename:
             try:
@@ -1023,11 +1138,13 @@ def register_raw_materials_routes(
                 _err = validate_pdf_bytes(coa_bytes, "File CoA")
                 if _err:
                     raise ValueError(_err)
-                coa_path = f"coa/coa_{clean_batch}.pdf"
+                coa_path = f"coa/coa_{clean_batch}_{upload_uid}.pdf"
                 object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
+                uploaded_paths.append(coa_path)
                 update_data["coa_file_url"] = object_store.public_url("raw-material-docs", coa_path, client=supabase)
             except Exception as e:
                 print(f"Gagal update CoA: {e}")
+                upload_errors.append("CoA")
 
         if halal_file and halal_file.filename:
             try:
@@ -1035,11 +1152,13 @@ def register_raw_materials_routes(
                 _err = validate_pdf_bytes(halal_bytes, "File Halal")
                 if _err:
                     raise ValueError(_err)
-                halal_path = f"halal/halal_{clean_batch}.pdf"
+                halal_path = f"halal/halal_{clean_batch}_{upload_uid}.pdf"
                 object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
+                uploaded_paths.append(halal_path)
                 update_data["halal_batch_file_url"] = object_store.public_url("raw-material-docs", halal_path, client=supabase)
             except Exception as e:
                 print(f"Gagal update Halal: {e}")
+                upload_errors.append("Halal")
 
         if qc_report_file and qc_report_file.filename:
             try:
@@ -1047,20 +1166,86 @@ def register_raw_materials_routes(
                 _err = validate_pdf_bytes(qc_report_bytes, "File Laporan Pemeriksaan")
                 if _err:
                     raise ValueError(_err)
-                qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
+                qc_report_path = f"qc-reports/qcreport_{clean_batch}_{upload_uid}.pdf"
                 object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
+                uploaded_paths.append(qc_report_path)
                 update_data["qc_report_file_url"] = object_store.public_url("raw-material-docs", qc_report_path, client=supabase)
             except Exception as e:
                 print(f"Gagal update QC Report: {e}")
+                upload_errors.append("Laporan Pemeriksaan")
 
+        # 3. Simpan perubahan ke database. Audit log TIDAK lagi ditulis di
+        # dalam try yang sama, supaya kegagalan update tetap tercatat sebagai
+        # kegagalan (bukan hilang tanpa jejak).
         try:
             supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
-            log_activity(current_user, "edit", "raw_material_batch", batch_id, f"Update batch {no_batch}",
-                       request=request)
         except Exception as e:
             print(f"Gagal update batch: {e}")
+            # Database gagal -> objek yang barusan diunggah jadi yatim. Hapus
+            # HANYA objek yang dibuat operasi ini (path-nya unik per operasi).
+            cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
+            if cleanup_ok:
+                pesan = (
+                    f"Gagal menyimpan perubahan batch '{no_batch.strip()}'. File yang sudah diunggah "
+                    "sudah dihapus, silakan coba lagi."
+                )
+                catatan = (
+                    "penyimpanan perubahan batch gagal di database; file yang diunggah sudah dibersihkan"
+                )
+            else:
+                pesan = (
+                    f"Gagal menyimpan perubahan batch '{no_batch.strip()}'. File yang sudah diunggah "
+                    "juga gagal dihapus - administrator perlu memeriksa storage."
+                )
+                catatan = (
+                    "penyimpanan perubahan batch gagal di database; file yang diunggah juga gagal "
+                    f"dibersihkan ({len(cleanup_failed)} objek) - admin harus memeriksa storage"
+                )
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                f"Update batch {no_batch.strip()}",
+                changes=[{"field": "Batch", "note": catatan}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
+            response.set_cookie("error_msg", pesan)
+            return response
 
-        return RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
+        # Update berhasil -> audit ditulis di sini (di luar try database).
+        audit_changes = []
+        if upload_errors:
+            audit_changes.append({
+                "field": "File",
+                "note": "perubahan batch tersimpan, tetapi file "
+                        + ", ".join(upload_errors)
+                        + " gagal diunggah. Detail teknis ada di log server.",
+            })
+            pesan = (
+                f"Perubahan batch '{no_batch.strip()}' berhasil disimpan, tetapi file "
+                + ", ".join(upload_errors)
+                + " gagal diunggah."
+            )
+            peringatan = (
+                f"Perubahan batch '{no_batch.strip()}' tersimpan, tetapi file "
+                + ", ".join(upload_errors)
+                + " gagal diunggah. Silakan unggah ulang lewat menu upload cepat."
+            )
+        else:
+            pesan = f"Perubahan batch '{no_batch.strip()}' berhasil disimpan."
+            peringatan = ""
+
+        log_activity(
+            current_user, "edit", "raw_material_batch", batch_id,
+            f"Update batch {no_batch.strip()}",
+            changes=audit_changes or None, request=request,
+            outcome="failed" if upload_errors else "success",
+        )
+
+        response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
+        response.set_cookie("success_msg", pesan)
+        if peringatan:
+            response.set_cookie("warning_msg", peringatan)
+        return response
 
     @app.post("/raw-materials/batches/{batch_id}/quick-upload-doc")
     async def quick_upload_batch_doc(
@@ -1091,6 +1276,12 @@ def register_raw_materials_routes(
 
         update_data = {}
         uploaded_documents = []
+        uploaded_paths: list = []   # objek yang dibuat operasi ini saja
+        upload_errors: list = []    # nama dokumen yang gagal diunggah
+        # Sufiks unik per operasi: path file tidak boleh menimpa file lama
+        # milik batch lain dengan nomor batch sama, dan objek yang baru dibuat
+        # aman dihapus kalau penyimpanan ke database gagal.
+        upload_uid = uuid4().hex[:8]
 
         if coa_file and coa_file.filename:
             try:
@@ -1098,12 +1289,14 @@ def register_raw_materials_routes(
                 _err = validate_pdf_bytes(coa_bytes, "File CoA")
                 if _err:
                     raise ValueError(_err)
-                coa_path = f"coa/coa_{clean_batch}.pdf"
+                coa_path = f"coa/coa_{clean_batch}_{upload_uid}.pdf"
                 object_store.upload_pdf("raw-material-docs", coa_path, coa_bytes, client=supabase)
+                uploaded_paths.append(coa_path)
                 update_data["coa_file_url"] = object_store.public_url("raw-material-docs", coa_path, client=supabase)
                 uploaded_documents.append("CoA")
             except Exception as e:
                 print(f"Gagal quick-upload CoA: {e}")
+                upload_errors.append("CoA")
 
         if halal_file and halal_file.filename:
             try:
@@ -1111,12 +1304,14 @@ def register_raw_materials_routes(
                 _err = validate_pdf_bytes(halal_bytes, "File Halal")
                 if _err:
                     raise ValueError(_err)
-                halal_path = f"halal/halal_{clean_batch}.pdf"
+                halal_path = f"halal/halal_{clean_batch}_{upload_uid}.pdf"
                 object_store.upload_pdf("raw-material-docs", halal_path, halal_bytes, client=supabase)
+                uploaded_paths.append(halal_path)
                 update_data["halal_batch_file_url"] = object_store.public_url("raw-material-docs", halal_path, client=supabase)
                 uploaded_documents.append("Halal")
             except Exception as e:
                 print(f"Gagal quick-upload Halal: {e}")
+                upload_errors.append("Halal")
 
         if qc_report_file and qc_report_file.filename:
             try:
@@ -1124,31 +1319,86 @@ def register_raw_materials_routes(
                 _err = validate_pdf_bytes(qc_report_bytes, "File Laporan Pemeriksaan")
                 if _err:
                     raise ValueError(_err)
-                qc_report_path = f"qc-reports/qcreport_{clean_batch}.pdf"
+                qc_report_path = f"qc-reports/qcreport_{clean_batch}_{upload_uid}.pdf"
                 object_store.upload_pdf("raw-material-docs", qc_report_path, qc_report_bytes, client=supabase)
+                uploaded_paths.append(qc_report_path)
                 update_data["qc_report_file_url"] = object_store.public_url("raw-material-docs", qc_report_path, client=supabase)
                 uploaded_documents.append("Catatan Pemeriksaan Bahan Baku")
             except Exception as e:
                 print(f"Gagal quick-upload QC Report: {e}")
+                upload_errors.append("Laporan Pemeriksaan")
 
         if update_data:
             try:
                 supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
-                document_list = ", ".join(uploaded_documents)
-                log_activity(
-                    current_user, "edit", "raw_material_batch", batch_id,
-                    f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} — batch {no_batch}",
-                    request=request
-                )
-                response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-                response.set_cookie("success_msg", "Dokumen berhasil diupload.")
             except Exception as e:
                 print(f"Gagal simpan quick-upload batch doc: {e}")
+                # Database gagal -> objek yang barusan diunggah jadi yatim. Hapus
+                # HANYA objek yang dibuat operasi ini (path-nya unik per operasi).
+                cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
+                if cleanup_ok:
+                    pesan = (
+                        "Gagal menyimpan dokumen batch. File yang sudah diunggah sudah dihapus, "
+                        "silakan coba lagi."
+                    )
+                    catatan = (
+                        "penyimpanan URL dokumen gagal di database; file yang diunggah sudah dibersihkan"
+                    )
+                else:
+                    pesan = (
+                        "Gagal menyimpan dokumen batch. File yang sudah diunggah juga gagal dihapus - "
+                        "administrator perlu memeriksa storage."
+                    )
+                    catatan = (
+                        "penyimpanan URL dokumen gagal di database; file yang diunggah juga gagal "
+                        f"dibersihkan ({len(cleanup_failed)} objek) - admin harus memeriksa storage"
+                    )
+                log_activity(
+                    current_user, "edit", "raw_material_batch", batch_id,
+                    f"Upload cepat untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
+                    changes=[{"field": "Dokumen", "note": catatan}],
+                    request=request, outcome="failed",
+                )
                 response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-                response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
-        else:
+                response.set_cookie("error_msg", pesan)
+                return response
+
+            # Audit ditulis di luar try database supaya kegagalan tetap tercatat.
+            audit_changes = []
+            if upload_errors:
+                audit_changes.append({
+                    "field": "Dokumen",
+                    "note": "dokumen tersimpan, tetapi file "
+                            + ", ".join(upload_errors)
+                            + " gagal diunggah. Detail teknis ada di log server.",
+                })
+            document_list = ", ".join(uploaded_documents)
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
+                changes=audit_changes or None, request=request,
+                outcome="failed" if upload_errors else "success",
+            )
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-            response.set_cookie("error_msg", "Tidak ada file yang dipilih.")
+            if upload_errors:
+                response.set_cookie(
+                    "success_msg",
+                    "Dokumen berhasil diupload, tetapi file "
+                    + ", ".join(upload_errors)
+                    + " gagal diunggah.",
+                )
+                response.set_cookie(
+                    "warning_msg",
+                    "Batch '" + no_batch.strip() + "' tersimpan, tetapi file "
+                    + ", ".join(upload_errors)
+                    + " gagal diunggah. Silakan unggah ulang.",
+                )
+            else:
+                response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+            return response
+
+        response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+        response.set_cookie("error_msg", "Tidak ada file yang dipilih.")
         return response
 
     # ==================== ED MANAGEMENT ENDPOINTS ====================

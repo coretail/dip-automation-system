@@ -20,6 +20,65 @@ from xhtml2pdf import pisa
 
 WIB = ZoneInfo("Asia/Jakarta")
 
+# --- Aturan total persentase formula Bab 2 ---------------------------------
+# Total persentase formula HARUS tepat 100.0000%. Aturan yang sama sudah ada di
+# sisi browser (app/templates/edit_product.html:960) - validasi server berikut
+# adalah jaring pengaman kedua karena validasi sisi browser bisa dilewati.
+FORMULA_TOTAL_TARGET = Decimal("100")
+FORMULA_TOTAL_TOLERANCE = Decimal("0.0001")
+
+
+def _validate_formula_total(percentages: list) -> tuple[bool, str]:
+    """Cek total persentase formula Bab 2 harus tepat 100.0000%.
+
+    Fungsi MURNI (tanpa database, tanpa jaringan) supaya bisa diuji unit.
+    `percentages` = daftar persentase per baris formula (string dari form,
+    Decimal, atau float). Nilai kosong/None dianggap 0 karena baris tanpa
+    bahan baku memang tidak pernah ikut tersimpan.
+
+    Daftar kosong berarti tidak ada baris formula yang dikirim (produk tanpa
+    formula / pengguna sengaja mengosongkan formula) - itu tidak divalidasi,
+    sama seperti aturan sisi browser di app/templates/edit_product.html:946.
+
+    Return (ok, pesan_error). `pesan_error` AMAN ditampilkan ke user: tidak
+    memuat pesan exception database apa pun.
+    """
+    if not percentages:
+        return True, ""
+    total = Decimal("0")
+    for idx, value in enumerate(percentages, start=1):
+        if value is None:
+            continue
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                continue
+        try:
+            pct = Decimal(str(value))
+        except (ArithmeticError, ValueError, TypeError):
+            return False, (
+                "Persentase formula Bab 2 baris ke-%d bukan angka yang valid. "
+                "Perbaiki persentase tersebut lalu simpan ulang." % idx
+            )
+        if not pct.is_finite():
+            return False, (
+                "Persentase formula Bab 2 baris ke-%d bukan angka yang valid. "
+                "Perbaiki persentase tersebut lalu simpan ulang." % idx
+            )
+        if pct < 0:
+            return False, (
+                "Persentase formula Bab 2 baris ke-%d tidak boleh negatif. "
+                "Perbaiki persentase tersebut lalu simpan ulang." % idx
+            )
+        total += pct
+
+    if abs(total - FORMULA_TOTAL_TARGET) > FORMULA_TOTAL_TOLERANCE:
+        return False, (
+            "Total persentase formula Bab 2 harus tepat 100.0000%%. Total saat ini: %s%%. "
+            "Formula tidak disimpan dan tidak ada data lain yang diubah." % total
+        )
+    return True, ""
+
 
 def register_products_routes(
     app,
@@ -961,6 +1020,60 @@ def register_products_routes(
             if _user_company and (_old_company != _user_company or _new_company != _user_company):
                 raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
 
+        # --- Validasi & snapshot formula Bab 2 (SEBELUM ada perubahan data) ---
+        # Validasi total persentase dijalankan paling dulu: kalau totalnya bukan
+        # 100.0000% maka TIDAK ada data yang diubah sama sekali (baris produk
+        # maupun formula), jadi tidak ada keadaan setengah jadi.
+        formula_rows_pct: list = []
+        if formula_submitted:
+            for i in range(len(raw_material_id or [])):
+                rm_id = (raw_material_id[i] or "").strip()
+                if not rm_id:
+                    continue
+                formula_rows_pct.append(
+                    percentage[i] if percentage and i < len(percentage) else None
+                )
+
+            formula_ok, formula_msg = _validate_formula_total(formula_rows_pct)
+            if not formula_ok:
+                log_activity(
+                    current_user, "update", "product", product_id, nama_produk,
+                    [{"field": "Formula Bab 2",
+                      "note": "ditolak: total persentase bukan 100.0000% - tidak ada data yang diubah"}],
+                    request=request, outcome="rejected",
+                )
+                response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+                response.set_cookie("error_msg", formula_msg)
+                return response
+
+        # Snapshot baris formula lama: dipakai untuk memulihkan data kalau
+        # INSERT baris baru gagal. Daftar kolom ditulis eksplisit (bukan
+        # select("*")) supaya tidak ada kolom tak terduga ikut dipulihkan.
+        old_formula_rows: list = []
+        if formula_submitted:
+            try:
+                snap_resp = (
+                    supabase.table("product_formula_lines")
+                    .select("product_id, raw_material_id, percent_in_formula, variant_id")
+                    .eq("product_id", product_id)
+                    .execute()
+                )
+                old_formula_rows = snap_resp.data or []
+            except Exception as e:
+                print(f"Gagal snapshot formula Bab 2 produk {product_id}: {e}")
+                log_activity(
+                    current_user, "update", "product", product_id, nama_produk,
+                    [{"field": "Formula Bab 2",
+                      "note": "gagal membaca formula lama - tidak ada data yang diubah"}],
+                    request=request, outcome="failed",
+                )
+                response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+                response.set_cookie(
+                    "error_msg",
+                    "Gagal membaca formula Bab 2 produk. Tidak ada data yang diubah. Silakan coba lagi.",
+                )
+                return response
+
         update_payload = {
             "nama_produk": nama_produk,
             "perusahaan": perusahaan,
@@ -1053,9 +1166,20 @@ def register_products_routes(
         # Delete + re-insert semua baris formula biar urutan & komposisi selalu tersinkron.
         # Baris lama tetap dirender dari DB di halaman edit, jadi kalau gak diubah pun
         # datanya tetap tersimpan sama persis (tidak ada data Bab 2 yang hilang).
+        #
+        # Jaring pengaman data: kalau INSERT baris baru gagal, baris lama yang
+        # sudah ter-DELETE dipulihkan dari snapshot (old_formula_rows). Kalau
+        # DELETE-nya sendiri yang gagal, baris lama masih ada di DB sehingga
+        # TIDAK boleh di-insert ulang (bakal jadi baris duplikat).
+        formula_failed = False
+        formula_error_msg = ""
+        formula_note = ""
+        formula_line_count = 0
         if formula_submitted:
+            delete_done = False
             try:
                 supabase.table("product_formula_lines").delete().eq("product_id", product_id).execute()
+                delete_done = True
                 if raw_material_id:
                     # --- Validasi variant_id per baris (Fase 4): varian wajib milik
                     #     bahan bakunya sendiri; kosong/invalid = default (NULL) ---
@@ -1089,10 +1213,68 @@ def register_products_routes(
                                 "percent_in_formula": pct,
                                 "variant_id": v_clean,
                             })
+                    formula_line_count = len(lines)
                     if lines:
                         supabase.table("product_formula_lines").insert(lines).execute()
             except Exception as e:
                 print(f"Gagal simpan formula Bab 2 produk {product_id}: {e}")
+                formula_failed = True
+                if not delete_done:
+                    # DELETE gagal -> baris formula lama masih ada di DB. Insert
+                    # ulang di sini bakal bikin baris DUPLIKAT, jadi jangan.
+                    formula_error_msg = (
+                        "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan. "
+                        "Formula lama tetap utuh, jadi komposisi produk tidak berubah. Silakan coba lagi."
+                    )
+                    formula_note = (
+                        "gagal menyimpan formula Bab 2; baris formula lama tidak terhapus (tetap utuh). "
+                        "Detail teknis ada di log server."
+                    )
+                elif not old_formula_rows:
+                    # Baris lama memang tidak ada (produk belum punya formula),
+                    # jadi tidak ada yang bisa dipulihkan.
+                    formula_error_msg = (
+                        "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan dan "
+                        "tidak ada formula lama untuk dipulihkan. Silakan coba lagi."
+                    )
+                    formula_note = (
+                        "gagal menyimpan formula Bab 2; tidak ada formula lama untuk dipulihkan. "
+                        "Detail teknis ada di log server."
+                    )
+                else:
+                    # Pulihkan baris lama dari snapshot (daftar kolom eksplisit).
+                    try:
+                        restore_rows = [
+                            {
+                                "product_id": row.get("product_id"),
+                                "raw_material_id": row.get("raw_material_id"),
+                                "percent_in_formula": row.get("percent_in_formula"),
+                                "variant_id": row.get("variant_id"),
+                            }
+                            for row in old_formula_rows
+                        ]
+                        supabase.table("product_formula_lines").insert(restore_rows).execute()
+                        formula_error_msg = (
+                            "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan. "
+                            "Formula lama berhasil dipulihkan, jadi komposisi produk tidak berubah. "
+                            "Silakan coba lagi."
+                        )
+                        formula_note = (
+                            "gagal menyimpan formula Bab 2; formula lama berhasil dipulihkan. "
+                            "Detail teknis ada di log server."
+                        )
+                    except Exception as rb:
+                        print(f"Rollback formula Bab 2 produk {product_id} GAGAL: {rb}")
+                        formula_error_msg = (
+                            "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan dan "
+                            "formula lama TIDAK berhasil dipulihkan otomatis. Segera hubungi admin "
+                            "untuk perbaikan data formula."
+                        )
+                        formula_note = (
+                            "gagal menyimpan formula Bab 2 DAN formula lama tidak berhasil dipulihkan "
+                            "otomatis; admin harus memperbaiki data formula secara manual. "
+                            "Detail teknis ada di log server."
+                        )
 
         # --- Catat activity log: field teks dibandingin beneran, field file cuma dicatet "diganti" ---
         product_field_labels = {
@@ -1129,6 +1311,24 @@ def register_products_routes(
         }
         product_file_fields = {k for k in product_field_labels if k.endswith("_file_url")}
         product_changes = _build_diff_changes(old_product, update_payload, product_field_labels, product_file_fields)
+        if formula_submitted and not formula_failed:
+            product_changes.append({
+                "field": "Formula Bab 2",
+                "note": "%d baris formula tersimpan" % formula_line_count,
+            })
+
+        if formula_failed:
+            # Formula gagal -> JANGAN tulis audit sukses untuk edit produk ini.
+            # Baris produknya sendiri sudah tersimpan, jadi audit tetap merekam
+            # perubahan produk + catatan bahwa formula Bab 2 gagal disimpan.
+            failed_changes = list(product_changes)
+            failed_changes.append({"field": "Formula Bab 2", "note": formula_note})
+            log_activity(current_user, "update", "product", product_id, nama_produk,
+                         failed_changes, request=request, outcome="failed")
+            response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+            response.set_cookie("error_msg", formula_error_msg)
+            return response
+
         if product_changes:
             log_activity(current_user, "update", "product", product_id, nama_produk,
                          product_changes, request=request)
