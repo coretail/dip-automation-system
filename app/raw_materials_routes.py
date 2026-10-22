@@ -54,6 +54,115 @@ def _cleanup_uploaded_objects(paths: list, bucket: str = "raw-material-docs") ->
     return (not failed), failed
 
 
+class _BatchUpdateAffectedNoRow(Exception):
+    """UPDATE batch tidak menyentuh baris mana pun (batch hilang/terhapus)."""
+
+
+# Label dokumen per kolom URL di raw_material_batches (dipakai untuk pesan
+# flash dan audit trail).
+DOC_FIELD_LABELS = {
+    "coa_file_url": "CoA",
+    "halal_batch_file_url": "Halal",
+    "qc_report_file_url": "Laporan Pemeriksaan",
+}
+
+
+def _count_url_references(table: str, column: str, url: str, exclude_id: str | None = None) -> tuple[int, str | None]:
+    """Hitung baris lain yang masih menunjuk URL objek storage yang sama.
+
+    Dipakai sebelum menghapus file lama: path warisan (mis.
+    ``coa/coa_{batch}.pdf``) bisa dipakai lebih dari satu batch, jadi objek
+    tidak boleh dihapus selama masih dirujuk baris lain.
+
+    Return (jumlah_referensi, nama_tabel_yang_gagal_cek). Kalau query gagal,
+    jumlah = -1 yang berarti TIDAK bisa dibuktikan bebas pakai -> pemanggil
+    tidak boleh menghapus objek.
+    """
+    try:
+        query = supabase.table(table).select("id").eq(column, url)
+        if exclude_id:
+            query = query.neq("id", exclude_id)
+        resp = query.execute()
+        return len(resp.data or []), None
+    except Exception as exc:
+        print(f"[RAW MATERIALS] Gagal cek referensi {table}.{column}: {exc}")
+        return -1, f"{table}.{column}"
+
+
+def _cleanup_replaced_objects(batch_id: str, old_doc_urls: dict, new_doc_urls: dict) -> tuple[list, list]:
+    """Hapus objek storage lama yang digantikan, kalau memang tidak dirujuk lagi.
+
+    File lama TIDAK boleh langsung dihapus: path warisan (mis.
+    ``coa/coa_{batch}.pdf``) bisa dipakai lebih dari satu batch, bahkan oleh
+    baris ``product_batches``. Jadi sebelum dihapus, objek dicek dulu: masih
+    ada baris lain yang menunjuk URL yang sama? Kalau ada, file dibiarkan.
+
+    Return (perubahan_untuk_audit, pesan_peringatan_untuk_user).
+    """
+    changes: list = []
+    warnings: list = []
+    for column, label in DOC_FIELD_LABELS.items():
+        old_url = (old_doc_urls or {}).get(column)
+        new_url = (new_doc_urls or {}).get(column)
+        if not old_url or not new_url or old_url == new_url:
+            continue
+        bucket, path = object_store.parse_storage_url(old_url)
+        if not bucket or not path:
+            print(f"[RAW MATERIALS] URL lama {label} tidak bisa diparse, file tidak dihapus: {old_url}")
+            changes.append({
+                "field": label,
+                "note": "file lama tidak bisa diparse, jadi tidak dihapus dari storage",
+            })
+            warnings.append(f"File lama {label} tidak bisa diparse, jadi tidak dihapus.")
+            continue
+        refs, ref_error = _count_url_references(
+            "raw_material_batches", column, old_url, exclude_id=batch_id
+        )
+        if refs <= 0 and column == "coa_file_url":
+            # CoA warisan (coa/coa_{batch}.pdf) bisa juga ditunjuk baris
+            # product_batches, jadi ikut dicek sebelum dihapus.
+            product_refs, product_error = _count_url_references("product_batches", column, old_url)
+            if product_refs > 0:
+                refs = product_refs
+            elif product_error:
+                ref_error = ref_error or product_error
+        if ref_error:
+            changes.append({
+                "field": label,
+                "note": "referensi file lama tidak bisa dicek, jadi file tidak dihapus dari storage",
+            })
+            warnings.append(f"Referensi file lama {label} tidak bisa dicek, jadi file tidak dihapus.")
+            continue
+        if refs > 0:
+            changes.append({
+                "field": label,
+                "note": "file lama masih dipakai batch lain, jadi tidak dihapus dari storage",
+            })
+            warnings.append(f"File lama {label} masih dipakai batch lain, jadi tidak dihapus.")
+            continue
+        gagal_hapus = False
+        try:
+            remove_result = object_store.remove_from_all_backends(bucket, path, client=supabase)
+            gagal_hapus = bool(object_store.failed_backends(remove_result))
+            if gagal_hapus:
+                print(
+                    f"[RAW MATERIALS] File lama {label} gagal dihapus di backend: "
+                    f"{', '.join(object_store.failed_backends(remove_result))}"
+                )
+        except Exception as exc:
+            gagal_hapus = True
+            print(f"[RAW MATERIALS] Gagal hapus file lama {label} ({path}): {exc}")
+        if gagal_hapus:
+            changes.append({
+                "field": label,
+                "note": "file lama gagal dihapus dari storage; detail ada di log server",
+            })
+            warnings.append(
+                f"File lama {label} gagal dihapus dari storage - administrator perlu memeriksa storage."
+            )
+    return changes, warnings
+
+
 def register_raw_materials_routes(
     app,
     get_current_user,
@@ -1054,7 +1163,9 @@ def register_raw_materials_routes(
             return response
 
         # Batch tersimpan. Kalau ada file yang gagal diunggah, hasilnya sukses
-        # sebagian dan itu harus terlihat jelas di pesan maupun audit trail.
+        # sebagian: baris batch-nya SUDAH ditulis, jadi outcome tetap "success"
+        # dan file yang gagal disebut di `changes`. Outcome "failed" dipakai
+        # hanya kalau baris batch-nya sendiri gagal ditulis.
         audit_changes = []
         if upload_errors:
             audit_changes.append({
@@ -1064,13 +1175,12 @@ def register_raw_materials_routes(
                         + " gagal diunggah. Detail teknis ada di log server.",
             })
             pesan = (
-                f"Batch '{no_batch.strip()}' berhasil ditambahkan, tetapi file "
+                f"Batch '{no_batch.strip()}' tersimpan, tetapi file "
                 + ", ".join(upload_errors)
                 + " gagal diunggah."
             )
             peringatan = (
-                f"Batch '{no_batch.strip()}' tersimpan, tetapi file "
-                + ", ".join(upload_errors)
+                "File " + ", ".join(upload_errors)
                 + " gagal diunggah. Silakan unggah ulang lewat menu upload cepat."
             )
         else:
@@ -1081,7 +1191,7 @@ def register_raw_materials_routes(
             current_user, "create", "raw_material_batch", batch_id or "-",
             f"Batch {no_batch.strip()}",
             changes=audit_changes or None, request=request,
-            outcome="failed" if upload_errors else "success",
+            outcome="success",
         )
 
         # Redirect balik ke halaman utama bahan baku
@@ -1126,6 +1236,34 @@ def register_raw_materials_routes(
             "quantity": quantity,
             "quantity_unit": quantity_unit,
             "keterangan": keterangan.strip() if keterangan else None
+        }
+
+        # --- Baca batch SEBELUM mengunggah apa pun -------------------------
+        # .limit(1) (bukan .single()) supaya batch yang tidak ada tidak
+        # melempar error -> ditolak sendiri dengan pesan yang jelas, dan
+        # tidak ada file terunggah yang jadi yatim.
+        pre_resp = supabase.table("raw_material_batches").select(
+            "id, no_batch, coa_file_url, halal_batch_file_url, qc_report_file_url"
+        ).eq("id", batch_id).limit(1).execute()
+        batch_row = (pre_resp.data or [None])[0]
+        if not batch_row:
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                f"Update batch {no_batch.strip()}",
+                changes=[{"field": "Batch",
+                          "note": "batch tidak ditemukan; tidak ada perubahan yang disimpan"}],
+                request=request, outcome="rejected",
+            )
+            response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
+            response.set_cookie("error_msg", "Batch tidak ditemukan. Perubahan tidak disimpan.")
+            return response
+
+        # URL dokumen LAMA -> dipakai nanti untuk menghapus objek yang
+        # digantikan, kalau objek itu memang tidak dirujuk baris lain.
+        old_doc_urls = {
+            "coa_file_url": batch_row.get("coa_file_url"),
+            "halal_batch_file_url": batch_row.get("halal_batch_file_url"),
+            "qc_report_file_url": batch_row.get("qc_report_file_url"),
         }
 
         uploaded_paths: list = []   # objek yang dibuat operasi ini saja
@@ -1175,32 +1313,54 @@ def register_raw_materials_routes(
                 upload_errors.append("Laporan Pemeriksaan")
 
         # 3. Simpan perubahan ke database. Audit log TIDAK lagi ditulis di
-        # dalam try yang sama, supaya kegagalan update tetap tercatat sebagai
-        # kegagalan (bukan hilang tanpa jejak).
+        #    dalam try yang sama, supaya kegagalan update tetap tercatat sebagai
+        #    kegagalan (bukan hilang tanpa jejak).
+        #    .select("id") dipakai supaya PostgREST mengembalikan baris yang
+        #    terpengaruh: UPDATE tanpa baris yang cocok TIDAK melempar error,
+        #    jadi harus dicek sendiri (batch hilang / terhapus di antara
+        #    pre-read dan update). Kalau tidak ada baris yang terpengaruh,
+        #    exception sentinel dilempar supaya ikut ditangani sebagai
+        #    kegagalan - bukan dilaporkan sukses.
         try:
-            supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+            upd_resp = (
+                supabase.table("raw_material_batches").update(update_data)
+                .eq("id", batch_id)
+                .select("id")
+                .execute()
+            )
+            affected_rows = len(upd_resp.data or [])
+            if not affected_rows:
+                raise _BatchUpdateAffectedNoRow(
+                    "tidak ada baris batch yang terpengaruh oleh update"
+                )
         except Exception as e:
-            print(f"Gagal update batch: {e}")
-            # Database gagal -> objek yang barusan diunggah jadi yatim. Hapus
+            batch_hilang = isinstance(e, _BatchUpdateAffectedNoRow)
+            if batch_hilang:
+                print(f"Update batch {batch_id} tidak menyentuh baris mana pun: {e}")
+            else:
+                print(f"Gagal update batch: {e}")
+            # Kegagalan: objek yang barusan diunggah jadi yatim. Hapus
             # HANYA objek yang dibuat operasi ini (path-nya unik per operasi).
             cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
             if cleanup_ok:
-                pesan = (
-                    f"Gagal menyimpan perubahan batch '{no_batch.strip()}'. File yang sudah diunggah "
-                    "sudah dihapus, silakan coba lagi."
-                )
-                catatan = (
-                    "penyimpanan perubahan batch gagal di database; file yang diunggah sudah dibersihkan"
-                )
+                tail_pesan = " File yang sudah diunggah sudah dihapus, silakan coba lagi."
+                tail_pesan_belum = " File yang sudah diunggah sudah dihapus."
+                tail_catatan = "; file yang diunggah sudah dibersihkan"
             else:
-                pesan = (
-                    f"Gagal menyimpan perubahan batch '{no_batch.strip()}'. File yang sudah diunggah "
-                    "juga gagal dihapus - administrator perlu memeriksa storage."
+                tail_pesan = " File yang sudah diunggah juga gagal dihapus - administrator perlu diperiksa storage."
+                tail_pesan_belum = tail_pesan
+                tail_catatan = (
+                    f"; file yang diunggah juga gagal dibersihkan ({len(cleanup_failed)} objek) "
+                    "- admin harus memeriksa storage"
                 )
-                catatan = (
-                    "penyimpanan perubahan batch gagal di database; file yang diunggah juga gagal "
-                    f"dibersihkan ({len(cleanup_failed)} objek) - admin harus memeriksa storage"
-                )
+            if batch_hilang:
+                # Baris tidak terpengaruh: batch tidak ada atau terhapus di
+                # antara pre-read dan update.
+                pesan = "Batch tidak ditemukan. Perubahan tidak disimpan." + tail_pesan_belum
+                catatan = "batch tidak ditemukan atau terhapus saat perubahan disimpan" + tail_catatan
+            else:
+                pesan = f"Gagal menyimpan perubahan batch '{no_batch.strip()}'." + tail_pesan
+                catatan = "penyimpanan perubahan batch gagal di database" + tail_catatan
             log_activity(
                 current_user, "edit", "raw_material_batch", batch_id,
                 f"Update batch {no_batch.strip()}",
@@ -1211,7 +1371,11 @@ def register_raw_materials_routes(
             response.set_cookie("error_msg", pesan)
             return response
 
-        # Update berhasil -> audit ditulis di sini (di luar try database).
+        # Update berhasil -> file lama yang digantikan dibersihkan (hanya
+        # kalau tidak dirujuk baris lain), lalu audit ditulis di sini
+        # (di luar try database).
+        cleanup_changes, cleanup_pesan = _cleanup_replaced_objects(batch_id, old_doc_urls, update_data)
+
         audit_changes = []
         if upload_errors:
             audit_changes.append({
@@ -1221,24 +1385,26 @@ def register_raw_materials_routes(
                         + " gagal diunggah. Detail teknis ada di log server.",
             })
             pesan = (
-                f"Perubahan batch '{no_batch.strip()}' berhasil disimpan, tetapi file "
+                f"Perubahan batch '{no_batch.strip()}' tersimpan, tetapi file "
                 + ", ".join(upload_errors)
                 + " gagal diunggah."
             )
             peringatan = (
-                f"Perubahan batch '{no_batch.strip()}' tersimpan, tetapi file "
-                + ", ".join(upload_errors)
+                "File " + ", ".join(upload_errors)
                 + " gagal diunggah. Silakan unggah ulang lewat menu upload cepat."
             )
         else:
             pesan = f"Perubahan batch '{no_batch.strip()}' berhasil disimpan."
             peringatan = ""
+        audit_changes.extend(cleanup_changes)
+        if cleanup_pesan:
+            peringatan = (peringatan + " " + " ".join(cleanup_pesan)).strip()
 
         log_activity(
             current_user, "edit", "raw_material_batch", batch_id,
             f"Update batch {no_batch.strip()}",
             changes=audit_changes or None, request=request,
-            outcome="failed" if upload_errors else "success",
+            outcome="success",
         )
 
         response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
@@ -1258,21 +1424,39 @@ def register_raw_materials_routes(
     ):
         # Route ini CUMA nyentuh kolom file URL, tidak menyentuh field lain
         # (no_batch, supplier, tanggal, kesimpulan, dll) di baris batch tersebut.
+        # .limit(1) (bukan .single()) supaya batch yang tidak ada tidak
+        # melempar error -> ditolak dengan pesan yang jelas.
         batch_resp = supabase.table("raw_material_batches").select(
             "no_batch, raw_materials(nama_dagang)"
-        ).eq("id", batch_id).single().execute()
-        if not batch_resp.data:
+        ).eq("id", batch_id).limit(1).execute()
+        batch_row = (batch_resp.data or [None])[0]
+        if not batch_row:
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                "Upload cepat dokumen batch",
+                changes=[{"field": "Dokumen",
+                          "note": "batch tidak ditemukan; tidak ada dokumen yang diunggah"}],
+                request=request, outcome="rejected",
+            )
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
             response.set_cookie("error_msg", "Batch tidak ditemukan.")
             return response
 
-        no_batch = batch_resp.data["no_batch"]
-        raw_material = batch_resp.data.get("raw_materials")
+        no_batch = batch_row["no_batch"]
+        raw_material = batch_row.get("raw_materials")
         if isinstance(raw_material, list):
             raw_material = raw_material[0] if raw_material else None
         nama_bahan_baku = raw_material.get("nama_dagang") if isinstance(raw_material, dict) else None
         nama_bahan_baku = nama_bahan_baku or "Tanpa Master"
         clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ("-", "_")).strip()
+
+        # Apakah ada file yang benar-benar dipilih? File yang dipilih tapi
+        # gagal validasi BUKAN sama dengan "tidak ada file yang dipilih" -
+        # dua kasus ini harus dibedakan supaya pesannya jujur.
+        files_selected = any(
+            upload is not None and (getattr(upload, "filename", "") or "")
+            for upload in (coa_file, halal_file, qc_report_file)
+        )
 
         update_data = {}
         uploaded_documents = []
@@ -1328,77 +1512,110 @@ def register_raw_materials_routes(
                 print(f"Gagal quick-upload QC Report: {e}")
                 upload_errors.append("Laporan Pemeriksaan")
 
-        if update_data:
-            try:
-                supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
-            except Exception as e:
-                print(f"Gagal simpan quick-upload batch doc: {e}")
-                # Database gagal -> objek yang barusan diunggah jadi yatim. Hapus
-                # HANYA objek yang dibuat operasi ini (path-nya unik per operasi).
-                cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
-                if cleanup_ok:
-                    pesan = (
-                        "Gagal menyimpan dokumen batch. File yang sudah diunggah sudah dihapus, "
-                        "silakan coba lagi."
-                    )
-                    catatan = (
-                        "penyimpanan URL dokumen gagal di database; file yang diunggah sudah dibersihkan"
-                    )
-                else:
-                    pesan = (
-                        "Gagal menyimpan dokumen batch. File yang sudah diunggah juga gagal dihapus - "
-                        "administrator perlu memeriksa storage."
-                    )
-                    catatan = (
-                        "penyimpanan URL dokumen gagal di database; file yang diunggah juga gagal "
-                        f"dibersihkan ({len(cleanup_failed)} objek) - admin harus memeriksa storage"
-                    )
-                log_activity(
-                    current_user, "edit", "raw_material_batch", batch_id,
-                    f"Upload cepat untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
-                    changes=[{"field": "Dokumen", "note": catatan}],
-                    request=request, outcome="failed",
-                )
-                response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-                response.set_cookie("error_msg", pesan)
-                return response
-
-            # Audit ditulis di luar try database supaya kegagalan tetap tercatat.
-            audit_changes = []
-            if upload_errors:
-                audit_changes.append({
-                    "field": "Dokumen",
-                    "note": "dokumen tersimpan, tetapi file "
-                            + ", ".join(upload_errors)
-                            + " gagal diunggah. Detail teknis ada di log server.",
-                })
-            document_list = ", ".join(uploaded_documents)
+        # Kasus 1: tidak ada file yang dipilih sama sekali.
+        if not files_selected:
             log_activity(
                 current_user, "edit", "raw_material_batch", batch_id,
-                f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
-                changes=audit_changes or None, request=request,
-                outcome="failed" if upload_errors else "success",
+                f"Upload cepat untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
+                changes=[{"field": "Dokumen",
+                          "note": "tidak ada file yang dipilih; tidak ada dokumen yang diubah"}],
+                request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-            if upload_errors:
-                response.set_cookie(
-                    "success_msg",
-                    "Dokumen berhasil diupload, tetapi file "
-                    + ", ".join(upload_errors)
-                    + " gagal diunggah.",
-                )
-                response.set_cookie(
-                    "warning_msg",
-                    "Batch '" + no_batch.strip() + "' tersimpan, tetapi file "
-                    + ", ".join(upload_errors)
-                    + " gagal diunggah. Silakan unggah ulang.",
-                )
-            else:
-                response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+            response.set_cookie("error_msg", "Tidak ada file yang dipilih.")
             return response
 
+        # Kasus 2: file dipilih, tapi SEMUA gagal -> tidak ada dokumen yang
+        # tersimpan. Bersihkan dulu objek yang sempat terunggah (biasanya
+        # daftar ini kosong, tapi tetap aman dibersihkan).
+        if not update_data:
+            cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
+            catatan = (
+                "semua file gagal diunggah ("
+                + ", ".join(upload_errors)
+                + "); tidak ada dokumen yang tersimpan"
+            )
+            if not cleanup_ok:
+                catatan += (
+                    f"; file yang sempat terunggah juga gagal dibersihkan ({len(cleanup_failed)} objek)"
+                )
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                f"Upload cepat untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
+                changes=[{"field": "Dokumen", "note": catatan}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+            response.set_cookie(
+                "error_msg",
+                "Semua file gagal diunggah. Tidak ada dokumen yang tersimpan.",
+            )
+            return response
+
+        # Kasus 3: ada dokumen yang berhasil tersimpan (mungkin sebagian
+        # file gagal -> nanti dilaporkan lewat warning_msg).
+        try:
+            supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+        except Exception as e:
+            print(f"Gagal simpan quick-upload batch doc: {e}")
+            # Database gagal -> objek yang barusan diunggah jadi yatim. Hapus
+            # HANYA objek yang dibuat operasi ini (path-nya unik per operasi).
+            cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
+            if cleanup_ok:
+                pesan = (
+                    "Gagal menyimpan dokumen batch. File yang sudah diunggah sudah dihapus, "
+                    "silakan coba lagi."
+                )
+                catatan = (
+                    "penyimpanan URL dokumen gagal di database; file yang diunggah sudah dibersihkan"
+                )
+            else:
+                pesan = (
+                    "Gagal menyimpan dokumen batch. File yang sudah diunggah juga gagal dihapus - "
+                    "administrator perlu memeriksa storage."
+                )
+                catatan = (
+                    "penyimpanan URL dokumen gagal di database; file yang diunggah juga gagal "
+                    f"dibersihkan ({len(cleanup_failed)} objek) - admin harus memeriksa storage"
+                )
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                f"Upload cepat untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
+                changes=[{"field": "Dokumen", "note": catatan}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+            response.set_cookie("error_msg", pesan)
+            return response
+
+        # Audit ditulis di luar try database supaya kegagalan tetap tercatat.
+        # Baris batch SUDAH tersimpan, jadi outcome tetap "success"; file yang
+        # gagal disebut di `changes` dan diperingatkan lewat warning_msg.
+        audit_changes = []
+        if upload_errors:
+            audit_changes.append({
+                "field": "Dokumen",
+                "note": "dokumen tersimpan, tetapi file "
+                        + ", ".join(upload_errors)
+                        + " gagal diunggah. Detail teknis ada di log server.",
+            })
+        document_list = ", ".join(uploaded_documents)
+        log_activity(
+            current_user, "edit", "raw_material_batch", batch_id,
+            f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
+            changes=audit_changes or None, request=request,
+            outcome="success",
+        )
         response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-        response.set_cookie("error_msg", "Tidak ada file yang dipilih.")
+        if upload_errors:
+            response.set_cookie("success_msg", f"Batch '{no_batch.strip()}' tersimpan.")
+            response.set_cookie(
+                "warning_msg",
+                "File " + ", ".join(upload_errors)
+                + " gagal diunggah. Silakan unggah ulang.",
+            )
+        else:
+            response.set_cookie("success_msg", "Dokumen berhasil diupload.")
         return response
 
     # ==================== ED MANAGEMENT ENDPOINTS ====================
