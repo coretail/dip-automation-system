@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from httpx import HTTPStatusError
+from postgrest.exceptions import APIError
 
 from app.database import supabase
 from app.file_validation import validate_pdf_bytes
@@ -79,7 +81,11 @@ def _count_url_references(table: str, column: str, url: str, exclude_id: str | N
     tidak boleh menghapus objek.
     """
     try:
-        query = supabase.table(table).select("id").eq(column, url)
+        # Filter memakai builder resmi library (`.in_`) supaya nilai URL
+        # dipasar sebagai SATU nilai: `.in_` membungkus nilai yang memuat
+        # karakter khusus PostgREST (`,:()`) di dalam tanda kutip, sedangkan
+        # `.eq` menempelkan nilai mentah ke string filter.
+        query = supabase.table(table).select("id").in_(column, [url])
         if exclude_id:
             query = query.neq("id", exclude_id)
         resp = query.execute()
@@ -115,9 +121,24 @@ def _cleanup_replaced_objects(batch_id: str, old_doc_urls: dict, new_doc_urls: d
             })
             warnings.append(f"File lama {label} tidak bisa diparse, jadi tidak dihapus.")
             continue
+        # Objek yang sama bisa ditunjuk dari kolom lain atau tabel lain, jadi
+        # SEMUA kombinasi dicek: file lama tidak boleh dihapus selama masih
+        # dirujuk baris lain.
         refs, ref_error = _count_url_references(
             "raw_material_batches", column, old_url, exclude_id=batch_id
         )
+        if refs <= 0:
+            for kolom_lain in DOC_FIELD_LABELS:
+                if kolom_lain == column:
+                    continue
+                refs_lain, err_lain = _count_url_references(
+                    "raw_material_batches", kolom_lain, old_url, exclude_id=batch_id
+                )
+                if refs_lain > 0:
+                    refs = refs_lain
+                    break
+                if err_lain:
+                    ref_error = ref_error or err_lain
         if refs <= 0 and column == "coa_file_url":
             # CoA warisan (coa/coa_{batch}.pdf) bisa juga ditunjuk baris
             # product_batches, jadi ikut dicek sebelum dihapus.
@@ -161,6 +182,199 @@ def _cleanup_replaced_objects(batch_id: str, old_doc_urls: dict, new_doc_urls: d
                 f"File lama {label} gagal dihapus dari storage - administrator perlu memeriksa storage."
             )
     return changes, warnings
+
+
+# ---------------------------------------------------------------------------
+# Klasifikasi kegagalan tulis ke database
+# ---------------------------------------------------------------------------
+# Tiga kemungkinan hasil saat menulis ke database:
+#   1. Pasti ditolak - server menerima permintaan lalu membalas HTTP error.
+#      Tulisan TIDAK terjadi, jadi objek yang baru diunggah aman dihapus.
+#   2. Ambigu tapi terkonfirmasi tersimpan - respons database hilang (timeout,
+#      koneksi putus), tapi query rekonsiliasi menemukan URL baru di database.
+#      Datanya sudah tersimpan, jadi objek DIPERTAHANKAN dan hasilnya sukses.
+#   3. Ambigu dan belum pasti - respons hilang dan URL baru tidak ditemukan
+#      (atau query rekonsiliasinya sendiri gagal). Objek DIPERTAHANKAN dan
+#      path-nya dicatat di activity log untuk rekonsiliasi manual.
+KEGAGALAN_PASTI_DITOLAK = "pasti_ditolak"
+KEGAGALAN_AMBIGU = "ambigu"
+
+REKONSILIASI_DITEMUKAN = "ditemukan"
+REKONSILIASI_TIDAK_DITEMUKAN = "tidak_ditemukan"
+REKONSILIASI_GAGAL_CEK = "gagal_cek"
+
+
+def _klasifikasi_kegagalan_db(exc: BaseException) -> str:
+    """Tentukan kegagalan database itu pasti ditolak atau ambigu.
+
+    Dasarnya TIPE exception, bukan pencocokan teks pesan:
+
+    * ``postgrest.exceptions.APIError`` dilempar client PostgREST ketika
+      server membalas HTTP error (lihat ``SyncQueryRequestBuilder.execute``
+      di ``postgrest/_sync/request_builder.py``). Server sudah menerima dan
+      menolak permintaan, jadi tulisannya tidak terjadi.
+    * ``httpx.HTTPStatusError`` = server membalas status HTTP error, bukan
+      kegagalan transport, jadi juga pasti ditolak.
+    * ``httpx.HTTPError`` (timeout/connect/read/write/protocol/network) dan
+      exception lain = permintaan mungkin sudah diterapkan di server, tapi
+      responsnya tidak sampai -> ambigu.
+    """
+    if isinstance(exc, (APIError, HTTPStatusError)):
+        return KEGAGALAN_PASTI_DITOLAK
+    return KEGAGALAN_AMBIGU
+
+
+def _rekonsiliasi_url_baru(new_doc_urls: dict) -> tuple[str, str | None]:
+    """Cek apakah URL dokumen baru benar-benar sudah tersimpan di database.
+
+    Dipakai HANYA di jalur error, ketika respons database hilang sehingga
+    tidak diketahui apakah tulisan sudah diterapkan atau belum.
+
+    Filternya dibangun lewat builder resmi library (``.in_``), bukan string
+    PostgREST yang dirangkai tangan: ``postgrest`` membungkus nilai yang
+    memuat karakter khusus PostgREST (``,:()``) di dalam tanda kutip,
+    sehingga URL tetap dipasar sebagai satu nilai utuh.
+
+    Return: (status, id_baris_ditemukan).
+    """
+    target = [
+        (column, (new_doc_urls or {}).get(column))
+        for column in DOC_FIELD_LABELS
+        if (new_doc_urls or {}).get(column)
+    ]
+    if not target:
+        return REKONSILIASI_TIDAK_DITEMUKAN, None
+
+    for column, url in target:
+        # product_batches hanya punya kolom CoA; kolom Halal dan Laporan
+        # Pemeriksaan hanya ada di raw_material_batches.
+        if column == "coa_file_url":
+            tabel = ("raw_material_batches", "product_batches")
+        else:
+            tabel = ("raw_material_batches",)
+        for table in tabel:
+            try:
+                resp = (
+                    supabase.table(table)
+                    .select("id")
+                    .in_(column, [url])
+                    .limit(1)
+                    .execute()
+                )
+            except Exception as exc:
+                print(
+                    f"[RAW MATERIALS] Gagal cek rekonsiliasi {table}.{column}: {exc}"
+                )
+                return REKONSILIASI_GAGAL_CEK, None
+            if resp.data:
+                return REKONSILIASI_DITEMUKAN, (resp.data[0] or {}).get("id")
+    return REKONSILIASI_TIDAK_DITEMUKAN, None
+
+
+def _rekonsiliasi_setelah_gagal(
+    new_doc_urls: dict,
+    uploaded_paths: list,
+    *,
+    pesan_tersimpan: str,
+    pesan_belum_pasti: str,
+) -> dict:
+    """Ringkasan hasil rekonsiliasi setelah respons database hilang.
+
+    Return dict berisi:
+      - "status"    : "tersimpan" atau "belum_pasti"
+      - "entity_id" : id baris yang ditemukan (None kalau belum pasti)
+      - "catatan"   : catatan untuk audit trail
+      - "pesan"     : pesan flash untuk user
+      - "outcome"   : "success" atau "failed"
+
+    Catatan penting: hasil query yang KOSONG bukan bukti pasti gagal -
+    request-nya masih mungkin berjalan di server. Karena itu objek yang baru
+    diunggah selalu DIPERTAHANKAN di jalur ini, dan path-nya dicatat di
+    activity log supaya administrator bisa merekonsiliasi manual.
+    """
+    status_rek, id_ditemukan = _rekonsiliasi_url_baru(new_doc_urls)
+    if status_rek == REKONSILIASI_DITEMUKAN:
+        return {
+            "status": "tersimpan",
+            "entity_id": id_ditemukan,
+            "catatan": (
+                "respons database tidak diterima, tapi URL baru terverifikasi ada "
+                "di database; file yang diunggah dipertahankan"
+            ),
+            "pesan": pesan_tersimpan,
+            "outcome": "success",
+        }
+    if status_rek == REKONSILIASI_GAGAL_CEK:
+        alasan = "query rekonsiliasi juga gagal"
+    else:
+        alasan = "URL baru belum ditemukan di database"
+    daftar_path = ", ".join(uploaded_paths) if uploaded_paths else "-"
+    return {
+        "status": "belum_pasti",
+        "entity_id": None,
+        "catatan": (
+            f"hasil penyimpanan belum pasti ({alasan}); file yang diunggah "
+            f"sengaja dipertahankan untuk rekonsiliasi manual: {daftar_path}"
+        ),
+        "pesan": pesan_belum_pasti,
+        "outcome": "failed",
+    }
+
+
+def _balas_gagal_ambigu(
+    log_activity,
+    current_user,
+    request,
+    *,
+    action: str,
+    entity_type: str,
+    entity_id: str | None,
+    entity_label: str,
+    field_label: str,
+    hasil: dict,
+    redirect_url: str,
+    old_doc_urls: dict | None = None,
+    new_doc_urls: dict | None = None,
+) -> RedirectResponse:
+    """Balas dan catat hasil jalur "gagal ambigu" (respons database hilang).
+
+    Objek yang baru diunggah SELALU dipertahankan di jalur ini: hasil query
+    rekonsiliasi yang kosong bukan bukti pasti gagal, karena request-nya masih
+    mungkin berjalan di server.
+
+    * Kalau URL baru ditemukan, tulisan memang tersimpan -> operasi dilaporkan
+      sukses dan objek lama yang digantikan ikut dibersihkan.
+    * Kalau tidak ditemukan (atau query rekonsiliasinya gagal), hasilnya
+      dilaporkan belum pasti dan path objek dicatat di audit trail supaya
+      administrator bisa merekonsiliasi manual.
+    """
+    perubahan = [{"field": field_label, "note": hasil["catatan"]}]
+    peringatan = ""
+    if hasil["outcome"] == "success" and old_doc_urls:
+        # Tulisan terbukti tersimpan -> objek lama yang digantikan boleh
+        # dibersihkan, sama seperti pada jalur sukses.
+        cleanup_changes, cleanup_pesan = _cleanup_replaced_objects(
+            entity_id, old_doc_urls, new_doc_urls or {}
+        )
+        perubahan.extend(cleanup_changes)
+        peringatan = " ".join(cleanup_pesan)
+    if hasil["outcome"] == "success":
+        log_activity(
+            current_user, action, entity_type, hasil["entity_id"] or entity_id,
+            entity_label, changes=perubahan, request=request, outcome="success",
+        )
+        response = RedirectResponse(url=redirect_url, status_code=303)
+        response.set_cookie("success_msg", hasil["pesan"])
+    else:
+        log_activity(
+            current_user, action, entity_type, entity_id,
+            entity_label, changes=perubahan, request=request, outcome="failed",
+        )
+        response = RedirectResponse(url=redirect_url, status_code=303)
+        response.set_cookie("error_msg", hasil["pesan"])
+    if peringatan:
+        response.set_cookie("warning_msg", peringatan)
+    return response
 
 
 def register_raw_materials_routes(
@@ -1131,36 +1345,71 @@ def register_raw_materials_routes(
             print("--> Data Batch berhasil masuk ke Database!")
         except Exception as e:
             print(f"Gagal insert ke DB: {e}")
-            # Database gagal -> objek yang barusan diunggah jadi yatim. Hapus
-            # HANYA objek yang dibuat operasi ini (path-nya unik per operasi),
-            # file milik batch lain tidak boleh disentuh.
-            cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
-            if cleanup_ok:
-                pesan = (
-                    f"Gagal menyimpan batch '{no_batch.strip()}'. File yang sudah diunggah "
-                    "sudah dihapus, silakan coba lagi."
+            klasifikasi = _klasifikasi_kegagalan_db(e)
+            if klasifikasi == KEGAGALAN_PASTI_DITOLAK:
+                # Server menolak permintaan: tulisan tidak terjadi, jadi objek
+                # yang barusan diunggah jadi yatim dan BOLEH dihapus (HANYA
+                # objek yang dibuat operasi ini - path-nya unik per operasi,
+                # file milik batch lain tidak boleh disentuh).
+                cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
+                if cleanup_ok:
+                    pesan = (
+                        f"Gagal menyimpan batch '{no_batch.strip()}'. File yang sudah diunggah "
+                        "sudah dihapus, silakan coba lagi."
+                    )
+                    catatan = (
+                        "penyimpanan batch gagal di database; file yang diunggah sudah dibersihkan"
+                    )
+                else:
+                    pesan = (
+                        f"Gagal menyimpan batch '{no_batch.strip()}'. File yang sudah diunggah "
+                        "juga gagal dihapus - administrator perlu memeriksa storage."
+                    )
+                    catatan = (
+                        "penyimpanan batch gagal di database; file yang diunggah juga gagal dibersihkan "
+                        f"({len(cleanup_failed)} objek) - admin harus memeriksa storage"
+                    )
+                log_activity(
+                    # entity_id=None (bukan "-"): kolom activity_logs.entity_id
+                    # bertipe uuid, jadi "-" gagal di-cast dan baris audit ini
+                    # tidak akan pernah tersimpan.
+                    current_user, "create", "raw_material_batch", None,
+                    f"Batch {no_batch.strip()}",
+                    changes=[{"field": "Batch", "note": catatan}],
+                    request=request, outcome="failed",
                 )
-                catatan = (
-                    "penyimpanan batch gagal di database; file yang diunggah sudah dibersihkan"
-                )
-            else:
-                pesan = (
-                    f"Gagal menyimpan batch '{no_batch.strip()}'. File yang sudah diunggah "
-                    "juga gagal dihapus - administrator perlu memeriksa storage."
-                )
-                catatan = (
-                    "penyimpanan batch gagal di database; file yang diunggah juga gagal dibersihkan "
-                    f"({len(cleanup_failed)} objek) - admin harus memeriksa storage"
-                )
-            log_activity(
-                current_user, "create", "raw_material_batch", "-",
-                f"Batch {no_batch.strip()}",
-                changes=[{"field": "Batch", "note": catatan}],
-                request=request, outcome="failed",
+                response = RedirectResponse(url="/raw-materials", status_code=303)
+                response.set_cookie("error_msg", pesan)
+                return response
+            # --- GAGALAN AMBIGU: respons database hilang --------------------
+            # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
+            # diunggah TIDAK boleh dihapus. Rekonsiliasi dulu: kalau URL baru
+            # ditemukan, datanya memang tersimpan; kalau tidak, hasilnya
+            # belum pasti dan file tetap dipertahankan untuk rekonsiliasi
+            # manual oleh administrator.
+            hasil_ambigu = _rekonsiliasi_setelah_gagal(
+                batch_data,
+                uploaded_paths,
+                pesan_tersimpan=(
+                    f"Batch '{no_batch.strip()}' tersimpan, tapi respons server tidak "
+                    "diterima. File yang diunggah dipertahankan."
+                ),
+                pesan_belum_pasti=(
+                    f"Belum bisa dipastikan apakah batch '{no_batch.strip()}' tersimpan. "
+                    "File yang diunggah sengaja dipertahankan; administrator perlu "
+                    "memeriksa storage."
+                ),
             )
-            response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", pesan)
-            return response
+            return _balas_gagal_ambigu(
+                log_activity, current_user, request,
+                action="create",
+                entity_type="raw_material_batch",
+                entity_id=None,
+                entity_label=f"Batch {no_batch.strip()}",
+                field_label="Batch",
+                hasil=hasil_ambigu,
+                redirect_url="/raw-materials",
+            )
 
         # Batch tersimpan. Kalau ada file yang gagal diunggah, hasilnya sukses
         # sebagian: baris batch-nya SUDAH ditulis, jadi outcome tetap "success"
@@ -1334,42 +1583,81 @@ def register_raw_materials_routes(
                     "tidak ada baris batch yang terpengaruh oleh update"
                 )
         except Exception as e:
-            batch_hilang = isinstance(e, _BatchUpdateAffectedNoRow)
-            if batch_hilang:
+            if isinstance(e, _BatchUpdateAffectedNoRow):
                 print(f"Update batch {batch_id} tidak menyentuh baris mana pun: {e}")
+                # Tidak ada baris yang terpengaruh -> tulisan pasti tidak
+                # terjadi, sama seperti penolakan server.
+                klasifikasi = KEGAGALAN_PASTI_DITOLAK
+                pesan_gagal = "Batch tidak ditemukan. Perubahan tidak disimpan."
+                catatan_gagal = (
+                    "batch tidak ditemukan atau terhapus saat perubahan disimpan"
+                )
+                suffix_pesan = " File yang sudah diunggah sudah dihapus."
             else:
                 print(f"Gagal update batch: {e}")
-            # Kegagalan: objek yang barusan diunggah jadi yatim. Hapus
-            # HANYA objek yang dibuat operasi ini (path-nya unik per operasi).
-            cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
-            if cleanup_ok:
-                tail_pesan = " File yang sudah diunggah sudah dihapus, silakan coba lagi."
-                tail_pesan_belum = " File yang sudah diunggah sudah dihapus."
-                tail_catatan = "; file yang diunggah sudah dibersihkan"
-            else:
-                tail_pesan = " File yang sudah diunggah juga gagal dihapus - administrator perlu diperiksa storage."
-                tail_pesan_belum = tail_pesan
-                tail_catatan = (
-                    f"; file yang diunggah juga gagal dibersihkan ({len(cleanup_failed)} objek) "
-                    "- admin harus memeriksa storage"
+                klasifikasi = _klasifikasi_kegagalan_db(e)
+                pesan_gagal = f"Gagal menyimpan perubahan batch '{no_batch.strip()}'."
+                catatan_gagal = "penyimpanan perubahan batch gagal di database"
+                suffix_pesan = (
+                    " File yang sudah diunggah sudah dihapus, silakan coba lagi."
                 )
-            if batch_hilang:
-                # Baris tidak terpengaruh: batch tidak ada atau terhapus di
-                # antara pre-read dan update.
-                pesan = "Batch tidak ditemukan. Perubahan tidak disimpan." + tail_pesan_belum
-                catatan = "batch tidak ditemukan atau terhapus saat perubahan disimpan" + tail_catatan
-            else:
-                pesan = f"Gagal menyimpan perubahan batch '{no_batch.strip()}'." + tail_pesan
-                catatan = "penyimpanan perubahan batch gagal di database" + tail_catatan
-            log_activity(
-                current_user, "edit", "raw_material_batch", batch_id,
-                f"Update batch {no_batch.strip()}",
-                changes=[{"field": "Batch", "note": catatan}],
-                request=request, outcome="failed",
+            if klasifikasi == KEGAGALAN_PASTI_DITOLAK:
+                # Kegagalan pasti: tulisan tidak terjadi, jadi objek yang
+                # barusan diunggah jadi yatim dan BOLEH dihapus (HANYA objek
+                # yang dibuat operasi ini - path-nya unik per operasi).
+                cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
+                if cleanup_ok:
+                    pesan = pesan_gagal + suffix_pesan
+                    catatan = catatan_gagal + "; file yang diunggah sudah dibersihkan"
+                else:
+                    pesan = (
+                        pesan_gagal + " File yang sudah diunggah juga gagal dihapus - "
+                        "administrator perlu diperiksa storage."
+                    )
+                    catatan = (
+                        catatan_gagal + "; file yang diunggah juga gagal dibersihkan "
+                        f"({len(cleanup_failed)} objek) - admin harus memeriksa storage"
+                    )
+                log_activity(
+                    current_user, "edit", "raw_material_batch", batch_id,
+                    f"Update batch {no_batch.strip()}",
+                    changes=[{"field": "Batch", "note": catatan}],
+                    request=request, outcome="failed",
+                )
+                response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
+                response.set_cookie("error_msg", pesan)
+                return response
+            # --- GAGALAN AMBIGU: respons database hilang --------------------
+            # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
+            # diunggah TIDAK boleh dihapus. Rekonsiliasi dulu: kalau URL baru
+            # ditemukan, datanya memang tersimpan; kalau tidak, hasilnya
+            # belum pasti dan file tetap dipertahankan untuk rekonsiliasi
+            # manual oleh administrator.
+            hasil_ambigu = _rekonsiliasi_setelah_gagal(
+                update_data,
+                uploaded_paths,
+                pesan_tersimpan=(
+                    f"Perubahan batch '{no_batch.strip()}' tersimpan, tapi respons "
+                    "server tidak diterima. File yang diunggah dipertahankan."
+                ),
+                pesan_belum_pasti=(
+                    f"Belum bisa dipastikan apakah perubahan batch '{no_batch.strip()}' "
+                    "tersimpan. File yang diunggah sengaja dipertahankan; administrator "
+                    "perlu memeriksa storage."
+                ),
             )
-            response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
-            response.set_cookie("error_msg", pesan)
-            return response
+            return _balas_gagal_ambigu(
+                log_activity, current_user, request,
+                action="edit",
+                entity_type="raw_material_batch",
+                entity_id=batch_id,
+                entity_label=f"Update batch {no_batch.strip()}",
+                field_label="Batch",
+                hasil=hasil_ambigu,
+                redirect_url="/raw-materials?tab=batch-tab",
+                old_doc_urls=old_doc_urls,
+                new_doc_urls=update_data,
+            )
 
         # Update berhasil -> file lama yang digantikan dibersihkan (hanya
         # kalau tidak dirujuk baris lain), lalu audit ditulis di sini
@@ -1427,7 +1715,8 @@ def register_raw_materials_routes(
         # .limit(1) (bukan .single()) supaya batch yang tidak ada tidak
         # melempar error -> ditolak dengan pesan yang jelas.
         batch_resp = supabase.table("raw_material_batches").select(
-            "no_batch, raw_materials(nama_dagang)"
+            "no_batch, coa_file_url, halal_batch_file_url, qc_report_file_url, "
+            "raw_materials(nama_dagang)"
         ).eq("id", batch_id).limit(1).execute()
         batch_row = (batch_resp.data or [None])[0]
         if not batch_row:
@@ -1443,6 +1732,14 @@ def register_raw_materials_routes(
             return response
 
         no_batch = batch_row["no_batch"]
+        # URL dokumen LAMA -> dipakai untuk menghapus objek yang digantikan,
+        # kalau update-nya terkonfirmasi sukses dan objek itu tidak dirujuk
+        # baris lain.
+        old_doc_urls = {
+            "coa_file_url": batch_row.get("coa_file_url"),
+            "halal_batch_file_url": batch_row.get("halal_batch_file_url"),
+            "qc_report_file_url": batch_row.get("qc_report_file_url"),
+        }
         raw_material = batch_row.get("raw_materials")
         if isinstance(raw_material, list):
             raw_material = raw_material[0] if raw_material else None
@@ -1554,39 +1851,113 @@ def register_raw_materials_routes(
 
         # Kasus 3: ada dokumen yang berhasil tersimpan (mungkin sebagian
         # file gagal -> nanti dilaporkan lewat warning_msg).
+        # .select("id") dipakai supaya PostgREST mengembalikan baris yang
+        # terpengaruh: UPDATE tanpa baris yang cocok TIDAK melempar error,
+        # jadi harus dicek sendiri (batch hilang / terhapus di antara
+        # pre-read dan update). Kalau tidak ada baris yang terpengaruh,
+        # exception sentinel dilempar supaya ikut ditangani sebagai
+        # kegagalan - bukan dilaporkan sukses.
         try:
-            supabase.table("raw_material_batches").update(update_data).eq("id", batch_id).execute()
+            upd_resp = (
+                supabase.table("raw_material_batches").update(update_data)
+                .eq("id", batch_id)
+                .select("id")
+                .execute()
+            )
+            affected_rows = len(upd_resp.data or [])
+            if not affected_rows:
+                raise _BatchUpdateAffectedNoRow(
+                    "tidak ada baris batch yang terpengaruh oleh update"
+                )
         except Exception as e:
-            print(f"Gagal simpan quick-upload batch doc: {e}")
-            # Database gagal -> objek yang barusan diunggah jadi yatim. Hapus
-            # HANYA objek yang dibuat operasi ini (path-nya unik per operasi).
-            cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
-            if cleanup_ok:
-                pesan = (
-                    "Gagal menyimpan dokumen batch. File yang sudah diunggah sudah dihapus, "
-                    "silakan coba lagi."
+            if isinstance(e, _BatchUpdateAffectedNoRow):
+                print(f"Update batch {batch_id} tidak menyentuh baris mana pun: {e}")
+                # Tidak ada baris yang terpengaruh -> tulisan pasti tidak
+                # terjadi, sama seperti penolakan server.
+                klasifikasi = KEGAGALAN_PASTI_DITOLAK
+                pesan_dasar = "Batch tidak ditemukan. Perubahan tidak disimpan."
+                catatan_dasar = (
+                    "batch tidak ditemukan atau terhapus saat dokumen disimpan"
                 )
-                catatan = (
-                    "penyimpanan URL dokumen gagal di database; file yang diunggah sudah dibersihkan"
-                )
-            else:
-                pesan = (
-                    "Gagal menyimpan dokumen batch. File yang sudah diunggah juga gagal dihapus - "
+                suffix_pesan = " File yang sudah diunggah sudah dihapus."
+                pesan_bersih_gagal = (
+                    " File yang sudah diunggah juga gagal dihapus - "
                     "administrator perlu memeriksa storage."
                 )
-                catatan = (
-                    "penyimpanan URL dokumen gagal di database; file yang diunggah juga gagal "
-                    f"dibersihkan ({len(cleanup_failed)} objek) - admin harus memeriksa storage"
+            else:
+                print(f"Gagal simpan quick-upload batch doc: {e}")
+                klasifikasi = _klasifikasi_kegagalan_db(e)
+                pesan_dasar = "Gagal menyimpan dokumen batch."
+                catatan_dasar = "penyimpanan URL dokumen gagal di database"
+                suffix_pesan = (
+                    " File yang sudah diunggah sudah dihapus, silakan coba lagi."
                 )
-            log_activity(
-                current_user, "edit", "raw_material_batch", batch_id,
-                f"Upload cepat untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
-                changes=[{"field": "Dokumen", "note": catatan}],
-                request=request, outcome="failed",
+                pesan_bersih_gagal = (
+                    " File yang sudah diunggah juga gagal dihapus - "
+                    "administrator perlu memeriksa storage."
+                )
+            if klasifikasi == KEGAGALAN_PASTI_DITOLAK:
+                # Kegagalan pasti: tulisan tidak terjadi, jadi objek yang
+                # barusan diunggah jadi yatim dan BOLEH dihapus (HANYA
+                # objek yang dibuat operasi ini - path-nya unik per operasi).
+                cleanup_ok, cleanup_failed = _cleanup_uploaded_objects(uploaded_paths)
+                if cleanup_ok:
+                    pesan = pesan_dasar + suffix_pesan
+                    catatan = catatan_dasar + "; file yang diunggah sudah dibersihkan"
+                else:
+                    pesan = pesan_dasar + pesan_bersih_gagal
+                    catatan = (
+                        catatan_dasar + "; file yang diunggah juga gagal dibersihkan "
+                        f"({len(cleanup_failed)} objek) - admin harus memeriksa storage"
+                    )
+                log_activity(
+                    current_user, "edit", "raw_material_batch", batch_id,
+                    f"Upload cepat untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
+                    changes=[{"field": "Dokumen", "note": catatan}],
+                    request=request, outcome="failed",
+                )
+                response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
+                response.set_cookie("error_msg", pesan)
+                return response
+            # --- GAGALAN AMBIGU: respons database hilang --------------------
+            # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
+            # diunggah TIDAK boleh dihapus. Rekonsiliasi dulu: kalau URL baru
+            # ditemukan, dokumennya memang tersimpan; kalau tidak, hasilnya
+            # belum pasti dan file tetap dipertahankan untuk rekonsiliasi
+            # manual oleh administrator.
+            hasil_ambigu = _rekonsiliasi_setelah_gagal(
+                update_data,
+                uploaded_paths,
+                pesan_tersimpan=(
+                    f"Dokumen batch '{no_batch.strip()}' tersimpan, tapi respons server "
+                    "tidak diterima. File yang diunggah dipertahankan."
+                ),
+                pesan_belum_pasti=(
+                    f"Belum bisa dipastikan apakah dokumen batch '{no_batch.strip()}' "
+                    "tersimpan. File yang diunggah sengaja dipertahankan; administrator "
+                    "perlu memeriksa storage."
+                ),
             )
-            response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-            response.set_cookie("error_msg", pesan)
-            return response
+            return _balas_gagal_ambigu(
+                log_activity, current_user, request,
+                action="edit",
+                entity_type="raw_material_batch",
+                entity_id=batch_id,
+                entity_label=f"Upload cepat untuk bahan baku {nama_bahan_baku} - batch {no_batch}",
+                field_label="Dokumen",
+                hasil=hasil_ambigu,
+                redirect_url="/raw-materials?tab=docs-tab",
+                old_doc_urls=old_doc_urls,
+                new_doc_urls=update_data,
+            )
+
+        # Update terkonfirmasi sukses -> objek lama yang digantikan dibersihkan
+        # (hanya kalau tidak dirujuk baris lain). Hasil pembersihan ikut
+        # masuk audit trail dan warning_msg, jadi masalah cleanup tidak hilang
+        # diam-diam.
+        cleanup_changes, cleanup_pesan = _cleanup_replaced_objects(
+            batch_id, old_doc_urls, update_data
+        )
 
         # Audit ditulis di luar try database supaya kegagalan tetap tercatat.
         # Baris batch SUDAH tersimpan, jadi outcome tetap "success"; file yang
@@ -1599,6 +1970,7 @@ def register_raw_materials_routes(
                         + ", ".join(upload_errors)
                         + " gagal diunggah. Detail teknis ada di log server.",
             })
+        audit_changes.extend(cleanup_changes)
         document_list = ", ".join(uploaded_documents)
         log_activity(
             current_user, "edit", "raw_material_batch", batch_id,
@@ -1609,13 +1981,25 @@ def register_raw_materials_routes(
         response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
         if upload_errors:
             response.set_cookie("success_msg", f"Batch '{no_batch.strip()}' tersimpan.")
-            response.set_cookie(
-                "warning_msg",
-                "File " + ", ".join(upload_errors)
-                + " gagal diunggah. Silakan unggah ulang.",
-            )
         else:
             response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+        if upload_errors or cleanup_pesan:
+            response.set_cookie(
+                "warning_msg",
+                " ".join(
+                    [
+                        (
+                            "File " + ", ".join(upload_errors)
+                            + " gagal diunggah. Silakan unggah ulang."
+                            if upload_errors else ""
+                        ),
+                        (
+                            f"Batch '{no_batch.strip()}': " + " ".join(cleanup_pesan)
+                            if cleanup_pesan else ""
+                        ),
+                    ]
+                ).strip(),
+            )
         return response
 
     # ==================== ED MANAGEMENT ENDPOINTS ====================
