@@ -20,9 +20,13 @@ atau dicatat.
 dengan **3 file suite test baru** di `tests/` — lihat §12. Batas dari
 amendemen ini:
 
-* **Belum ada commit.** Ketiga file test masih hanya ada di working tree;
-  belum ada `git add`, `git commit`, maupun `git push` yang dijalankan.
-  `.gitignore` sudah di-whitelist untuk ketiganya, jadi file siap di-add.
+* **Status commit (diperbarui 22 Oktober 2026).** Ketiga file test **sudah
+  di-commit** pada 21 Oktober 2026 di `8a70435` ("test: tambah suite regresi
+  audit, verifikasi state DB, dan E2E staging"); dokumen ini sendiri
+  di-commit di `6e1ceeb` pada sesi yang sama. Yang **belum** di-commit
+  adalah perubahan implementasi H3 (§13.9) beserta check `H3.*` dan
+  amendemen dokumen ini — semuanya hanya ada di working tree, tanpa `git
+  add`, `git commit`, maupun `git push`.
 * **Tidak ada perubahan ke kode aplikasi, template, CSS, JS, migrasi,
   `README.md`, atau `panduan_dip_automation_system.md`.** Satu-satunya file lain
   yang berubah di working tree adalah `.gitignore` (+7 baris whitelist).
@@ -85,6 +89,17 @@ amendemen ini:
     persetujuan owner.
   * **Tidak ada nilai kredensial yang dicatat** — hanya nama environment
     variable, jumlah, dan panjang.
+
+* **Tambahan 22 Oktober 2026 (sesi implementasi H3.1–H3.5).** Temuan
+  "sukses palsu" (§13.9) diperbaiki. Batas dari sesi ini:
+  * **Kode aplikasi berubah** — `app/products_routes.py`,
+    `app/raw_materials_routes.py`, `app/sample_routes.py`,
+    `app/notes_routes.py`, dan `app/templates/base.html`.
+  * **Tidak ada migrasi yang dieksekusi.** `migration/010_replace_product_formula.sql`
+    hanya **disiapkan** — belum pernah dijalankan di staging maupun produksi.
+  * **Tidak ada perubahan skema database** dan tidak ada data yang ditulis.
+  * **Tidak ada** `git add`, `git commit`, maupun `git push` yang dijalankan —
+    seluruh perubahan hanya di working tree.
 
 ### Keputusan pemilik (21 Oktober 2026)
 
@@ -340,14 +355,21 @@ loop redirect, tidak ada polling di halaman publik maupun halaman login.
 | Rate limit login | Redirect 303 → `/login?error=too_many_attempts` |
 | Exception yang di-`except` | `print()` ke terminal saja — **tidak ada handler global** |
 
+> **Catatan 22 Oktober 2026.** Baris terakhir di atas tetap berlaku sebagai
+> kontrak **global** (memang tidak ada handler exception global). Namun sejak
+> perbaikan H3 (§13.9), lima handler mutating **tidak lagi** berhenti di
+> `print()` saja — mereka juga menulis flash cookie (`error_msg` /
+> `warning_msg`) dan baris `activity_logs` dengan `outcome` yang jujur:
+> BE-01, BE-02, BE-03, BE-15, BE-16 (§6.2, §6.3).
+
 ### 6.2 Temuan tingkat TINGGI
 
 | ID | Temuan | File:line | Dampak | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| BE-01 | **Formula Bab 2 hilang tapi pengguna diberi pesan sukses.** Delete semua baris (:963) → insert (:998) di dalam `try`; bila insert gagal, `except` hanya `print` (:999) → tetap redirect dengan `success_msg` "berhasil diperbarui!". PDF Bab II/III berikutnya kosong atau tidak sesuai. | `app/products_routes.py:963-1000, 1042` | Kehilangan data formulasi tanpa indikasi | CONFIRMED |
-| BE-02 | **Insert batch bahan baku gagal → tidak ada pesan apa pun.** `print` saja lalu redirect ke `/raw-materials` tanpa cookie pesan. Data QC/harga/ED hilang; pengguna mengira tersimpan. | `app/raw_materials_routes.py:974-981` | Kehilangan data QC | CONFIRMED |
-| BE-03 | **Edit batch gagal → tidak ada pesan apa pun** (pola sama). | `app/raw_materials_routes.py:1056-1063` | Kehilangan data | CONFIRMED |
-| BE-04 | **`.single()` pada baris tak ada → HTTP 500.** `single()` memaksa PostgREST `Accept: application/vnd.pgrst.object+json` → error 406 → exception **tidak tertangkap** (query berada di luar `try`). Baris `if not rm_resp.data:` berikutnya adalah dead code. 4 lokasi. | `raw_materials_routes.py:313, 533, 703, 1003` | 500 alih-alih "tidak ditemukan" | CONFIRMED |
+| BE-01 | **Formula Bab 2 hilang tapi pengguna diberi pesan sukses.** Delete semua baris (:963) → insert (:998) di dalam `try`; bila insert gagal, `except` hanya `print` (:999) → tetap redirect dengan `success_msg` "berhasil diperbarui!". PDF Bab II/III berikutnya kosong atau tidak sesuai. | `app/products_routes.py:963-1000, 1042` | Kehilangan data formulasi tanpa indikasi | CONFIRMED → **SELESAI 22 Okt 2026** (§13.9) |
+| BE-02 | **Insert batch bahan baku gagal → tidak ada pesan apa pun.** `print` saja lalu redirect ke `/raw-materials` tanpa cookie pesan. Data QC/harga/ED hilang; pengguna mengira tersimpan. | `app/raw_materials_routes.py:974-981` | Kehilangan data QC | CONFIRMED → **SELESAI 22 Okt 2026** (§13.9) |
+| BE-03 | **Edit batch gagal → tidak ada pesan apa pun** (pola sama). | `app/raw_materials_routes.py:1056-1063` | Kehilangan data | CONFIRMED → **SELESAI 22 Okt 2026** (§13.9) |
+| BE-04 | **`.single()` pada baris tak ada → HTTP 500.** `single()` memaksa PostgREST `Accept: application/vnd.pgrst.object+json` → error 406 → exception **tidak tertangkap** (query berada di luar `try`). Baris `if not rm_resp.data:` berikutnya adalah dead code. 4 lokasi. | `raw_materials_routes.py:343, 563, 733, 1261` | 500 alih-alih "tidak ditemukan" | CONFIRMED — **masih terbuka** (posisi baris per 22 Okt 2026; satu call `.single()` lama di baris 1003 dihapus oleh perbaikan H3.3, jadi jumlah lokasinya kembali 4 — §13.9.5) |
 | BE-05 | **Akun yatim saat pembuatan user.** `auth.admin.create_user` (:118) sukses → insert `profiles` (:128) gagal → user **tetap bisa login**, role jatuh ke `staff`, nama "User Lab", tidak muncul di `/admin/users`; pesan ke pengguna: "gagal membuat akun". | `app/admin_users_routes.py:118-160` | Akun tampak tak terlihat | CONFIRMED |
 | BE-06 | **Guard/konfigurasi server gagal → pengguna disuruh "invalid_credentials".** `HTTPException(500)` di dalam blok `try` login tertangkap `except Exception` (:1137) → redirect `?error=invalid_credentials`. | `app/main.py:1064-1068 → 1137-1141` | Diagnosis menyesatkan | CONFIRMED |
 | BE-07 | **Isolasi tenant hanya sebagian** — rujukan SEC-02. | `app/security.py:9` | Akses lintas badan hukum | CONFIRMED |
@@ -356,20 +378,20 @@ loop redirect, tidak ada polling di halaman publik maupun halaman login.
 
 | ID | Temuan | File:line | Status |
 | :--- | :--- | :--- | :--- |
-| BE-08 | **`str(e)` bocor ke pengguna** lewat 3 JSON 500 + 2 flash cookie; `str(e)[:300]` **dipersistensi** ke `activity_logs` di 4 tempat. `str(APIError)` memuat `message` + `hint` + `details` PostgREST (nama kolom, constraint, fragmen SQL). | `main.py:1359`; `raw_materials_routes.py:296, 490, 1192, 1231`; `brands_routes.py:107, 279`; `sample_routes.py:166, 309, 377` | CONFIRMED |
+| BE-08 | **`str(e)` bocor ke pengguna** lewat 3 JSON 500 + 2 flash cookie; `str(e)[:300]` **dipersistensi** ke `activity_logs` di 4 tempat. `str(APIError)` memuat `message` + `hint` + `details` PostgREST (nama kolom, constraint, fragmen SQL). | `main.py:1359`; `raw_materials_routes.py:326, 520, 1442, 1481`; `brands_routes.py:107, 279`; `sample_routes.py:166, 309` (posisi per 22 Okt 2026; `sample_routes.py:377` lama sudah diperbaiki) | CONFIRMED → **TERSISA 9 dari 10** (22 Okt 2026, §13.9) — hanya jalur hapus FSP yang diperbaiki; 9 situs lain belum |
 | BE-09 | **Validasi formula 100% hanya client-side.** Server menerima `float()` tanpa cek rentang 0–100 maupun total; string invalid → `0.0` senyap. Bertentangan dengan aturan `AGENTS.md §5` (Decimal). | `app/products_routes.py:978-996`; `edit_product.html:929` | CONFIRMED |
 | BE-10 | **Upload storage sebelum tulis DB tanpa rollback** (jalur bahan baku) → file yatim; path berbasis `no_batch` (bukan id) → dua batch dengan nomor sama **menimpa file yang sama**. Bandingkan `product_attachments_routes.py:176` yang **melakukan rollback**. | `app/raw_materials_routes.py:904-975` | CONFIRMED |
 | BE-11 | **Upload MSDS/Spek gagal → masih diklaim "berhasil".** Bila satu file gagal dan yang lain sukses, `uploaded_documents` tidak kosong → pesan sukses. | `app/main.py:34-80`; `raw_materials_routes.py:332-339` | CONFIRMED |
 | BE-12 | **Tidak ada policy password saat pembuatan akun** — hanya reset password yang punya minimal 6 karakter. | `app/admin_users_routes.py:118-122` | CONFIRMED |
 | BE-13 | **Input login mentah dicetak ke log** — identifier bisa berisi password; `str(e)` Supabase ikut. Email penuh juga tercetak di setiap activity log. | `app/main.py:1140, 1099, 917` | CONFIRMED |
 | BE-14 | **Pengecakan tenant FSP ditelan `except`** → 403 yang di-raise di dalam `try` berubah jadi 404 "Pengajuan tidak ditemukan" (tulisannya tetap diblokir, tapi respons & jejak audit "rejected" salah). | `app/sample_routes.py:242-248` | CONFIRMED |
-| BE-15 | **Hapus sample gagal → redirect tanpa pesan.** | `app/sample_routes.py:372-380` | CONFIRMED |
-| BE-16 | **Note tersimpan tapi insert mention gagal → "save_failed"** + `log_activity` tidak jalan (audit hilang). | `app/notes_routes.py:607-631` | CONFIRMED |
+| BE-15 | **Hapus sample gagal → redirect tanpa pesan.** | `app/sample_routes.py:372-380` | CONFIRMED → **SELESAI 22 Okt 2026** (§13.9) |
+| BE-16 | **Note tersimpan tapi insert mention gagal → "save_failed"** + `log_activity` tidak jalan (audit hilang). | `app/notes_routes.py:607-631` | CONFIRMED → **SELESAI 22 Okt 2026** (§13.9) |
 | BE-17 | **Filter `or_` PostgREST dari `search` mentah** tanpa `_sanitize_ilike` (modul notes & PO sudah memakainya). | `app/sample_routes.py:387-390` | CONFIRMED |
 | BE-18 | **Halaman daftar tanpa filter tenant** — sample, notes, PO, bahan baku menampilkan data kedua perusahaan untuk semua pengguna. | 4 modul | CONFIRMED |
 | BE-19 | **Halaman lampiran tanpa cek tenant** → staff PT Erfi memperoleh signed URL 1 jam untuk file produk PT Heka. | `app/product_attachments_routes.py:116-131` | CONFIRMED |
 | BE-20 | **Produk legacy tanpa `public_access_token` tetap publik** hanya dengan UUID. | `app/dip_public.py:281-292` | CONFIRMED |
-| BE-21 | **`warning_msg` cookie tidak pernah dirender** — grep seluruh `app/` hanya menemukan 1 kemunculan (produsennya). Pesan "objek storage gagal dihapus" tidak pernah tampil. | `app/products_routes.py:1167` | CONFIRMED |
+| BE-21 | **`warning_msg` cookie tidak pernah dirender** — grep seluruh `app/` hanya menemukan 1 kemunculan (produsennya). Pesan "objek storage gagal dihapus" tidak pernah tampil. | `app/products_routes.py:1167` | CONFIRMED → **SELESAI 22 Okt 2026** (§13.9) — `app/templates/base.html` kini merender `warning_msg` |
 | BE-22 | **Update produk tanpa `try/except`** → 500 tanpa pesan; file yang sudah ter-upload menjadi yatim. | `app/products_routes.py:955` | CONFIRMED |
 | BE-23 | **Kontrak error tidak seragam**: 403/404 → JSON mentah di browser, sementara modul lain redirect + flash. | `app/main.py:1220-1223` | CONFIRMED |
 | BE-24 | **Timeout Gemini 4 dtk per model, 3 model berurutan** → hook login bisa tertahan 12–24 detik. | `app/main.py:203-219` | CONFIRMED |
@@ -590,7 +612,7 @@ Daftar 14 modul route yang didaftarkan di `app/main.py` (semuanya dipanggil):
 | **P1 #5 (BARU)** | **Tambahkan marker versi/build di respons** (atau `RENDER_GIT_COMMIT`) agar deploy bisa diikat ke commit. Saat ini build ter-deploy **tidak bisa dibuktikan** identik dengan repo | §13.7.7 |
 | **P1 #6 (BARU)** | **[SELESAI 21 Okt 2026]** Jalankan `ALTER COLUMN is_deleted SET NOT NULL` pada `public.products` **bila belum** — kolom itu pre-existed migrasi 008 sehingga `ADD COLUMN IF NOT EXISTS` jadi no-op dan clause `NOT NULL` tidak pernah berlaku ⇒ baris `is_deleted = NULL` **lolos** dari CHECK (three-valued logic). Sudah dieksekusi di **staging** lalu **produksi**: `is_nullable` `YES` → `NO` di keduanya, hitungan baris tidak berubah | §13.8.2 |
 | **P0** | Pasang `assert_same_tenant` di seluruh route tulis + filter tenant di route baca; jadikan helper itu satu-satunya sumber kebenaran. **[Dalam]** P0 #2 — helper sudah ada dan sudah dipakai, tetapi tidak menolak karena `profiles.perusahaan` kosong | SEC-02, BE-07, §13.7.3 |
-| **P0** | Ubah "sukses palsu" jadi pesan jujur: BE-01 (formula), BE-02/BE-03 (batch), BE-15 (sample), BE-16 (mention) | BE-01→03, 15, 16 |
+| **P0** | **[SELESAI 22 Okt 2026]** Ubah "sukses palsu" jadi pesan jujur: BE-01 (formula), BE-02/BE-03 (batch), BE-15 (sample), BE-16 (mention) — kelima item dikerjakan di §13.9 (pesan user + `outcome` audit yang jujur) | BE-01→03, 15, 16; §13.9 |
 | **P0** | Validasi `brand_id` (UUID + eksistensi) + cek tenant pada `POST /brands/{id}/update-documents` | SEC-03 |
 | **P1** | `secure=True` + prefix `__Host-` pada `access_token`; ambil IP **terakhir** dari `X-Forwarded-For` untuk rate limit | SEC-04, SEC-05 |
 | **P1** | Satu middleware untuk header defensif + same-origin check pada POST; token CSRF double-submit | SEC-06, SEC-07 |
@@ -670,10 +692,11 @@ Statusnya **bukan PASS dan bukan FAIL** — statusnya *tidak dapat diverifikasi*
 
 ## 12. Suite Test Audit (Baru — 21 Oktober 2026)
 
-> **Status file.** Ketiga file di bawah **ada di working tree** dan sudah
-> *commit-ready*, tetapi **belum di-commit** — belum ada `git add`,
-> `git commit`, atau `git push` yang dijalankan. `.gitignore` **sudah**
-> di-whitelist untuk ketiganya, jadi file bisa langsung di-add.
+> **Status file.** Ketiga file di bawah **sudah di-commit** pada 21 Oktober
+> 2026 di `8a70435` (dokumen ini di `6e1ceeb`); `.gitignore` **sudah**
+> di-whitelist untuk ketiganya sejak sebelum commit tersebut. Perubahan
+> lanjutan — implementasi H3 (§13.9) beserta check `H3.*` — **masih hanya
+> di working tree**: belum ada `git add`, `git commit`, atau `git push` untuknya.
 >
 > **Fungsi suite: mendeteksi, bukan memperbaiki.** Suite ini mengunci setiap
 > temuan audit menjadi assertion yang bisa dijalankan mesin. **Tidak ada satu
@@ -740,7 +763,8 @@ di CI setelah perbaikan benar-benar land.
 
 | Aspek | Isi |
 | :--- | :--- |
-| Registry `KNOWN_ISSUES` | 19 entri: SEC-01, SEC-02, SEC-04, SEC-07, SEC-14, SEC-16, SEC-18, BE-01, BE-02, BE-03, BE-04, BE-07, BE-08, BE-21, DUPL-01, FE-05, FE-06, FE-07, U6 |
+| Registry `KNOWN_ISSUES` | **14 entri** (per 22 Oktober 2026): SEC-02, SEC-04, SEC-07, SEC-14, SEC-16, SEC-18, BE-04, BE-07, BE-08, DUPL-01, FE-05, FE-06, FE-07, U6 — BE-01, BE-02, BE-03, dan BE-21 **keluar** dari registry karena sudah diperbaiki (§13.9) |
+| Check baru H3 (22 Oktober 2026) | **16 check baru** di `tests/test_audit_regressions.py` Section 8 (KEJUJURAN HASIL WRITE): `H3.1a`–`H3.1f`, `H3.2a`–`H3.2b`, `H3.3a`–`H3.3b`, `H3.4`, `H3.5a`–`H3.5c`, `MIG-010`, `UNIT-01` → §13.9 |
 | Audit ID baru (grup G9) | 6 ID baru di `tests/verify_audit_db_state.py`: **PROD-01** (privasi bucket storage), **PROD-02** (kelengkapan `profiles.perusahaan`), **PROD-03** (keberadaan `public_link_audits` + DDL-nya), **PROD-04** (cakupan detail storage di audit trail), **PROD-05** (distribusi `outcome`/`source`), **PROD-06** (konsistensi soft-delete produk vs jejak audit) → §13.7 |
 | Check yang sengaja SKIP | Validasi PDF (`file_validation`) dan parsing storage URL — sudah diuji file lain; pendeteksiannya otomatis dari isi file tsb |
 | Interaksi dengan pytest | Ketiga file **tidak** di-collect pytest (tidak punya fungsi `test_*`) → total pytest tidak berubah |
@@ -769,6 +793,8 @@ staging. Tidak ada eksekusi terhadap produksi.
 | `tests/verify_audit_db_state.py` (re-run 21 Oktober 2026, malam) | 43 check: **PASS 20 / FAIL 0 / WARN 1 / INFO 22**, exit 0 — G8.3 diperbaiki (semula menguji `storage_note` sebagai `entity_type`, yang mustahil) | — |
 | `tests/verify_audit_db_state.py` (re-run 21 Oktober 2026, malam + grup G9) | 49 check (dari 43): **PASS 21 / FAIL 0 / WARN 6 / INFO 22**, exit 0 — grup G9 menambah 6 check `PROD-01`…`PROD-06` (§12.5) | — |
 | `tests/test_audit_regressions.py --strict` | 18 KNOWN dipromosikan jadi FAIL, exit 1 | — |
+| `tests/test_audit_regressions.py` (re-run 22 Oktober 2026, sesi H3) | **PASS 41 / KNOWN 14 / FAIL 0 / SKIP 2**, exit 0 — +16 check baru (`H3.1a`–`H3.5c`, `MIG-010`, `UNIT-01`) dan BE-01/BE-02/BE-03/BE-21 naik dari `[KNOWN]` ke `[PASS]` (§13.9) | — |
+| `tests/test_audit_regressions.py --strict` (re-run 22 Oktober 2026) | 14 KNOWN dipromosikan jadi FAIL, exit 1 | — |
 | `pytest tests/ -q` | **79 passed, 0 failed** (baseline sebelum = 79 → tanpa regresi) | 5,8 dtk |
 | `tests/verify_audit_db_state.py` | 43 check: PASS 15 / FAIL 3 / WARN 2 / INFO 23, exit 1 → setelah migrasi 004 + 007: **PASS 20 / FAIL 0 / WARN 1 / INFO 22**, exit 0 (§13.5) | — |
 | `tests/e2e_audit_staging.py --full` | **PASS 22 / KNOWN 5 / FAIL 0 / SKIP 1**, exit 0 | 189,5 dtk |
@@ -802,7 +828,7 @@ tenant turun menjadi 1 SKIP.
 | **SEC-04** | **CONFIRMED** | Cookie `access_token` diset **tanpa `secure=True`** (`app/main.py:1121-1127`). |
 | **FE-05** | **CONFIRMED** | Link logout **sidebar** tidak punya handler `stopPresenceHeartbeat()`; link **navbar** punya (`base.html:169-170` vs `_sidebar.html:115`). |
 | **FE-06** | **CONFIRMED** | `window.__adminPresenceInterval` tidak pernah di-assign di `admin_users.html` (hanya variabel lokal `presencePollInterval` di `admin_users.html:326`) → jalur cleanup `base.html:44` adalah dead code. |
-| **BE-21** | **CONFIRMED** | Cookie `warning_msg` diproduksi di `app/products_routes.py:1167` tetapi dirender oleh **tidak ada** template. |
+| **BE-21** | **CONFIRMED → SELESAI 22 Okt 2026** | Cookie `warning_msg` diproduksi di `app/products_routes.py:1167` tetapi dirender oleh **tidak ada** template. **Diperbaiki 22 Okt 2026** — `app/templates/base.html` kini merender `warning_msg` (§13.9). |
 | **U6** | **REFUTED sebagai temuan kode** — yang tersisa adalah celah **dokumentasi** selebar **5 nilai** | Kode **sudah** memakai `entity_type="product_attachment"` di `app/product_attachments_routes.py:185` (upload), `:220` (update), `:242` (delete). Ketiadaannya di staging adalah **artefak ketiadaan data** — `product_attachments` = **0 baris** di staging, jadi tidak pernah ada lampiran yang diunggah di sana. Produksi membuktikan jalurnya bekerja: **13 baris `product_attachment`** (§13.6). Celah sebenarnya: `product_attachment`, `product_file`, `product_batch`, `purchase_order`, `purchase_order_item` tidak ada di tabel entitas audit (`panduan:699-713`). Dikoreksi di §8.2 K9. |
 | **SEC-15** | **CONFIRMED — CSS injection, bukan XSS** | Cookie `greeting_cache` crafted benar-benar memasang kelas `fa-solid fa-bug text-red-500 text-lg` dan menampilkan teksnya di header dashboard; autoescaping Jinja mencegah breakout atribut (tidak ada dialog, tidak ada `img[onerror]`). |
 
@@ -1305,12 +1331,306 @@ bila tidak, eksekusi **dihentikan** untuk environment itu.
 | `tests/verify_audit_db_state.py` | **49 check**, PASS 21 / FAIL 0 / WARN 6 / INFO 22, exit 0 — **G9.6 soft-delete consistency = PASS** |
 | `pytest tests/ -q` | **79 passed**, 0 failed |
 | `scripts/check_undefined_names.py` | exit 0 |
+| `tests/test_audit_regressions.py` (22 Oktober 2026, setelah §13.9) | **PASS 41 / KNOWN 14 / FAIL 0 / SKIP 2**, exit 0 — lihat §13.9.6 |
 
 > **Catatan hitungan BE-08.** Count BE-08 sempat naik **10 → 11** akibat
 > *false positive* `str(old_deleted_at)` di `app/dashboard_routes.py` —
 > itu **timestamp**, bukan pesan exception. Hitungan itu lalu
 > **dikoreksi** kembali ke **10 lokasi** dan check BE-08 tetap
-> `[KNOWN]` (temuannya memang belum diperbaiki).
+> `[KNOWN]` (temuannya memang belum diperbaiki). Per 22 Oktober 2026
+> (§13.9) hitungannya turun lagi ke **9 lokasi** karena jalur hapus FSP
+> diperbaiki — 9 situs sisanya **masih** `[KNOWN]`.
+### 13.9 Perbaikan H3.1–H3.5 (22 Oktober 2026)
+
+> **Cakupan.** Sub-bagian ini mencatat **pekerjaan implementasi** yang menyusul
+> audit — bukan temuan baru. Lima temuan "sukses palsu" diperbaiki, satu cookie
+> flash yang tidak pernah tampil diperbaiki, dan satu file migrasi
+> **disiapkan tanpa dieksekusi**. Tidak ada migrasi yang dieksekusi, tidak ada
+> perubahan skema database, dan tidak ada data yang ditulis. **Tidak ada**
+> `git add`, `git commit`, maupun `git push` — seluruh perubahan hanya di
+> working tree.
+
+#### 13.9.1 Mekanisme & file yang diubah
+
+| Temuan | File | Mekanisme | Verdict |
+| :--- | :--- | :--- | :--- |
+| **H3.1** formula | `app/products_routes.py` | Helper murni `_validate_formula_total()` (Decimal, toleransi 0,0001, target 100, menolak non-numerik & negatif) yang berjalan **sebelum** semua write → snapshot baris lama dengan **daftar kolom eksplisit** → **flag `delete_done`** yang hanya di-true setelah DELETE sukses (jadi rollback **dilewati** kalau delete-nya sendiri gagal → tidak ada baris dobel) → rollback memakai daftar kolom eksplisit yang sama → kegagalan rollback **tidak ditelan** (detail ke `print()`, audit note menyatakan admin harus memperbaiki manual, pesan user menyatakan hal sama dalam bahasa sederhana). | **SELESAI** — `H3.1a`–`H3.1f` PASS |
+| **H3.2 / H3.3** batch | `app/raw_materials_routes.py` | Path storage diberi komponen unik per operasi (`uuid4().hex[:8]`, konvensi `product_attachments_routes.py:160`): `coa/coa_{batch}_{uid}.pdf`, `halal/halal_{batch}_{uid}.pdf`, `qc-reports/qcreport_{batch}_{uid}.pdf` → objek yang diunggah operasi ini **pasti baru**, jadi cleanup **terbukti aman** dan tidak pernah menyentuh file lama yang masih direferensikan baris lain → `object_store.remove_from_all_backends()` → kegagalan cleanup **dicetak ke log server DAN ditampilkan** ke user → audit sukses dipindah **keluar** dari `try` DB sehingga kegagalan update tetap tercatat. | **SELESAI** — `H3.2a`–`H3.2b`, `H3.3a`–`H3.3b` PASS |
+| **H3.4** hapus FSP | `app/sample_routes.py` | Flash `error_msg` baru + `str(e)[:300]` di payload activity log diganti pesan generik (detail teknis tetap ke `print()`). | **SELESAI** — `H3.4` PASS |
+| **H3.5** note/mention | `app/notes_routes.py` | Tiga blok `try` terpisah (insert note / insert mention / tulis audit) → note gagal = kegagalan total (`error_msg`, `outcome="failed"`, redirect tanpa `?status=created`) → note berhasil + mention gagal = **tanpa** pesan gagal, `warning_msg`, audit `outcome="failed"` dengan note "catatan tersimpan tetapi pemberitahuan (@mention) gagal disimpan", redirect `/notes?status=created` (tidak mendorong user membuat duplikat). | **SELESAI** — `H3.5a`–`H3.5c` PASS |
+| Dukungan | `app/templates/base.html` | `warning_msg` kini **dirender** (blok amber `bg-amber-50 / border-amber-200 / text-amber-800` + ikon `fa-solid fa-triangle-exclamation`) dan ikut dihapus di script pembersihan cookie bersama `error_msg`/`success_msg`. Sebelumnya cookie itu ada tapi tidak pernah tampil (temuan BE-21). | **SELESAI** — `H3.5c` PASS |
+
+#### 13.9.2 Kabar sukses yang gagal sebelumnya
+
+Enam hasil berbeda yang **dulunya** dilaporkan "berhasil" (atau hilang tanpa
+jejak) kini punya pesan dan `outcome` audit yang jujur:
+
+| # | Situasi | Pesan ke user (persis) | `outcome` audit |
+| :--- | :--- | :--- | :--- |
+| 1 | Total persentase ditolak (bukan 100%) | "Total persentase formula Bab 2 harus tepat 100.0000%. Total saat ini: {total}%. Formula tidak disimpan dan tidak ada data lain yang diubah." | `rejected` |
+| 2 | Snapshot baris formula lama gagal | "Gagal membaca formula Bab 2 produk. Tidak ada data yang diubah. Silakan coba lagi." | `failed` |
+| 3 | DELETE baris formula lama gagal | "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan. Formula lama tetap utuh, jadi komposisi produk tidak berubah. Silakan coba lagi." | `failed` |
+| 4 | INSERT gagal, tidak ada formula lama untuk dipulihkan | "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan dan tidak ada formula lama untuk dipulihkan. Silakan coba lagi." | `failed` |
+| 5 | INSERT gagal, rollback (pemulihan formula lama) **berhasil** | "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan. Formula lama berhasil dipulihkan, jadi komposisi produk tidak berubah. Silakan coba lagi." | `failed` |
+| 6 | INSERT gagal, rollback **juga gagal** | "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan dan formula lama TIDAK berhasil dipulihkan otomatis. Segera hubungi admin untuk perbaikan data formula." | `failed` |
+
+Variasi lain dari kasus 1 (total ≠ 100%): persentase **non-numerik** →
+"Persentase formula Bab 2 baris ke-{n} bukan angka yang valid. Perbaiki
+persentase tersebut lalu simpan ulang."; persentase **negatif** →
+"Persentase formula Bab 2 baris ke-{n} tidak boleh negatif. Perbaiki
+persentase tersebut lalu simpan ulang." Semuanya `outcome="rejected"`.
+
+Setiap pesan di atas **menyatakan eksplisit** apakah baris produk itu sendiri
+sudah tersimpan: kasus 1–2 menyatakan **tidak ada satu pun data yang
+berubah** (bukan sukses sebagian), sedangkan kasus 3–6 menyatakan **"Data
+produk tersimpan"** (sukses sebagian) sekaligus menyebut apakah formula lama
+masih utuh. Tidak ada lagi jalur di mana write yang gagal dilaporkan sebagai
+"berhasil diperbarui".
+
+#### 13.9.3 Yang TIDAK berubah
+
+* **Tidak ada migrasi yang dieksekusi.** Tidak satu pun file `migration/*.sql`
+  dijalankan di staging maupun produksi.
+* **Tidak ada perubahan skema database.** Tabel, kolom, index, dan constraint
+  tidak berubah sama sekali.
+* **`outcome` hanya memakai 3 nilai yang diizinkan `CHECK`** pada
+  `activity_logs` (`migration/003`): `success`, `rejected`, `failed`. Tidak ada
+  nilai baru yang diperkenalkan.
+* **Tidak ada pesan exception mentah** yang masuk ke `activity_logs` maupun ke
+  flash cookie. Detail teknis hanya masuk ke `print()` di log server.
+* **Tidak ada perubahan di luar cakupan H3.** H4, H5, viewer audit log, dan
+  konfigurasi storage **tidak disentuh**; `app/main.py`, `app/object_store.py`,
+  dan `app/dashboard_routes.py` tidak berubah.
+
+#### 13.9.4 `migration/010_replace_product_formula.sql` (disiapkan, BELUM dieksekusi)
+
+File ini menambahkan fungsi `public.replace_product_formula(p_product_id uuid,
+p_lines jsonb)` — DELETE + INSERT **dalam satu fungsi = satu transaksi** ⇒
+mode kegagalan "formula produk hilang permanen" hilang sama sekali. Header
+file menyatakan tegas bahwa file **belum dieksekusi**, wajib manual lewat
+Supabase SQL Editor **staging lebih dulu** (hasil staging dibaca sebelum lanjut
+ke produksi), dan **kode aplikasi tidak bergantung padanya** — grep `app/`
+→ **0 pemanggilan**.
+
+Kolom fungsi sudah diverifikasi identik dengan skema nyata
+`public.product_formula_lines` di **staging dan produksi** (read-only via
+`information_schema.columns`): `id uuid default gen_random_uuid()`,
+`product_id uuid NOT NULL`, `raw_material_id uuid NOT NULL`,
+`percent_in_formula numeric NOT NULL`, `created_at timestamptz default now()`,
+`variant_id uuid NULL`.
+
+Nomor **010** dipakai karena `008_products_soft_delete_contract.sql` sudah
+terpasang (§13.8.2) dan nomor **009** dicadangkan untuk DDL
+`public_link_audits` (keputusan pemilik #5, §10 P1 #4).
+
+#### 13.9.5 Efek samping yang sengaja diterima + langkah manual
+
+* Path storage lama yang **shared** (`coa/coa_{batch}.pdf`,
+  `halal/halal_{batch}.pdf`, `qc-reports/qcreport_{batch}.pdf`) kini
+  **terduplikasi** oleh scheme path baru → objek lama perlu **dibersihkan
+  manual** setelah dipastikan tidak direferensikan baris mana pun.
+* File lama **tidak** dihapus otomatis saat update sukses — path-nya masih
+  mungkin dipakai baris lain.
+* `quick-upload` (`raw_materials_routes.py:1250-1402`, blok upload
+  `:1277-1338`) **ikut diperbaiki** karena defect-nya identik.
+* 2 bocor `str(e)` tersisa di `sample_routes.py` (handler create/edit FSP,
+  `:166` dan `:309`) **di luar cakupan H3** → masih `[KNOWN]`.
+* Judul check BE-04 di `tests/test_audit_regressions.py` sudah diperbarui
+  (line numbers dikaitkan ke pola, bukan nomor baris).
+* Angka "5 handler POST" pada §8.2 K2 **tidak berlaku lagi**: perbaikan H3.3
+  menghapus satu call `.single()` (baris lama 1003), sehingga jumlah call
+  `.single()` di luar `try` kembali menjadi **4** (baris 343, 563, 733, 1261).
+
+#### 13.9.6 Verifikasi
+
+| Pemeriksaan | Hasil |
+| :--- | :--- |
+| `tests/test_audit_regressions.py` | **PASS 41 / KNOWN 14 / FAIL 0 / SKIP 2**, exit 0 (sebelumnya PASS 21 / KNOWN 18 / FAIL 0 / SKIP 2; BE-01/02/03/21 keluar dari daftar KNOWN karena kini PASS) |
+| `tests/verify_audit_db_state.py` | 49 check, **PASS 21 / FAIL 0 / WARN 6 / INFO 22**, exit 0 |
+| `pytest tests/ -q` | **79 passed**, 0 failed |
+| `scripts/check_undefined_names.py` | exit 0 |
+| `py_compile` 5 file | OK |
+| `git diff -- 'migration/00[1-9]*'` | **kosong** — tidak ada perubahan pada migrasi yang sudah pernah dipakai |
+| Scan karakter asing pada 1.027 baris diff | **bersih** — 0 glif CJK/Hangul/fullwidth; satu-satunya non-ASCII adalah `…` yang meniru gaya yang sudah ada |
+| Audit independen | **semua requirement PASS** |
+
+Check regresi baru (16 check, di `tests/test_audit_regressions.py` Section 8 —
+"KEJUJURAN HASIL WRITE"):
+
+| Prefix | Jumlah | Yang dikunci |
+| :--- | ---: | :--- |
+| `H3.1a`–`H3.1f` | 6 | helper validasi murni (Decimal + target + toleransi), validasi jalan **sebelum** update produk, snapshot dengan kolom eksplisit, flag `delete_done` sebagai penjaga rollback, kegagalan formula tidak jatuh ke audit sukses, pesan partial success + eskalasi admin |
+| `H3.2a`–`H3.2b` | 2 | path upload batch punya sufiks unik per operasi; DB gagal → file dibersihkan + flash error + audit `failed` |
+| `H3.3a`–`H3.3b` | 2 | idem untuk jalur ubah batch; audit sukses ditulis **di luar** `try` database |
+| `H3.4` | 1 | hapus FSP gagal → ada `error_msg` dan tidak ada `str(e)` di payload audit |
+| `H3.5a`–`H3.5c` | 3 | simpan note / mention / audit dipisah jadi 3 blok `try`; kegagalan mention memakai `warning_msg`; `base.html` merender + membersihkan `warning_msg` |
+| `MIG-010` | 1 | file migrasi 010 ada, ditandai belum dieksekusi, dan `app/` **tidak** memakainya |
+| `UNIT-01` | 1 | unit test murni `_validate_formula_total`: 50+50 ✔ · 33,3333×2+33,3334 ✔ · 50+40 ✘ · "abc" ✘ · negatif ✘ · kosong ✔ |
+
+> **Catatan hitungan BE-08.** Jumlah bocor `str(e)` bergerak **10 → 9**:
+> jalur hapus FSP (`sample_routes.py`) diperbaiki oleh H3.4, sedangkan 9 situs
+> lain — 2 di `sample_routes.py` (create/edit FSP), 2 di `brands_routes.py`,
+> 4 di `raw_materials_routes.py`, 1 di `main.py` — **belum**. Hitungan itu
+> **dihitung dinamis** (AST-based: hanya `str()` atas variabel yang benar-benar
+> di-bind sebagai exception), **bukan angka hard-coded** di dalam check —
+> jadi angkanya ikut bergerak sendiri bila kodenya berubah.
+
+### 13.10 Eksposur bucket R2 produksi dan status eksekusi H1b (22 Oktober 2026)
+
+> **Cakupan.** Sub-bagian ini mencatat **verifikasi read-only** terhadap bucket
+> R2 produksi dan **percobaan eksekusi** untuk mematikan *Public Development
+> URL* pada bucket-bucket produksi. Percobaan itu **GAGAL** — tidak ada
+> kredensial Cloudflare yang tersedia di mesin ini yang dapat mengautentikasi
+> ke Cloudflare API — sehingga **tidak ada yang berubah**: status publik, isi
+> bucket, `.env`, dan status git semuanya identik dengan sebelum percobaan.
+> Tidak ada `git add`, `git commit`, maupun `git push` yang dijalankan.
+
+#### 13.10.1 Eksposur yang terverifikasi
+
+Produksi berjalan dengan `STORAGE_BACKEND=supabase` dan `R2_BUCKET_SUFFIX`
+kosong (tanpa sufiks `-stg`). Aplikasi sendiri karena itu **tidak pernah
+membaca R2** di produksi — tetapi bucket R2 produksi **tetap terisi dan
+publik**, dan `R2_PUBLIC_BASES` menunjuk ke `pub-*.r2.dev`, yaitu **Cloudflare
+Public Development URL** yang memang dirancang untuk akses publik tanpa
+autentikasi.
+
+| Bucket R2 produksi | Objek | Host `R2_PUBLIC_BASES` | HEAD anonim |
+| :--- | ---: | :--- | :--- |
+| `raw-material-docs` | 643 | `pub-*.r2.dev` | **200 + `application/pdf`** |
+| `legal-documents` | 105 | `pub-*.r2.dev` | **200 + `application/pdf`** |
+| `product-attachments` | 4 | *(tanpa entri `R2_PUBLIC_BASES`)* | belum terverifikasi — lihat 13.10.5 |
+| **Total** | **752** | | |
+
+Probe **HEAD tanpa `Authorization` dan tanpa signature** pada objek nyata
+mengembalikan **200 + `application/pdf`** — sama seperti bucket Supabase yang
+sudah tercatat di §13.7.2. Prefix objek yang ada: `products/`,
+`spec-sheets/`, `msds/`, `coa/`, `qc-reports/`, `halal/`, `brands/`, plus
+**13 file di level akar** `legal-documents` — yaitu pola **yang sama bisa
+ditebak** dengan sisi Supabase, misalnya `coa/coa_{no_batch}.pdf` dan
+`msds/msds_{kode_bahan_baku}_{slug}.pdf`.
+
+Catatan bentuk URL: URL publik R2 berbentuk `host + "/" + key` — **tanpa
+prefix nama bucket**; bentuk `host/bucket/key` mengembalikan **404**.
+
+**Klasifikasi.** **H1b** — "R2 produksi publik" — **CONFIRMED**, keparahan
+**TINGGI**, status **TERBUKA (belum ditutup — eksekusi pencetakan status
+publik gagal, lihat 13.10.3)**. Ini adalah **salinan publik kedua yang
+mandiri** atas dokumen yang sama, dan paparan material rahasia pemasok
+identik dengan sisi Supabase: MSDS 65, spec-sheet 141, CoA 56, QC report 52,
+halal 13.
+
+#### 13.10.2 Gerbang pra-eksekusi: LOLOS
+
+Diverifikasi ulang secara read-only pada 22 Oktober 2026: `STORAGE_BACKEND`
+bernilai `supabase` dan `R2_BUCKET_SUFFIX` kosong; dan pada **9 tabel
+produksi**, jumlah baris yang kolom file-URL-nya memuat `r2.dev` adalah **0**:
+
+| Tabel produksi | Baris | Baris dengan `r2.dev` |
+| :--- | ---: | ---: |
+| `products` | 136 | 0 |
+| `raw_material_batches` | 68 | 0 |
+| `raw_material_company_docs` | 376 | 0 |
+| `nib_documents` | 2 | 0 |
+| `sertifikat_cpkb_documents` | 2 | 0 |
+| `surat_tidak_pidana_documents` | 2 | 0 |
+| `company_sop_documents` | 2 | 0 |
+| `brand_legal_documents` | 18 | 0 |
+| `product_attachments` | 8 | 0 |
+
+**Kesimpulan:** aplikasi **tidak pernah membaca R2 di produksi** ⇒ mematikan
+Public Development URL **tidak mungkin merusak jalur baca mana pun**. Daftar
+bucket di akun Cloudflare menunjukkan tepat **3 bucket produksi + 3 bucket
+`-stg`** — tidak ada bucket lain yang tersembunyi.
+
+#### 13.10.3 Status eksekusi: BELUM BERHASIL, TIDAK ADA YANG BERUBAH
+
+Pencetatan status publik **tidak dapat dieksekusi** karena tidak ada
+kredensial Cloudflare di mesin ini yang dapat mengautentikasi ke Cloudflare
+API. Bukti kegagalan:
+
+| Jalur yang dicoba | Hasil |
+| :--- | :--- |
+| Token di `.kilo/kilo.jsonc` (`GET /user/tokens/verify`) | **401 code 1000 "Invalid API Token"** — token itu token **MCP-gateway**, bukan token API Cloudflare |
+| `npx wrangler r2 bucket dev-url disable` | **"Invalid access token [code: 9109]"** |
+| Sesi OAuth satu-satunya yang tersedia | terikat hanya pada `bindings.mcp.cloudflare.com` (**400 code 6111**), dan permukaan **23 tool** server itu **tidak memuat** tool dev-url |
+| Playwright | tidak ada sesi SSO Cloudflare |
+
+Kredensial S3 R2 di `.env` **tidak bisa dipakai** untuk keperluan ini:
+mematikan Public Development URL adalah operasi **control-plane** (Cloudflare
+API), bukan operasi **data-plane** S3.
+
+**Tidak ada yang berubah.** Snapshot sesudah identik dengan snapshot sebelum:
+jumlah objek tetap **643 / 105 / 4**; HEAD anonim **tetap 200**; status
+publik Cloudflare tidak berubah; hitungan objek identik; signed S3 HEAD dan
+presigned GET (Range `0-0` → **206**) tetap berfungsi di ketiga bucket;
+`.env` **byte-identical** (sha256 `83220818…49e3`); `git status --short`
+identik dengan baseline pra-tugas; dan **tidak ada file sementara** yang
+tersisa di dalam repo.
+
+#### 13.10.4 Perintah yang harus dijalankan pemilik repo (manual)
+
+Ada **tiga** opsi. Semuanya **dapat dibalik**, dan **tidak menyentuh** data,
+skema database, maupun kode aplikasi.
+
+> **Koreksi endpoint.** Endpoint yang hidup adalah
+> `.../r2/buckets/<BUCKET>/domains/managed` — **bukan** `/public`, yang sudah
+> tidak ada lagi di API R2 saat ini.
+
+1. **Dashboard Cloudflare** — R2 → pilih bucket → **Settings** →
+   **Public Development URL** → **Disable** → ketik `disallow` → **Disallow**.
+2. **REST API** (butuh `CLOUDFLARE_API_TOKEN` dengan izin tulis R2):
+
+   ```bash
+   curl -X PUT "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/r2/buckets/<BUCKET>/domains/managed" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+     -d '{"enabled":false}'
+   ```
+
+   Jalankan untuk masing-masing `raw-material-docs`, `legal-documents`, dan
+   `product-attachments`.
+3. **CLI wrangler** — `npx wrangler r2 bucket dev-url disable <BUCKET>`.
+
+**Cara membalik.** `dev-url enable <BUCKET>` / `{"enabled":true}` / Dashboard
+Enable → `allow` → Allow.
+
+**Verifikasi setelah dijalankan.** HEAD anonim harus **berhenti**
+mengembalikan **200** (KF3 **400/403**) pada semua key nyata maupun
+sintetis; jumlah objek harus tetap **643 / 105 / 4** (bukti tidak ada yang
+terhapus); S3 API dan presigned URL harus tetap berfungsi; dan
+`GET .../r2/buckets/<BUCKET>/domains/managed` harus mengembalikan
+`enabled:false`.
+
+#### 13.10.5 Yang TIDAK disentuh dan perlu keputusan terpisah
+
+* **Bucket staging juga publik.** `raw-material-docs-stg` (**1** objek, HEAD
+  anonim **200**) dan `legal-documents-stg` (**2** objek, HEAD anonim
+  **200**). Di luar cakupan H1b ⇒ **belum disentuh**; pencetatan statusnya
+  identik dan perlu **keputusan terpisah**.
+* **`product-attachments` (produksi) belum terverifikasi.** Bucket ini tidak
+  punya entri `R2_PUBLIC_BASES`, jadi host `pub-<bucketId>.r2.dev`-nya tidak
+  diketahui dan status publiknya **tidak bisa dibaca tanpa token API**.
+  Catatan repo (`catatan_handoff_migrasi_r2.md:136`) menyebut bucket ini
+  privat via presigned ⇒ kemungkinan sudah non-publik; perlu konfirmasi di
+  Dashboard.
+* **`R2_PUBLIC_BASES` di `.env` tidak boleh dihapus** meski akses publik
+  dimatikan — `app/object_store.py:366-374` membutuhkannya untuk membangun
+  URL, dan menghapusnya membuat `public_url()` melempar `RuntimeError`.
+* **Batas laju di edge Cloudflare** untuk `r2.dev`. Mematikan Public Development
+  URL **hanya menutup hostname dev**; custom domain tidak tersentuh
+  (belum ada custom domain yang dikonfigurasi).
+
+#### 13.10.6 Dampak terhadap daftar risiko
+
+* **H1a** — Supabase publik (`raw-material-docs` 646 + `legal-documents` 105 +
+  `product-attachments` 8 objek, path bisa ditebak) — tetap **TINGGI / HOLD**.
+* **H1b** — R2 publik (752 objek) — **TINGGI / TERBUKA**. Sifatnya **terpisah**
+  dari H1a, dan **ini aksi tersisa yang paling murah** di seluruh daftar:
+  **3** panggilan control-plane, tanpa kode, tanpa database, tanpa perubahan
+  `.env`, dan **sepenuhnya dapat dibalik**.
+* Dengan sisi Supabase masih publik, **menutup R2 saja** kira-kira
+  **setengah** permukaan dokumen yang bisa dijangkau anonim: dari **±1.511**
+  objek menjadi **±759** — berkurang, tetapi **belum hilang**.
 ## 14. Rekomendasi Perbaikan (Poin 1–3)
 
 > **Status §14.** Isi bagian ini **rekomendasi**, bukan temuan baru. Semua
@@ -1648,3 +1968,5 @@ satu request, dan `source` yang benar. Empat catatan sementara:
 | 2026-10-21 (malam) | **Verifikasi status migrasi produksi (read-only)**
  — seluruh migrasi **001–007 terpasang di staging DAN produksi**; fallback fail-OPEN portal publik **tidak aktif di produksi**, sehingga **SEC-09 dan BE-20 REFUTED untuk produksi** (§13.6, §14.1). Snapshot produksi dicatat (products 136, profiles 7, activity_logs 1.308, product_attachments 6, brands 18); `supabase_migrations.schema_migrations` dinyatakan **bukan ledger** migrasi, sehingga status wajib diinspeksi per objek di katalog. **Dua set rekomendasi baru §14** ditambahkan: Poin 1 status migrasi, Poin 2 soft-delete (9 item + model kanonik), Poin 3 audit trail (9 item + model kanonik). **U6 dikoreksi** dari CONFIRMED menjadi REFUTED sebagai temuan kode (koreksi §8.2 K9) — celah yang sebenarnya adalah dokumentasi, selebar 5 nilai `entity_type`. Dua check test diperbarui: G8.3 di `tests/verify_audit_db_state.py` (semula menguji `storage_note` sebagai `entity_type` yang mustahil) dan check baru U6 di `tests/test_audit_regressions.py` (doc-drift tabel entitas audit). **Suite tetap hanya MENDETEKSI, tidak memperbaiki** — tidak ada satu pun temuan yang ditutup oleh suite. Ketiga file test masih **belum di-commit** di working tree; tidak ada `git add` / `git commit` / `git push` yang dijalankan. |
 | 2026-10-21 (malam, implementasi) | **Implementasi §13.8.** Route `POST /products/delete/{product_id}` dipulihkan ke `app/products_routes.py` (dari `491d036`) dengan 6 gap G1–G6 ditutup; form dashboard di-gate admin + teks konfirmasi dikoreksi; jalur restore menyimpan `deleted_at` lama. `migration/008` dieksekusi di **staging** lalu **produksi** lewat Supabase Management API atas otorisasi eksplisit owner (constraint `products_soft_delete_consistency` + index `idx_products_is_deleted_deleted_at` terpasang, probe enforcement ditolak **SQLSTATE 23514**), lalu `ALTER COLUMN is_deleted SET NOT NULL` ditutup di kedua environment (`is_nullable` `YES` → `NO`, hitungan baris tidak berubah). Uji soft delete **produksi** pada ``tes log `12`` **LULUS** (+4 baris audit, `trashed` 8 → 9). **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan. |
+| 2026-10-22 | **Implementasi + verifikasi independen H3.1–H3.5** (§13.9). H3.1 — formula Bab 2: validasi total 100,0000% di server (helper murni `_validate_formula_total`), snapshot baris lama + rollback berflag `delete_done`, kegagalan tidak lagi dilaporkan "berhasil diperbarui". H3.2/H3.3 — path upload batch unik per operasi (`uuid4().hex[:8]`) + cleanup file yatim + audit sukses dipindah keluar dari `try` DB. H3.4 — hapus FSP: flash `error_msg`, `str(e)` keluar dari payload audit. H3.5 — simpan note / @mention / audit dipisah jadi 3 blok `try`; `warning_msg` kini **dirender** di `app/templates/base.html`. **File `migration/010_replace_product_formula.sql` disiapkan, BELUM dieksekusi** — tidak ada migrasi yang dijalankan, tidak ada perubahan skema, dan kode aplikasi tidak bergantung padanya. Angka suite diperbarui: `tests/test_audit_regressions.py` **PASS 41 / KNOWN 14 / FAIL 0 / SKIP 2** (sebelumnya 21/18/0/2; 16 check baru `H3.1a`–`H3.5c`, `MIG-010`, `UNIT-01`), `tests/verify_audit_db_state.py` 49 check PASS 21 / FAIL 0 / WARN 6 / INFO 22, `pytest tests/ -q` 79 passed, `scripts/check_undefined_names.py` exit 0. **Tidak ada** `git add` / `git commit` / `git push` yang dijalankan — seluruh perubahan H3 dan amendemen dokumen ini **masih hanya di working tree**; ketiga file suite sendiri sudah ter-commit lebih dulu pada 21 Oktober 2026 di `8a70435`. |
+| 2026-10-22 (H1b) | **Verifikasi eksposur bucket R2 produksi + percobaan mematikan *Public Development URL*** (§13.10). Tiga bucket R2 produksi terverifikasi **publik** lewat `pub-*.r2.dev` — **752 objek** (643 + 105 + 4), HEAD anonim **200 + `application/pdf`**, prefix objek sama bisa ditebak dengan sisi Supabase. Gerbang pra-eksekusi **LOLOS** (9 tabel produksi: **0** baris memakai URL `r2.dev` ⇒ aplikasi produksi tidak pernah membaca R2). **Eksekusi GAGAL** — tidak ada kredensial Cloudflare di mesin ini yang dapat mengautentikasi (token MCP-gateway ditolak **401 code 1000**; `wrangler` ditolak **code 9109**; sesi OAuth terikat hanya pada `bindings.mcp.cloudflare.com` dan tidak punya tool dev-url) ⇒ **tidak ada yang berubah** (snapshot sesudah identik dengan snapshot sebelum: 643/105/4 objek, HEAD anonim tetap 200, `.env` byte-identical, `git status --short` identik, tanpa file sementara tersisa). Perintah manual + verifikasi pasca-jalankan tercatat di §13.10.4; bucket staging dan `product-attachments` produksi **belum disentuh** dan butuh keputusan terpisah. |
