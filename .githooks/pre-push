@@ -3,6 +3,24 @@
 # Aktifkan sekali per clone:  git config core.hooksPath .githooks
 # Lewati darurat:             git push --no-verify
 cd "$(git rev-parse --show-toplevel)" || exit 1
-PY=python3
-command -v "$PY" >/dev/null 2>&1 || PY=python
+# Preferensi: interpreter venv repo dipakai lebih dulu sebelum fallback ke PATH.
+case "$(uname -s 2>/dev/null)" in
+  MINGW*|MSYS*|CYGWIN*) VENV_PY=./venv/Scripts/python.exe ;;
+  *) VENV_PY=./venv/bin/python ;;
+esac
+PY=""
+for cand in "$VENV_PY" ./venv/bin/python ./venv/Scripts/python.exe python3 python; do
+  case "$cand" in
+    */*) [ -f "$cand" ] || continue ;;
+    *) command -v "$cand" >/dev/null 2>&1 || continue ;;
+  esac
+  "$cand" --version >/dev/null 2>&1 || continue
+  PY="$cand"
+  break
+done
+if [ -z "$PY" ]; then
+  echo "[ABORT] pre-push: tidak ada interpreter Python yang bisa dijalankan." >&2
+  echo "[ABORT] siapkan venv repo (venv/Scripts/python.exe atau venv/bin/python) atau Python di PATH." >&2
+  exit 1
+fi
 exec "$PY" scripts/check_undefined_names.py
