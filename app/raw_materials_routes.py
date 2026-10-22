@@ -82,7 +82,7 @@ def _count_url_references(table: str, column: str, url: str, exclude_id: str | N
     """
     try:
         # Filter memakai builder resmi library (`.in_`) supaya nilai URL
-        # dipasar sebagai SATU nilai: `.in_` membungkus nilai yang memuat
+        # dipasarkan sebagai SATU nilai: `.in_` membungkus nilai yang memuat
         # karakter khusus PostgREST (`,:()`) di dalam tanda kutip, sedangkan
         # `.eq` menempelkan nilai mentah ke string filter.
         query = supabase.table(table).select("id").in_(column, [url])
@@ -233,7 +233,7 @@ def _rekonsiliasi_url_baru(new_doc_urls: dict) -> tuple[str, str | None]:
     Filternya dibangun lewat builder resmi library (``.in_``), bukan string
     PostgREST yang dirangkai tangan: ``postgrest`` membungkus nilai yang
     memuat karakter khusus PostgREST (``,:()``) di dalam tanda kutip,
-    sehingga URL tetap dipasar sebagai satu nilai utuh.
+    sehingga URL tetap dipasarkan sebagai satu nilai utuh.
 
     Return: (status, id_baris_ditemukan).
     """

@@ -1827,7 +1827,7 @@ Perbaikan:
   trail (`app/raw_materials_routes.py:1938`);
 * masalah pembersihan tidak pernah hilang diam-diam: kalau objek lama
   **masih dirujuk** baris lain, atau **pemeriksaan referensinya tidak bisa
-  dilakukan**, atau **penghapusananya gagal**, pesan `warning_msg` yang
+  dilakukan**, atau **penghapusannya gagal**, pesan `warning_msg` yang
   menyebut nomor batch dikirim ke user (`app/raw_materials_routes.py:1939`).
 
 Cakupan pemeriksaan referensi diperluas (`app/raw_materials_routes.py:72`,
@@ -1859,7 +1859,7 @@ hasil:
 Aturan penting: **hasil query rekonsiliasi yang kosong BUKAN bukti pasti
 gagal** - request-nya masih mungkin berjalan di server. Karena itu pada
 hasil ambigu objek **selalu** dipertahankan; hanya kegagalan yang pasti
-(margin atas) yang boleh menghapus objek baru
+(yaitu penolakan server yang pasti, bukan hasil yang ambigu) yang boleh menghapus objek baru
 (`app/raw_materials_routes.py:1349`, `app/raw_materials_routes.py:1601`,
 `app/raw_materials_routes.py:1856`).
 
@@ -1892,7 +1892,7 @@ juga membersihkan objek lama yang digantikan (§13.12.1).
    tambah batch mengirim literal `"-"`. Cast-nya gagal
    (`invalid input syntax for type uuid: "-"`) dan `log_activity` bersifat
    fail-open, jadi baris audit **tidak pernah masuk** `activity_logs` - yang
-   tertinggal hanya cetakan terminal. Akibatnya,wajarutan "audit
+   tertinggal hanya cetakan terminal. Akibatnya, wajar untuk "audit
    `outcome="failed"`" pada jalur pasti ditolak tidak berlaku untuk tambah
    batch. Perbaikan: `entity_id=None` (`app/raw_materials_routes.py:1372`,
    `app/raw_materials_routes.py:1400`).

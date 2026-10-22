@@ -375,7 +375,7 @@ def collect_entity_types_from_code() -> tuple[set[str], set[str]]:
 
 
 def resolve_dynamic_entity_types(dynamic_names: set[str]) -> set[str]:
-    """Nilai konkret untuk `entity_type` yangdinamis.
+    """Nilai konkret untuk `entity_type` yang dinamis.
 
     Untuk nama variabel (mis. `doc_type` di app/company_docs_routes.py) nilai
     sebenarnya adalah himpunan kunci whitelist di modul yang sama, mis.
@@ -550,7 +550,7 @@ def python_function_code(text: str, func_name: str) -> str:
 def python_function_body(text: str, func_name: str) -> str:
     """Kode sebuah fungsi level modul, TANPA docstring, dengan batas yang benar.
 
-    Dipakai untuk pemeriksaan yang harus benar-benarhanya isi fungsi. Helper
+    Dipakai untuk pemeriksaan yang harus benar-benar hanya isi fungsi. Helper
     `python_function_code` mengembalikan seluruh file kalau fungsi punya
     docstring, jadi helper ini dipakai untuk check yang butuh isi fungsi saja.
     """
