@@ -14,7 +14,7 @@ Cakupan (ID audit yang dilindungi):
   - Polling frontend       : FE-05, FE-06, FE-07
   - Doc-drift audit trail  : U6 (tabel entitas audit di panduan)
   - Unit pure-module       : SEC-02 (helper tenant), file_validation, object_store
-  - Kejujuran hasil write  : H3.1, H3.2, H3.3, H3.4, H3.5, MIG-010
+  - Kejujuran hasil write  : H3.1, H3.2, H3.3, H3.4, H3.5, H3.6, MIG-010
 
 Perubahan status:
   - 2026-10-21: SEC-01 (route POST /products/delete/{id} hilang di commit
@@ -38,6 +38,16 @@ Perubahan status:
     BE-01, BE-02, BE-03, dan BE-21 keluar dari KNOWN_ISSUES karena sudah
     diperbaiki; registry KNOWN_ISSUES sekarang berisi 14 entri.
     Section 8 (KEJUJURAN HASIL WRITE) mengunci perbaikan tersebut.
+  - 2026-10-22: jalur tulis formula Bab 2 dipindah ke fungsi transaksi
+    Postgres public.replace_product_formula(uuid, jsonb) (migration 010).
+    Mekanisme lama (snapshot + rollback + flag delete selesai) DIHAPUS dari
+    aplikasi, jadi H3.1c, H3.1d, H3.1f, dan MIG-010 ditulis ulang untuk
+    mengunci mekanisme baru (bukan lagi mengunci yang lama). Ditambah 8 check
+    baru H3.6a-H3.6h untuk mengunci jalur baru: klasifikasi kegagalan RPC,
+    kunci baris produk induk di migrasi, pre-read batch sebelum unggah,
+    penanganan batch yang hilang, pemeriksaan referensi file lama, tiga
+    kondisi upload cepat, nilai outcome yang dibatasi, dan penulisan sukses
+    sebagian.
 
 Sifat wajib file ini:
   - READ-ONLY. Tidak pernah menyentuh database, jaringan, atau server.
@@ -63,8 +73,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import re
 import sys
+import tokenize
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -424,6 +436,105 @@ def strip_js_comments(text: str) -> str:
 def line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
+
+def strip_python_comments(text: str) -> str:
+    """Hapus komentar Python tanpa mengubah jumlah baris maupun kolom.
+
+    Dipakai untuk memeriksa isi KODE saja. Penjelasan di dalam komentar
+    bukan mekanisme yang berjalan, jadi tidak boleh dihitung sebagai
+    "mekanisme lama masih ada".
+    """
+    lines = text.splitlines(keepends=True)
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError):
+        return text
+    for tok in tokens:
+        if tok.type != tokenize.COMMENT:
+            continue
+        srow, scol = tok.start
+        erow = tok.end[0]
+        if srow != erow or srow - 1 >= len(lines):
+            continue
+        idx = srow - 1
+        isi = lines[idx].rstrip("\r\n")
+        akhir = lines[idx][len(isi):]
+        lines[idx] = isi[:scol] + " " * max(0, len(isi) - scol) + akhir
+    return "".join(lines)
+
+
+def find_pattern_line(text: str, pattern: str) -> int:
+    """Indeks baris kemunculan pertama sebuah regex, dihitung mulai dari nol;
+    nilai -1 kalau pola tidak ditemukan.
+    """
+    m = re.search(pattern, text)
+    if not m:
+        return -1
+    return text.count("\n", 0, m.start())
+
+
+def handler_region(lines: list[str], decorator_needle: str) -> tuple[int, int]:
+    """Batas handler sebuah route: (baris_awal, baris_akhir_exklusif).
+
+    Baris akhir diambil dari dekorator route berikutnya, jadi isi handler
+    yang dibaca benar-benar milik route yang dicari.
+    """
+    start = -1
+    for i, l in enumerate(lines):
+        if decorator_needle in l:
+            start = i
+            break
+    if start < 0:
+        return -1, -1
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if re.match(r"^[ \t]*@app\.(get|post|put|delete|patch|head|options)\(", lines[i]):
+            end = i
+            break
+    return start, end
+
+
+def python_function_code(text: str, func_name: str) -> str:
+    """Kode sebuah fungsi level modul, TANPA docstring.
+
+    Docstring hanya penjelasan; penyebutan nama fungsi atau kode PostgREST
+    di dalam docstring tidak boleh dihitung sebagai implementasi.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return ""
+    lines = text.splitlines()
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name != func_name:
+            continue
+        doc = node.body[0] if node.body else None
+        if (
+            isinstance(doc, ast.Expr)
+            and isinstance(doc.value, ast.Constant)
+            and isinstance(doc.value.value, str)
+        ):
+            return "\n".join(lines[:doc.lineno - 1] + lines[doc.end_lineno:])
+        return "\n".join(lines[node.lineno - 1:node.end_lineno])
+    return ""
+
+
+def python_function_span(text: str, func_name: str) -> tuple[int, int]:
+    """Indeks baris awal & akhir (exklusif) fungsi level modul tertentu,
+    dihitung mulai dari nol.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return -1, -1
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+            return node.lineno - 1, (node.end_lineno or node.lineno)
+    return -1, -1
+
+
 # ---------------------------------------------------------------------------
 # Section 1 - Inventaris route (parse statis, tanpa import)
 # ---------------------------------------------------------------------------
@@ -748,34 +859,40 @@ def section_error_honesty() -> None:
         known="BE-08",
     )
 
-    # BE-01 - simpan formula Bab 2 (delete + insert) ditelan except, lalu user
-    # tetap dapat cookie "berhasil diperbarui" (blok simpan formula di
+    # BE-01 - pemanggilan fungsi transaksi formula Bab 2 ditelan except, lalu
+    # user tetap dapat cookie "berhasil diperbarui" (blok simpan formula di
     # app/products_routes.py; posisi baris dihitung saat runtime).
+    # Blok formula dicari lewat pemanggilan fungsi transaksi, BUKAN lewat
+    # hapus baris formula (mekanisme lama sudah dibuang).
     prod_path = APP_DIR / "products_routes.py"
     prod_lines = read_text(prod_path).splitlines()
-    del_idx = find_line(prod_lines, 'product_formula_lines").delete()')
-    success_idx = find_line(prod_lines, 'set_cookie("success_msg"', del_idx)
+    prod_text = "\n".join(prod_lines)
+    rpc_idx = find_pattern_line(
+        prod_text, r"supabase\.rpc\(\s*\"replace_product_formula\""
+    )
+    success_idx = -1
+    for i in range(max(rpc_idx, 0), len(prod_lines)):
+        if "log_activity(" in prod_lines[i] and (
+            'outcome="failed"' not in "\n".join(prod_lines[i:i + 5])
+        ):
+            success_idx = i
+            break
     be01_ok = False
-    be01_detail = "blok formula tidak ditemukan di app/products_routes.py"
-    if del_idx >= 0 and success_idx > del_idx:
-        region = prod_lines[del_idx:success_idx]
-        exc_idx = next(
-            (i for i, l in enumerate(region) if l.strip().startswith("except Exception")),
-            -1,
+    be01_detail = (
+        "pemanggilan fungsi transaksi formula (replace_product_formula) "
+        "tidak ditemukan di app/products_routes.py"
+    )
+    if rpc_idx >= 0 and success_idx > rpc_idx:
+        region = "\n".join(prod_lines[rpc_idx:success_idx + 1])
+        be01_ok = (
+            "except Exception" in region
+            and 'set_cookie("error_msg"' in region
         )
-        if exc_idx >= 0:
-            handler = "\n".join(block_after(region, exc_idx))
-            be01_ok = (
-                'set_cookie("error_msg"' in "\n".join(region)
-                or "raise" in handler
-            )
+        if not be01_ok:
             be01_detail = (
-                "kegagalan simpan formula hanya di-print lalu tetap set success_msg "
-                "(products_routes.py:%d)" % (del_idx + 1)
-            )
-        else:
-            be01_detail = (
-                "blok formula tidak punya except Exception (products_routes.py:%d)" % (del_idx + 1)
+                "blok fungsi transaksi formula tidak punya except Exception "
+                "dan/atau set_cookie error_msg (products_routes.py:%d)"
+                % (rpc_idx + 1)
             )
     check(
         "BE-01 kegagalan simpan formula tidak dilaporkan sebagai sukses",
@@ -1467,6 +1584,7 @@ def section_write_honesty() -> None:
     rm_text = "\n".join(rm_lines)
     sample_lines = read_text(APP_DIR / "sample_routes.py").splitlines()
     notes_lines = read_text(APP_DIR / "notes_routes.py").splitlines()
+    notes_text = "\n".join(notes_lines)
 
     # --- H3.1a: helper validasi total 100% (murni, Decimal, toleransi) -----
     helper_idx = find_line(prod_lines, "def _validate_formula_total(")
@@ -1500,38 +1618,47 @@ def section_write_honesty() -> None:
         "validasi total tidak ditemukan / dijalankan setelah update produk",
     )
 
-    # --- H3.1c: snapshot baris lama (kolom eksplisit) diambil sebelum delete -
-    snap_idx = find_line(
-        prod_lines,
-        '.select("product_id, raw_material_id, percent_in_formula, variant_id")',
+    # --- H3.1c: baris formula TIDAK boleh ditulis langsung oleh aplikasi -
+    # Baris formula Bab 2 sekarang hanya ditulis lewat fungsi transaksi
+    # Postgres public.replace_product_formula(uuid, jsonb). Aplikasi tidak
+    # boleh lagi menghapus atau menyisipkan baris formula secara langsung.
+    prod_nows = nows(prod_text)
+    prod_code = strip_python_comments(prod_text)
+    rpc_call_nows = nows('supabase.rpc("replace_product_formula"')
+    formula_rpc_only = (
+        rpc_call_nows in prod_nows
+        and 'product_formula_lines").delete()' not in prod_text
+        and 'product_formula_lines").insert(' not in prod_text
     )
-    del_idx = find_line(prod_lines, 'product_formula_lines").delete()')
-    h31c_ok = snap_idx >= 0 and del_idx > snap_idx
+    if 'product_formula_lines").delete()' in prod_text:
+        h31c_detail = "aplikasi masih menghapus baris formula secara langsung"
+    elif 'product_formula_lines").insert(' in prod_text:
+        h31c_detail = "aplikasi masih menyisipkan baris formula secara langsung"
+    elif rpc_call_nows not in prod_nows:
+        h31c_detail = "pemanggilan fungsi transaksi replace_product_formula tidak ditemukan"
+    else:
+        h31c_detail = "baris formula masih ditulis langsung oleh aplikasi"
     check(
-        "H3.1c snapshot formula lama diambil dengan kolom eksplisit sebelum delete",
-        h31c_ok,
-        "snapshot baris formula lama tidak ditemukan atau tidak mendahului delete",
+        "H3.1c baris formula tidak ditulis langsung aplikasi (pakai fungsi transaksi)",
+        formula_rpc_only,
+        h31c_detail,
     )
 
-    # --- H3.1d: rollback hanya boleh jalan kalau delete benar-benar selesai -
-    set_true_idx = find_line(prod_lines, "delete_done = True")
-    guard_idx = find_line(prod_lines, "if not delete_done:")
-    restore_idx = find_line(prod_lines, '"percent_in_formula": row.get("percent_in_formula"),')
-    h31d_ok = 0 <= set_true_idx < guard_idx < restore_idx
-    h31d_detail = (
-        "urutan flag delete selesai / penjaga rollback tidak benar "
-        "(set=%d, guard=%d, restore=%d)" % (set_true_idx, guard_idx, restore_idx)
-    )
-    if h31d_ok:
-        restore_block = "\n".join(prod_lines[restore_idx - 6:restore_idx + 4])
-        h31d_ok = all(
-            key in restore_block
-            for key in ("product_id", "raw_material_id", "percent_in_formula", "variant_id")
-        )
-        if not h31d_ok:
-            h31d_detail = "rollback tidak memakai daftar kolom eksplisit (product_id/raw_material_id/percent_in_formula/variant_id)"
+    # --- H3.1d: mekanisme lama (snapshot + rollback) harus dibuang -------
+    # Kode dibaca TANPA komentar: penjelasan "rollback" di dalam komentar
+    # bukan mekanisme yang berjalan. Yang dicek adalah kode yang benar-benar
+    # menjalankan snapshot/rollback manual di sisi aplikasi.
+    sisa_mekanisme = [
+        token for token in ("delete_done", "old_formula_rows", "rollback")
+        if token in prod_code.lower()
+    ]
+    h31d_ok = not sisa_mekanisme and rpc_call_nows in prod_nows
+    if sisa_mekanisme:
+        h31d_detail = "mekanisme lama masih ada di kode aplikasi: %s" % ", ".join(sisa_mekanisme)
+    else:
+        h31d_detail = "pemanggilan fungsi transaksi replace_product_formula tidak ditemukan"
     check(
-        "H3.1d rollback formula dijaga flag delete selesai (tidak menghasilkan duplikat)",
+        "H3.1d mekanisme snapshot/rollback lama dibuang (tulis formula lewat fungsi transaksi)",
         h31d_ok,
         h31d_detail,
     )
@@ -1560,16 +1687,19 @@ def section_write_honesty() -> None:
         "cabang 'if formula_failed:' tidak menulis audit outcome=failed + error_msg lalu return",
     )
 
-    # --- H3.1f: pesan partial success + eskalasi kalau rollback gagal -------
+    # --- H3.1f: pesan kegagalan formula harus jujur ----------------------
+    # Pesan ke user wajib menyatakan komposisi tidak berubah, menyebut fungsi
+    # transaksi yang dipakai, dan mengarahkan admin ke migration 010.
     h31f_ok = (
-        "Data produk tersimpan, tetapi formula Bab 2 gagal disimpan" in prod_text
-        and "TIDAK berhasil dipulihkan otomatis" in prod_text
-        and "admin harus memperbaiki data formula secara manual" in prod_text
+        "Komposisi produk tidak berubah" in prod_text
+        and "replace_product_formula" in prod_text
+        and "migration/010_replace_product_formula.sql" in prod_text
     )
     check(
-        "H3.1f pesan kegagalan formula menyebut partial success & eskalasi admin",
+        "H3.1f pesan kegagalan formula jujur: komposisi tidak berubah + arahkan ke migrasi 010",
         h31f_ok,
-        "pesan partial success / eskalasi admin tidak ditemukan",
+        "pesan kegagalan formula tidak menyebut komposisi tidak berubah / "
+        "fungsi transaksi / migration 010",
     )
 
     # --- H3.2a: path upload batch WAJIB unik per operasi -------------------
@@ -1714,25 +1844,321 @@ def section_write_honesty() -> None:
         "warning_msg belum dirender / belum dibersihkan di base.html",
     )
 
-    # --- MIG-010: file migrasi prepared, TIDAK dieksekusi ------------------
+    # Data migrasi 010 dibaca sekali di sini supaya dipakai bersama oleh
+    # H3.6b (urutan kunci baris) dan MIG-010 (isi file migrasi).
     mig_path = ROOT / "migration" / "010_replace_product_formula.sql"
     mig_text = read_text(mig_path) if mig_path.exists() else ""
     app_refs = []
+    app_rpc_refs = []
     for path in app_py_files():
-        if "replace_product_formula" in read_text(path):
+        isi_app = read_text(path)
+        if "replace_product_formula" in isi_app:
             app_refs.append(path.name)
-    h_mig_ok = (
-        mig_path.exists()
-        and "CREATE OR REPLACE FUNCTION public.replace_product_formula" in mig_text
-        and "BELUM DIEKSEKUSI" in mig_text
-        and "TIDAK bergantung" in mig_text
-        and not app_refs
+        # Rujukan yang dihitung = pemanggilan RPC sungguhan, bukan sekadar
+        # sebut nama fungsi di komentar atau di pesan.
+        if re.search(r"rpc\(\s*\"replace_product_formula\"", isi_app):
+            app_rpc_refs.append(path.name)
+
+    # --- H3.6a: fungsi transaksi belum terpasang -> pesan jujur, tanpa
+    #     jalur cadangan yang menulis baris formula secara langsung -------
+    # Diskriminator wajib ada di DALAM fungsi klasifikasi (bukan hanya
+    # disebut di docstring), dan pesan ke user wajib dibangun di fungsi
+    # pembentuk pesan.
+    klas_body = python_function_code(prod_text, "_classify_formula_rpc_error")
+    klas_body_lower = klas_body.lower()
+    klasifikasi_hilang = (
+        bool(klas_body)
+        and "pgrst202" in klas_body_lower
+        and (
+            "could not find the function" in klas_body_lower
+            or "not found" in klas_body_lower
+            or "does not exist" in klas_body_lower
+        )
+    )
+    pesan_body = python_function_code(prod_text, "_formula_failure_message")
+    h36a_ok = (
+        klasifikasi_hilang
+        and "migration/010_replace_product_formula.sql" in pesan_body
+        and formula_rpc_only
     )
     check(
-        "MIG-010 migration/010_replace_product_formula.sql prepared (belum dieksekusi, app tidak bergantung)",
+        "H3.6a fungsi transaksi belum ada: pesan arahkan ke migrasi 010, tanpa jalur tulis langsung",
+        h36a_ok,
+        "kegagalan fungsi transaksi belum diklasifikasikan / pesan tidak "
+        "menunjuk migration 010 / masih ada jalur tulis baris formula langsung",
+    )
+
+    # --- H3.6b: kunci baris produk induk harus mendahului penghapusan ----
+    mig_lock_m = re.search(
+        r"FROM\s+public\.products\b[^;]*?FOR\s+UPDATE", mig_text, re.S
+    )
+    mig_lock_pos = mig_lock_m.start() if mig_lock_m else -1
+    mig_del_pos = mig_text.find("DELETE FROM public.product_formula_lines")
+    mig_lock_window = mig_lock_m.group(0) if mig_lock_m else ""
+    h36b_ok = (
+        mig_lock_pos >= 0
+        and mig_del_pos >= 0
+        and mig_lock_pos < mig_del_pos
+        and "public.products" in mig_lock_window
+        and "p_product_id" in mig_lock_window
+    )
+    check(
+        "H3.6b kunci baris produk induk (FOR UPDATE) mendahuli penghapusan baris formula",
+        h36b_ok,
+        "kunci FOR UPDATE tidak ditemukan / tidak mendahuli penghapusan baris "
+        "formula / tidak memakai p_product_id",
+    )
+
+    # --- H3.6c: batch tidak ditemukan harus dicek SEBELUM unggah file -----
+    edit_start, edit_end = handler_region(
+        rm_lines, '@app.post("/raw-materials/batches/edit/{batch_id}")'
+    )
+    edit_lines = rm_lines[edit_start:edit_end] if edit_start >= 0 else []
+    edit_norm = nows("\n".join(edit_lines))
+    preread_pos = edit_norm.find('.eq("id",batch_id).limit(1)')
+    upload_pos = edit_norm.find("upload_pdf")
+    preread_window = (
+        edit_norm[max(0, preread_pos - 260):preread_pos] if preread_pos >= 0 else ""
+    )
+    h36c_ok = (
+        edit_start >= 0
+        and preread_pos >= 0
+        and upload_pos >= 0
+        and preread_pos < upload_pos
+        and "raw_material_batches" in preread_window
+        and 'outcome="rejected"' in edit_norm
+    )
+    check(
+        "H3.6c batch tidak ditemukan: pre-read .limit(1) sebelum unggah file + cabang rejected",
+        h36c_ok,
+        "pre-read batch dengan .limit(1) tidak ditemukan / tidak mendahuli "
+        "unggahan file / tidak ada cabang outcome rejected",
+    )
+
+    # --- H3.6d: batch hilang antara pre-read dan update harus jadi gagal ---
+    update_chain = (
+        'supabase.table("raw_material_batches").update(update_data)'
+        '.eq("id",batch_id).select("id").execute()'
+    )
+    nol_baris_idx = next(
+        (i for i, l in enumerate(edit_lines) if "if not affected_rows:" in l), -1
+    )
+    exc_idx = next(
+        (
+            i for i in range(nol_baris_idx + 1, len(edit_lines))
+            if edit_lines[i].strip().startswith("except Exception")
+        ),
+        -1,
+    ) if nol_baris_idx >= 0 else -1
+    gagal_idx = next(
+        (
+            i for i in range(exc_idx + 1, len(edit_lines))
+            if 'outcome="failed"' in edit_lines[i]
+        ),
+        -1,
+    ) if exc_idx >= 0 else -1
+    ada_raise = (
+        any("raise " in edit_lines[i] for i in range(nol_baris_idx + 1, exc_idx))
+        if 0 <= nol_baris_idx < exc_idx
+        else False
+    )
+    h36d_ok = (
+        update_chain in edit_norm
+        and nol_baris_idx >= 0
+        and ada_raise
+        and gagal_idx > exc_idx
+    )
+    check(
+        "H3.6d batch hilang saat update: UPDATE pakai .select(id) + cabang tanpa baris jadi kegagalan",
+        h36d_ok,
+        "rantai UPDATE tidak mengembalikan id / cabang tanpa baris terpengaruh "
+        "tidak ada / tidak diperlakukan sebagai kegagalan",
+    )
+
+    # --- H3.6e: file lama yang masih dirujuk TIDAK boleh dihapus ---------
+    ref_start, ref_end = python_function_span(rm_text, "_count_url_references")
+    clean_start, clean_end = python_function_span(rm_text, "_cleanup_replaced_objects")
+    ref_body = "\n".join(rm_lines[ref_start:ref_end]) if ref_start >= 0 else ""
+    clean_body = "\n".join(rm_lines[clean_start:clean_end]) if clean_start >= 0 else ""
+    clean_norm = nows(clean_body)
+    pos_ref_bahan = clean_norm.find('_count_url_references("raw_material_batches"')
+    pos_ref_produk = clean_norm.find('_count_url_references("product_batches"')
+    pos_simpan = clean_norm.find("ifrefs>0:")
+    pos_lewati = clean_norm.find("continue", pos_simpan) if pos_simpan >= 0 else -1
+    pos_hapus = clean_norm.find("remove_from_all_backends")
+    h36e_ok = (
+        ref_start >= 0
+        and clean_start >= 0
+        and '.neq("id"' in ref_body
+        and "exclude_id" in ref_body
+        and pos_ref_bahan >= 0
+        and pos_ref_produk >= 0
+        and pos_simpan > pos_ref_produk
+        and pos_lewati > pos_simpan
+        and pos_hapus > pos_lewati
+    )
+    check(
+        "H3.6e file lama yang masih dirujuk tidak dihapus (cek raw_material_batches + product_batches)",
+        h36e_ok,
+        "pemeriksaan referensi / cabang mempertahankan file lama / penghapusan "
+        "objek tidak ditemukan",
+    )
+
+    # --- H3.6f: upload cepat harus membedakan tiga kondisi ---------------
+    quick_start, quick_end = handler_region(
+        rm_lines, '@app.post("/raw-materials/batches/{batch_id}/quick-upload-doc")'
+    )
+    quick_lines = rm_lines[quick_start:quick_end] if quick_start >= 0 else []
+    quick_norm = nows("\n".join(quick_lines))
+    idx_kosong = next(
+        (i for i, l in enumerate(quick_lines) if l.strip() == "if not files_selected:"), -1
+    )
+    idx_gagal_semua = next(
+        (i for i, l in enumerate(quick_lines) if l.strip() == "if not update_data:"), -1
+    )
+    win_kosong = (
+        nows("\n".join(quick_lines[idx_kosong:idx_kosong + 15])) if idx_kosong >= 0 else ""
+    )
+    win_gagal_semua = (
+        nows("\n".join(quick_lines[idx_gagal_semua:idx_gagal_semua + 30]))
+        if idx_gagal_semua >= 0 else ""
+    )
+    idx_peringatan = next(
+        (i for i, l in enumerate(quick_lines) if l.strip().startswith('"warning_msg"')), -1
+    )
+    win_peringatan = (
+        nows("\n".join(quick_lines[max(0, idx_peringatan - 2):idx_peringatan + 8]))
+        if idx_peringatan >= 0 else ""
+    )
+    h36f_ok = (
+        idx_kosong >= 0
+        and idx_gagal_semua >= 0
+        and idx_kosong != idx_gagal_semua
+        and "Tidakadafileyangdipilih." in win_kosong
+        and 'outcome="rejected"' in win_kosong
+        and "Semuafilegagaldiunggah." not in win_kosong
+        and "Semuafilegagaldiunggah." in win_gagal_semua
+        and "Tidakadadokumenyangtersimpan." in win_gagal_semua
+        and 'outcome="failed"' in win_gagal_semua
+        and "_cleanup_uploaded_objects(" in win_gagal_semua
+        and "Tidakadafileyangdipilih." not in win_gagal_semua
+        and 'set_cookie("warning_msg"' in quick_norm
+        and '",".join(upload_errors)' in win_peringatan
+    )
+    check(
+        "H3.6f upload cepat: tiga kondisi dibedakan (tidak ada file / semua gagal / sebagian)",
+        h36f_ok,
+        "cabang upload cepat tidak memisahkan kondisi tidak ada file, semua "
+        "file gagal, dan sebagian file gagal",
+    )
+
+    # --- H3.6g: nilai outcome yang dipakai harus terbatas -----------------
+    outcome_re = re.compile(r"""outcome\s*=\s*["']([^"']+)["']""")
+    nilai_outcome = set(outcome_re.findall(rm_text))
+    nilai_outcome |= set(outcome_re.findall(notes_text))
+    ada_partial = bool(
+        re.search(r"\bpartial\b", rm_text, re.IGNORECASE)
+        or re.search(r"\bpartial\b", notes_text, re.IGNORECASE)
+    )
+    h36g_ok = (
+        nilai_outcome == {"success", "rejected", "failed"}
+        and "partial" not in nilai_outcome
+        and not ada_partial
+    )
+    check(
+        "H3.6g nilai outcome dibatasi success/rejected/failed (tanpa nilai partial)",
+        h36g_ok,
+        "nilai outcome yang dipakai: %s%s"
+        % (", ".join(sorted(nilai_outcome)), " / ada nilai partial" if ada_partial else ""),
+    )
+
+    # --- H3.6h: sukses sebagian tetap ditulis sebagai success -------------
+    idx_mention = next(
+        (i for i, l in enumerate(notes_lines) if l.strip() == "if mention_failed:"), -1
+    )
+    win_mention = (
+        nows("\n".join(notes_lines[idx_mention:idx_mention + 25])) if idx_mention >= 0 else ""
+    )
+    h36h_notes_ok = (
+        idx_mention >= 0
+        and '"field":"Mention"' in win_mention
+        and 'outcome="success"' in win_mention
+    )
+    h36h_rm_ok = False
+    for i, l in enumerate(quick_lines):
+        if 'outcome="success"' not in l:
+            continue
+        j = i
+        while j >= 0 and "log_activity(" not in quick_lines[j]:
+            j -= 1
+        if j < 0:
+            continue
+        blok = "\n".join(quick_lines[j:i + 2])
+        m = re.search(r"changes=([A-Za-z_][A-Za-z0-9_]*)", blok)
+        if not m:
+            continue
+        var = m.group(1)
+        idx_var = next(
+            (k for k in range(j, -1, -1) if var + ".append(" in quick_lines[k]), -1
+        )
+        if idx_var < 0:
+            continue
+        if "upload_errors" in "\n".join(quick_lines[idx_var:idx_var + 8]):
+            h36h_rm_ok = True
+            break
+    h36h_ok = h36h_notes_ok and h36h_rm_ok
+    check(
+        "H3.6h sukses sebagian tetap outcome success dan rincian yang gagal disebut di changes",
+        h36h_ok,
+        "catatan tersimpan tapi @mention gagal tidak ditulis sebagai success, "
+        "atau file yang gagal tidak disebut di changes",
+    )
+
+    # --- MIG-010: file migrasi prepared, TIDAK dieksekusi ------------------
+    wajib_mig = [
+        "abs(v_total - 100) > 0.0001",
+        "v_pct < 0",
+        r"^-?[0-9]+(\.[0-9]+)?$",
+        "REVOKE ALL ON FUNCTION public.replace_product_formula(uuid, jsonb) FROM PUBLIC;",
+        "REVOKE ALL ON FUNCTION public.replace_product_formula(uuid, jsonb) FROM anon, authenticated;",
+        "GRANT EXECUTE ON FUNCTION public.replace_product_formula(uuid, jsonb) TO service_role;",
+        "BELUM DIEKSEKUSI",
+        "DELETE FROM public.product_formula_lines",
+        "DROP FUNCTION IF EXISTS public.replace_product_formula(uuid, jsonb);",
+        "CREATE FUNCTION public.replace_product_formula(",
+    ]
+    mig_hilang = [w for w in wajib_mig if w not in mig_text]
+    mig_pakai_lama = "CREATE OR REPLACE FUNCTION public.replace_product_formula" in mig_text
+    # Kunci baris produk induk harus benar-benar ada sebagai pernyataan
+    # SQL (bukan sekadar sebutan di komentar kepala file).
+    mig_pakai_kunci = bool(
+        re.search(r"FROM\s+public\.products\b[^;]*?FOR\s+UPDATE", mig_text, re.S)
+    )
+    h_mig_ok = (
+        mig_path.exists()
+        and not mig_hilang
+        and mig_pakai_kunci
+        and not mig_pakai_lama
+        and "products_routes.py" in app_rpc_refs
+    )
+    mig_catatan = []
+    if not mig_path.exists():
+        mig_catatan.append("file migrasi 010 tidak ditemukan")
+    if mig_hilang:
+        mig_catatan.append("isi wajib hilang: %s" % ", ".join(mig_hilang))
+    if mig_pakai_lama:
+        mig_catatan.append("masih memakai CREATE OR REPLACE FUNCTION")
+    if not mig_pakai_kunci:
+        mig_catatan.append("tidak ada kunci FOR UPDATE pada baris produk induk")
+    if "products_routes.py" not in app_rpc_refs:
+        mig_catatan.append(
+            "aplikasi tidak memanggil fungsi transaksi lewat RPC (ditemukan: %s)"
+            % (", ".join(app_rpc_refs) or "tidak ada")
+        )
+    check(
+        "MIG-010 migration/010_replace_product_formula.sql prepared (belum dieksekusi, dipakai aplikasi)",
         h_mig_ok,
-        "file migrasi 010 hilang / tidak ditandai belum dieksekusi / app sudah memakainya: %s"
-        % ", ".join(app_refs),
+        "; ".join(mig_catatan) or "isi migrasi 010 lengkap dan aplikasi memakainya",
     )
 
     # --- UNIT: helper validasi total 100% (murni, tanpa DB) ----------------

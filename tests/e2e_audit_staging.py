@@ -45,6 +45,9 @@ Ringkasan yang diuji:
     D. Multi-tenant               (SEC-02, BE-07, BE-18, BE-19) - opsional
     E. XSS regression             (Sec. 4.1 "pemeriksaan nihil")
     F. Polling setelah sesi expired (FE-12, FE-13)
+    G. Formula Bab 2 transaksional  (RPC public.replace_product_formula)
+       G1..G11 - lewat service role, TIDAK memakai kredensial login. Kalau
+       fungsi belum terpasang di staging, grup ini di-SKIP (bukan FAIL).
 
 Prasyarat (sekali):
     pip install playwright supabase python-dotenv httpx
@@ -78,6 +81,8 @@ import re
 import sys
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 
@@ -980,6 +985,549 @@ def group_expired(browser, base_url: str, state: dict, quick: bool) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# G. Formula Bab 2 transaksional (RPC replace_product_formula)
+# --------------------------------------------------------------------------- #
+# Fungsi public.replace_product_formula(uuid, jsonb) (migration/010) menyimpan
+# ulang seluruh baris formula Bab 2 dalam SATU transaksi: baris produk induk
+# dikunci (SELECT ... FOR UPDATE), tiap baris divalidasi di sisi database, lalu
+# DELETE + INSERT. Kalau ada kegagalan, transaksi di-rollback sehingga formula
+# lama tetap utuh.
+#
+# Grup ini menguji perilaku tersebut lewat service role (klien yang sama dengan
+# aplikasi), jadi TIDAK memakai kredensial login dan tidak menambah beban
+# rate limiter POST /login.
+#
+# Katalog Postgres (pg_proc, information_schema.routine_privileges) TIDAK bisa
+# dibaca lewat PostgREST, jadi skrip memakai kanal SQL OPSIONAL:
+#   - STAGING_DATABASE_URL  (psycopg2; DSN wajib memuat ref staging, bukan prod)
+#   - SUPABASE_ACCESS_TOKEN (Supabase Management API, project staging eksak)
+# Tanpa kanal itu, dua pemeriksaan katalog di-SKIP (bukan FAIL) dan sisanya tetap
+# dijalankan lewat RPC PostgREST.
+FORMULA_RPC = "replace_product_formula"
+FORMULA_RPC_MISSING = ("fungsi replace_product_formula belum terpasang di staging "
+                       "- jalankan migration/010 lebih dulu")
+FORMULA_GROUP = "G1..G11 formula Bab 2 transaksional (RPC replace_product_formula)"
+
+
+def _redact(text) -> str:
+    """Sembunyikan pola kredensial (password/DSN) dari pesan error."""
+    out = re.sub(r"(://[^:/\s]+:)[^@\s]+@", r"\1***@", str(text))
+    out = re.sub(r"(?i)(password\s*[=:]\s*)\S+", r"\1***", out)
+    return out[:240]
+
+
+def _rpc_error(exc: Exception) -> tuple[str, str]:
+    """(kode, pesan) dari exception PostgREST -> ("", "") bila tidak terbaca."""
+    code = str(getattr(exc, "code", "") or "")
+    message = str(getattr(exc, "message", "") or "")
+    raw = getattr(exc, "_raw_error", None)
+    if isinstance(raw, dict):
+        code = str(raw.get("code") or code)
+        message = str(raw.get("message") or message)
+    if not code:
+        code = str(getattr(exc, "code", "") or "")
+    if not message:
+        message = str(exc)
+    return code.upper(), message
+
+
+def _jwt_role(key: str) -> str:
+    """Peran (role) dari JWT kunci API - kunci tidak pernah dicetak."""
+    return str(decode_jwt_claims(key).get("role") or "")
+
+
+def _pct_text(value) -> str:
+    """Angka -> teks desimal tanpa eksponen (format yang diterima fungsi)."""
+    try:
+        return format(Decimal(str(value)), "f")
+    except (InvalidOperation, ValueError, TypeError):
+        return str(value)
+
+
+def _pct_key(value) -> str:
+    """Kunci banding persentase (4 desimal) supaya 60 dan 60.0 dianggap sama."""
+    try:
+        return format(Decimal(str(value)).quantize(Decimal("0.0001")), "f")
+    except (InvalidOperation, ValueError, TypeError):
+        return str(value)
+
+
+def _row_key(row: dict) -> tuple:
+    """Kunci baris formula: (bahan baku, persentase, varian)."""
+    return (str(row.get("raw_material_id") or ""),
+            _pct_key(row.get("percent_in_formula")),
+            str(row.get("variant_id") or ""))
+
+
+def _rows_equal(rows_a: list, rows_b: list) -> bool:
+    """Dua daftar baris formula dianggap sama kalau isinya sama (urutan bebas)."""
+    return (sorted(_row_key(r) for r in rows_a)
+            == sorted(_row_key(r) for r in rows_b))
+
+
+def _formula_payload(rows: list) -> list:
+    """Baris formula -> payload jsonb untuk RPC."""
+    return [{"raw_material_id": str(r.get("raw_material_id") or ""),
+             "percent_in_formula": _pct_text(r.get("percent_in_formula")),
+             "variant_id": (str(r.get("variant_id")) if r.get("variant_id") else None)}
+            for r in rows]
+
+
+def _formula_rows(db, product_id: str) -> list:
+    """Baca baris formula satu produk (bahan baku, persentase, varian)."""
+    data = (db.table("product_formula_lines")
+            .select("raw_material_id,percent_in_formula,variant_id")
+            .eq("product_id", product_id).execute().data or [])
+    return [{"raw_material_id": str(r.get("raw_material_id") or ""),
+             "percent_in_formula": r.get("percent_in_formula"),
+             "variant_id": (str(r.get("variant_id")) if r.get("variant_id") else None)}
+            for r in data]
+
+
+def _call_formula_rpc(db, product_id: str, lines: list):
+    """Panggil RPC formula. -> (respons, error); error None bila berhasil."""
+    try:
+        resp = db.rpc(FORMULA_RPC, {"p_product_id": str(product_id),
+                                    "p_lines": lines}).execute()
+        return resp, None
+    except Exception as exc:  # noqa: BLE001
+        return None, exc
+
+
+def _rpc_row_count(resp, fallback: int) -> int:
+    """Jumlah baris yang dikembalikan fungsi (PostgREST mengirim scalar)."""
+    data = getattr(resp, "data", None)
+    if isinstance(data, bool):
+        return fallback
+    if isinstance(data, int):
+        return data
+    if isinstance(data, dict):
+        for key in ("replace_product_formula", "count", "line_count"):
+            value = data.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+    if isinstance(data, list) and len(data) == 1:
+        value = data[0]
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return fallback
+
+
+def _catalog_rows(cfg: dict, sql: str) -> tuple:
+    """SELECT katalog lewat kanal SQL opsional -> (baris, sumber, pesan).
+
+    Kanal 1: STAGING_DATABASE_URL (psycopg2). Hanya dipakai kalau DSN memuat
+    ref staging dan TIDAK memuat ref produksi.
+    Kanal 2: SUPABASE_ACCESS_TOKEN -> Supabase Management API, project staging
+    eksak (ref staging dipatok di kode, jadi tidak bisa diarahkan ke produksi).
+    Tanpa kanal -> katalog tidak terbaca (baris kosong + pesan alasannya).
+    """
+    if not str(sql).strip().upper().startswith("SELECT"):
+        return [], "", "hanya SELECT yang boleh lewat kanal SQL katalog"
+    dsn = (os.getenv("STAGING_DATABASE_URL") or os.getenv("SUPABASE_DB_URL") or "").strip()
+    if dsn:
+        from app.staging_preflight import PROD_REF, STAGING_REF
+
+        if PROD_REF in dsn or STAGING_REF not in dsn:
+            return [], "psycopg2", ("DSN bukan staging (wajib memuat ref staging, "
+                                    "dilarang memuat ref produksi) -> kanal dimatikan")
+        try:
+            import psycopg2
+            import psycopg2.extras
+        except Exception as exc:  # noqa: BLE001
+            return [], "psycopg2", f"psycopg2 tidak tersedia: {type(exc).__name__}"
+        try:
+            conn = psycopg2.connect(dsn)
+            try:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(sql)
+                    rows = cur.fetchall() or []
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            return [], "psycopg2", f"{type(exc).__name__}: {_redact(exc)}"
+        return [dict(r) for r in rows], "psycopg2 (STAGING_DATABASE_URL)", ""
+    token = (os.getenv("SUPABASE_ACCESS_TOKEN")
+             or os.getenv("SUPABASE_MANAGEMENT_TOKEN") or "").strip()
+    if token:
+        import httpx
+
+        from app.staging_preflight import STAGING_REF
+
+        try:
+            resp = httpx.post(
+                f"https://api.supabase.com/v1/projects/{STAGING_REF}/database/query",
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"},
+                json={"query": sql}, timeout=30)
+        except Exception as exc:  # noqa: BLE001
+            return [], "Supabase Management API", f"{type(exc).__name__}: {_redact(exc)}"
+        if resp.status_code not in (200, 201):
+            return [], "Supabase Management API", f"HTTP {resp.status_code}: {_redact(resp.text)}"
+        try:
+            data = resp.json()
+        except Exception:  # noqa: BLE001
+            return [], "Supabase Management API", "respons bukan JSON"
+        if isinstance(data, list):
+            return [dict(r) for r in data], "Supabase Management API (SELECT)", ""
+        return [], "Supabase Management API (SELECT)", (
+            f"bentuk respons tidak dikenal: {type(data).__name__}")
+    return [], "", ("tidak ada kanal SQL katalog "
+                   "(set STAGING_DATABASE_URL atau SUPABASE_ACCESS_TOKEN)")
+
+
+def _rest_rpc_paths(cfg: dict) -> list:
+    """Daftar jalur /rpc/ yang diekspos PostgREST (metadata, tanpa data)."""
+    import httpx
+
+    key = cfg["SUPABASE_SERVICE_ROLE_KEY"]
+    url = cfg["SUPABASE_URL"].rstrip("/") + "/rest/v1/"
+    try:
+        resp = httpx.get(url, headers={"apikey": key, "Authorization": f"Bearer {key}"},
+                         timeout=20)
+        resp.raise_for_status()
+        paths = (resp.json() or {}).get("paths") or {}
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] baca OpenAPI PostgREST gagal: {type(exc).__name__}: {_redact(exc)}")
+        return []
+    return sorted(p for p in paths if p.startswith("/rpc/"))
+
+
+def _rest_rpc_call(cfg: dict, key: str, product_id: str, lines: list) -> tuple:
+    """Panggil RPC lewat REST dengan kunci tertentu -> (status, body)."""
+    import httpx
+
+    url = cfg["SUPABASE_URL"].rstrip("/") + f"/rest/v1/rpc/{FORMULA_RPC}"
+    try:
+        resp = httpx.post(url, headers={"apikey": key, "Authorization": f"Bearer {key}",
+                                        "Content-Type": "application/json"},
+                          json={"p_product_id": str(product_id), "p_lines": lines},
+                          timeout=20)
+    except Exception as exc:  # noqa: BLE001
+        return 0, f"{type(exc).__name__}: {_redact(exc)}"
+    return resp.status_code, resp.text
+
+
+def _restore_formula(db, product_id: str, snapshot: list, label: str,
+                     force: bool = True) -> bool:
+    """Pulihkan baris formula asli lewat RPC (satu transaksi) -> True bila aman.
+
+    Dipanggil di blok finally setiap skenario yang bisa mengubah staging.
+    Kalau baris ternyata tidak berubah sama sekali, tidak ada yang ditulis.
+    """
+    if not snapshot:
+        info(f"{label} pulihkan baris formula", "tidak ada baris formula asli untuk dipulihkan")
+        return True
+    if not force:
+        try:
+            current = _formula_rows(db, product_id)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] baca baris formula saat memulihkan {label} gagal: "
+                  f"{type(exc).__name__}")
+            current = None
+        if current is not None and _rows_equal(current, snapshot):
+            info(f"{label} pulihkan baris formula", "baris formula tidak berubah -> tidak perlu dipulihkan")
+            return True
+    resp, err = _call_formula_rpc(db, product_id, _formula_payload(snapshot))
+    if err is not None:
+        code, message = _rpc_error(err)
+        print(f"[WARN] pulihkan formula {label} GAGAL lewat RPC: "
+              f"{code or type(err).__name__}: {_redact(message)[:140]}")
+        return False
+    try:
+        current = _formula_rows(db, product_id)
+    except Exception:  # noqa: BLE001
+        current = []
+    ok = _rows_equal(current, snapshot)
+    info(f"{label} pulihkan baris formula", f"baris formula asli dipulihkan lewat RPC: {ok} "
+                             f"(jumlah baris {len(snapshot)})")
+    return ok
+
+
+def _concurrency_payloads(db, snapshot: list) -> tuple:
+    """Dua payload valid (total 100) dengan isi berbeda untuk uji konkurensi."""
+    base = _formula_payload(snapshot)
+    if len(base) >= 2:
+        moved = Decimal("10")
+        try:
+            p1 = Decimal(base[0]["percent_in_formula"])
+            p2 = Decimal(base[-1]["percent_in_formula"])
+        except (InvalidOperation, ValueError, TypeError):
+            p1 = p2 = Decimal("50")
+        if p1 >= moved and p2 + moved <= Decimal("100"):
+            first = dict(base[0])
+            last = dict(base[-1])
+            first["percent_in_formula"] = _pct_text(p1 - moved)
+            last["percent_in_formula"] = _pct_text(p2 + moved)
+            return base, [first] + base[1:-1] + [last]
+    # Hanya satu baris (atau tidak bisa digeser): pakai dua bahan baku berbeda.
+    try:
+        rm_rows = (db.table("raw_materials").select("id").limit(100).execute().data or [])
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] baca raw_materials gagal: {type(exc).__name__}: {_redact(exc)}")
+        rm_rows = []
+    lain = [str(r.get("id")) for r in rm_rows
+            if r.get("id") and str(r.get("id")) != base[0]["raw_material_id"]]
+    if not lain:
+        return None, None
+    a = [{"raw_material_id": base[0]["raw_material_id"],
+          "percent_in_formula": "100", "variant_id": None}]
+    b = [{"raw_material_id": lain[0], "percent_in_formula": "100", "variant_id": None}]
+    return a, b
+
+
+def group_formula(db, cfg: dict) -> None:
+    """G1..G11. Hanya lewat service role; kredensial login tidak dipakai.
+
+    Kalau fungsi belum terpasang di staging, seluruh grup di-SKIP (bukan FAIL).
+    """
+    if db is None:
+        skip(FORMULA_GROUP, "klien service-role tidak tersedia (butuh .env.staging lengkap)")
+        return
+
+    # --- G0: probe keberadaan fungsi (TIDAK menulis data) ------------------
+    # Produk UUID acak + array kosong: fungsi mengunci baris produk lebih dulu
+    # lalu melempar P0002 (produk tidak ditemukan) SEBELUM ada DELETE, jadi
+    # tidak ada baris formula yang tersentuh.
+    resp0, err0 = _call_formula_rpc(db, str(uuid.uuid4()), [])
+    code0 = ""
+    message0 = ""
+    if err0 is not None:
+        code0, message0 = _rpc_error(err0)
+        hay0 = (code0 + " " + message0).lower()
+        if "pgrst202" in hay0 or "could not find the function" in hay0:
+            skip(FORMULA_GROUP, f"{FORMULA_RPC_MISSING} "
+                                 "(PGRST202: fungsi tidak ada di schema cache PostgREST)")
+            return
+        if ("permission denied" in hay0 or "insufficient privilege" in hay0
+                or code0 in ("401", "403", "42501", "PGRST301")):
+            skip(FORMULA_GROUP, "service role tidak punya hak EXECUTE atas fungsi "
+                                "-> tidak bisa diuji")
+            return
+    bisa_dipanggil = (err0 is None or code0 in ("P0002", "22023")
+                      or message0.startswith("Formula Bab 2"))
+
+    # --- G1: fungsi terdaftar di katalog (pg_proc) ------------------------
+    cat_rows, cat_src, cat_err = _catalog_rows(cfg, (
+        "SELECT pg_get_function_identity_arguments(p.oid) AS argumen, "
+        "pg_get_function_result(p.oid) AS hasil "
+        "FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = 'public' AND p.proname = 'replace_product_formula'"))
+    if not cat_src:
+        skip("G1 fungsi replace_product_formula terdaftar di pg_proc "
+             "(1 baris, argumen uuid + jsonb)", cat_err)
+    else:
+        args = [str(r.get("argumen") or "") for r in cat_rows]
+        ok_g1 = (len(cat_rows) == 1 and "uuid" in args[0].lower()
+                 and "jsonb" in args[0].lower())
+        check("G1 fungsi replace_product_formula terdaftar di pg_proc "
+              "(1 baris, argumen uuid + jsonb)", ok_g1,
+              f"sumber={cat_src} jumlah_baris={len(cat_rows)} argumen={args}")
+
+    # --- G1b: fungsi diekspos & bisa dipanggil lewat service role ---------
+    check("G1b fungsi diekspos & bisa dipanggil lewat service role (RPC PostgREST)",
+          bisa_dipanggil, f"kode_error={code0 or '-'} pesan={_redact(message0)[:120]}")
+    info("G1c cache skema PostgREST",
+         f"jalur RPC terdaftar={_rest_rpc_paths(cfg) or 'tidak ada'}")
+
+    # --- G2: hak akses fungsi ---------------------------------------------
+    priv_rows, priv_src, priv_err = _catalog_rows(cfg, (
+        "SELECT grantee, privilege_type FROM information_schema.routine_privileges "
+        "WHERE routine_schema = 'public' AND routine_name = 'replace_product_formula'"))
+    if not priv_src:
+        skip("G2 hak EXECUTE fungsi hanya untuk service_role "
+             "(bukan PUBLIC/anon/authenticated)", priv_err)
+    else:
+        grants = {(str(r.get("grantee") or ""), str(r.get("privilege_type") or ""))
+                  for r in priv_rows}
+        ada_service = ("service_role", "EXECUTE") in grants
+        bocor = sorted(g for g, _p in grants
+                       if g.strip().upper() in ("PUBLIC", "ANON", "AUTHENTICATED"))
+        check("G2 hak EXECUTE fungsi hanya untuk service_role "
+              "(bukan PUBLIC/anon/authenticated)", ada_service and not bocor,
+              f"sumber={priv_src} service_role_EXECUTE={ada_service} "
+              f"hak_lain_yang_boleh={bocor} total_baris={len(priv_rows)}")
+
+    # --- G2b: proxy peran anon (tanpa kanal katalog) ----------------------
+    anon_key = str(cfg.get("SUPABASE_KEY") or "").strip()
+    if not anon_key or _jwt_role(anon_key) != "anon":
+        skip("G2b peran anon tidak bisa memanggil fungsi "
+             "(proxy tanpa kanal SQL katalog)",
+             "kunci anon tidak tersedia di .env.staging atau perannya bukan 'anon'")
+    else:
+        status_anon, body_anon = _rest_rpc_call(cfg, anon_key, str(uuid.uuid4()), [])
+        ditolak = (status_anon in (401, 403, 404)
+                   or "permission denied" in body_anon.lower()
+                   or "could not find the function" in body_anon.lower())
+        check("G2b peran anon tidak bisa memanggil fungsi "
+              "(proxy tanpa kanal SQL katalog)", ditolak,
+              f"HTTP {status_anon} body={body_anon[:120]}")
+
+    # --- pilih produk staging yang punya baris formula -------------------
+    try:
+        semua = (db.table("product_formula_lines")
+                 .select("product_id,raw_material_id,percent_in_formula,variant_id")
+                 .limit(1000).execute().data or [])
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] baca product_formula_lines gagal: "
+              f"{type(exc).__name__}: {_redact(exc)}")
+        semua = []
+    per_produk: dict = {}
+    for r in semua:
+        pid = str(r.get("product_id") or "")
+        if not pid:
+            continue
+        per_produk.setdefault(pid, []).append({
+            "raw_material_id": str(r.get("raw_material_id") or ""),
+            "percent_in_formula": r.get("percent_in_formula"),
+            "variant_id": (str(r.get("variant_id")) if r.get("variant_id") else None)})
+    dipilih = None
+    for pid in sorted(per_produk):
+        rows = per_produk[pid]
+        try:
+            total = sum(Decimal(_pct_text(r["percent_in_formula"])) for r in rows)
+        except (InvalidOperation, ValueError, TypeError):
+            continue
+        if total == Decimal("100"):
+            dipilih = (pid, rows)
+            break
+    if dipilih is None:
+        skip("G3..G10 pengujian tulis formula "
+             "(butuh produk staging dengan baris formula total 100)",
+             "tidak ada produk staging dengan baris formula yang totalnya 100")
+        return
+    product_id, snapshot = dipilih
+    info("G3 produk uji", f"produk={product_id} jumlah_baris_formula={len(snapshot)} "
+                          "(baris asli disalin untuk dipulihkan di akhir skenario)")
+
+    def _harus_ditolak(label: str, lines: list, catatan: str) -> None:
+        """Skenario penolakan: RPC harus melempar error & baris formula utuh."""
+        _resp, err = _call_formula_rpc(db, product_id, lines)
+        code, message = _rpc_error(err) if err is not None else ("", "")
+        try:
+            sesudah = _formula_rows(db, product_id)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] baca baris formula setelah {label} gagal: "
+                  f"{type(exc).__name__}")
+            sesudah = []
+        utuh = _rows_equal(sesudah, snapshot)
+        check(label, err is not None and utuh,
+              f"error={code or ('-' if err is None else type(err).__name__)} "
+              f"pesan={_redact(message)[:120]} baris_tetap_sama={utuh} ({catatan})")
+
+    # --- G3: penggantian formula yang valid -------------------------------
+    payload = _formula_payload(snapshot)
+    try:
+        resp, err = _call_formula_rpc(db, product_id, payload)
+        if err is not None:
+            code, message = _rpc_error(err)
+            check("G3 penggantian formula valid (total 100) berhasil "
+                  "& hasilnya sama dengan snapshot", False,
+                  f"RPC gagal: {code or type(err).__name__}: {_redact(message)[:140]}")
+        else:
+            ditulis = _rpc_row_count(resp, len(payload))
+            sesudah = _formula_rows(db, product_id)
+            sama = _rows_equal(sesudah, snapshot)
+            check("G3 penggantian formula valid (total 100) berhasil "
+                  "& hasilnya sama dengan snapshot",
+                  ditulis == len(payload) and sama,
+                  f"baris dikembalikan={ditulis} (dikirim {len(payload)}) "
+                  f"baris_setelah_sama_dengan_snapshot={sama}")
+    finally:
+        _restore_formula(db, product_id, snapshot, "G3", force=True)
+
+    rm0 = snapshot[0]["raw_material_id"]
+
+    # --- G4: total persentase bukan 100 ditolak ---------------------------
+    try:
+        _harus_ditolak("G4 total persentase bukan 100 ditolak "
+                       "& baris formula tidak berubah",
+                       [{"raw_material_id": rm0, "percent_in_formula": "90",
+                         "variant_id": None}],
+                       "total 90 harus ditolak fungsi")
+    finally:
+        _restore_formula(db, product_id, snapshot, "G4", force=False)
+
+    # --- G5: persentase negatif ditolak -----------------------------------
+    try:
+        _harus_ditolak("G5 persentase negatif ditolak & baris formula tidak berubah",
+                       [{"raw_material_id": rm0, "percent_in_formula": "-10",
+                         "variant_id": None},
+                        {"raw_material_id": rm0, "percent_in_formula": "110",
+                         "variant_id": None}],
+                       "satu baris negatif harus ditolak walau totalnya 100")
+    finally:
+        _restore_formula(db, product_id, snapshot, "G5", force=False)
+
+    # --- G6: persentase bukan angka ditolak ------------------------------
+    try:
+        _harus_ditolak("G6 persentase bukan angka ditolak & baris formula tidak berubah",
+                       [{"raw_material_id": rm0, "percent_in_formula": "abc",
+                         "variant_id": None},
+                        {"raw_material_id": rm0, "percent_in_formula": "100",
+                         "variant_id": None}],
+                       "nilai 'abc' harus ditolak fungsi")
+    finally:
+        _restore_formula(db, product_id, snapshot, "G6", force=False)
+
+    # --- G7: variant_id asing ditolak ------------------------------------
+    try:
+        _harus_ditolak("G7 variant_id yang tidak milik bahan baku ditolak "
+                       "& baris formula tidak berubah",
+                       [{"raw_material_id": rm0, "percent_in_formula": "100",
+                         "variant_id": str(uuid.uuid4())}],
+                       "variant acak harus ditolak fungsi")
+    finally:
+        _restore_formula(db, product_id, snapshot, "G7", force=False)
+
+    # --- G8: produk tidak dikenal ditolak --------------------------------
+    resp8, err8 = _call_formula_rpc(db, str(uuid.uuid4()), payload)
+    code8, message8 = _rpc_error(err8) if err8 is not None else ("", "")
+    check("G8 produk tidak dikenal ditolak (produk tidak ditemukan)",
+          err8 is not None,
+          f"error={code8 or ('-' if err8 is None else type(err8).__name__)} "
+          f"pesan={_redact(message8)[:120]}")
+
+    # --- G9: array baris kosong ditolak ----------------------------------
+    try:
+        _harus_ditolak("G9 array baris kosong ditolak & baris formula tidak berubah",
+                       [], "daftar baris kosong harus ditolak fungsi")
+    finally:
+        _restore_formula(db, product_id, snapshot, "G9", force=False)
+
+    # --- G10: dua penggantian formula bersamaan --------------------------
+    payload_a, payload_b = _concurrency_payloads(db, snapshot)
+    if payload_a is None or payload_b is None:
+        skip("G10 dua penggantian formula bersamaan diserialisasi",
+             "tidak bisa menyusun dua payload valid yang berbeda untuk produk uji")
+    else:
+        try:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                future_a = pool.submit(_call_formula_rpc, db, product_id, payload_a)
+                future_b = pool.submit(_call_formula_rpc, db, product_id, payload_b)
+                hasil_a = future_a.result()
+                hasil_b = future_b.result()
+            err_a = hasil_a[1]
+            err_b = hasil_b[1]
+            sesudah = _formula_rows(db, product_id)
+            set_a = _rows_equal(sesudah, _formula_payload(payload_a))
+            set_b = _rows_equal(sesudah, _formula_payload(payload_b))
+            check("G10 dua penggantian formula bersamaan diserialisasi "
+                  "(hasilnya salah satu set utuh)",
+                  set_a or set_b,
+                  f"hasil_set_A={set_a} hasil_set_B={set_b} "
+                  f"jumlah_baris_akhir={len(sesudah)} "
+                  f"error_A={_rpc_error(err_a)[0] if err_a else '-'} "
+                  f"error_B={_rpc_error(err_b)[0] if err_b else '-'}")
+        finally:
+            _restore_formula(db, product_id, snapshot, "G10", force=True)
+
+    # --- G11: staging dikembalikan seperti semula ------------------------
+    akhir = _formula_rows(db, product_id)
+    check("G11 baris formula produk uji kembali sama seperti snapshot awal",
+          _rows_equal(akhir, snapshot),
+          f"jumlah_baris_akhir={len(akhir)} jumlah_baris_snapshot={len(snapshot)}")
+# --------------------------------------------------------------------------- #
 # Mode produksi: subset read-only saja
 # --------------------------------------------------------------------------- #
 def run_production_subset(browser, base_url: str) -> None:
@@ -1133,6 +1681,7 @@ def main() -> int:
                                                    second_tenant_credentials())),
                         ("E", lambda: group_xss(browser, base_url, state)),
                         ("F", lambda: group_expired(browser, base_url, state, quick)),
+                        ("G", lambda: group_formula(db, cfg)),
                     )
                     for label, step in steps:
                         try:
