@@ -39,12 +39,14 @@ jobs:
           import os, socket
           os.environ.update(SUPABASE_URL='https://ci.invalid.supabase.co', SUPABASE_SERVICE_ROLE_KEY='ci-dummy-service-role-key', SUPABASE_KEY='ci-dummy-anon-key', STORAGE_BACKEND='supabase', DIP_APP_ENV='')
           def blocked(*args, **kwargs): raise AssertionError('external client/network creation on import')
-          socket.socket = blocked
           import supabase, boto3, dotenv
           dotenv.load_dotenv = lambda *args, **kwargs: False
           dotenv.dotenv_values = lambda *args, **kwargs: {}
           supabase.create_client = blocked
           boto3.client = blocked
+          socket.create_connection = blocked
+          socket.getaddrinfo = blocked
+          socket.socket.connect = blocked
           import app.main
           assert app.main.app
           PY

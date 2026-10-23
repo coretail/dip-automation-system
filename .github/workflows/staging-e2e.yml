@@ -1,7 +1,6 @@
 name: Staging E2E
+# Re-enable push after staging secrets are complete and a manual run is green.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       suite:
