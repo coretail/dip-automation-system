@@ -82,7 +82,7 @@ def _count_url_references(table: str, column: str, url: str, exclude_id: str | N
     """
     try:
         # Filter memakai builder resmi library (`.in_`) supaya nilai URL
-        # dipasarkan sebagai SATU nilai: `.in_` membungkus nilai yang memuat
+        # diurai sebagai SATU nilai: `.in_` membungkus nilai yang memuat
         # karakter khusus PostgREST (`,:()`) di dalam tanda kutip, sedangkan
         # `.eq` menempelkan nilai mentah ke string filter.
         query = supabase.table(table).select("id").in_(column, [url])
@@ -204,10 +204,31 @@ REKONSILIASI_TIDAK_DITEMUKAN = "tidak_ditemukan"
 REKONSILIASI_GAGAL_CEK = "gagal_cek"
 
 
+def _status_http_dari_exception(exc: BaseException) -> int | None:
+    """Ambil status HTTP dari exception database, kalau ada.
+
+    * ``httpx.HTTPStatusError`` membawa ``response.status_code``.
+    * ``postgrest.exceptions.APIError`` dari error PostgREST yang asli punya
+      ``code`` berupa string SQLSTATE/PGRST (mis. ``23505``, ``PGRST116``)
+      -> bukan status HTTP, jadi dikembalikan ``None``. Tetapi kalau body
+      error BUKAN JSON PostgREST (mis. halaman HTML dari gateway/proxy),
+      library membuat ``APIError`` generik dengan ``code`` = status HTTP
+      (``generate_default_error_message`` di ``postgrest/exceptions.py``).
+    """
+    if isinstance(exc, HTTPStatusError):
+        return getattr(getattr(exc, "response", None), "status_code", None)
+    kode = getattr(exc, "code", None)
+    if isinstance(kode, int):
+        return kode
+    if isinstance(kode, str) and len(kode) == 3 and kode.isdigit():
+        return int(kode)
+    return None
+
+
 def _klasifikasi_kegagalan_db(exc: BaseException) -> str:
     """Tentukan kegagalan database itu pasti ditolak atau ambigu.
 
-    Dasarnya TIPE exception, bukan pencocokan teks pesan:
+    Dasarnya TIPE exception dan status HTTP, bukan pencocokan teks pesan:
 
     * ``postgrest.exceptions.APIError`` dilempar client PostgREST ketika
       server membalas HTTP error (lihat ``SyncQueryRequestBuilder.execute``
@@ -215,11 +236,19 @@ def _klasifikasi_kegagalan_db(exc: BaseException) -> str:
       menolak permintaan, jadi tulisannya tidak terjadi.
     * ``httpx.HTTPStatusError`` = server membalas status HTTP error, bukan
       kegagalan transport, jadi juga pasti ditolak.
+    * PENGECUALIAN: status 5xx yang datang dari gateway/proxy (body bukan
+      JSON PostgREST, mis. 502/503/504) TIDAK membuktikan tulisan gagal -
+      database bisa saja sudah commit sebelum gateway menyerah -> ambigu.
+      Error PostgREST asli (``code`` SQLSTATE/PGRST) tetap pasti ditolak
+      karena transaksinya di-rollback.
     * ``httpx.HTTPError`` (timeout/connect/read/write/protocol/network) dan
       exception lain = permintaan mungkin sudah diterapkan di server, tapi
       responsnya tidak sampai -> ambigu.
     """
     if isinstance(exc, (APIError, HTTPStatusError)):
+        status = _status_http_dari_exception(exc)
+        if status is not None and status >= 500:
+            return KEGAGALAN_AMBIGU
         return KEGAGALAN_PASTI_DITOLAK
     return KEGAGALAN_AMBIGU
 
@@ -233,7 +262,7 @@ def _rekonsiliasi_url_baru(new_doc_urls: dict) -> tuple[str, str | None]:
     Filternya dibangun lewat builder resmi library (``.in_``), bukan string
     PostgREST yang dirangkai tangan: ``postgrest`` membungkus nilai yang
     memuat karakter khusus PostgREST (``,:()``) di dalam tanda kutip,
-    sehingga URL tetap dipasarkan sebagai satu nilai utuh.
+    sehingga URL tetap diurai sebagai satu nilai utuh.
 
     Return: (status, id_baris_ditemukan).
     """
@@ -1381,7 +1410,7 @@ def register_raw_materials_routes(
                 response = RedirectResponse(url="/raw-materials", status_code=303)
                 response.set_cookie("error_msg", pesan)
                 return response
-            # --- GAGALAN AMBIGU: respons database hilang --------------------
+            # --- KEGAGALAN AMBIGU: respons database hilang --------------------
             # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
             # diunggah TIDAK boleh dihapus. Rekonsiliasi dulu: kalau URL baru
             # ditemukan, datanya memang tersimpan; kalau tidak, hasilnya
@@ -1612,7 +1641,7 @@ def register_raw_materials_routes(
                 else:
                     pesan = (
                         pesan_gagal + " File yang sudah diunggah juga gagal dihapus - "
-                        "administrator perlu diperiksa storage."
+                        "administrator perlu memeriksa storage."
                     )
                     catatan = (
                         catatan_gagal + "; file yang diunggah juga gagal dibersihkan "
@@ -1627,7 +1656,7 @@ def register_raw_materials_routes(
                 response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
                 response.set_cookie("error_msg", pesan)
                 return response
-            # --- GAGALAN AMBIGU: respons database hilang --------------------
+            # --- KEGAGALAN AMBIGU: respons database hilang --------------------
             # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
             # diunggah TIDAK boleh dihapus. Rekonsiliasi dulu: kalau URL baru
             # ditemukan, datanya memang tersimpan; kalau tidak, hasilnya
@@ -1919,7 +1948,7 @@ def register_raw_materials_routes(
                 response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
                 response.set_cookie("error_msg", pesan)
                 return response
-            # --- GAGALAN AMBIGU: respons database hilang --------------------
+            # --- KEGAGALAN AMBIGU: respons database hilang --------------------
             # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
             # diunggah TIDAK boleh dihapus. Rekonsiliasi dulu: kalau URL baru
             # ditemukan, dokumennya memang tersimpan; kalau tidak, hasilnya

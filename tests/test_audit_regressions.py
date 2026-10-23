@@ -2474,6 +2474,63 @@ def section_write_honesty() -> None:
         "klasifikasi tidak memakai tipe exception",
     )
 
+    # --- H3.7f2: 5xx dari gateway (body bukan JSON PostgREST) = AMBIGU -----
+    # Dieksekusi sungguhan di namespace terisolasi dengan exception pengganti
+    # (tanpa mengimpor app, karena import app membuka client Supabase).
+    class _APIErrorStub(Exception):
+        def __init__(self, code):
+            super().__init__(f"code={code}")
+            self.code = code
+
+    class _ResponseStub:
+        def __init__(self, status_code):
+            self.status_code = status_code
+
+    class _HTTPStatusErrorStub(Exception):
+        def __init__(self, status_code):
+            super().__init__(f"status={status_code}")
+            self.response = _ResponseStub(status_code)
+
+    ns_klasifikasi = {
+        "APIError": _APIErrorStub,
+        "HTTPStatusError": _HTTPStatusErrorStub,
+        "KEGAGALAN_PASTI_DITOLAK": "pasti_ditolak",
+        "KEGAGALAN_AMBIGU": "ambigu",
+    }
+    try:
+        # Ambil sumber fungsi persis lewat ast (python_function_code
+        # mengembalikan seluruh modul untuk fungsi ber-docstring).
+        pohon_rm = ast.parse(rm_text)
+        for nama_fn in ("_status_http_dari_exception", "_klasifikasi_kegagalan_db"):
+            node_fn = next(
+                n for n in pohon_rm.body
+                if isinstance(n, ast.FunctionDef) and n.name == nama_fn
+            )
+            exec(ast.get_source_segment(rm_text, node_fn), ns_klasifikasi)
+        klasifikasi_fn = ns_klasifikasi["_klasifikasi_kegagalan_db"]
+        kasus_klasifikasi = [
+            (_APIErrorStub("23505"), "pasti_ditolak"),       # SQLSTATE: rollback
+            (_APIErrorStub("PGRST116"), "pasti_ditolak"),    # error PostgREST asli
+            (_APIErrorStub("57014"), "pasti_ditolak"),       # statement timeout: rollback
+            (_APIErrorStub(400), "pasti_ditolak"),           # 4xx generik
+            (_APIErrorStub(429), "pasti_ditolak"),
+            (_APIErrorStub(502), "ambigu"),                  # gateway, body bukan JSON
+            (_APIErrorStub(504), "ambigu"),
+            (_APIErrorStub("503"), "ambigu"),
+            (_HTTPStatusErrorStub(404), "pasti_ditolak"),
+            (_HTTPStatusErrorStub(504), "ambigu"),
+            (TimeoutError("read timeout"), "ambigu"),        # transport
+        ]
+        h37f2_ok = all(klasifikasi_fn(exc) == harapan for exc, harapan in kasus_klasifikasi)
+    except Exception:
+        h37f2_ok = False
+    check(
+        "H3.7f2 klasifikasi: 5xx dari gateway dan timeout ambigu, error PostgREST asli dan 4xx pasti ditolak",
+        h37f2_ok,
+        "5xx gateway masih dianggap pasti ditolak (file baru bisa terhapus padahal "
+        "database sudah commit) / error PostgREST asli salah diklasifikasi",
+    )
+
     # --- H3.7g: tidak ada jalur ambigu yang langsung menghapus objek baru --
     sites_cleanup = module_call_sites(rm_text, "_cleanup_uploaded_objects")
     sites_dalam_except = [s for s in sites_cleanup if s[1]]
