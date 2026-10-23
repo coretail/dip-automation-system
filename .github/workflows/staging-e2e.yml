@@ -1,0 +1,125 @@
+name: Staging E2E
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Upload requires staging backend dual/r2; all excludes upload.
+        required: true
+        type: choice
+        options: [all, smoke, upload, activity, audit]
+        default: all
+permissions:
+  contents: read
+concurrency:
+  group: staging-e2e-single-writer
+  cancel-in-progress: false
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 60
+    env:
+      # Configure these staging-only secrets in GitHub Environment staging.
+      # Required: STAGING_ADMIN_EMAIL/PASSWORD, STAGING_SUPABASE_URL/KEY/SERVICE_ROLE_KEY, STAGING_STORAGE_BACKEND.
+      # Upload suite requires STORAGE_BACKEND=dual|r2 and R2 staging secrets. Other suites support supabase.
+      STAGING_BASE_URL: http://127.0.0.1:8017
+      E2E_SUITE: ${{ github.event.inputs.suite || 'all' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.0'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ci.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install runtime and browser dependencies
+        run: |
+          python -m pip install -r requirements.txt -r requirements-ci.txt
+          python -m playwright install --with-deps chromium
+      - name: Create guarded staging config and start launcher
+        shell: bash
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_KEY: ${{ secrets.STAGING_SUPABASE_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_STORAGE_BACKEND: ${{ secrets.STAGING_STORAGE_BACKEND }}
+          STAGING_R2_ACCOUNT_ID: ${{ secrets.STAGING_R2_ACCOUNT_ID }}
+          STAGING_R2_ACCESS_KEY_ID: ${{ secrets.STAGING_R2_ACCESS_KEY_ID }}
+          STAGING_R2_SECRET_ACCESS_KEY: ${{ secrets.STAGING_R2_SECRET_ACCESS_KEY }}
+          STAGING_R2_PUBLIC_BASES: ${{ secrets.STAGING_R2_PUBLIC_BASES }}
+          STAGING_R2_BUCKET_SUFFIX: ${{ secrets.STAGING_R2_BUCKET_SUFFIX }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf 'DIP_APP_ENV=staging\nSUPABASE_URL=%s\nSUPABASE_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\nSTORAGE_BACKEND=%s\nR2_ACCOUNT_ID=%s\nR2_ACCESS_KEY_ID=%s\nR2_SECRET_ACCESS_KEY=%s\nR2_PUBLIC_BASES=%s\nR2_BUCKET_SUFFIX=%s\n' "$STAGING_SUPABASE_URL" "$STAGING_SUPABASE_KEY" "$STAGING_SUPABASE_SERVICE_ROLE_KEY" "$STAGING_STORAGE_BACKEND" "$STAGING_R2_ACCOUNT_ID" "$STAGING_R2_ACCESS_KEY_ID" "$STAGING_R2_SECRET_ACCESS_KEY" "$STAGING_R2_PUBLIC_BASES" "$STAGING_R2_BUCKET_SUFFIX" > .env.staging
+          setsid python scripts/run_staging_8017.py > staging.log 2>&1 < /dev/null & echo $! > .staging.pid
+          for _ in $(seq 1 60); do curl --fail --silent http://127.0.0.1:8017/health >/dev/null && exit 0; sleep 2; done
+          echo 'Health check timed out.' >&2; exit 1
+      - name: Run selected E2E
+        env:
+          STAGING_ADMIN_EMAIL: ${{ secrets.STAGING_ADMIN_EMAIL }}
+          STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          case "$E2E_SUITE" in
+            all) python tests/e2e_smoke_refactor.py; python tests/e2e_activity_request_id.py; python tests/e2e_audit_staging.py --quick ;;
+            smoke) python tests/e2e_smoke_refactor.py ;;
+            # R2-specific check; run only when staging backend is dual or r2.
+            upload) python tests/e2e_upload_staging.py --log staging.log ;;
+            activity) python tests/e2e_activity_request_id.py ;;
+            audit) python tests/e2e_audit_staging.py --quick ;;
+            *) echo 'Invalid suite selection' >&2; exit 2 ;;
+          esac
+      - name: Stop server and remove staging config
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f .staging.pid ]]; then kill -- -"$(cat .staging.pid)" 2>/dev/null || true; fi
+          rm -f .env.staging .staging.pid
+      - name: Redact secrets from failure log
+        if: failure()
+        shell: bash
+        env:
+          SECRETS_TO_REDACT: |
+            ${{ secrets.STAGING_ADMIN_PASSWORD }}
+            ${{ secrets.STAGING_GEMINI_API_KEY }}
+            ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+            ${{ secrets.STAGING_R2_SECRET_ACCESS_KEY }}
+            ${{ secrets.STAGING_SUPABASE_KEY }}
+            ${{ secrets.STAGING_ADMIN_EMAIL }}
+            ${{ secrets.STAGING_R2_ACCESS_KEY_ID }}
+            ${{ secrets.STAGING_R2_ACCOUNT_ID }}
+            ${{ secrets.STAGING_R2_PUBLIC_BASES }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path("staging.log")
+          text = path.read_text(errors="replace") if path.exists() else "No staging log was created.\n"
+          for secret in os.environ.get("SECRETS_TO_REDACT", "").splitlines():
+              if secret:
+                  text = text.replace(secret, "[REDACTED]")
+          import re
+          text = re.sub(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s]+", r"\1[REDACTED]", text)
+          text = re.sub(r"(?i)([?&]key=)[^&\s]+", r"\1[REDACTED]", text)
+          text = re.sub(r"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", "[REDACTED_JWT]", text)
+          Path("staging-failure.log").write_text(text)
+          PY
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-failure-${{ github.sha }}-${{ github.run_id }}
+          path: staging-failure.log
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Summary
+        if: always()
+        run: >-
+          printf '## Staging E2E\n\n- Commit: %s\n- Suite: %s\n- Staging only\n' "$GITHUB_SHA" "$E2E_SUITE" >> "$GITHUB_STEP_SUMMARY"

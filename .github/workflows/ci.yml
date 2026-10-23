@@ -1,0 +1,78 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: fast-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.0'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ci.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install runtime and CI tools
+        run: python -m pip install -r requirements.txt -r requirements-ci.txt
+      - name: Static checks
+        run: |
+          python scripts/check_undefined_names.py
+          python scripts/check_static_rules.py
+      - name: Compile and isolated app import
+        run: |
+          python -m compileall -q app scripts
+          python - <<'PY'
+          import os, socket
+          os.environ.update(SUPABASE_URL='https://ci.invalid.supabase.co', SUPABASE_SERVICE_ROLE_KEY='ci-dummy-service-role-key', SUPABASE_KEY='ci-dummy-anon-key', STORAGE_BACKEND='supabase', DIP_APP_ENV='')
+          def blocked(*args, **kwargs): raise AssertionError('external client/network creation on import')
+          socket.socket = blocked
+          import supabase, boto3, dotenv
+          dotenv.load_dotenv = lambda *args, **kwargs: False
+          dotenv.dotenv_values = lambda *args, **kwargs: {}
+          supabase.create_client = blocked
+          boto3.client = blocked
+          import app.main
+          assert app.main.app
+          PY
+      - name: Pure-local tests
+        env:
+          PYTHONPATH: .
+        run: |
+          python tests/test_parse_storage_url.py
+          python tests/test_object_store_r2.py
+          python tests/test_security_helpers.py
+          python tests/test_upload_validation.py
+          python tests/test_auth_matrix.py
+          python tests/test_audit_regressions.py
+      - name: Dependency audit (report-only baseline)
+        continue-on-error: true
+        run: pip-audit -r requirements.txt --format json --output pip-audit.json
+      - name: Secret scan (report-only baseline)
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Summary
+        if: always()
+        run: >-
+          printf '## Fast CI\n\n- Commit: %s\n- Python: 3.11.0\n- Audit/scanner steps are report-only during baseline rollout.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('pip-audit.json') != ''
+        with:
+          name: ci-audit-${{ github.sha }}-${{ github.run_id }}
+          path: pip-audit.json
+          retention-days: 7

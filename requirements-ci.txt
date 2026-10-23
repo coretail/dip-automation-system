@@ -1,0 +1,7 @@
+# Additional deterministic tooling for CI-only validation.
+pyflakes==3.4.0
+pytest==8.4.2
+pip-audit==2.9.0
+PyYAML==6.0.3
+python-dotenv==1.2.3
+playwright==1.56.0
