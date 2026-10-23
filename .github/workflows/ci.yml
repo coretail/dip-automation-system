@@ -67,7 +67,7 @@ jobs:
           python tests/test_audit_regressions.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
-        run: pip-audit -r requirements.txt --format json --output pip-audit.json
+        run: pip-audit -r requirements.txt
       - name: Secret scan (report-only baseline)
         continue-on-error: true
         uses: gitleaks/gitleaks-action@v2
@@ -76,10 +76,4 @@ jobs:
       - name: Summary
         if: always()
         run: >-
-          printf '## Fast CI\n\n- Commit: %s\n- Python: 3.11.0\n- Audit/scanner steps are report-only during baseline rollout.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always() && hashFiles('pip-audit.json') != ''
-        with:
-          name: ci-audit-${{ github.sha }}-${{ github.run_id }}
-          path: pip-audit.json
-          retention-days: 7
+           printf '## Fast CI\n\n- Commit: %s\n- Python: 3.11.0\n- Audit/scanner steps are report-only during baseline rollout.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

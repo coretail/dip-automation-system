@@ -1,0 +1,27 @@
+name: Dependency Audit
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.0"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install pip-audit
+        run: python -m pip install pip-audit
+      - name: Audit pinned dependencies
+        # Exceptions must use --ignore-vuln <ID> and include a nearby comment
+        # with the reason, owner, and review date. Do not ignore advisories broadly.
+        run: pip-audit -r requirements.txt
