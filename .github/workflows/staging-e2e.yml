@@ -44,6 +44,8 @@ jobs:
       - name: Create guarded staging config and start launcher
         shell: bash
         env:
+          STAGING_ADMIN_EMAIL: ${{ secrets.STAGING_ADMIN_EMAIL }}
+          STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
           STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           STAGING_SUPABASE_KEY: ${{ secrets.STAGING_SUPABASE_KEY }}
           STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
@@ -56,6 +58,21 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          required=(STAGING_ADMIN_EMAIL STAGING_ADMIN_PASSWORD STAGING_SUPABASE_URL STAGING_SUPABASE_KEY STAGING_SUPABASE_SERVICE_ROLE_KEY STAGING_STORAGE_BACKEND STAGING_R2_ACCOUNT_ID STAGING_R2_ACCESS_KEY_ID STAGING_R2_SECRET_ACCESS_KEY STAGING_R2_PUBLIC_BASES STAGING_R2_BUCKET_SUFFIX)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required staging Environment secret: ${name}" >&2
+              exit 2
+            fi
+          done
+          case "$STAGING_STORAGE_BACKEND" in
+            supabase|dual|r2) ;;
+            *) echo 'STAGING_STORAGE_BACKEND must be supabase, dual, or r2.' >&2; exit 2 ;;
+          esac
+          if [[ "$STAGING_R2_BUCKET_SUFFIX" != '-stg' ]]; then
+            echo 'STAGING_R2_BUCKET_SUFFIX must be -stg.' >&2
+            exit 2
+          fi
           printf 'DIP_APP_ENV=staging\nSUPABASE_URL=%s\nSUPABASE_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\nSTORAGE_BACKEND=%s\nR2_ACCOUNT_ID=%s\nR2_ACCESS_KEY_ID=%s\nR2_SECRET_ACCESS_KEY=%s\nR2_PUBLIC_BASES=%s\nR2_BUCKET_SUFFIX=%s\n' "$STAGING_SUPABASE_URL" "$STAGING_SUPABASE_KEY" "$STAGING_SUPABASE_SERVICE_ROLE_KEY" "$STAGING_STORAGE_BACKEND" "$STAGING_R2_ACCOUNT_ID" "$STAGING_R2_ACCESS_KEY_ID" "$STAGING_R2_SECRET_ACCESS_KEY" "$STAGING_R2_PUBLIC_BASES" "$STAGING_R2_BUCKET_SUFFIX" > .env.staging
           setsid python scripts/run_staging_8017.py > staging.log 2>&1 < /dev/null & echo $! > .staging.pid
           for _ in $(seq 1 60); do curl --fail --silent http://127.0.0.1:8017/health >/dev/null && exit 0; sleep 2; done
