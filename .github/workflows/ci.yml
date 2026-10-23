@@ -12,6 +12,11 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SUPABASE_URL: https://ci.invalid.supabase.co
+      SUPABASE_KEY: ci-dummy-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ci-dummy-service-role-key
+      STORAGE_BACKEND: supabase
     steps:
       - uses: actions/checkout@v4
         with:
