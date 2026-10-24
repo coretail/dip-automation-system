@@ -145,3 +145,5 @@ build/
 *.egg-info/
 .cleanup/
 scripts/cleanup_repo.py
+ringkas.py
+audit/pip-audit.json

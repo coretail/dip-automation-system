@@ -40,9 +40,12 @@ BAB3_CONTENT_WIDTH_PT = 538.58
 KOP_WIDTH_RATIO = 0.80
 # Rasio tinggi/lebar berkas kop aslinya, supaya gambar tidak gepeng.
 KOP_ASPECT = {"kop_erfi.png": 114 / 805, "kop_heka.png": 132 / 802}
+TEXT_DESIGN_CONTENT_WIDTH_PT = 510.24
+TEXT_DESIGN_ERFI_KOP_WIDTH_RATIO = 0.975
 
 
-def _kop_image(company: dict, max_width_pt: float = BAB3_CONTENT_WIDTH_PT):
+def _kop_image(company: dict, max_width_pt: float = BAB3_CONTENT_WIDTH_PT,
+               width_ratio: float = KOP_WIDTH_RATIO):
     """Gambar kop surat perusahaan sebagai dict {src, width, height, name} untuk xhtml2pdf.
 
     xhtml2pdf tidak bisa resolve URL "/static/images/kop_*.png" tanpa base_url, jadi
@@ -71,7 +74,7 @@ def _kop_image(company: dict, max_width_pt: float = BAB3_CONTENT_WIDTH_PT):
         logger.warning("Gambar kop surat tidak ditemukan: %s", path)
         return None
 
-    width = round(float(max_width_pt) * KOP_WIDTH_RATIO, 1)
+    width = round(float(max_width_pt) * float(width_ratio), 1)
     height = round(width * KOP_ASPECT.get(os.path.basename(path), 0.15), 1)
     return {"src": path, "width": width, "height": height,
             "name": os.path.basename(path)}
@@ -955,11 +958,21 @@ def register_dip_document_routes(
         cover_pdf_io.seek(0)
 
         # 5. RENDER HALAMAN TEXT DESIGN PDF
+        text_design_kop_width_pt = BAB3_CONTENT_WIDTH_PT
+        text_design_kop_width_ratio = KOP_WIDTH_RATIO
+        if os.path.basename(company.get("kop") or "") == "kop_erfi.png":
+            text_design_kop_width_pt = TEXT_DESIGN_CONTENT_WIDTH_PT
+            text_design_kop_width_ratio = TEXT_DESIGN_ERFI_KOP_WIDTH_RATIO
         text_design_template = templates.get_template("text_design_block.html")
         text_design_rendered = text_design_template.render({
             "product": product,
             "company": company,
-            "komposisi_text": komposisi_text
+            "komposisi_text": komposisi_text,
+            "kop_image": _kop_image(
+                company,
+                max_width_pt=text_design_kop_width_pt,
+                width_ratio=text_design_kop_width_ratio,
+            ),
         })
         text_design_pdf_io = io.BytesIO()
         pisa.CreatePDF(io.StringIO(text_design_rendered), dest=text_design_pdf_io)
