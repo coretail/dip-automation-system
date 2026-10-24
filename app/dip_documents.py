@@ -808,13 +808,13 @@ def register_dip_document_routes(
             except Exception as e:
                 print(f"[BAB 3 FINISHED SPEC PDF ERROR] Gagal generate spek produk jadi: {e}")
 
-        # Poin 5 (SAPJ) dan 6a (SPJ): untuk PT Erfi, SAPJ pakai PDF hasil generate finished_spec,
-        # SPJ pakai file upload manual. Untuk perusahaan lain (PT Heka), keduanya pakai file
-        # upload manual yang sama (dokumen gabungan lama), sengaja dilampirkan dua kali supaya
-        # urutan halaman tetap sejajar dengan urutan item checklist 5 dan 6a.
+        # PT Erfi dapat memilih sumber spesifikasi produk jadi: form generator
+        # mengisi SAPJ (poin 5), atau PDF manual mengisi SPJ (poin 6a).
+        # Keduanya tidak dilampirkan bersamaan agar pilihan user tetap tunggal.
         if perusahaan == 'PT Erfi':
-            poin5_sapj = finished_spec_pdf_bytes
-            poin6a_spj = product.get("spek_produk_jadi_file_url")
+            uploaded_finished_spec = product.get("spek_produk_jadi_file_url")
+            poin5_sapj = None if uploaded_finished_spec else finished_spec_pdf_bytes
+            poin6a_spj = uploaded_finished_spec
         else:
             poin5_sapj = product.get("spek_produk_jadi_file_url")
             poin6a_spj = None  
