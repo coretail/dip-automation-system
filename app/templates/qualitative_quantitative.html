@@ -3,6 +3,14 @@
 {% block title %}Formula Kualitatif & Kuantitatif{% endblock %}
 
 {% block content %}
+{% set company_identity = ((product.perusahaan or '') ~ ' ' ~ (company.nama or '') ~ ' ' ~ (company.logo or '') ~ ' ' ~ (company.kop or '')) | lower %}
+{% set is_pt_heka = 'heka' in company_identity or 'haraka' in company_identity %}
+{% set header_fill = 'var(--qq-header-heka)' if is_pt_heka else 'var(--qq-header-erfi)' %}
+{% set total_fill = 'var(--qq-total-fill)' %}
+{% set active_fill = 'var(--qq-active-fill)' %}
+{% set note_fill = 'var(--qq-note-fill)' %}
+{% set border_color = 'var(--qq-border)' %}
+{% set letterhead_border = 'var(--qq-line-heka)' if is_pt_heka else 'var(--qq-line-erfi)' %}
 <div class="mt-2 flex justify-between items-center no-print">
     <div>
         <h1 class="text-xl font-bold text-gray-900">Formulasi Kualitatif & Kuantitatif</h1>
@@ -28,6 +36,42 @@
 
 <!-- Menggunakan tag style aman tanpa memicu parser dictionary Jinja2 -->
 <style>
+    :root {
+        --qq-header-erfi: #FFCC99;
+        --qq-header-heka: #DCE6F1;
+        --qq-total-fill: #DCE6F1;
+        --qq-active-fill: #FFFF00;
+        --qq-active-text: #b45309;
+        --qq-note-fill: #FFFF00;
+        --qq-border: #000000;
+        --qq-line-erfi: #f97316;
+        --qq-line-heka: #4060AD;
+    }
+
+    [data-theme="terra"], [data-theme="rose"] {
+        --qq-header-erfi: var(--t-surface-2);
+        --qq-header-heka: var(--t-surface-2);
+        --qq-total-fill: var(--t-surface-3);
+        --qq-active-fill: var(--t-yellow-bg-100);
+        --qq-active-text: var(--t-amber-text-700);
+        --qq-note-fill: var(--t-yellow-bg-100);
+        --qq-border: var(--t-border-2);
+        --qq-line-erfi: var(--t-orange-border-500);
+        --qq-line-heka: #4060AD;
+    }
+
+    [data-theme="dark"] {
+        --qq-header-erfi: #7C2D12;
+        --qq-header-heka: #1E3A8A;
+        --qq-total-fill: var(--t-surface-3);
+        --qq-active-fill: var(--t-yellow-bg-100);
+        --qq-active-text: var(--t-amber-text-700);
+        --qq-note-fill: var(--t-yellow-bg-100);
+        --qq-border: var(--t-border-2);
+        --qq-line-erfi: var(--t-orange-border-500);
+        --qq-line-heka: #7C9EE8;
+    }
+
     /* ============================================================
        PRINT LAYOUT: 1 blok .print-page = 1 halaman PDF utuh.
        Page break HANYA dikontrol lewat class .print-page pada tiap
@@ -36,6 +80,18 @@
        3 halaman tanpa loncat-loncat halaman kosong.
        ============================================================ */
     @media print {
+        :root {
+            --qq-header-erfi: #FFCC99 !important;
+            --qq-header-heka: #DCE6F1 !important;
+            --qq-total-fill: #DCE6F1 !important;
+            --qq-active-fill: #FFFF00 !important;
+            --qq-active-text: #b45309 !important;
+            --qq-note-fill: #FFFF00 !important;
+            --qq-border: #000000 !important;
+            --qq-line-erfi: #f97316 !important;
+            --qq-line-heka: #4060AD !important;
+        }
+
         /* Sembunyikan elemen non-dokumen (toolbar, navbar base.html, modal & toast BPOM) */
         .no-print { display: none !important; }
         #bpomLinkModal, #bpomToast { display: none !important; }
@@ -104,7 +160,7 @@
 
 <!-- ==================== DOKUMEN 1: PER NAMA DAGANG ==================== -->
 <div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 mb-12 print-page">
-    <div id="letterhead-trade" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
+    <div id="letterhead-trade" class="flex items-center gap-4 border-b-4 pb-3 mb-4" style="border-bottom-color: {{ letterhead_border }};">
         <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
         <div>
             <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
@@ -129,15 +185,15 @@
     </table>
 
     <!-- Tabel Data 1 -->
-    <table id="table-trade" class="w-full text-xs text-left border-collapse" style="border: 1px solid #c0c0c0;">
+    <table id="table-trade" class="w-full text-xs text-left border-collapse" style="border: 1px solid {{ border_color }};">
         <thead>
-            <tr class="bg-orange-100 text-center font-bold">
-                <th class="p-2 w-10" style="border: 1px solid #c0c0c0;">No</th>
-                <th class="p-2 w-1/4" style="border: 1px solid #c0c0c0;">Nama Dagang</th>
-                <th class="p-2 w-28 rm-code-col" style="border: 1px solid #c0c0c0;">Kode</th>
-                <th class="p-2 w-1/3" style="border: 1px solid #c0c0c0;">Ingredients</th>
-                <th class="p-2 w-1/4" style="border: 1px solid #c0c0c0;">Function</th>
-                <th class="p-2 w-16" style="border: 1px solid #c0c0c0;">% w/w</th>
+            <tr class="text-center font-bold" style="background-color: {{ header_fill }};">
+                <th class="p-2 w-10" style="border: 1px solid {{ border_color }};">No</th>
+                <th class="p-2 w-1/4" style="border: 1px solid {{ border_color }};">Nama Dagang</th>
+                <th class="p-2 w-28 rm-code-col" style="border: 1px solid {{ border_color }};">Kode</th>
+                <th class="p-2 w-1/3" style="border: 1px solid {{ border_color }};">Ingredients</th>
+                <th class="p-2 w-1/4" style="border: 1px solid {{ border_color }};">Function</th>
+                <th class="p-2 w-16" style="border: 1px solid {{ border_color }};">% w/w</th>
             </tr>
         </thead>
         <tbody>
@@ -148,32 +204,32 @@
                     <tr>
                         {% if loop.first %}
                         {% set ns.no = ns.no + 1 %}
-                        <td class="p-2 text-center align-top bg-gray-50" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ ns.no }}</td>
-                        <td class="p-2 align-top font-medium bg-gray-50" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ item.nama_dagang }}</td>
-                        <td class="p-2 align-top font-mono bg-gray-50 rm-code-col" rowspan="{{ item.rowspan }}" style="border: 1px solid #c0c0c0;">{{ item.kode_bahan_baku or '-' }}</td>
+                        <td class="p-2 text-center align-top bg-gray-50" rowspan="{{ item.rowspan }}" style="border: 1px solid {{ border_color }};">{{ ns.no }}</td>
+                        <td class="p-2 align-top font-medium bg-gray-50" rowspan="{{ item.rowspan }}" style="border: 1px solid {{ border_color }};">{{ item.nama_dagang }}</td>
+                        <td class="p-2 align-top font-mono bg-gray-50 rm-code-col" rowspan="{{ item.rowspan }}" style="border: 1px solid {{ border_color }};">{{ item.kode_bahan_baku or '-' }}</td>
                         {% endif %}
-                        <td class="p-2" style="border: 1px solid #c0c0c0; {% if comp.is_bahan_aktif %} font-weight:bold; color:#b45309;{% endif %} ">
+                        <td class="p-2" style="border: 1px solid {{ border_color }}; {% if comp.is_bahan_aktif %} background-color: {{ active_fill }}; font-weight:bold; color: var(--qq-active-text);{% endif %} ">
                             {{ comp.inci_name }}{# {% if comp.is_bahan_aktif %} <span style="font-size:10px; background:#fef3c7; color:#b45309; padding:1px 4px; border-radius:3px; margin-left:4px;">Aktif</span>{% endif %} #}
                         </td>
-                        <td class="p-2 text-gray-600" style="border: 1px solid #c0c0c0;">{{ comp.function }}</td>
-                        <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">{{ comp.pct_ww|clean_pct }}</td>
+                        <td class="p-2 text-gray-600" style="border: 1px solid {{ border_color }}; {% if comp.is_bahan_aktif %} background-color: {{ active_fill }};{% endif %} ">{{ comp.function }}</td>
+                        <td class="p-2 text-right font-mono" style="border: 1px solid {{ border_color }}; {% if comp.is_bahan_aktif %} background-color: {{ active_fill }};{% endif %} ">{{ comp.pct_ww|clean_pct }}</td>
                     </tr>
                     {% endfor %}
                 {% else %}
                     {% set ns.no = ns.no + 1 %}
                     <tr>
-                        <td class="p-2 text-center" style="border: 1px solid #c0c0c0;">{{ ns.no }}</td>
-                        <td class="p-2 font-medium bg-gray-50" style="border: 1px solid #c0c0c0;">{{ item.nama_dagang }}</td>
-                        <td class="p-2 font-mono bg-gray-50 rm-code-col" style="border: 1px solid #c0c0c0;">{{ item.kode_bahan_baku or '-' }}</td>
-                        <td class="p-2 text-gray-400" style="border: 1px solid #c0c0c0;">-</td>
-                        <td class="p-2 text-gray-400" style="border: 1px solid #c0c0c0;">-</td>
-                        <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">0</td>
+                        <td class="p-2 text-center" style="border: 1px solid {{ border_color }};">{{ ns.no }}</td>
+                        <td class="p-2 font-medium bg-gray-50" style="border: 1px solid {{ border_color }};">{{ item.nama_dagang }}</td>
+                        <td class="p-2 font-mono bg-gray-50 rm-code-col" style="border: 1px solid {{ border_color }};">{{ item.kode_bahan_baku or '-' }}</td>
+                        <td class="p-2 text-gray-400" style="border: 1px solid {{ border_color }};">-</td>
+                        <td class="p-2 text-gray-400" style="border: 1px solid {{ border_color }};">-</td>
+                        <td class="p-2 text-right font-mono" style="border: 1px solid {{ border_color }};">0</td>
                     </tr>
                 {% endif %}
             {% endfor %}
-            <tr class="bg-gray-100 font-bold text-center">
-                <td colspan="5" class="p-2 text-right" style="border: 1px solid #c0c0c0;">Total</td>
-                <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">100</td>
+            <tr class="font-bold text-center" style="background-color: {{ total_fill }};">
+                <td colspan="5" class="p-2 text-right" style="border: 1px solid {{ border_color }};">Total</td>
+                <td class="p-2 text-right font-mono" style="border: 1px solid {{ border_color }};">100</td>
             </tr>
         </tbody>
     </table>
@@ -187,7 +243,7 @@
 
 <!-- ==================== DOKUMEN 2: MURNI BAHAN BAKU INCI ==================== -->
 <div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 print-page">
-    <div id="letterhead-pure" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
+    <div id="letterhead-pure" class="flex items-center gap-4 border-b-4 pb-3 mb-4" style="border-bottom-color: {{ letterhead_border }};">
         <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
         <div>
             <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
@@ -208,29 +264,29 @@
     </table>
 
     <!-- Tabel Data 2 -->
-    <table id="table-pure" class="w-full text-xs text-left border-collapse" style="border: 1px solid #c0c0c0;">
+    <table id="table-pure" class="w-full text-xs text-left border-collapse" style="border: 1px solid {{ border_color }};">
         <thead>
-            <tr class="bg-orange-100 text-center font-bold">
-                <th class="p-2 w-10" style="border: 1px solid #c0c0c0;">No</th>
-                <th class="p-2 w-1/2" style="border: 1px solid #c0c0c0;">Ingredients</th>
-                <th class="p-2 w-1/3" style="border: 1px solid #c0c0c0;">Function</th>
-                <th class="p-2 w-24" style="border: 1px solid #c0c0c0;">% w/w</th>
+            <tr class="text-center font-bold" style="background-color: {{ header_fill }};">
+                <th class="p-2 w-10" style="border: 1px solid {{ border_color }};">No</th>
+                <th class="p-2 w-1/2" style="border: 1px solid {{ border_color }};">Ingredients</th>
+                <th class="p-2 w-1/3" style="border: 1px solid {{ border_color }};">Function</th>
+                <th class="p-2 w-24" style="border: 1px solid {{ border_color }};">% w/w</th>
             </tr>
         </thead>
         <tbody>
             {% for comp in pure_breakdown %}
             <tr>
-                <td class="p-2 text-center" style="border: 1px solid #c0c0c0;">{{ loop.index }}</td>
-                <td class="p-2 font-medium" style="border: 1px solid #c0c0c0; {% if comp.is_bahan_aktif %} font-weight:bold; color:#b45309;{% endif %} ">
+                <td class="p-2 text-center" style="border: 1px solid {{ border_color }};">{{ loop.index }}</td>
+                <td class="p-2 font-medium" style="border: 1px solid {{ border_color }}; {% if comp.is_bahan_aktif %} background-color: {{ active_fill }}; font-weight:bold; color: var(--qq-active-text);{% endif %} ">
                     {{ comp.inci_name }}{# {% if comp.is_bahan_aktif %} <span style="font-size:10px; background:#fef3c7; color:#b45309; padding:1px 4px; border-radius:3px; margin-left:4px;">Aktif</span>{% endif %} #}
                 </td>
-                <td class="p-2 text-gray-600" style="border: 1px solid #c0c0c0;">{{ comp.function }}</td>
-                <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">{{ comp.pct_ww|clean_pct }}</td>
+                <td class="p-2 text-gray-600" style="border: 1px solid {{ border_color }}; {% if comp.is_bahan_aktif %} background-color: {{ active_fill }};{% endif %} ">{{ comp.function }}</td>
+                <td class="p-2 text-right font-mono" style="border: 1px solid {{ border_color }}; {% if comp.is_bahan_aktif %} background-color: {{ active_fill }};{% endif %} ">{{ comp.pct_ww|clean_pct }}</td>
             </tr>
             {% endfor %}
-            <tr class="bg-gray-100 font-bold text-center">
-                <td colspan="3" class="p-2 text-right" style="border: 1px solid #c0c0c0;">Total</td>
-                <td class="p-2 text-right font-mono" style="border: 1px solid #c0c0c0;">100.0000</td>
+            <tr class="font-bold text-center" style="background-color: {{ total_fill }};">
+                <td colspan="3" class="p-2 text-right" style="border: 1px solid {{ border_color }};">Total</td>
+                <td class="p-2 text-right font-mono" style="border: 1px solid {{ border_color }};">100.0000</td>
             </tr>
         </tbody>
     </table>
@@ -244,7 +300,7 @@
 
 <!-- ==================== DOKUMEN 3: TEXT DESIGN ==================== -->
 <div class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 print-page print-page-last">
-    <div id="letterhead-textdesign" class="flex items-center gap-4 border-b-4 border-orange-500 pb-3 mb-4">
+    <div id="letterhead-textdesign" class="flex items-center gap-4 border-b-4 pb-3 mb-4" style="border-bottom-color: {{ letterhead_border }};">
         <img src="{{ company.logo }}" alt="Logo" class="h-16 w-16 object-contain">
         <div>
             <p class="letterhead-line text-xl font-bold text-gray-900 leading-tight">{{ company.nama }}</p>
@@ -253,56 +309,56 @@
         </div>
     </div>
 
-    <table id="info-textdesign" class="w-full text-xs border-collapse" style="border: 1px solid #c0c0c0;">
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="w-32 py-2 px-2 font-semibold" style="border: 1px solid #c0c0c0;">Tanggal</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.tanggal_text_design or '-' }}</td>
+    <table id="info-textdesign" class="w-full text-xs border-collapse" style="border: 1px solid {{ border_color }};">
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="w-32 py-2 px-2 font-semibold" style="border: 1px solid {{ border_color }};">Tanggal</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ product.tanggal_text_design or '-' }}</td>
         </tr>
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold" style="border: 1px solid #c0c0c0;">Nama Produk</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.nama_produk }}</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold" style="border: 1px solid {{ border_color }};">Nama Produk</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ product.nama_produk }}</td>
         </tr>
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold" style="border: 1px solid #c0c0c0;">Netto</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.netto or '-' }}</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold" style="border: 1px solid {{ border_color }};">Netto</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ product.netto or '-' }}</td>
         </tr>
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold" style="border: 1px solid #c0c0c0;">No NA</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.no_na_produk or '-' }}</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold" style="border: 1px solid {{ border_color }};">No NA</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ product.no_na_produk or '-' }}</td>
         </tr>
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Diproduksi Oleh</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ company.nama }}<br>{{ company.alamat }}</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid {{ border_color }};">Diproduksi Oleh</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ company.nama }}<br>{{ company.alamat }}</td>
         </tr>
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Komposisi</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ pure_breakdown | map(attribute='inci_name') | join(', ') }}.</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid {{ border_color }};">Komposisi</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ pure_breakdown | map(attribute='inci_name') | join(', ') }}.</td>
         </tr>
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Teks</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.teks_marketing or '-' }}</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid {{ border_color }};">Teks</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ product.teks_marketing or '-' }}</td>
         </tr>
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Cara Pakai</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ product.cara_pakai or '-' }}</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid {{ border_color }};">Cara Pakai</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ product.cara_pakai or '-' }}</td>
         </tr>
         {% set peringatan_txt = (product.peringatan or '') | trim %}
         {% if peringatan_txt and peringatan_txt != '-' %}
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Peringatan</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ peringatan_txt }}</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid {{ border_color }};">Peringatan</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ peringatan_txt }}</td>
         </tr>
         {% endif %}
         {% set penyimpanan_txt = (product.penyimpanan or '') | trim %}
         {% if penyimpanan_txt and penyimpanan_txt != '-' %}
-        <tr style="border: 1px solid #c0c0c0;">
-            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid #c0c0c0;">Penyimpanan</td>
-            <td class="py-2 px-2" style="border: 1px solid #c0c0c0;">: {{ penyimpanan_txt }}</td>
+        <tr style="border: 1px solid {{ border_color }};">
+            <td class="py-2 px-2 font-semibold align-top" style="border: 1px solid {{ border_color }};">Penyimpanan</td>
+            <td class="py-2 px-2" style="border: 1px solid {{ border_color }};">: {{ penyimpanan_txt }}</td>
         </tr>
         {% endif %}
     </table>
 
-    <div class="bg-yellow-300 text-center font-bold text-xs py-2 mt-0" style="border: 1px solid #c0c0c0; border-top: none;">
+    <div class="text-center font-bold text-xs py-2 mt-0" style="background-color: {{ note_fill }}; border: 1px solid {{ border_color }}; border-top: none;">
         Keterangan tambahan: QR BPOM, No Batch dan Exp Date, Netto yg digunakan.
     </div>
 </div>
