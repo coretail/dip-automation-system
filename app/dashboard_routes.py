@@ -116,6 +116,18 @@ def register_dashboard_routes(
                 except Exception as e2:
                     print(f"Gagal tarik formula lines: {e2}")
 
+            # Spesifikasi Produk Jadi PT Erfi dapat berasal dari form generator
+            # maupun PDF upload manual.
+            products_with_finished_spec_form = set()
+            try:
+                finished_spec_resp = supabase.table("product_finished_specs").select("product_id").execute()
+                products_with_finished_spec_form = {
+                    item.get("product_id") for item in (finished_spec_resp.data or [])
+                    if item.get("product_id")
+                }
+            except Exception as e:
+                print(f"Gagal tarik product_finished_specs: {e}")
+
             # Data pendukung Bab I: NIB, CPKB, Tidak Pidana itu per-perusahaan (bukan per-produk),
             # Hak & Lisensi Merk itu per-brand+perusahaan. Ambil sekali di luar loop biar efisien.
             nib_by_company = {}
@@ -196,7 +208,7 @@ def register_dashboard_routes(
                     b3_items = {
                         "Ringkasan Cara Pembuatan Kosmetik": bool(p.get("cara_pembuatan_file_url")),
                         "Sistem Penomoran Batch Spesifik": bool(p.get("sistem_penomoran_batch_file_url")),
-                        "Spesifikasi Produk Jadi": bool(p.get("spek_produk_jadi_file_url")),
+                        "Spesifikasi Produk Jadi": bool(p.get("spek_produk_jadi_file_url")) or p.get("id") in products_with_finished_spec_form,
                         "Spesifikasi Bahan Pengemas": bool(p.get("spek_pengemas_file_url")),
                         "Laporan Hasil Uji Lab Eksternal (SIG)": bool(p.get("laporan_uji_sig_file_url")),
                         "Protokol Pemantauan Stabilitas": bool(p.get("protokol_stabilitas_file_url")),

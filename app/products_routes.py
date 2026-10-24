@@ -999,13 +999,16 @@ def register_products_routes(
 
         # Status "sudah diisi" spek produk jadi (khusus PT Erfi) buat kartu inline Bab 3
         has_finished_spec = False
+        has_finished_spec_form = False
         if product.get("perusahaan") == "PT Erfi":
             try:
                 spec_check = supabase.table("product_finished_specs").select("id").eq("product_id", product_id).execute()
-                has_finished_spec = bool(spec_check.data)
+                has_finished_spec_form = bool(spec_check.data)
             except Exception as e:
                 print(f"Gagal cek finished spec produk {product_id}: {e}")
-                has_finished_spec = False
+                has_finished_spec_form = False
+            # PT Erfi dapat memakai form generator atau PDF manual.
+            has_finished_spec = has_finished_spec_form or bool(product.get("spek_produk_jadi_file_url"))
 
         # Get error message from cookie (if any)
         error_msg = request.cookies.get("error_msg")
@@ -1058,6 +1061,7 @@ def register_products_routes(
                 "bab2_materials": bab2_materials,
                 "sop_cpkb_url": sop_cpkb_url,
                 "has_finished_spec": has_finished_spec,
+                "has_finished_spec_form": has_finished_spec_form,
                 "error_msg": error_msg,
                 "success_msg": success_msg,
                 "efek_samping": _efek_samping_meta(product),
