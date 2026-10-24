@@ -17,13 +17,24 @@
 - Jika `python` tidak ada di PATH, gunakan interpreter venv repo: `venv\Scripts\python.exe` di Windows atau `venv/bin/python` di Linux/macOS; `venv/` di-ignore Git.
 - E2E `e2e_*.py` membutuhkan server staging, kredensial env `STAGING_ADMIN_EMAIL`/`STAGING_ADMIN_PASSWORD`, dependency Playwright, dan menulis/cleanup data staging; bukan unit test. Nilai kredensial itu hanya ada di `LOGIN.md` di root repo (git-ignored, tidak pernah di-commit): baca dari sana saat runtime lalu export jadi env var di shell yang sama; jangan pernah menyalinnya ke `.py`, `.md`, `.env`, log, atau output apa pun.
 
+## CI/CD (GitHub Actions)
+- Sumber kebenaran pipeline adalah `.github/workflows/ci.yml`, `.github/workflows/staging-e2e.yml`, `.github/workflows/dependency-audit.yml`, dan `.github/dependabot.yml`.
+- `ci.yml` berjalan pada `pull_request` dan `push` ke `main`. Job `quality` tidak memakai secret; env dummy level job berisi `SUPABASE_URL=https://ci.invalid.supabase.co`, `SUPABASE_KEY=ci-dummy-anon-key`, `SUPABASE_SERVICE_ROLE_KEY=ci-dummy-service-role-key`, dan `STORAGE_BACKEND=supabase`. `DIP_APP_ENV` **tidak boleh diset** di CI.
+- Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, enam test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
+- `staging-e2e.yml` hanya memiliki `workflow_dispatch`; trigger `push` dinonaktifkan sampai diputuskan lain. Workflow memakai GitHub Environment `staging`, concurrency tunggal dengan `cancel-in-progress: false`, serta suite `all`, `smoke`, `upload`, `activity`, dan `audit`. Suite `all` tidak memuat `upload`; suite upload memerlukan backend `dual`/`r2`.
+- `dependency-audit.yml` berjalan melalui cron mingguan hari Senin dan `workflow_dispatch`; `pip-audit -r requirements.txt` membuat job gagal bila ada advisory. Pengecualian hanya boleh memakai `--ignore-vuln <ID>` dengan komentar yang mencatat alasan, owner, dan tanggal review.
+- `.github/dependabot.yml` mengatur ekosistem `pip` dan `github-actions` dengan jadwal mingguan; seluruh update masuk melalui PR dan wajib melewati CI.
+- `requirements-ci.txt` berisi tool CI. `scripts/check_static_rules.py` memeriksa syntax Python, duplikat route FastAPI berdasarkan method+path, kompilasi seluruh template Jinja, script HTML yang mencampur `src` dan inline code, serta syntax JavaScript inline melalui `node --check`.
+- Nama secret di GitHub Environment `staging` berawalan `STAGING_` (misalnya `STAGING_SUPABASE_URL`). Workflow memetakan secret tersebut ke `.env.staging` sementara dengan nama polos yang dibutuhkan launcher. `STAGING_R2_BUCKET_SUFFIX` harus `-stg`; jangan menulis nilai secret di dokumentasi.
+- Production secret tidak boleh masuk GitHub Actions. Migrasi SQL tetap manual; tidak ada langkah migrasi database di workflow.
+
 ## 3. Aturan keras
 - Jangan membaca, mencetak, atau commit secret dari `.env*`, termasuk `.env.staging`; `.env.staging.example` hanya template dan tidak boleh diisi secret lalu di-commit.
 - Kredensial akun tes E2E staging hanya ada di `LOGIN.md` di root repo (git-ignored); agen membacanya dari sana lalu set sebagai environment variable untuk run, dan tidak boleh echoed, di-log, disalin ke file lain, atau di-commit. Kalau nilainya pernah masuk ke file yang ter-commit atau output publik, password staging wajib segera dirotasi karena menghapus file atau commit tidak cukup - riwayat git tetap menyimpannya.
 - Jangan pernah mengarahkan staging ke produksi. `DIP_APP_ENV=staging` wajib; guard menolak URL selain host staging eksak, ref produksi, shell env yang tercampur, key JWT yang terikat bukan staging, dan konfigurasi wajib yang hilang.
 - Pengembangan/tes di mesin lokal hanya melalui `python scripts/run_staging_8017.py`; tanpa mode staging, `app/config.py` mengambil `.env` produksi dan `uvicorn app.main:app` langsung dilarang.
 - Validasi key lokal tidak membuktikan key aktif: JWT hanya dicek klaim `ref` tanpa signature; key opaque hanya dicek keberadaan.
-- Launcher membaca `.env.staging` sebagai sumber tunggal, memvalidasi sebelum import app, dan tidak mencetak secret. Contoh env saat ini belum memuat seluruh `STORAGE_BACKEND`/R2 key yang diwajibkan preflight; isi lengkap secara lokal, jangan commit.
+- Launcher membaca `.env.staging` sebagai sumber tunggal, memvalidasi sebelum import app, dan tidak mencetak secret. `.env.staging.example` sudah memuat seluruh key yang diwajibkan preflight; salin ke `.env.staging` dan isi nilai staging secara lokal, jangan commit.
 - `STORAGE_BACKEND` hanya `supabase`, `dual`, atau `r2`; `R2_BUCKET_SUFFIX` memisahkan bucket fisik staging (dokumen E2E mensyaratkan `-stg`).
 - Migrasi SQL tetap **tidak otomatis**: tidak pernah lewat pipeline otomatis (mis. `supabase db push`), dan tidak boleh dijalankan pada langkah baru tanpa otorisasi eksplisit pemilik repo pada sesi tersebut.
   - Jalur baku: manual oleh pemilik repo lewat Supabase SQL Editor, berurutan; staging lebih dulu dan hasil staging dibaca sebelum lanjut ke produksi.
@@ -31,7 +42,7 @@
   - Tanpa otorisasi eksplisit tersebut, migrasi tidak boleh dieksekusi oleh agen; menyiapkan environment baru wajib lewat `scripts/run_staging_8017.py`.
   - Nomor migrasi berurutan dan unik: `migration/008_products_soft_delete_contract.sql` sudah dipakai, jadi DDL `public_link_audits` berikutnya harus bernomor `009`.
 - Sebelum mulai pekerjaan bersama, `git pull` dulu.
-- Agen hanya commit atau push bila diminta eksplisit oleh pemilik repo di sesi itu; tidak pernah `--force` atau push ke prod/deploy dengan cara lain.
+- Agen bekerja di branch dan membuat Pull Request ke `main`; agen tidak push langsung ke `main`. Status branch protection diatur pada pengaturan GitHub dan tidak terlihat dari repo. Agen hanya commit atau push bila diminta eksplisit oleh pemilik repo di sesi itu; tidak pernah `--force` atau push ke prod/deploy dengan cara lain.
 - Render auto-deploy dari `main`, Build/Start command, dan status env tidak dapat diverifikasi dari repo; jangan menganggapnya fakta.
 
 ## 4. Arsitektur & menambah route
@@ -54,17 +65,24 @@
 - Asumsi redirect smoke test pernah salah (handler menuju preview, bukan daftar); diperbaiki di `2fa904a`.
 - Komentar/keterangan kode memperingatkan string seperti `now()`/komentar SQL di payload PostgREST dapat diperlakukan sebagai literal dan gagal cast; kirim nilai timestamp nyata.
 - `<script src="...">` hanya memuat file eksternal; inline code harus berada di elemen script terpisah (bukan dicampur dalam tag ber-`src`).
+- Jangan menimpa `socket.socket` sebelum modul `ssl` ter-import (menyebabkan `TypeError` di `ssl.py`); blokir hanya fungsi koneksi `create_connection`, `getaddrinfo`, dan `socket.socket.connect` setelah import.
+- `tests/test_auth_matrix.py` meng-import `app.main`, dan `app/config.py` mewajibkan `SUPABASE_URL` serta `SUPABASE_SERVICE_ROLE_KEY` saat import; di CI keduanya disediakan lewat env dummy level job.
+- `pip-audit` tidak menyediakan level severity; kebijakan pipeline adalah gagal bila ada advisory yang memiliki versi perbaikan.
+- `pypdf` dinaikkan ke 6.21.1 untuk menutup 8 advisory; perubahan dependency PDF perlu uji manual Bab II, gabungan Bab I-IV, dan efek samping.
 - `.gitignore` mengabaikan `/tests/*`; test baru harus menambah whitelist `!/tests/nama.py`.
 - Perubahan storage perlu memperhatikan encoding spasi URL (`26fba31`) dan mode dual yang best-effort ke R2.
 - Tidak ditemukan bukti commit bertajuk `Grok Build`; aturan operasional tetap `git pull` sebelum mulai.
 
 ## 7. Definisi selesai
 - `python scripts/check_undefined_names.py` exit 0 dan unit/verification standalone yang relevan exit 0 (di lingkungan yang memiliki Python/dependency).
+- Setiap Pull Request harus lolos job `quality` di CI.
 - Jika menyentuh route, upload, auth, atau storage, jalankan E2E staging yang relevan setelah guard lokal dan kredensial staging tersedia; jangan jalankan terhadap prod.
+- Perubahan yang menyentuh route, upload, auth, atau storage tetap perlu Staging E2E manual yang relevan.
 - Untuk perubahan SQL, file sudah direview dan eksekusinya manual lewat Supabase SQL Editor oleh pemilik repo, atau oleh agen hanya atas otorisasi eksplisit pemilik repo per-jalur lewat Supabase Management API (staging lebih dulu, hasil staging dibaca sebelum produksi).
 
 ## 8. Dokumen sumber
 - `README.md`: orientasi dan perintah; tabel migrasi hanya mencantumkan 001–004 dan inventaris test sudah tidak lengkap.
+- `.github/workflows/*`: sumber kebenaran konfigurasi CI/CD; README dan panduan operasional harus diselaraskan bila perintah pipeline berubah.
 - `panduan_dip_automation_system.md`: panduan operasional/teknis utama dan detail tema, PDF, keamanan, serta migrasi.
 - `catatan/catatan_investigasi_auth500_staging.md`: investigasi Auth staging historis; hasil live belum diverifikasi ulang.
 - `catatan/catatan_handoff_migrasi_r2.md` dan `catatan/catatan_migrasi_storage_r2.md`: handoff/status R2 historis; jangan dianggap status live tanpa verifikasi.
