@@ -90,6 +90,7 @@ backup-rls/
 
 # Test artifacts (local only), except source-controlled verification scripts.
 /tests/*
+!/tests/e2e_dip_public_link.py
 !/tests/
 !/tests/verify_product_attachments.py
 !/tests/verify_po_analytics_detail.py

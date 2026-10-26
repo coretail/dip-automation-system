@@ -255,6 +255,9 @@ def register_dip_public_routes(
             name="dip_public_hub.html",
             context={
                 "product": product,
+                # Produk yang sudah terdaftar BPOM tetap memakai URL legacy tanpa
+                # token; produk lain perlu membawa capability token ke tautannya.
+                "public_access_token": product.get("public_access_token") if not product.get("bpom_registered_link") else None,
                 "company": company,
                 "perusahaan": perusahaan,
                 "brand_name": brand_name,
