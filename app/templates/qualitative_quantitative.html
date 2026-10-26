@@ -407,7 +407,8 @@
         // Format baru: /dip/[slug-nama-produk]-[id]
         var slug = '{{ product.nama_produk | slugify }}';
         var id = '{{ product.id }}';
-        return window.location.origin + '/dip/' + slug + '-' + id;
+        var access = '{% if not product.bpom_registered_link %}{{ product.public_access_token or "" }}{% endif %}';
+        return window.location.origin + '/dip/' + slug + '-' + id + (access ? '?access=' + encodeURIComponent(access) : '');
     }
 
     function showBpomToast(msg) {

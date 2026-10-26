@@ -599,7 +599,13 @@ def register_products_routes(
         elif isinstance(product, dict):
             clean_product = product
 
-        final_product = {str(k): (str(v) if v is not None else "") for k, v in clean_product.items()}
+        # Preserve booleans used by the public-link template. Converting False
+        # to the truthy string "False" would suppress the capability token for
+        # non-registered products.
+        final_product = {
+            str(k): (v if isinstance(v, bool) else (str(v) if v is not None else ""))
+            for k, v in clean_product.items()
+        }
 
         # Ambil data kop surat sesuai perusahaan produk ini, fallback ke PT Erfi kalau kosong/tidak dikenali
         company = COMPANY_INFO.get(final_product.get("perusahaan"), COMPANY_INFO["PT Erfi"])

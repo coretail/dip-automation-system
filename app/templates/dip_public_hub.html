@@ -96,10 +96,10 @@
                 </div>
                 <p class="text-xs text-gray-500 mb-4">NIB, Sertifikat CPKB, Hak &amp; Lisensi Merk, Surat Tidak Pidana, dan Surat Notifikasi BPOM.</p>
                 <div class="flex gap-2 mt-auto">
-                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab1" target="_blank" class="bg-sky-600 hover:bg-sky-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab1{% if public_access_token %}?access={{ public_access_token | urlencode }}{% endif %}" target="_blank" class="bg-sky-600 hover:bg-sky-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-eye"></i> Preview
                     </a>
-                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab1/download" class="bg-sky-600/90 hover:bg-sky-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab1/download{% if public_access_token %}?access={{ public_access_token | urlencode }}{% endif %}" class="bg-sky-600/90 hover:bg-sky-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-download"></i> Download PDF
                     </a>
                 </div>
@@ -120,7 +120,7 @@
                     <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab2/download" class="bg-amber-600/90 hover:bg-amber-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-download"></i> Download PDF
                     </a> #}
-                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab2/zip" class="bg-amber-800 hover:bg-amber-900 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab2/zip{% if public_access_token %}?access={{ public_access_token | urlencode }}{% endif %}" class="bg-amber-800 hover:bg-amber-900 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-folder-tree"></i> Folder (ZIP)
                     </a>
                 </div>
@@ -176,10 +176,10 @@
                 </div>
                 <p class="text-xs text-gray-500 mb-4">Cara pembuatan, protap/SOP batch, CoA produk jadi, spek kemasan, hasil uji lab, dan stabilitas.</p>
                 <div class="flex gap-2 mt-auto">
-                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab3" target="_blank" class="bg-purple-600 hover:bg-purple-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab3{% if public_access_token %}?access={{ public_access_token | urlencode }}{% endif %}" target="_blank" class="bg-purple-600 hover:bg-purple-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-eye"></i> Preview
                     </a>
-                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab3/download" class="bg-purple-600/90 hover:bg-purple-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab3/download{% if public_access_token %}?access={{ public_access_token | urlencode }}{% endif %}" class="bg-purple-600/90 hover:bg-purple-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-download"></i> Download PDF
                     </a>
                 </div>
@@ -193,10 +193,10 @@
                 </div>
                 <p class="text-xs text-gray-500 mb-4">Safety assessment, CV assessor, monitoring efek samping, data klaim, dan desain kemasan.</p>
                 <div class="flex gap-2 mt-auto">
-                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab4" target="_blank" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab4{% if public_access_token %}?access={{ public_access_token | urlencode }}{% endif %}" target="_blank" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-eye"></i> Preview
                     </a>
-                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab4/download" class="bg-emerald-600/90 hover:bg-emerald-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
+                    <a href="/dip/{{ product.nama_produk | slugify }}-{{ product.id }}/bab4/download{% if public_access_token %}?access={{ public_access_token | urlencode }}{% endif %}" class="bg-emerald-600/90 hover:bg-emerald-700 text-white text-sm px-3 py-2 rounded-md transition cursor-pointer flex items-center gap-1.5">
                         <i class="fa-solid fa-download"></i> Download PDF
                     </a>
                 </div>
