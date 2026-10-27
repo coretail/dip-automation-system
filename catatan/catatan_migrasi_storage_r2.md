@@ -1,5 +1,7 @@
 # Catatan Migrasi Storage: Supabase → Cloudflare R2
 
+> **Catatan historis (2026-10):** dokumen ini merekam format log & probe saat migrasi. Perilaku mode `dual` (fail-loud upload ke R2) mengikuti kode `app/object_store.py` dan panduan bagian **Object Storage**; jangan anggap "best-effort"/"request tetap sukses" sebagai perilaku saat ini.
+
 Dokumen ringkas operasional untuk fase migrasi storage. Rahasia (nilai token/secret)
 TIDAK ditulis di sini — hanya nama/scope dan perilaku.
 
@@ -7,8 +9,9 @@ TIDAK ditulis di sini — hanya nama/scope dan perilaku.
 
 - Ditulis oleh `logger.warning` pada modul `app.object_store` (`app/object_store.py`).
 - Muncul saat mode `dual`/`r2` gagal menulis/menghapus di R2. Di mode `dual`,
-  kegagalan ini **tidak** menggagalkan request (Supabase tetap otoritatif);
-  rekonsiliasi utama tetap `rclone sync`.
+  upload ke R2 dilakukan **lebih dulu dan gagal loudly** (upload gagal bila R2
+  gagal); Supabase tetap otoritatif untuk baca dan URL. Rekonsiliasi utama
+  tetap `rclone sync`.
 - **Token pencarian (untuk Render): `storage_repair`.**
 - Format satu baris:
   ```
