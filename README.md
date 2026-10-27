@@ -1,6 +1,6 @@
 ﻿# Aplikasi Penyusun Dokumen Informasi Produk (DIP) Kosmetik
 
-![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
+![Python Version](https://img.shields.io/badge/python-3.11.0-blue)
 ![Framework](https://img.shields.io/badge/framework-FastAPI-green)
 ![Database](https://img.shields.io/badge/database-Supabase-emerald)
 ![Status](https://img.shields.io/badge/status-Bab_I_to_IV_Selesai-brightgreen)
@@ -21,7 +21,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 | **Analisis PO** (`/po-analytics`) | Halaman analitik terpisah dari modul Produksi. KPI Total PO/qty, komposisi per kuartal, grafik donat proporsi per perusahaan, **grafik kombinasi batang + garis jumlah PO & qty pcs per kuartal per perusahaan** (dua sumbu), Top 5 produk menurut PO/qty, Top 5 produk belum ada Laporan Uji SIG, serta tabel rincian qty per produk dan per merek dengan selector 5/10/25/100 client-side. Filter **tahun**, **kuartal**, **urutan**, dan **tab per perusahaan** (`Semua` / `PT Erfi` / `PT Heka`). Banner amber "PO belum punya item" yang menyebutkan jumlahnya dan daftar nomor PO-nya — pemisahan eksplisit antara *PO tanpa item* dan *PO tidak ada*. | ✅ **Selesai** |
 | **Filter & Pencarian Produksi** | `/purchase-orders` punya filter **tahun** (termasuk "Semua Tahun"), **kuartal** (Q1–Q4, default = kuartal berjalan WIB, dinaikkan ke kuartal tertinggi yang benar-benar berisi data), dan **perusahaan** — termasuk opsi **"Tanpa item"** untuk PO yang belum punya item, karena `purchase_orders` tidak punya kolom perusahaan. Disimpan di cookie `po_filter`. Pencarian realtime No. PO + nama produk. Pengurutan tanggal null diletakkan terakhir. | ✅ **Selesai** |
 | **PO Rework** | Kolom `purchase_orders.jenis_po` (`migration/002_add_jenis_po.sql`) untuk menandai PO perbaikan/rework. Di `/po-analytics`, PO Rework **tetap dihitung sebagai jumlah PO** tetapi **qty pcs-nya tidak ikut dijumlahkan** — sehingga KPI PO dan qty tidak sama-sama naik. Diberi tanda lewat `migration/tag_rework_po.py`. Banner di analisis memberi tahu bila kolom ini belum ada di database. | ✅ **Selesai** |
-| **Toolkit Migrasi Data** | Folder `migration/` berisi 4 file SQL skema + **9 skrip migrasi data** + skrip rollback-nya, semuanya mengikuti pola yang sama: **read-only secara default**, hanya menulis dengan `--execute --yes`, `--dry-run` menulis laporan CSV/JSON tanpa menyentuh database, dan **manifest** berisi id baris yang tertulis untuk keperluan rollback. Lihat §Migrasi Data. | ✅ **Selesai** |
+| **Toolkit Migrasi Data** | Folder `migration/` berisi 9 file SQL skema (001–008, 010; 009 tidak dipakai) + skrip migrasi data & rollback + skrip audit/backfill storage (`audit_storage.py`, `backfill_r2_urls.py`, `verify_r2_readiness.py`), semuanya mengikuti pola yang sama: **read-only secara default**, hanya menulis dengan `--execute --yes`, `--dry-run` menulis laporan CSV/JSON tanpa menyentuh database, dan **manifest** berisi id baris yang tertulis untuk keperluan rollback. Lihat §Migrasi Data. | ✅ **Selesai** |
 | **Manajemen Dokumen Perusahaan** | Halaman admin khusus (`/admin/company-documents`) untuk mengelola **7 jenis dokumen statis per-perusahaan** (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, **SOP CPKB Pemeriksaan Bahan Baku**) yang dipakai lintas Bab I, III, dan IV saat generate PDF DIP. Upload file via UI (bucket `legal-documents` & `raw-material-docs`), upsert otomatis ke 5 tabel terkait, tercatat di `activity_logs`. Laporan Monitoring Efek Samping (NIES) adalah dokumen per-produk yang di-generate dari Tab Bab 4 — bukan dokumen statis perusahaan. | ✅ **Selesai** |
 | **Spesifikasi Produk Jadi (PT Erfi)** | Form input spesifikasi QC produk jadi dengan template default 5 section, auto-fill dari Informasi Dasar (`no_na_produk`, `netto`, `acc_sampel`), generate PDF meniru format dokumen QC resmi PT Erfi. Tabel `product_finished_specs`. Hanya untuk `PT Erfi`; produk PT Heka mendapat 303 ke halaman edit. | ✅ **Selesai** |
 | **Field Peringatan & Penyimpanan** | Field `peringatan` & `penyimpanan` di form Tambah/Edit Produk, otomatis muncul di dokumen Bab IV (Text Design), Formula Kualitatif & Kuantitatif, dan Export Excel — **hanya bila diisi** (bukan NULL, kosong, atau `-`). | ✅ **Selesai** |
@@ -104,7 +104,7 @@ Bab I, III, dan IV di-generate dengan satu pendekatan: halaman cover/checklist d
 * **Form Input Spesifikasi QC:** 5 *section* template standar (Pemerian, Pengemasan Primer & Sekunder, Uji Mikrobiologi, Uji Cemaran Logam), auto-fill dari Informasi Dasar Produk, generate PDF QC resmi yang meniru format PT Erfi, tersimpan di `product_finished_specs` dan terintegrasi sebagai lampiran Bab III DIP.
 
 ### 7. Keamanan & Manajemen Pengguna
-* **Dual-Option Login:** masuk memakai **Username** atau **Email resmi**. Username dicocokkan ke `profiles.full_name`, dan bila tidak ditemukan ada fallback domain kantor `@erfi.com` — sehingga akun PT Heka yang tidak terdaftar di `profiles` tidak akan bisa login lewat username. Keunikan `full_name` dijaga case-insensitive saat pembuatan akun.
+* **Dual-Option Login:** masuk memakai **Username** atau **Email resmi**. Username dicocokkan ke `profiles.full_name` (case-insensitive); bila username tidak ditemukan di `profiles`, login **ditolak** (tidak ada fallback domain kantor). Akun PT Heka yang belum terdaftar di `profiles` sebaiknya login memakai **email resmi**. Keunikan `full_name` dijaga case-insensitive saat pembuatan akun.
 * **Cookie sesi:** `access_token` HTTP-Only, `SameSite=Lax`, umur cookie 24 jam; token JWT-nya valid 4 jam (dikelola Supabase Auth). Bila kedaluwarsa, handler 401 mengarahkan ke `/login?warning=session_expired`.
 * **Pendaftaran mandiri dimatikan.** Akun hanya dibuat Admin. Halaman login, tombol logout, dan setiap link logout meminta konfirmasi.
 * **Admin Control Panel** (`/admin/users`): tambah akun, reset password, ubah role, hapus akun, plus **Status Kehadiran 3 tingkat** (Online ≤ 90 dtk · Idle ≤ 5 menit · Offline) dengan badge, filter, counter, dan auto-refresh 15 detik. Akun bertanda `is_protected` tidak dapat diubah/dihapus admin lain.
@@ -124,13 +124,13 @@ Bab I, III, dan IV di-generate dengan satu pendekatan: halaman cover/checklist d
 * **Fail-open:** kegagalan insert log tidak membatalkan operasi bisnis; error tetap dicetak ke terminal.
 * **Log portal publik:** Setiap pembukaan link publik `/dip/{slug}` mencatat IP, User-Agent, dan username ke `public_link_audits`, dengan fallback ke `activity_logs` bila tabel khusus belum ada, dan dicetak real-time ke terminal.
 * **Web Uptime Monitor:** Endpoint `/health` (GET & HEAD).
-* **Penyaringan log:** access log dari empat poller berfrekuensi tinggi (`/health`, heartbeat presence, unread-count mention, presence admin) disaring agar terminal tetap terbaca.
+* **Penyaringan log:** access log dari lima poller berfrekuensi tinggi (`/health`, heartbeat presence, unread-count mention, presence admin, notifikasi ED) disaring agar terminal tetap terbaca.
 
 ---
 
 ## 🛠️ Tech Stack
 
-* **Backend:** Python 3.10+, FastAPI, Uvicorn, `slowapi` (rate limiting)
+* **Backend:** Python 3.11.0 (dipin via `.python-version`), FastAPI, Uvicorn, `slowapi` (rate limiting)
 * **Database & Storage:** Supabase (PostgreSQL, Supabase Storage) — satu klien global memakai service role
 * **Frontend:** Jinja2 Templates, HTML5, Tailwind CSS v4 (`@tailwindcss/browser`), JavaScript (vanilla, tanpa build step)
 * **Document Generation:** `xhtml2pdf` (render HTML ke PDF), `pypdf` (merge PDF **dan komposisi layout halaman Bab II**), `openpyxl` (export Excel)
@@ -144,12 +144,13 @@ Semua dipin dengan versi exact:
 | Paket | Versi | Paket | Versi |
 |---|---|---|---|
 | `fastapi` | 0.141.1 | `xhtml2pdf` | 0.2.20 |
-| `starlette` | 1.6.0 | `pypdf` | 6.19.0 |
+| `starlette` | 1.6.0 | `pypdf` | 6.21.1 |
 | `uvicorn` | 0.53.0 | `httpx` | 0.28.1 |
 | `supabase` | 2.31.0 | `slowapi` | 0.1.10 |
-| `pydantic-settings` | 2.15.0 | `python-slugify` | 9.0.0 |
-| `jinja2` | 3.1.6 | `openpyxl` | 3.1.5 |
-| `python-multipart` | 0.0.32 | `tzdata` | 2026.4 |
+| `boto3` | 1.43.114 | `python-slugify` | 9.0.0 |
+| `pydantic-settings` | 2.15.0 | `openpyxl` | 3.1.5 |
+| `jinja2` | 3.1.6 | `tzdata` | 2026.4 |
+| `python-multipart` | 0.0.32 | | |
 
 > ⚠️ **Dua paket yang diimpor tapi tidak tercantum di `requirements.txt`:**
 >
@@ -173,7 +174,7 @@ Semua dipin dengan versi exact:
 ## 🚀 Panduan Pengoperasian Lokal
 
 ### 1. Prasyarat
-* Python 3.10 atau versi yang lebih baru
+* Python 3.11.0 (lihat `.python-version`; rencana naik ke 3.11.18 (patch keamanan) setelah cutover R2 stabil; Python 3.11 hanya menerima patch keamanan sampai Oktober 2027)
 * Akun Supabase (untuk URL Database dan Service Role Key)
 
 ### 2. Kloning Repository & Instalasi
@@ -222,12 +223,19 @@ Mode staging diaktifkan dengan `DIP_APP_ENV=staging` + file `.env.staging` (cont
 
 Skema produksi tidak dikelola otomatis. Jalankan file SQL di folder `migration/` secara manual melalui Supabase SQL Editor, berurutan:
 
-| File | Isi |
-|---|---|
-| `migration/001_create_purchase_orders.sql` | Membuat `purchase_orders` + `purchase_order_items`. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada, dan hanya direferensikan dengan FK `RESTRICT` |
-| `migration/002_add_jenis_po.sql` | Menambah kolom `purchase_orders.jenis_po` untuk PO Rework |
-| `migration/003_activity_log_audit_hardening.sql` | Menambah 7 kolom konteks request & verdict ke `activity_logs`, 4 index investigasi, 2 `CHECK`, `REVOKE` dari `anon`/`authenticated`, dan memperbaiki FK `actor_id` ke `ON DELETE SET NULL` |
-| `migration/004_create_product_attachments.sql` | Membuat tabel `product_attachments` (lampiran produk privat non-DIP) + view `product_attachment_counts`, RLS aktif & `REVOKE` dari `anon`/`authenticated`, `CHECK` ukuran file ≤ 10 MB |
+| Nomor | File | Fungsi | Dampak bila belum dijalankan |
+|---|---|---|---|
+| 001 | `migration/001_create_purchase_orders.sql` | Membuat `purchase_orders` + `purchase_order_items` (FK `RESTRICT`). ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada | Modul Produksi/PO tidak berfungsi (tabel tidak ada) |
+| 002 | `migration/002_add_jenis_po.sql` | Menambah kolom `purchase_orders.jenis_po` untuk PO Rework | PO Rework tidak bisa ditandai; analitik PO menghitung seluruh qty tanpa pemisahan rework |
+| 003 | `migration/003_activity_log_audit_hardening.sql` | Menambah 7 kolom konteks request & verdict ke `activity_logs`, 4 index investigasi, 2 `CHECK`, `REVOKE` dari `anon`/`authenticated`, memperbaiki FK `actor_id` ke `ON DELETE SET NULL` | Audit trail tanpa konteks request; hapus user yang punya log gagal |
+| 004 | `migration/004_create_product_attachments.sql` | Membuat tabel `product_attachments` (lampiran produk privat non-DIP) + view `product_attachment_counts`, RLS aktif, `CHECK` ukuran file ≤ 10 MB | Lampiran produk privat tidak bisa disimpan |
+| 005 | `migration/005_null_legacy_brand_merk_columns.sql` | Mengosongkan kolom legacy `brands.hak_merk_file_url` / `lisensi_merk_file_url` | Pre-check backfill storage terganggu (link mati) |
+| 006 | `migration/006_create_product_formula_presence.sql` | View `product_formula_presence` (produk yang punya minimal satu baris formula) | Dashboard checklist Bab II bisa salah tampil "Kosong" karena batas PostgREST |
+| 007 | `migration/007_add_public_access_capability.sql` | Menambah `public_access_enabled`, `public_access_token`, `public_access_revoked_at`, `bpom_registered_link` + index token | Portal publik `/dip` gagal (kolom tidak ada; fail-closed → 404 untuk semua) |
+| 008 | `migration/008_products_soft_delete_contract.sql` | Kontrak soft delete: kolom `is_deleted`/`deleted_at`, CHECK konsistensi, index | Produk di Sampah tidak konsisten; query sampah/dashboard tanpa index |
+| 010 | `migration/010_replace_product_formula.sql` | Fungsi atomik `replace_product_formula` (transaksi DELETE+INSERT) | Penyimpanan formula Bab 2 gagal dengan pesan "fungsi transaksi belum terpasang" |
+
+> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Semua file SQL dijalankan manual lewat Supabase SQL Editor, staging lebih dulu.
 
 ---
 
@@ -264,10 +272,10 @@ dip-automation-system/
 │   │   └── images/             # logo_erfi, logo_heka, kop_erfi, kop_heka, apt, favicon
 │   └── templates/              # 17 halaman extend base.html + template PDF/partial tersendiri
 ├── migration/                  # Toolkit migrasi data (SQL skema di-commit; skrip & data tidak)
-├── tests/                      # Skrip verifikasi (di-commit hanya verify_product_attachments.py & verify_po_analytics_detail.py)
+├── tests/                      # Skrip verifikasi. Di-commit (whitelist `.gitignore`): test_parse_storage_url.py, test_object_store_r2.py, test_security_helpers.py, test_upload_validation.py, test_auth_matrix.py, test_audit_regressions.py, test_base_cachebust.py, test_dip_public_check.py, test_log_activity_normalize.py, test_verify_r2_readiness_logic.py, verify_*.py, e2e_*.py. Test baru harus ditambahkan ke whitelist `!/tests/nama.py` karena `/tests/*` di-ignore
 ├── scripts/                    # Launcher staging (run_staging_8017.py) & util pendukung
 ├── tools/                      # Util pemeriksaan (kontras tema)
-├── requirements.txt            # 14 dependensi, semua dipin exact
+├── requirements.txt            # 15 dependensi, semua dipin exact
 ├── README.md                   # Dokumen ini
 └── panduan_dip_automation_system.md  # Panduan operasional & teknis lengkap
 ```
@@ -282,7 +290,7 @@ dip-automation-system/
 
 ## 🗄️ Migrasi Data
 
-Folder `migration/` berisi toolkit bermigrasi data historis (spreadsheet → Supabase). **Hanya file SQL skema (`*.sql`) yang di-commit ke git** (lihat `.gitignore`); skrip impor/rollback dan data spreadsheet/CSV tetap tidak di-commit karena berisi data operasional perusahaan — salin dan simpan di luar repository bila perlu dipertahankan.
+Folder `migration/` berisi toolkit bermigrasi data historis (spreadsheet → Supabase). **File SQL skema (`*.sql`) di-commit ke git** (lihat `.gitignore`); selain itu `audit_storage.py`, `backfill_r2_urls.py`, dan `verify_r2_readiness.py` juga di-commit karena read-only/audit. Skrip impor/rollback dan data spreadsheet/CSV tetap tidak di-commit karena berisi data operasional perusahaan — salin dan simpan di luar repository bila perlu dipertahankan.
 
 ### Konvensi yang dipatuhi seluruh skrip
 
@@ -294,12 +302,17 @@ Folder `migration/` berisi toolkit bermigrasi data historis (spreadsheet → Sup
 
 ### Skema SQL
 
-| File | Isi |
-|---|---|
-| `001_create_purchase_orders.sql` | Membuat `purchase_orders` + `purchase_order_items`. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada, dan hanya direferensikan dengan FK `RESTRICT` |
-| `002_add_jenis_po.sql` | Kolom `purchase_orders.jenis_po` untuk PO Rework |
-| `003_activity_log_audit_hardening.sql` | Konteks request & verdict (`outcome`, `source`, `ip_address`, `user_agent`, `route`, `http_method`, `request_id`) + index + constraint pada `activity_logs` |
-| `004_create_product_attachments.sql` | Membuat `product_attachments` (lampiran produk privat non-DIP) + view `product_attachment_counts`, RLS aktif & `REVOKE` dari `anon`/`authenticated`, `CHECK` ukuran file ≤ 10 MB |
+| Nomor | File | Fungsi | Dampak bila belum dijalankan |
+|---|---|---|---|
+| 001 | `001_create_purchase_orders.sql` | Membuat `purchase_orders` + `purchase_order_items`. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada | Modul Produksi/PO tidak berfungsi |
+| 002 | `002_add_jenis_po.sql` | Kolom `purchase_orders.jenis_po` untuk PO Rework | PO Rework tidak bisa ditandai |
+| 003 | `003_activity_log_audit_hardening.sql` | Konteks request & verdict (`outcome`, `source`, `ip_address`, `user_agent`, `route`, `http_method`, `request_id`) + index + constraint pada `activity_logs` | Audit trail tanpa konteks request |
+| 004 | `004_create_product_attachments.sql` | Membuat `product_attachments` (lampiran produk privat non-DIP) + view `product_attachment_counts`, RLS aktif & `REVOKE`, `CHECK` ukuran file ≤ 10 MB | Lampiran produk privat tidak bisa disimpan |
+| 005 | `005_null_legacy_brand_merk_columns.sql` | Mengosongkan kolom legacy `brands.hak_merk_file_url` / `lisensi_merk_file_url` | Pre-check backfill storage terganggu |
+| 006 | `006_create_product_formula_presence.sql` | View `product_formula_presence` (produk yang punya formula) | Checklist Bab II bisa salah tampil "Kosong" |
+| 007 | `007_add_public_access_capability.sql` | Menambah `public_access_enabled`, `public_access_token`, `public_access_revoked_at`, `bpom_registered_link` | Portal publik `/dip` gagal (fail-closed → 404) |
+| 008 | `008_products_soft_delete_contract.sql` | Kontrak soft delete: kolom, CHECK, index | Produk di Sampah tidak konsisten |
+| 010 | `010_replace_product_formula.sql` | Fungsi atomik `replace_product_formula` | Penyimpanan formula Bab 2 gagal |
 
 ### Skrip migrasi & rollback
 
@@ -334,6 +347,26 @@ Folder `migration/` berisi toolkit bermigrasi data historis (spreadsheet → Sup
 * **Normalisasi tanggal dari kode batch.** `tanggal_catatan_batch` dan `tanggal_produksi` diturunkan dari 6 digit awal `no_batch` (`YYMMDD`) bila tersedia — bukan dari kolom Tgl SOP di spreadsheet.
 * **Deteksi footer berlapis.** Baris footer dikenali dari isi kolom A maupun kolom F, karena beberapa sheet menaruh label footer di kolom F.
 * **Perbaikan-perbaikan otomatis hanya diterima bila ada bukti.** Contoh: kandidat nomor PO hasil normalisasi hanya dipakai bila kandidat itu benar-benar ada di `purchase_orders`.
+
+---
+
+## 📦 Object Storage (Supabase Storage / Cloudflare R2)
+
+Seluruh akses object storage (upload, URL publik, signed URL, hapus) terpusat di `app/object_store.py`. Backend dipilih lewat env `STORAGE_BACKEND` (`supabase` / `dual` / `r2`):
+
+- **`supabase`** (default): hanya Supabase Storage.
+- **`dual`**: upload ke **R2 lebih dulu** — bila R2 gagal, upload **gagal (fail-loud)**; lalu ke Supabase (rollback best-effort untuk jalur non-upsert). `public_url` dan `signed_url(s)` memakai Supabase; `remove` menghapus di kedua backend.
+- **`r2`**: hanya R2; `public_url` lewat `R2_PUBLIC_BASES`, `signed_url` lewat presigned `get_object`.
+
+Env R2 yang dibutuhkan (nama saja): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_BASES` (JSON `{bucket: base_url_publik}`), `R2_BUCKET_SUFFIX` (`""` produksi, `-stg` staging). Bucket `product-attachments` privat (hanya presigned, tanpa public base). `STORAGE_BACKEND` sendiri juga wajib.
+
+Backfill URL DB: `migration/backfill_r2_urls.py` (dry-run default, `--precheck`, `--apply`, `--bucket`, `--target r2|supabase`), idempoten. Mode `dual` menulis kembali URL Supabase ke DB, sehingga backfill perlu dijalankan ulang tepat sebelum cutover ke `r2`.
+
+Audit & readiness: `migration/audit_storage.py` dan `migration/verify_r2_readiness.py` (read-only; opsi `--env`, `--expect-suffix`, `--origin`, `--json`).
+
+Cutover & rollback tingkat tinggi: verifikasi → backfill dry-run → flip env di Render jam sepi → pantau log; rollback = kembalikan env ke `dual` + `backfill --target supabase`; bucket Supabase dipertahankan minimal 4 minggu.
+
+Catatan: Presigned URL SigV4 tidak boleh diberi query tambahan (mis. `?v=`) — tanda tangan jadi tidak valid (403). `app/templates/base.html` mengecualikan URL yang memuat `X-Amz-Signature`, `X-Amz-Algorithm`, atau `token`. Keterbatasan: selector `a[href*="raw-material-docs"], a[href*="legal-documents"]` tidak mencocokkan URL `pub-*.r2.dev`.
 
 ---
 
