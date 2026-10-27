@@ -115,6 +115,8 @@ backup-rls/
 !/tests/verify_audit_db_state.py
 # E2E Playwright temuan audit 2026-10-21 (staging saja; kredensial via env vars).
 !/tests/e2e_audit_staging.py
+# Unit test murni fail-closed checker portal publik /dip/ (tanpa koneksi/secret).
+!/tests/test_dip_public_check.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log
