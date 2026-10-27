@@ -1466,7 +1466,7 @@ def register_raw_materials_routes(
             peringatan = ""
 
         log_activity(
-            current_user, "create", "raw_material_batch", batch_id or "-",
+            current_user, "create", "raw_material_batch", batch_id,
             f"Batch {no_batch.strip()}",
             changes=audit_changes or None, request=request,
             outcome="success",

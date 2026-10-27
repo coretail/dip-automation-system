@@ -294,13 +294,13 @@ def register_dip_public_routes(
                     return True
                 return False
             return True
-        except Exception:
-            # Fallback legacy bila kolom capability belum ada di DB.
-            try:
-                check = supabase.table("products").select("id").eq("id", product_id).eq("is_deleted", False).single().execute()
-                return bool(check.data)
-            except Exception:
-                return False
+        except Exception as e:
+            # Fail-closed: bila query capability gagal (kolom belum ada di DB
+            # migrasi 007, error transient Supabase, dsb.), TOLAK akses — jangan
+            # jatuh ke mode legacy tanpa cek token, karena itu membuat produk
+            # apa pun bisa diakses publik hanya dengan UUID-nya.
+            print(f"\n[PUBLIC DIP] Gagal memeriksa produk publik (fail-closed, akses ditolak): {type(e).__name__}")
+            return False
 
     async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool, provided_token: str = None):
         """Stream PDF gabungan Bab I-IV lewat backend (proxy), tanpa login."""
