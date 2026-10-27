@@ -80,6 +80,8 @@ skills-lock.json
 !/migration/audit_storage.py
 # Skrip backfill URL storage (idempoten, tanpa secret).
 !/migration/backfill_r2_urls.py
+# Skrip verifikasi kesiapan cutover R2 (read-only, tanpa secret; rahasia via .env).
+!/migration/verify_r2_readiness.py
 
 # RLS backup dumps (local only, contains database data)
 /backup-rls/
@@ -119,6 +121,8 @@ backup-rls/
 !/tests/test_dip_public_check.py
 # Unit test murni normalisasi entity_id log_activity (tanpa koneksi/secret).
 !/tests/test_log_activity_normalize.py
+# Unit test murni helper verify_r2_readiness (tanpa koneksi/secret).
+!/tests/test_verify_r2_readiness_logic.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log
