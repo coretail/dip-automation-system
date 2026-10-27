@@ -20,7 +20,7 @@
 ## CI/CD (GitHub Actions)
 - Sumber kebenaran pipeline adalah `.github/workflows/ci.yml`, `.github/workflows/staging-e2e.yml`, `.github/workflows/dependency-audit.yml`, dan `.github/dependabot.yml`.
 - `ci.yml` berjalan pada `pull_request` dan `push` ke `main`. Job `quality` tidak memakai secret; env dummy level job berisi `SUPABASE_URL=https://ci.invalid.supabase.co`, `SUPABASE_KEY=ci-dummy-anon-key`, `SUPABASE_SERVICE_ROLE_KEY=ci-dummy-service-role-key`, dan `STORAGE_BACKEND=supabase`. `DIP_APP_ENV` **tidak boleh diset** di CI.
-- Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, enam test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
+- Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, sembilan test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
 - `staging-e2e.yml` hanya memiliki `workflow_dispatch`; trigger `push` dinonaktifkan sampai diputuskan lain. Workflow memakai GitHub Environment `staging`, concurrency tunggal dengan `cancel-in-progress: false`, serta suite `all`, `smoke`, `upload`, `activity`, dan `audit`. Suite `all` tidak memuat `upload`; suite upload memerlukan backend `dual`/`r2`.
 - `dependency-audit.yml` berjalan melalui cron mingguan hari Senin dan `workflow_dispatch`; `pip-audit -r requirements.txt` membuat job gagal bila ada advisory. Pengecualian hanya boleh memakai `--ignore-vuln <ID>` dengan komentar yang mencatat alasan, owner, dan tanggal review.
 - `.github/dependabot.yml` mengatur ekosistem `pip` dan `github-actions` dengan jadwal mingguan; seluruh update masuk melalui PR dan wajib melewati CI.
@@ -40,7 +40,7 @@
   - Jalur baku: manual oleh pemilik repo lewat Supabase SQL Editor, berurutan; staging lebih dulu dan hasil staging dibaca sebelum lanjut ke produksi.
   - Jalur tambahan yang diizinkan: atas otorisasi eksplisit pemilik repo per-jalur, agen boleh mengeksekusi migrasi lewat Supabase Management API (`POST /v1/projects/{ref}/database/query`) dengan syarat: jalankan **staging lebih dulu** dan baca hasilnya sebelum produksi; tidak pernah menyentuh produksi sebelum staging terverifikasi hijau; sertakan pre-check SELECT dan probe enforcement pasca-migrasi; file SQL dieksekusi **apa adanya** (byte-identik), tanpa modifikasi; token Management API diekstrak secara programatik dan tidak pernah dicetak atau ditulis ke file.
   - Tanpa otorisasi eksplisit tersebut, migrasi tidak boleh dieksekusi oleh agen; menyiapkan environment baru wajib lewat `scripts/run_staging_8017.py`.
-  - Nomor migrasi berurutan dan unik: `migration/008_products_soft_delete_contract.sql` sudah dipakai, jadi DDL `public_link_audits` berikutnya harus bernomor `009`.
+  - Nomor migrasi berurutan dan unik: `migration/008_products_soft_delete_contract.sql` dan `migration/010_replace_product_formula.sql` sudah dipakai; angka `009` sengaja TIDAK dipakai (dicadangkan untuk migrasi lain, lihat catatan di `010_replace_product_formula.sql`). DDL baru harus bernomor `011` (atau nomor berikutnya yang belum ada) — jangan memakai `009`.
 - Sebelum mulai pekerjaan bersama, `git pull` dulu.
 - Agen bekerja di branch dan membuat Pull Request ke `main`; agen tidak push langsung ke `main`. Status branch protection diatur pada pengaturan GitHub dan tidak terlihat dari repo. Agen hanya commit atau push bila diminta eksplisit oleh pemilik repo di sesi itu; tidak pernah `--force` atau push ke prod/deploy dengan cara lain.
 - Render auto-deploy dari `main`, Build/Start command, dan status env tidak dapat diverifikasi dari repo; jangan menganggapnya fakta.
@@ -70,7 +70,11 @@
 - `pip-audit` tidak menyediakan level severity; kebijakan pipeline adalah gagal bila ada advisory yang memiliki versi perbaikan.
 - `pypdf` dinaikkan ke 6.21.1 untuk menutup 8 advisory; perubahan dependency PDF perlu uji manual Bab II, gabungan Bab I-IV, dan efek samping.
 - `.gitignore` mengabaikan `/tests/*`; test baru harus menambah whitelist `!/tests/nama.py`.
-- Perubahan storage perlu memperhatikan encoding spasi URL (`26fba31`) dan mode dual yang best-effort ke R2.
+- Perubahan storage perlu memperhatikan encoding spasi URL (`26fba31`); mode `dual` menulis R2 **lebih dulu** dan gagal loudly bila R2 gagal (bukan best-effort), lalu Supabase (rollback best-effort untuk jalur non-upsert); baca tetap Supabase; `remove` menghapus di kedua backend.
+- Presigned URL SigV4 tidak boleh diberi query tambahan; parameter tambahan (mis. cache-buster `?v=`) membuat tanda tangan tidak valid dan memberi 403. `app/templates/base.html` mengecualikan URL yang memuat `X-Amz-Signature`, `X-Amz-Algorithm`, atau `token`; test: `tests/test_base_cachebust.py`. Residu: selector `a[href*="raw-material-docs"], a[href*="legal-documents"]` tidak mencocokkan URL `pub-*.r2.dev` (keterbatasan yang diketahui).
+- Cloudflare memblokir User-Agent default `Python-urllib` dengan 403; `migration/verify_r2_readiness.py` memakai UA browser-like.
+- `log_activity`: `activity_logs.entity_id` bertipe uuid; nilai non-UUID dinormalkan menjadi `None` dan nilai mentah ditambahkan ke `entity_label` (lihat `app/main.py`). Panggil `log_activity` dengan UUID baris, bukan slug/perusahaan.
+- E-05 (bug laten, belum diperbaiki): `parse_storage_url` di `app/object_store.py` tidak melakukan unquote, sehingga path dengan spasi (`%20`) bisa salah bila dipakai untuk `remove` atau presign. Saat ini hanya 13 objek di bucket `legal-documents` yang namanya mengandung spasi/`%`/`+`, dan semuanya dibaca lewat URL DB langsung (bukan lewat `parse_storage_url`), jadi belum berdampak. Perbaikan terjadwal setelah cutover (PR terpisah).
 - Tidak ditemukan bukti commit bertajuk `Grok Build`; aturan operasional tetap `git pull` sebelum mulai.
 
 ## 7. Definisi selesai
@@ -81,11 +85,11 @@
 - Untuk perubahan SQL, file sudah direview dan eksekusinya manual lewat Supabase SQL Editor oleh pemilik repo, atau oleh agen hanya atas otorisasi eksplisit pemilik repo per-jalur lewat Supabase Management API (staging lebih dulu, hasil staging dibaca sebelum produksi).
 
 ## 8. Dokumen sumber
-- `README.md`: orientasi dan perintah; tabel migrasi hanya mencantumkan 001–004 dan inventaris test sudah tidak lengkap.
+- `README.md`: orientasi dan perintah; tabel migrasi kini mencantumkan 001–010 (009 tidak dipakai) dan inventaris test disesuaikan.
 - `.github/workflows/*`: sumber kebenaran konfigurasi CI/CD; README dan panduan operasional harus diselaraskan bila perintah pipeline berubah.
 - `panduan_dip_automation_system.md`: panduan operasional/teknis utama dan detail tema, PDF, keamanan, serta migrasi.
 - `catatan/catatan_investigasi_auth500_staging.md`: investigasi Auth staging historis; hasil live belum diverifikasi ulang.
 - `catatan/catatan_handoff_migrasi_r2.md` dan `catatan/catatan_migrasi_storage_r2.md`: handoff/status R2 historis; jangan dianggap status live tanpa verifikasi.
 - `catatan/catatan_batch_plan.md`: rencana lama yang bertentangan dengan PO yang sudah ada; bukan sumber kebenaran saat ini.
 - `.kilo/plans/rencana_fitur_input_po_qc.md`: rencana lama; klaim “belum ada perubahan code” tidak cocok dengan `app/po_routes.py` saat ini.
-- `migration/001`–`007`: urutan SQL bernomor; bukti repo menunjukkan manual SQL Editor, tetapi status eksekusi aktual tidak dapat diverifikasi tanpa akses database.
+- `migration/001`–`010`: urutan SQL bernomor (009 sengaja tidak dipakai); bukti repo menunjukkan manual SQL Editor, tetapi status eksekusi aktual tidak dapat diverifikasi tanpa akses database.

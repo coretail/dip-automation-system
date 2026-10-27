@@ -1,5 +1,7 @@
 # Handoff — Migrasi Storage Supabase → Cloudflare R2
 
+> **Catatan historis (2026-10):** status fase di bawah mencerminkan kondisi saat handoff ditulis. Perilaku mode `dual` yang sebenarnya (fail-loud upload ke R2) mengikuti kode di `app/object_store.py` dan panduan bagian **Object Storage** — jangan anggap "best-effort"/"request tetap sukses" sebagai perilaku saat ini. Lihat panduan bagian Object Storage untuk prosedur cutover/rollback terkini.
+
 _Update terakhir: 2026-10-17._
 
 **Tujuan:** memindahkan object storage dari Supabase Storage ke Cloudflare R2 (mode
@@ -32,9 +34,9 @@ _Update terakhir: 2026-10-17._
 
 ## Kode & berkas penting
 - `app/object_store.py` — satu-satunya jalur storage. `upload_pdf / public_url /
-  signed_url(s) / remove` + dispatch `supabase|dual|r2`. `dual` = tulis Supabase
-  (otoritatif) + R2 best-effort (gagal → log `storage_repair`, request tetap sukses);
-  **baca tetap Supabase**. Tulis R2 sukses → log `storage_r2_ok` (level WARNING).
+  signed_url(s) / remove` + dispatch `supabase|dual|r2`. `dual` = upload ke **R2 lebih
+  dulu (fail-loud)** lalu Supabase (rollback best-effort untuk jalur non-upsert);
+  baca tetap Supabase. Tulis R2 sukses → log `storage_r2_ok` (level WARNING).
   `_r2_public_url` meng-encode path (`%20`).
   `_r2_physical_bucket` = nama logis + `R2_BUCKET_SUFFIX`.
 - `app/config.py` — field `storage_backend`, `r2_account_id/access_key_id/

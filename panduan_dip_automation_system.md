@@ -67,7 +67,7 @@ Sistem menerapkan mekanisme *Role-Based Access Control (RBAC)* dengan 2 tingkat 
 
 ### 2.2 Autentikasi Dual & HTTP-Only Cookie JWT
 - **Login Dual-Identifier:** pengguna dapat masuk menggunakan **Email** maupun **Username**.
-  - > ⚠️ **Catatan teknis:** input "username" sebenarnya dicocokkan ke kolom `profiles.full_name` — tidak ada kolom `username` terpisah. Bila identifier tidak mengandung `@` dan tidak ditemukan di `profiles`, sistem masih memakai fallback domain kantor yang hardcoded `@erfi.com`. Konsekuensinya: **user PT Heka yang belum terdaftar di `profiles` tidak bisa login lewat username** — gunakan email resmi sampai fallback ini diperbaiki.
+  - Input "username" dicocokkan ke kolom `profiles.full_name` (case-insensitive); bila tidak ditemukan, login **ditolak** (tidak ada fallback domain kantor). Konsekuensinya: **user PT Heka yang belum terdaftar di `profiles` tidak bisa login lewat username** — gunakan email resmi.
 - **Sesi Keamanan JWT:** token autentikasi disimpan dalam cookie `HTTP-Only` (`access_token`, `SameSite=Lax`), melindungi dari pencurian token lewat *Cross-Site Scripting (XSS)*. Token JWT berlaku **4 jam**, setelah itu pengguna perlu login ulang. (Catatan: cookie `access_token` sendiri diberi masa simpan 24 jam, namun isinya tidak berlaku lagi setelah JWT kedaluwarsa.)
 - **Deteksi Sesi Expired:** jika sesi habis, sistem menampilkan peringatan (*session expired*) dan mengarahkan kembali ke halaman login secara otomatis.
 - **Proteksi Brute-Force:** endpoint `POST /login` dibatasi maksimal **5 percobaan per menit per IP** memakai `slowapi`, dengan alert + countdown timer di halaman login.
@@ -330,18 +330,17 @@ Kalau salah satu dokumen belum tersedia, file `PERHATIAN.txt` otomatis disertaka
 
 Untuk mempermudah verifikasi BPOM tanpa perlu akun/login ke sistem internal, setiap produk punya **Public Link Hub**:
 
-**Format URL:** `/dip/[slug-nama-produk]-[uuid-produk]`
-*Contoh:* `.../dip/sunscreen-serum-spf-50-e623d2e4-1234-5678-9abc-def012345678`
+**Format URL:** `/dip/<slug-nama-produk>-<uuid-produk>?access=<token>`
+*Contoh:* `.../dip/sunscreen-serum-spf-50-e623d2e4-1234-5678-9abc-def012345678?access=<token>`
 
 - **Logo Header Dinamis:** Penentuan logo (PT Heka vs PT Erfi) dilakukan otomatis berdasarkan data `company` / `draft_producer` yang dipilih.
-- **Layout Tanda Tangan 3 Kolom:** Struktur baru tanda tangan pada dokumen:
-  * Kiri: Dibuat oleh (R&D / `rd_signer`)
-  * Tengah: Disetujui oleh (Nama PT Pemesan dari `company`/`draft_producer`)
-  * Kanan: Mengetahui (Erna Widayanti)
-
+- **Layout Tanda Tangan 3 Kolom:** Struktur tanda tangan pada dokumen: Kiri = Dibuat oleh (R&D / `rd_signer`), Tengah = Disetujui oleh (Nama PT Pemesan dari `company`/`draft_producer`), Kanan = Mengetahui (Erna Widayanti).
 
 - **Bebas login** — bisa dibuka langsung oleh verifikator BPOM kapan saja.
-- **Bagian "slug nama produk" di depan URL cuma kosmetik** — yang beneran divalidasi server cuma UUID 36-karakter di bagian akhir URL. UUID inilah yang berfungsi sebagai "kunci akses" (*unguessable URL*) — mustahil ditebak, sehingga cuma orang yang benar-benar dikasih link yang bisa membuka dokumennya. **Jangan pernah minta URL diganti murni berbasis nama produk** — itu akan menghilangkan proteksi ini, karena nama produk gampang ditebak/diketahui.
+- **Slug nama produk di depan URL cuma kosmetik** — yang divalidasi server adalah UUID 36-karakter di bagian akhir URL, plus capability token (bila produk memilikinya).
+- **Model akses (migrasi 007):** UUID tetap dipakai sebagai identifier/routing. Produk yang punya `public_access_token` dan **belum terdaftar BPOM** wajib membawa token lewat query `?access=<token>` (atau parameter `access`). Produk dengan `bpom_registered_link = true` tetap terbuka tanpa token (jalur legacy). Semua kegagalan (produk tidak ada, token salah, dicabut, dinonaktifkan) mengembalikan **404 yang identik** — tidak ada perbedaan pesan yang bisa dipakai untuk menebak keberadaan produk. Pemeriksaan bersifat **fail-closed** bila terjadi error saat memeriksa produk (mis. kolom migrasi 007 belum ada).
+- **Kolom migrasi 007:** `public_access_enabled`, `public_access_token`, `public_access_revoked_at`, `bpom_registered_link`.
+- **Catatan operasional:** verifikator yang memegang link lama (tanpa token) akan melihat 404 untuk produk yang memakai token — kirim ulang link yang memuat `?access=<token>`.
 - **Akses lengkap dokumen** — verifikator bisa preview PDF, download PDF, maupun download ZIP Bab II secara mandiri.
 - **Audit logging otomatis** — setiap kali halaman publik dibuka, sistem mencatat alamat IP, User-Agent browser, dan timestamp WIB ke tabel `public_link_audits` (dengan fallback ke `activity_logs` kalau tabel khusus belum tersedia), sekaligus dicetak ke terminal server secara real-time.
 
@@ -572,12 +571,19 @@ Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadshee
 
 #### B. Skema SQL
 
-| File | Isi |
-|---|---|
-| `001_create_purchase_orders.sql` | Membuat **`purchase_orders`** dan **`purchase_order_items`** beserta FK dan UNIQUE. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada sebelumnya, dan file ini hanya mereferensikannya dengan FK `RESTRICT` |
-| `002_add_jenis_po.sql` | Menambah kolom `purchase_orders.jenis_po` untuk PO Rework |
-| `003_activity_log_audit_hardening.sql` | Menambah 7 kolom konteks request & verdict ke `activity_logs`, 4 index investigasi, 2 `CHECK`, `REVOKE` dari `anon`/`authenticated`, dan memperbaiki FK `actor_id` ke `ON DELETE SET NULL` |
-| `004_create_product_attachments.sql` | Membuat tabel `product_attachments` (lampiran produk privat non-DIP, lihat §4.5a) + view `product_attachment_counts`, RLS aktif & `REVOKE` dari `anon`/`authenticated`, `CHECK` ukuran file ≤ 10 MB |
+| Nomor | File | Fungsi | Dampak bila belum dijalankan |
+|---|---|---|---|
+| 001 | `001_create_purchase_orders.sql` | Membuat **`purchase_orders`** dan **`purchase_order_items`** beserta FK dan UNIQUE. ⚠️ **Tidak membuat `product_batches`** — tabel itu harus sudah ada sebelumnya, dan file ini hanya mereferensikannya dengan FK `RESTRICT` | Modul Produksi/PO tidak berfungsi (tabel tidak ada) |
+| 002 | `002_add_jenis_po.sql` | Menambah kolom `purchase_orders.jenis_po` untuk PO Rework | PO Rework tidak bisa ditandai; analitik PO menghitung seluruh qty tanpa pemisahan rework |
+| 003 | `003_activity_log_audit_hardening.sql` | Menambah 7 kolom konteks request & verdict ke `activity_logs`, 4 index investigasi, 2 `CHECK`, `REVOKE` dari `anon`/`authenticated`, dan memperbaiki FK `actor_id` ke `ON DELETE SET NULL` | Audit trail tanpa konteks request; hapus user yang punya log gagal |
+| 004 | `004_create_product_attachments.sql` | Membuat tabel `product_attachments` (lampiran produk privat non-DIP, lihat §4.5a) + view `product_attachment_counts`, RLS aktif & `REVOKE` dari `anon`/`authenticated`, `CHECK` ukuran file ≤ 10 MB | Lampiran produk privat tidak bisa disimpan |
+| 005 | `005_null_legacy_brand_merk_columns.sql` | Mengosongkan kolom legacy `brands.hak_merk_file_url` / `lisensi_merk_file_url` | Pre-check backfill storage terganggu (link mati) |
+| 006 | `006_create_product_formula_presence.sql` | View `product_formula_presence` (produk yang punya minimal satu baris formula) | Dashboard checklist Bab II bisa salah tampil "Kosong" karena batas PostgREST |
+| 007 | `007_add_public_access_capability.sql` | Menambah `public_access_enabled`, `public_access_token`, `public_access_revoked_at`, `bpom_registered_link` + index token | Portal publik `/dip` gagal (kolom tidak ada; fail-closed → 404 untuk semua) |
+| 008 | `008_products_soft_delete_contract.sql` | Kontrak soft delete: kolom `is_deleted`/`deleted_at`, CHECK konsistensi, index | Produk di Sampah tidak konsisten; query sampah/dashboard tanpa index |
+| 010 | `010_replace_product_formula.sql` | Fungsi atomik `replace_product_formula` (transaksi DELETE+INSERT) | Penyimpanan formula Bab 2 gagal dengan pesan "fungsi transaksi belum terpasang" |
+
+> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Semua file SQL dijalankan manual lewat Supabase SQL Editor, staging lebih dulu.
 
 > ⚠️ Skema produksi **tidak dikelola otomatis** — jalankan file SQL ini manual melalui Supabase SQL Editor.
 
@@ -663,7 +669,7 @@ Tambahan: **Data Pendukung Klaim** dihitung sebagai **nilai tambah di pembilang 
 - **Perlindungan Varian Komposisi** — varian komposisi yang sudah dipakai di suatu formula tidak bisa dihapus selama masih dirujuk oleh baris formula.
 - **Perlindungan Log Aktivitas** — nama produk/bahan baku yang dihapus tetap direkam di `activity_logs` sebelum baris datanya benar-benar hilang, supaya riwayat aktivitas tetap informatif walau data aslinya sudah tidak ada.
 
-> ⚠️ **Ketidakseimbangan yang perlu diketahui:** penghapusan **produk** tidak punya proteksi apa pun selain soft delete — tidak ada pemeriksaan dependensi, dan **tidak ada pemeriksaan role**, sehingga akun Staff pun bisa menghapus produk mana pun. Sebaliknya penghapusan **bahan baku** dilindungi pemeriksaan pemakaian formula. Perlu dicatat juga: pemeriksaan pemakaian bahan baku menghitung produk yang sudah soft-deleted sebagai "masih dipakai", sementara badge `usage_count` dan API "Dipakai di Produk" secara sengaja **tidak** menghitungnya — jadi keduanya bisa terlihat berbeda.
+> ⚠️ **Ketidakseimbangan yang perlu diketahui:** penghapusan **produk** kini **hanya untuk Admin** (route `POST /products/delete/{product_id}` menolak non-admin dengan 403 dan mencatat audit `outcome='rejected'`). Selain soft delete, tidak ada pemeriksaan dependensi. Sebaliknya penghapusan **bahan baku** dilindungi pemeriksaan pemakaian formula. Perlu dicatat juga: pemeriksaan pemakaian bahan baku menghitung produk yang sudah soft-deleted sebagai "masih dipakai", sementara badge `usage_count` dan API "Dipakai di Produk" secara sengaja **tidak** menghitungnya — jadi keduanya bisa terlihat berbeda.
 >
 > ⚠️ **`ACC Dimusnahkan` tidak meng-nolkan stok.** Baris penulisan `qty` sengaja dikomentari dengan catatan "Uncomment if you have a qty column". Aksi ini juga **tidak** menghapus objek storage milik batch tersebut, berbeda dengan cascade delete bahan baku.
 
@@ -745,8 +751,19 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
   - **Audit:** `activity_logs`, `public_link_audits`.
   - **Dokumen legal/statis per perusahaan:** `nib_documents`, `sertifikat_cpkb_documents`, `surat_tidak_pidana_documents`, `company_sop_documents`, `cpkb_raw_material`, `brand_legal_documents`.
   - > Daftar di atas adalah tabel yang **dipanggil oleh kode**. Untuk rincian kolom dan relasi, rujuk ke skema/migrasi resmi di repository.
-- **Object Storage:** file PDF (MSDS, CoA, Halal, NIB, CPKB, dst) disimpan di Supabase Storage. Sebagian besar diakses lewat public URL; khusus di halaman Public Hub verifikator BPOM, tautan file memakai *signed URL* sementara (kedaluwarsa otomatis) sebagai lapisan keamanan tambahan — **dengan fallback ke public URL mentah bila pembuatan signed URL gagal**, agar halaman tidak ikut mati.
-  - Bucket yang dipakai: `legal-documents` (dokumen perusahaan), `raw-material-docs` (SOP CPKB, dokumen bahan baku, serta laporan Monitoring Efek Samping per produk), dan `product-attachments` (lampiran produk privat non-DIP, lihat §4.5a).
+- **Object Storage:** Seluruh akses object storage (upload, URL publik, signed URL, hapus) terpusat di `app/object_store.py`. Backend dipilih lewat env `STORAGE_BACKEND` (`supabase` / `dual` / `r2`):
+  - **`supabase`** (default): hanya Supabase Storage.
+  - **`dual`**: upload ke **R2 lebih dulu** — bila R2 gagal, upload **gagal (fail-loud)**; lalu ke Supabase (rollback best-effort untuk jalur non-upsert). `public_url` dan `signed_url(s)` memakai Supabase; `remove` menghapus di kedua backend.
+  - **`r2`**: hanya R2; `public_url` lewat `R2_PUBLIC_BASES`, `signed_url` lewat presigned `get_object`.
+  - Env R2 yang dibutuhkan (nama saja): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PUBLIC_BASES` (JSON `{bucket: base_url_publik}`), `R2_BUCKET_SUFFIX` (`""` produksi, `-stg` staging). Bucket `product-attachments` privat (hanya presigned, tanpa public base).
+  - Backfill URL DB: `migration/backfill_r2_urls.py` (dry-run default, `--precheck`, `--apply`, `--bucket`, `--target r2|supabase`), idempoten. Mode `dual` menulis kembali URL Supabase ke DB, sehingga backfill perlu dijalankan ulang tepat sebelum cutover ke `r2`.
+  - Audit & readiness: `migration/audit_storage.py` dan `migration/verify_r2_readiness.py` (read-only; opsi `--env`, `--expect-suffix`, `--origin`, `--json`). Arti status secara garis besar: PASS = lolos, WARN = perlu perhatian tapi tidak memblokir, FAIL = blocker, INFO = informasi (tidak diuji/di-skip).
+  - Cutover & rollback tingkat tinggi: verifikasi → backfill dry-run → flip env di Render jam sepi → pantau log; rollback = kembalikan env ke `dual` + `backfill --target supabase`; bucket Supabase dipertahankan minimal 4 minggu.
+  - Presigned URL SigV4 tidak boleh diberi query tambahan (mis. `?v=`) — tanda tangan jadi tidak valid (403). `app/templates/base.html` mengecualikan URL yang memuat `X-Amz-Signature`, `X-Amz-Algorithm`, atau `token`. Keterbatasan: selector `a[href*="raw-material-docs"], a[href*="legal-documents"]` tidak mencocokkan URL `pub-*.r2.dev`.
+  - Cloudflare memblokir User-Agent default `Python-urllib` dengan 403; `verify_r2_readiness.py` memakai UA browser-like.
+  - `log_activity`: `activity_logs.entity_id` bertipe uuid; nilai non-UUID dinormalkan menjadi `None` dan nilai mentah ditambahkan ke `entity_label` (lihat `app/main.py`). Panggil `log_activity` dengan UUID baris, bukan slug/perusahaan.
+  - E-05 (bug laten, belum diperbaiki): `parse_storage_url` di `app/object_store.py` tidak melakukan unquote, sehingga path dengan spasi (`%20`) bisa salah bila dipakai untuk `remove` atau presign. Saat ini hanya 13 objek di bucket `legal-documents` yang namanya mengandung spasi/`%`/`+`, dan semuanya dibaca lewat URL DB langsung (bukan lewat `parse_storage_url`), jadi belum berdampak. Perbaikan terjadwal setelah cutover (PR terpisah).
+  - Bucket yang dipakai: `legal-documents` (dokumen perusahaan), `raw-material-docs` (SOP CPKB, dokumen bahan baku, serta laporan Monitoring Efek Samping per produk), dan `product-attachments` (lampiran produk privat non-DIP, lihat §4.5a). Sebagian besar diakses lewat public URL; khusus di halaman Public Hub verifikator BPOM, tautan file memakai *signed URL* sementara (kedaluwarsa otomatis) — **dengan fallback ke public URL mentah bila pembuatan signed URL gagal**, agar halaman tidak ikut mati.
 
 #### Skema Modul Produksi
 
@@ -764,7 +781,7 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
 - Setiap aktivitas penting dicatat otomatis ke tabel `activity_logs` — termasuk `create`, `update`, `delete` pada bahan baku dan produk, pembuatan Purchase Order, batch produk, item PO, serta `generate` laporan Monitoring Efek Samping. Cakupan lengkap entitas & aksi ada di [§5.5](#55-cakupan-detail-dalam-audit-trail). Catatan mencakup siapa pelakunya, jenis objek, ID target, dan detail field yang berubah (nilai lama vs baru untuk field teks; catatan "File diganti" untuk field dokumen).
 - Terminal server (Uvicorn/Render) menampilkan log yang sama secara real-time dengan format timestamp **WIB (Asia/Jakarta)** — berguna untuk pengecekan cepat, tapi diingat log Render sendiri **cuma disimpan 7 hari**; untuk riwayat jangka panjang selalu rujuk ke tabel `activity_logs`.
 - Kesalahan pada proses generator dokumen (mis. lampiran gagal diambil atau file PDF rusak) **tidak** ditampilkan ke pengguna sebagai pesan teknis; kesalahan dicatat di log server agar bisa ditelusuri tanpa mengganggu alur kerja. Prinsipnya: **satu lampiran bermasalah tidak boleh menggagalkan seluruh dokumen**.
-- **Penyaringan access log:** empat endpoint poller berfrekuensi tinggi (`/health`, `/api/presence/heartbeat`, `/api/notes/mentions/unread-count`, `/api/admin/users/presence`) disaring dari access log agar terminal tetap terbaca.
+- **Penyaringan access log:** lima endpoint poller berfrekuensi tinggi (`/health`, `/api/presence/heartbeat`, `/api/notes/mentions/unread-count`, `/api/admin/users/presence`, `/api/ed-notifications`) disaring dari access log agar terminal tetap terbaca.
 
 ### 6.4 Manajemen Dokumen Perusahaan (`/admin/company-documents`)
 Sebelum September 2026, 7 jenis dokumen statis per-perusahaan (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, serta **SOP CPKB Pemeriksaan Bahan Baku**) hanya bisa diubah lewat Supabase Dashboard langsung (atau dari halaman bahan baku untuk SOP CPKB). Kini tersedia halaman admin khusus (`/admin/company-documents`) yang memungkinkan admin mengunggah dan mengganti file-file tersebut langsung dari aplikasi. Laporan Monitoring Efek Samping (NIES) **bukan** bagian dari halaman ini — itu dokumen per-produk yang di-generate (lihat §4.12).
@@ -826,7 +843,7 @@ Satu untuk bahan baku yang tidak punya Spek **dan** Catatan Pemeriksaan, satu la
 Token sesi (JWT) sudah kedaluwarsa (masa berlaku 4 jam). Silakan login ulang.
 
 **Q6: Apakah link publik verifikator BPOM aman dari kebocoran data produk lain?**
-Aman — setiap link memakai kombinasi slug nama produk (kosmetik) dan UUID acak 36-karakter yang divalidasi di server (*unguessable*). Portal publik hanya menampilkan data 1 produk sesuai UUID pada URL tersebut, dan setiap akses tercatat di audit log.
+Aman — setiap link memakai kombinasi slug nama produk (kosmetik) dan UUID 36-karakter yang divalidasi di server, plus capability token untuk produk yang belum terdaftar BPOM. Portal publik hanya menampilkan data 1 produk sesuai UUID pada URL tersebut, dan setiap akses tercatat di audit log. Produk tanpa token yang benar (atau link lama tanpa token untuk produk yang memakai token) mengembalikan 404.
 
 **Q7: Kenapa persentase di Formula Builder menunjukkan angka merah / tidak 100%?**
 Standar BPOM mengharuskan total persentase formula kosmetik tepat 100.000% (w/w). Periksa kembali persentase bahan pelarut (misalnya *Aqua/Water*) agar akumulasi formula pas 100%.
@@ -835,7 +852,7 @@ Standar BPOM mengharuskan total persentase formula kosmetik tepat 100.000% (w/w)
 Kemungkinan file melebihi 10 MB (cek ulang ukuran filenya), atau formatnya bukan PDF — sistem cuma menerima PDF untuk semua jenis lampiran dokumen.
 
 **Q9: Login pakai username gagal padahal user saya terdaftar.**
-Input "username" dicocokkan ke kolom `full_name` di tabel `profiles`, dan bila tidak ditemukan sistem memakai fallback domain `@erfi.com`. Untuk user PT Heka, cara yang paling aman adalah login memakai **email resmi**. Username yang tidak ada di `profiles` juga tidak bisa login.
+Input "username" dicocokkan ke kolom `full_name` di tabel `profiles` (case-insensitive). Bila tidak ditemukan, login **ditolak** — tidak ada fallback domain kantor. Untuk user PT Heka, cara yang paling aman adalah login memakai **email resmi**.
 
 **Q10: Kenapa status user saya di panel Admin muncul "Idle", bukan "Online"?**
 Idle berarti tab masih terbuka dan heartbeat masih berjalan, tetapi tidak ada aktivitas selama 5 menit terakhir. Itu status normal, bukan error — status kembali Online begitu ada interaksi.
