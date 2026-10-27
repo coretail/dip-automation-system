@@ -18,7 +18,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ci-dummy-service-role-key
       STORAGE_BACKEND: supabase
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
