@@ -2,6 +2,8 @@
 
 > **Catatan historis (2026-10):** status fase di bawah mencerminkan kondisi saat handoff ditulis. Perilaku mode `dual` yang sebenarnya (fail-loud upload ke R2) mengikuti kode di `app/object_store.py` dan panduan bagian **Object Storage** — jangan anggap "best-effort"/"request tetap sukses" sebagai perilaku saat ini. Lihat panduan bagian Object Storage untuk prosedur cutover/rollback terkini.
 
+> **Status 2026-10-28:** URL publik `pub-*.r2.dev` tidak dapat dibuka dari Wi-Fi kantor (`NET::ERR_CERT_COMMON_NAME_INVALID`). URL DB produksi sudah dikembalikan ke Supabase dan `STORAGE_BACKEND` tetap `dual`; langkah cutover ke `r2` di bawah **ditunda** sampai ada custom domain Cloudflare yang terbukti terbuka dari jaringan kantor. Langkah 4 (cutover) dan catatan Fase 6 "domain custom" harus dibaca dengan prasyarat ini.
+
 _Update terakhir: 2026-10-17._
 
 **Tujuan:** memindahkan object storage dari Supabase Storage ke Cloudflare R2 (mode

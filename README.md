@@ -366,6 +366,9 @@ Audit & readiness: `migration/audit_storage.py` dan `migration/verify_r2_readine
 
 Cutover & rollback tingkat tinggi: verifikasi → backfill dry-run → flip env di Render jam sepi → pantau log; rollback = kembalikan env ke `dual` + `backfill --target supabase`; bucket Supabase dipertahankan minimal 4 minggu.
 
+
+**Status operasional (2026-10-28) dan keterbatasan `r2.dev`:** URL publik bucket R2 saat ini berupa domain `pub-*.r2.dev`, yang **tidak dapat dibuka dari jaringan Wi-Fi kantor** (teruji di PC dan HP; Chrome menampilkan `NET::ERR_CERT_COMMON_NAME_INVALID`, indikasi pembelokan/pemblokiran di level jaringan). Akibatnya URL DB produksi dikembalikan ke Supabase (`backfill_r2_urls.py --target supabase --apply`) dan `STORAGE_BACKEND` tetap `dual`, sehingga R2 berfungsi sebagai cadangan tersinkron. **Jangan** menjalankan `--target r2 --apply` pada produksi atau mengubah `STORAGE_BACKEND=r2` sebelum file publik terbukti bisa dibuka dari jaringan kantor. Cloudflare juga menyatakan `r2.dev` rate-limited dan hanya untuk pengembangan (tanpa cache/WAF). Prasyarat cutover: custom domain pada Cloudflare (domain `*.onrender.com` tidak bisa dipakai karena bukan milik kita) yang diuji dari Wi-Fi kantor, lalu ganti `R2_PUBLIC_BASES`, jalankan ulang backfill `--target r2`, dan verifikasi ulang dengan `verify_r2_readiness.py`.
+
 Catatan: Presigned URL SigV4 tidak boleh diberi query tambahan (mis. `?v=`) — tanda tangan jadi tidak valid (403). `app/templates/base.html` mengecualikan URL yang memuat `X-Amz-Signature`, `X-Amz-Algorithm`, atau `token`. Keterbatasan: selector `a[href*="raw-material-docs"], a[href*="legal-documents"]` tidak mencocokkan URL `pub-*.r2.dev`.
 
 ---
