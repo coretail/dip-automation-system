@@ -941,6 +941,7 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
         "create": "🟢 [CREATED]",
         "update": "🟡 [UPDATED]",
         "delete": "🔴 [DELETED]",
+        "change_password": "🔐 [PASSWORD CHANGED]",
         "reset_password": "🔑 [PASSWORD RESET]",
         "restore": "↩️ [RESTORED]",
         "export": "📤 [EXPORTED]",
@@ -1500,6 +1501,18 @@ register_admin_users_routes(
     _user_role_and_label=_user_role_and_label,
     get_ed_notification_count=get_ed_notification_count,
     compute_status_na=compute_status_na,
+)
+
+from app.profile_routes import register_profile_routes
+from app.staging_guard import staging_client as _staging_client
+register_profile_routes(
+    app,
+    get_current_user=get_current_user,
+    supabase=supabase,
+    templates=templates,
+    log_activity=log_activity,
+    limiter=limiter,
+    staging_client=_staging_client,
 )
 
 from app.notes_routes import register_notes_routes
