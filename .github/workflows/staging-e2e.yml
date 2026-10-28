@@ -27,7 +27,7 @@ jobs:
       E2E_SUITE: ${{ github.event.inputs.suite || 'all' }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11.0'
           cache: pip
