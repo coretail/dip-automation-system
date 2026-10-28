@@ -116,12 +116,19 @@ def register_company_docs_routes(
             # - company_sop_documents punya 4 kolom berbeda -> UPDATE HANYA kolom spesifik,
             #   jangan overwrite kolom lain (protap_no_batch_url, dll).
             existing = supabase.table(table).select("id").eq("perusahaan", perusahaan).limit(1).execute()
+            row_id = None
             if existing.data:
+                row_id = (existing.data[0] or {}).get("id")
                 supabase.table(table).update({column: file_url}).eq("perusahaan", perusahaan).execute()
             else:
-                supabase.table(table).insert({"perusahaan": perusahaan, column: file_url}).execute()
+                inserted = supabase.table(table).insert({"perusahaan": perusahaan, column: file_url}).execute()
+                if inserted.data:
+                    row_id = (inserted.data[0] or {}).get("id")
 
-            log_activity(current_user, "update", doc_type, perusahaan,
+            # entity_id harus UUID baris tabel (kolom activity_logs.entity_id
+            # bertipe uuid); perusahaan disimpan di entity_label. Bila row_id
+            # tidak tersedia, kirim None — log_activity menormalkan sisanya.
+            log_activity(current_user, "update", doc_type, row_id,
                          f"{label} {perusahaan}", request=request)
 
             response = RedirectResponse(url="/admin/company-documents", status_code=303)

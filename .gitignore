@@ -80,6 +80,8 @@ skills-lock.json
 !/migration/audit_storage.py
 # Skrip backfill URL storage (idempoten, tanpa secret).
 !/migration/backfill_r2_urls.py
+# Skrip verifikasi kesiapan cutover R2 (read-only, tanpa secret; rahasia via .env).
+!/migration/verify_r2_readiness.py
 
 # RLS backup dumps (local only, contains database data)
 /backup-rls/
@@ -90,12 +92,15 @@ backup-rls/
 
 # Test artifacts (local only), except source-controlled verification scripts.
 /tests/*
+!/tests/e2e_dip_public_link.py
 !/tests/
 !/tests/verify_product_attachments.py
 !/tests/verify_po_analytics_detail.py
 # Unit test murni migrasi storage (tanpa secret/koneksi).
 !/tests/test_parse_storage_url.py
 !/tests/test_object_store_r2.py
+# Unit test guard cache-bust untuk URL presign (pure-local).
+!/tests/test_base_cachebust.py
 # E2E upload UI -> R2 staging (tanpa secret; kredensial via env vars saat dijalankan).
 !/tests/e2e_upload_staging.py
 # E2E request_id activity log (UI /notes -> activity_logs staging; kredensial via env vars).
@@ -108,10 +113,18 @@ backup-rls/
 !/tests/test_auth_matrix.py
 # Regression test temuan audit codebase 2026-10-21 (pure logic, tanpa koneksi/secret).
 !/tests/test_audit_regressions.py
+!/tests/test_profile_routes.py
+!/tests/e2e_profile_staging.py
 # Verifikasi state database staging read-only untuk temuan audit 2026-10-21.
 !/tests/verify_audit_db_state.py
 # E2E Playwright temuan audit 2026-10-21 (staging saja; kredensial via env vars).
 !/tests/e2e_audit_staging.py
+# Unit test murni fail-closed checker portal publik /dip/ (tanpa koneksi/secret).
+!/tests/test_dip_public_check.py
+# Unit test murni normalisasi entity_id log_activity (tanpa koneksi/secret).
+!/tests/test_log_activity_normalize.py
+# Unit test murni helper verify_r2_readiness (tanpa koneksi/secret).
+!/tests/test_verify_r2_readiness_logic.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log
@@ -145,3 +158,7 @@ build/
 *.egg-info/
 .cleanup/
 scripts/cleanup_repo.py
+ringkas.py
+audit/pip-audit.json
+
+/logs/

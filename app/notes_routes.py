@@ -611,7 +611,7 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             print(f"[NOTES] Gagal simpan note: {e}")
             try:
                 log_activity(
-                    current_user, "create", "note", "-",
+                    current_user, "create", "note", None,
                     (text[:80] + ("…" if len(text) > 80 else "")),
                     changes=[{"field": "Catatan",
                               "note": "catatan gagal disimpan; detail teknis ada di log server"}],
@@ -663,7 +663,7 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             })
         try:
             log_activity(
-                current_user, "create", "note", note_id or "-",
+                current_user, "create", "note", note_id,
                 (text[:80] + ("…" if len(text) > 80 else "")) + extra,
                 changes=audit_changes or None, request=request,
                 outcome="success",
