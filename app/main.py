@@ -823,6 +823,12 @@ def _user_role_and_label(uid: str):
     return (None, f"User {uid}")
 
 
+# Pola UUID (lower/upper) untuk normalisasi entity_id di log_activity (TYPE-01).
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
 def log_activity(current_user: dict, action: str, entity_type: str, entity_id: str,
                  entity_label: str, changes: list = None, *, request=None,
                  outcome: str = "success", request_id: str = None,
@@ -844,6 +850,19 @@ def log_activity(current_user: dict, action: str, entity_type: str, entity_id: s
     """
     outcome = outcome if outcome in ("success", "rejected", "failed") else "success"
     source = source if source in ("app", "public", "migration") else "app"
+
+    # Normalisasi entity_id (TYPE-01): kolom activity_logs.entity_id bertipe
+    # uuid. Nilai non-UUID (nama perusahaan, "-", dll.) membuat insert audit
+    # GAGAL CAST dan — karena log_activity fail-open — baris audit hilang
+    # diam-diam. Nilai yang bukan UUID valid dikirim sebagai None, dan nilai
+    # mentahnya dipertahankan di entity_label supaya tetap bisa ditelusuri.
+    entity_id_str = str(entity_id) if entity_id is not None else ""
+    if not _UUID_RE.match(entity_id_str):
+        if entity_id_str and entity_label and entity_id_str not in str(entity_label):
+            entity_label = f"{entity_label} [{entity_id_str}]"
+        elif entity_id_str:
+            entity_label = entity_label or entity_id_str
+        entity_id = None
 
     # Normalisasi changes + catat status storage R2 bila diberikan.
     final_changes = list(changes or [])
@@ -922,6 +941,7 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
         "create": "🟢 [CREATED]",
         "update": "🟡 [UPDATED]",
         "delete": "🔴 [DELETED]",
+        "change_password": "🔐 [PASSWORD CHANGED]",
         "reset_password": "🔑 [PASSWORD RESET]",
         "restore": "↩️ [RESTORED]",
         "export": "📤 [EXPORTED]",
@@ -1481,6 +1501,18 @@ register_admin_users_routes(
     _user_role_and_label=_user_role_and_label,
     get_ed_notification_count=get_ed_notification_count,
     compute_status_na=compute_status_na,
+)
+
+from app.profile_routes import register_profile_routes
+from app.staging_guard import staging_client as _staging_client
+register_profile_routes(
+    app,
+    get_current_user=get_current_user,
+    supabase=supabase,
+    templates=templates,
+    log_activity=log_activity,
+    limiter=limiter,
+    staging_client=_staging_client,
 )
 
 from app.notes_routes import register_notes_routes
