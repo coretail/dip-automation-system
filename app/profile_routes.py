@@ -126,11 +126,13 @@ def register_profile_routes(
     @limiter.limit("5/minute")
     async def change_password(
         request: Request,
-        current_password: str = Form(...),
-        new_password: str = Form(...),
-        confirm_new_password: str = Form(...),
+        current_password: str = Form(""),
+        new_password: str = Form(""),
+        confirm_new_password: str = Form(""),
         current_user: dict = Depends(get_current_user),
     ):
+        if not current_password or not new_password or not confirm_new_password:
+            return RedirectResponse(url="/profile?error=password_invalid", status_code=303)
         if (
             len(new_password) < MIN_PASSWORD_LENGTH
             or len(new_password) > MAX_PASSWORD_LENGTH
