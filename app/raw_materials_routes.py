@@ -1,6 +1,7 @@
 """Route /raw-materials/* (master bahan baku, varian komposisi, batch/ED, dokumen company)."""
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 from typing import List
 from uuid import uuid4
@@ -13,6 +14,22 @@ from postgrest.exceptions import APIError
 from app.database import supabase
 from app.file_validation import validate_pdf_bytes
 from app import object_store
+
+
+def _sort_rm_components(components: list) -> list:
+    """Urutkan komponen deterministik: percent_internal desc, lalu inci_name."""
+    def _to_decimal(value):
+        if value is None:
+            return Decimal("0")
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0")
+
+    return sorted(
+        [c for c in components if isinstance(c, dict)],
+        key=lambda c: (-_to_decimal(c.get("percent_internal")), str(c.get("inci_name") or "")),
+    )
 
 
 def _is_deleted_product(embedded):
@@ -1135,12 +1152,49 @@ def register_raw_materials_routes(
 
     # ==================== ENDPOINT KELOLA VARIAN KOMPOSISI ====================
     @app.get("/raw-materials/{rm_id}/variants")
-    async def list_raw_material_variants(rm_id: str, current_user: dict = Depends(get_current_user)):
-        """JSON daftar varian sebuah bahan baku (dipakai modal edit + Fase 4 formula)."""
+    async def list_raw_material_variants(
+        rm_id: str,
+        include: str | None = None,
+        current_user: dict = Depends(get_current_user),
+    ):
+        """JSON daftar varian sebuah bahan baku (dipakai modal edit + Fase 4 formula).
+
+        Dengan `include=components`, setiap varian disertai komponen INCI dan
+        `legacy_components` hanya untuk komponen dengan `variant_id IS NULL`.
+        """
         resp = supabase.table("raw_material_composition_variants") \
-            .select("id, nama_varian, is_default") \
+            .select("id, nama_varian, is_default, raw_material_components(inci_name, function, percent_internal, is_bahan_aktif)") \
             .eq("raw_material_id", rm_id).order("created_at").execute()
-        return JSONResponse(content={"success": True, "variants": resp.data or []})
+        variants = resp.data or []
+
+        for variant in variants:
+            comps = variant.get("raw_material_components") or []
+            if isinstance(comps, dict):
+                comps = [comps]
+            if not isinstance(comps, list):
+                comps = []
+            variant["raw_material_components"] = comps
+            if include == "components":
+                variant["components"] = _sort_rm_components(comps)
+                variant["component_count"] = len(comps)
+            # Jangan bocorkan embed mentah di respons.
+            variant.pop("raw_material_components", None)
+            if include != "components":
+                variant.pop("component_count", None)
+
+        if include != "components":
+            return JSONResponse(content={"success": True, "variants": variants})
+
+        legacy_resp = supabase.table("raw_material_components") \
+            .select("inci_name, function, percent_internal, is_bahan_aktif, variant_id") \
+            .eq("raw_material_id", rm_id).is_("variant_id", "null").execute()
+        legacy_components = _sort_rm_components(legacy_resp.data or []) if not variants else []
+
+        return JSONResponse(content={
+            "success": True,
+            "variants": variants,
+            "legacy_components": legacy_components,
+        })
 
     @app.post("/raw-materials/{rm_id}/variants/add")
     async def add_raw_material_variant(

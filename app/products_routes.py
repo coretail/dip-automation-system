@@ -4,7 +4,7 @@ from __future__ import annotations
 import io
 import json
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
@@ -19,6 +19,22 @@ from app.product_attachments_routes import LAMPIRAN_CATEGORIES
 from xhtml2pdf import pisa
 
 WIB = ZoneInfo("Asia/Jakarta")
+
+
+def _sort_rm_components(components: list) -> list:
+    """Urutkan komponen deterministik: percent_internal desc, lalu inci_name."""
+    def _to_decimal(value):
+        if value is None:
+            return Decimal("0")
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0")
+
+    return sorted(
+        [c for c in components if isinstance(c, dict)],
+        key=lambda c: (-_to_decimal(c.get("percent_internal")), str(c.get("inci_name") or "")),
+    )
 
 # --- Aturan total persentase formula Bab 2 ---------------------------------
 # Total persentase formula HARUS tepat 100.0000%. Aturan yang sama sudah ada di
@@ -937,7 +953,7 @@ def register_products_routes(
         sop_cpkb_url = None
         try:
             formula_resp = supabase.table("product_formula_lines") \
-                .select("*, raw_materials(nama_dagang, kode_bahan_baku, raw_material_composition_variants(id, nama_varian, is_default))") \
+                .select("*, raw_materials(nama_dagang, kode_bahan_baku, raw_material_composition_variants(id, nama_varian, is_default, raw_material_components(inci_name, function, percent_internal, is_bahan_aktif)), raw_material_components(inci_name, function, percent_internal, is_bahan_aktif, variant_id))") \
                 .eq("product_id", product_id) \
                 .order("created_at").execute()
             formula = formula_resp.data or []
@@ -955,10 +971,62 @@ def register_products_routes(
                 variants = rm_embed.get("raw_material_composition_variants") or []
                 if isinstance(variants, dict):
                     variants = [variants]
+                for variant in variants:
+                    comps = variant.get("raw_material_components") or []
+                    if isinstance(comps, dict):
+                        comps = [comps]
+                    if not isinstance(comps, list):
+                        comps = []
+                    variant["raw_material_components"] = comps
+                    variant["component_count"] = len(comps)
                 line["rm_variants"] = sorted(
                     variants,
                     key=lambda v: (not v.get("is_default"), v.get("nama_varian") or ""),
                 )
+
+                direct_components = rm_embed.get("raw_material_components") or []
+                if isinstance(direct_components, dict):
+                    direct_components = [direct_components]
+                if not isinstance(direct_components, list):
+                    direct_components = []
+                legacy_components = [
+                    comp for comp in direct_components
+                    if isinstance(comp, dict) and comp.get("variant_id") is None
+                ]
+                legacy_components = _sort_rm_components(legacy_components)
+
+                variant_ids = [v.get("id") for v in line["rm_variants"]]
+                selected_id = line.get("variant_id")
+                if selected_id not in variant_ids:
+                    default_variant = next((v for v in line["rm_variants"] if v.get("is_default")), None)
+                    if default_variant is not None:
+                        selected_id = default_variant.get("id")
+                    elif line["rm_variants"]:
+                        selected_id = line["rm_variants"][0].get("id")
+                    else:
+                        selected_id = None
+                selected_variant = next(
+                    (v for v in line["rm_variants"] if v.get("id") == selected_id),
+                    None,
+                )
+                if selected_variant is not None:
+                    selected_components = _sort_rm_components(selected_variant.get("raw_material_components") or [])
+                elif line["rm_variants"]:
+                    selected_components = _sort_rm_components(line["rm_variants"][0].get("raw_material_components") or [])
+                else:
+                    selected_components = legacy_components
+                preview_components = selected_components
+                line["selected_variant_id"] = selected_id
+                line["rm_preview"] = {
+                    "variant_name": selected_variant.get("nama_varian") if selected_variant else ("Komponen langsung" if legacy_components else "Belum ada komponen"),
+                    "is_default": bool(selected_variant.get("is_default")) if selected_variant else False,
+                    "component_count": len(selected_components),
+                    "components": preview_components,
+                    "remaining": max(0, len(selected_components) - 5),
+                    "has_variants": bool(line["rm_variants"]),
+                    "variant_total": len(line["rm_variants"]),
+                    "uses_legacy": not bool(line["rm_variants"]) and bool(legacy_components),
+                }
 
             rm_resp = supabase.table("raw_materials") \
                 .select("id, nama_dagang, kode_bahan_baku") \
