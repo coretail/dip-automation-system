@@ -166,6 +166,10 @@
                                 <p class="text-sm font-semibold text-gray-900 truncate">{{ _nav_user.full_name if _nav_user else '-' }}</p>
                                 <p class="text-xs text-gray-500 capitalize">{{ _nav_user.role if _nav_user else '-' }}</p>
                             </div>
+                            <a href="/profile"
+                               class="flex items-center gap-2 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">
+                                <i class="fa-solid fa-user-circle" aria-hidden="true"></i> Profile
+                            </a>
                             <a href="/logout" data-logout
                                onclick="if (typeof window.stopPresenceHeartbeat === 'function') window.stopPresenceHeartbeat();"
                                class="flex items-center gap-2 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 transition">
