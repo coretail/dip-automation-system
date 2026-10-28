@@ -178,9 +178,20 @@ def test_mismatch_and_wrong_current_are_safe():
     print("[PASS] mismatch and wrong-current responses use fixed error codes")
 
 
+def test_empty_fields_return_safe_redirect():
+    app, _limiter, supabase, client, _rendered, _logs = build()
+    endpoint = app.routes[("POST", "/profile/change-password")]
+    result = asyncio.run(endpoint(SimpleNamespace(), "", "new-pass", "new-pass", {"id": "user-1", "email": "user@example.test"}))
+    assert "password_invalid" in result.headers["location"]
+    assert client.calls == []
+    assert supabase.updated is None
+    print("[PASS] empty fields return a safe redirect instead of 422")
+
+
 if __name__ == "__main__":
     test_profile_query_is_scoped_and_limited()
     test_password_uses_fresh_client_and_session_uid()
     test_password_validation_does_not_call_auth()
     test_mismatch_and_wrong_current_are_safe()
+    test_empty_fields_return_safe_redirect()
     print("All profile route tests passed.")
