@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}User Profile | DIP Kosmetik Automation{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <header class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-gray-500">Account</p>
+            <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mt-1">User Profile</h1>
+            <p class="text-sm text-gray-500 mt-2">Manage your account, security, and appearance preferences.</p>
+        </div>
+        <div class="flex items-center gap-3 text-right">
+            <div>
+                <p class="font-semibold text-gray-900">{{ current_user.full_name }}</p>
+                <p class="text-xs text-gray-500 capitalize">{{ current_user.role }}</p>
+            </div>
+            <span class="w-11 h-11 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center">
+                {{ (current_user.full_name or 'U')[0]|upper }}
+            </span>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div class="lg:col-span-3 space-y-6">
+            <section class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 sm:p-6" aria-labelledby="account-heading">
+                <div class="flex items-start gap-3 mb-5">
+                    <span class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center"><i class="fa-solid fa-id-card" aria-hidden="true"></i></span>
+                    <div><h2 id="account-heading" class="text-lg font-bold text-gray-900">Account Information</h2><p class="text-sm text-gray-500">Your account details are managed by your administrator.</p></div>
+                </div>
+                <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+                    <div><dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Username</dt><dd class="mt-1 text-sm font-medium text-gray-900 break-words">{{ current_user.full_name or '-' }}</dd></div>
+                    <div><dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Email</dt><dd class="mt-1 text-sm font-medium text-gray-900 break-all">{{ current_user.email or '-' }}</dd></div>
+                    <div><dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Role</dt><dd class="mt-1"><span class="inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 capitalize">{{ current_user.role or '-' }}</span></dd></div>
+                    <div><dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Company</dt><dd class="mt-1 text-sm font-medium text-gray-900">{{ current_user.perusahaan or 'Not assigned' }}</dd></div>
+                    <div><dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Account created</dt><dd class="mt-1 text-sm font-medium text-gray-900">{{ account_created }}</dd></div>
+                </dl>
+            </section>
+
+            <section class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 sm:p-6" aria-labelledby="activity-heading">
+                <div class="flex items-start gap-3 mb-5">
+                    <span class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i></span>
+                    <div><h2 id="activity-heading" class="text-lg font-bold text-gray-900">Recent Activity</h2><p class="text-sm text-gray-500">Your 20 most recent actions in the workspace.</p></div>
+                </div>
+                {% if activity_error %}
+                <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">Activity is temporarily unavailable.</div>
+                {% elif activity %}
+                <ol class="space-y-4" aria-label="Recent activity list">
+                    {% for item in activity %}
+                    <li class="flex gap-3">
+                        <span class="mt-0.5 w-8 h-8 shrink-0 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center"><i class="fa-solid fa-circle-check text-xs" aria-hidden="true"></i></span>
+                        <div class="min-w-0 flex-1 border-b border-gray-100 pb-3">
+                            <div class="flex flex-wrap items-center gap-2"><p class="text-sm font-semibold text-gray-900">{{ item.action_label }}</p>{% if item.outcome != 'success' %}<span class="text-[11px] rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">{{ item.outcome|capitalize }}</span>{% endif %}</div>
+                            {% if item.entity_label %}<p class="text-sm text-gray-600 truncate" title="{{ item.entity_label }}">{{ item.entity_label }}</p>{% endif %}
+                            <time class="text-xs text-gray-400" datetime="{{ item.created_at or '' }}">{{ item.created_label }}</time>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ol>
+                {% else %}
+                <div class="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500"><i class="fa-regular fa-clock text-xl mb-2" aria-hidden="true"></i><p>No recent activity yet.</p></div>
+                {% endif %}
+            </section>
+        </div>
+
+        <div class="lg:col-span-2 space-y-6">
+            <section class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 sm:p-6" aria-labelledby="security-heading">
+                <div class="flex items-start gap-3 mb-5">
+                    <span class="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center"><i class="fa-solid fa-lock" aria-hidden="true"></i></span>
+                    <div><h2 id="security-heading" class="text-lg font-bold text-gray-900">Security Management</h2><p class="text-sm text-gray-500">Change your password without administrator help.</p></div>
+                </div>
+                <form method="post" action="/profile/change-password" class="space-y-4" novalidate>
+                    <div><label for="current-password" class="block text-sm font-semibold text-gray-700 mb-1">Current Password</label><input id="current-password" name="current_password" type="password" autocomplete="current-password" required class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"></div>
+                    <div><label for="new-password" class="block text-sm font-semibold text-gray-700 mb-1">New Password</label><input id="new-password" name="new_password" type="password" minlength="6" maxlength="72" autocomplete="new-password" required class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"></div>
+                    <div><label for="confirm-new-password" class="block text-sm font-semibold text-gray-700 mb-1">Confirm New Password</label><input id="confirm-new-password" name="confirm_new_password" type="password" minlength="6" maxlength="72" autocomplete="new-password" required class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"></div>
+                    <p class="text-xs text-gray-500">Use 6–72 characters. Do not reuse your current password. Password values are never stored in activity logs.</p>
+                    <button type="submit" class="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"><i class="fa-solid fa-key" aria-hidden="true"></i> Update Password</button>
+                </form>
+            </section>
+
+            <section class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 sm:p-6" aria-labelledby="theme-heading">
+                <div class="flex items-start gap-3 mb-5"><span class="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center"><i class="fa-solid fa-palette" aria-hidden="true"></i></span><div><h2 id="theme-heading" class="text-lg font-bold text-gray-900">Personalization</h2><p class="text-sm text-gray-500">Choose a theme saved on this browser.</p></div></div>
+                <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Theme selection">
+                    {% for key, label, icon in [('light', 'Light', 'fa-sun'), ('terra', 'Terra', 'fa-fire'), ('rose', 'Rose', 'fa-heart'), ('dark', 'Dark', 'fa-moon')] %}
+                    <button type="button" class="profile-theme-opt flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-3 text-sm font-semibold text-gray-700 hover:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-300" data-profile-theme="{{ key }}" role="radio" aria-checked="false"><i class="fa-solid {{ icon }}" aria-hidden="true"></i><span>{{ label }}</span></button>
+                    {% endfor %}
+                </div>
+                <p class="mt-3 text-xs text-gray-500">This preference is local to this device and browser.</p>
+            </section>
+        </div>
+    </div>
+</div>
+{% endblock %}

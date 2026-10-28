@@ -18,7 +18,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ci-dummy-service-role-key
       STORAGE_BACKEND: supabase
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v5
@@ -65,6 +65,10 @@ jobs:
           python tests/test_upload_validation.py
           python tests/test_auth_matrix.py
           python tests/test_audit_regressions.py
+          python tests/test_base_cachebust.py
+          python tests/test_dip_public_check.py
+          python tests/test_log_activity_normalize.py
+          python tests/test_profile_routes.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt

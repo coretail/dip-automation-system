@@ -61,6 +61,13 @@ var META = {
       var on = btn.getAttribute("data-theme-opt") === now;
       btn.setAttribute("aria-checked", on ? "true" : "false");
     });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-profile-theme]"), function (btn) {
+      var on = btn.getAttribute("data-profile-theme") === now;
+      btn.setAttribute("aria-checked", on ? "true" : "false");
+      btn.classList.toggle("border-indigo-500", on);
+      btn.classList.toggle("bg-indigo-50", on);
+      btn.classList.toggle("text-indigo-700", on);
+    });
   }
 
   function apply(theme, persist) {
@@ -109,6 +116,12 @@ var META = {
     // Skrip pra-render di base.html sudah menulis data-theme. Terapkan ulang
     // supaya atribut selalu ada walau skrip itu gagal (mis. localStorage diblokir).
     apply(current(), false);
+
+    document.querySelectorAll("[data-profile-theme]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        apply(btn.getAttribute("data-profile-theme"), true);
+      });
+    });
 
     els.trigger.addEventListener("click", function (e) {
       e.stopPropagation();
