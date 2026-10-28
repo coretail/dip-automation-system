@@ -69,6 +69,7 @@ jobs:
           python tests/test_dip_public_check.py
           python tests/test_log_activity_normalize.py
           python tests/test_profile_routes.py
+          python tests/test_variant_component_preview.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt
