@@ -59,6 +59,79 @@
     {% endif %}
 </div>
 {% endmacro %}
+
+{% macro variant_preview_card(preview) %}
+{% set p = preview or {} %}
+<div class="row-variant-preview mt-2 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2" data-preview>
+    <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+            <div class="preview-header flex flex-wrap items-center gap-1.5">
+                <span class="text-[11px] font-semibold text-gray-700">
+                    {% if p.unavailable %}Komposisi INCI{% elif p.has_variants %}Komposisi: {{ p.selected_variant_name or '-' }}{% else %}Komponen langsung{% endif %}
+                </span>
+                {% if p.has_variants and p.selected_is_default %}
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700">default</span>
+                {% endif %}
+                {% if p.has_variants and p.variant_count >= 2 %}
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700">{{ p.variant_count }} varian</span>
+                {% endif %}
+                {% if p.has_variants and not p.unavailable %}
+                <span class="text-[10px] text-gray-500">{{ p.component_count }} komponen</span>
+                {% endif %}
+            </div>
+            <div class="preview-body mt-1">
+                {% if p.unavailable %}
+                    <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Preview komposisi tidak bisa dimuat. Form tetap bisa digunakan.</p>
+                {% elif p.has_variants %}
+                    {% if p.component_count == 0 %}
+                    <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>Varian ini belum punya komponen INCI.
+                    </p>
+                    {% else %}
+                    <ul class="space-y-1">
+                        {% for comp in p.preview_components %}
+                        <li class="flex items-start justify-between gap-2 text-[11px]">
+                            <span class="min-w-0">
+                                <span class="font-medium text-gray-700">{{ comp.inci_name }}</span>
+                                {% if comp.is_bahan_aktif %}<span class="ml-1 inline-flex items-center px-1 py-0 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-800">Aktif</span>{% endif %}
+                                {% if comp.function %}<span class="text-gray-400"> · {{ comp.function }}</span>{% endif %}
+                            </span>
+                            <span class="font-mono text-indigo-600 shrink-0">{{ comp.percent_internal }}%</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% if p.remaining_count > 0 %}<p class="text-[10px] text-gray-500 mt-1">+{{ p.remaining_count }} lainnya</p>{% endif %}
+                    {% endif %}
+                {% else %}
+                    {% if p.legacy_count == 0 %}
+                    <p class="text-[11px] text-gray-500 italic">Belum ada komponen INCI untuk bahan baku ini.</p>
+                    {% else %}
+                    <ul class="space-y-1">
+                        {% for comp in p.legacy_components %}
+                        <li class="flex items-start justify-between gap-2 text-[11px]">
+                            <span class="min-w-0">
+                                <span class="font-medium text-gray-700">{{ comp.inci_name }}</span>
+                                {% if comp.is_bahan_aktif %}<span class="ml-1 inline-flex items-center px-1 py-0 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-800">Aktif</span>{% endif %}
+                                {% if comp.function %}<span class="text-gray-400"> · {{ comp.function }}</span>{% endif %}
+                            </span>
+                            <span class="font-mono text-indigo-600 shrink-0">{{ comp.percent_internal }}%</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% if p.legacy_remaining_count > 0 %}<p class="text-[10px] text-gray-500 mt-1">+{{ p.legacy_remaining_count }} lainnya</p>{% endif %}
+                    <p class="text-[10px] text-amber-700 mt-1"><i class="fa-solid fa-circle-info mr-1"></i>Bahan baku ini belum punya varian; preview memakai komponen INCI langsung.</p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <button type="button" class="preview-toggle shrink-0 text-gray-400 hover:text-gray-700 mt-0.5 cursor-pointer"
+                aria-expanded="true" aria-label="Tampilkan atau sembunyikan komposisi INCI"
+                title="Tampilkan atau sembunyikan komposisi" onclick="toggleRowPreview(this)">
+            <i class="fa-solid fa-chevron-up"></i>
+        </button>
+    </div>
+</div>
+{% endmacro %}
 <div class="max-w-6xl mx-auto bg-white p-8 rounded-lg shadow-xs border border-gray-200">
     <div class="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
         <div>
@@ -356,15 +429,16 @@
                             </div>
                             <div class="variant-picker mt-2{% if (line.rm_variants|length) <= 1 %} hidden{% endif %}">
                                 <label class="block text-xs font-medium text-gray-500 mb-1">Varian / Produsen</label>
-                                <select name="variant_id" class="variant-select block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500">
+                                <select name="variant_id" class="variant-select block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500" onchange="updateRowPreviewFromSelect(this)">
                                     {% if line.rm_variants|length == 0 %}
                                     <option value="">-</option>
                                     {% endif %}
                                     {% for v in line.rm_variants %}
-                                    <option value="{{ v.id }}"{% if line.variant_id and line.variant_id == v.id %} selected{% endif %}>{{ v.nama_varian }}{% if v.is_default %} (default){% endif %}</option>
+                                    <option value="{{ v.id }}"{% if line.selected_variant_id and line.selected_variant_id == v.id %} selected{% endif %}>{{ v.nama_varian }}{% if v.is_default %} (default){% endif %} · {{ v.component_count }} komponen</option>
                                     {% endfor %}
                                 </select>
                             </div>
+                            {{ variant_preview_card(line.rm_preview) }}
                         </div>
                         <div class="flex items-center space-x-2">
                             <div class="w-full">
@@ -477,9 +551,26 @@
                         </div>
                         <div class="variant-picker mt-2 hidden">
                             <label class="block text-xs font-medium text-gray-500 mb-1 sm:hidden">Varian / Produsen</label>
-                            <select class="variant-select input-variant-id block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500">
+                            <select class="variant-select input-variant-id block w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:border-indigo-500" onchange="updateRowPreviewFromSelect(this)">
                                 <option value="">- Pilih bahan baku dulu -</option>
                             </select>
+                        </div>
+                        <div class="row-variant-preview mt-2 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2" data-preview>
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <div class="preview-header flex flex-wrap items-center gap-1.5">
+                                        <span class="text-[11px] font-semibold text-gray-700">Komposisi INCI</span>
+                                    </div>
+                                    <div class="preview-body mt-1">
+                                        <p class="text-[11px] text-gray-500 italic">Pilih bahan baku untuk melihat komposisi INCI.</p>
+                                    </div>
+                                </div>
+                                <button type="button" class="preview-toggle shrink-0 text-gray-400 hover:text-gray-700 mt-0.5 cursor-pointer"
+                                        aria-expanded="true" aria-label="Tampilkan atau sembunyikan komposisi INCI"
+                                        title="Tampilkan atau sembunyikan komposisi" onclick="toggleRowPreview(this)">
+                                    <i class="fa-solid fa-chevron-up"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="flex items-center space-x-2">
@@ -747,6 +838,18 @@ document.addEventListener("DOMContentLoaded", function() {
     // Hitung total persentase kalau memang sudah ada baris formula.
     calculateFormulaTotal();
 
+    // Isi cache varian untuk baris yang sudah dirender server, supaya preview
+    // ikut berubah saat dropdown varian diganti tanpa fetch ulang tiap change.
+    const prefetchedRmIds = new Set();
+    document.querySelectorAll('#formula-rows-container .class-formula-row').forEach(function(row) {
+        const rmInput = row.querySelector('input[name="raw_material_id"]');
+        if (!rmInput || !rmInput.value || prefetchedRmIds.has(rmInput.value)) return;
+        prefetchedRmIds.add(rmInput.value);
+        fetchRowVariants(rmInput.value).catch(function(err) {
+            console.error('Gagal memuat varian:', err);
+        });
+    });
+
     // Baca query param ?tab= dan buka tab yang sesuai (dari klik badge di dashboard)
     const urlParams = new URLSearchParams(window.location.search);
     const requestedTab = urlParams.get('tab');
@@ -823,15 +926,203 @@ function escapeVariantText(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function resetRowVariantPicker(container) {
-    const picker = container.closest('.class-formula-row').querySelector('.variant-picker');
-    if (!picker) return;
-    const sel = picker.querySelector('.variant-select');
-    picker.classList.add('hidden');
-    if (sel) {
-        sel.innerHTML = '<option value="">- Pilih bahan baku dulu -</option>';
-        if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
+const variantPreviewLimit = 5;
+const rowVariantsCache = new Map();
+
+function sortVariantOptions(variants) {
+    return [...(variants || [])].sort((a, b) =>
+        ((b.is_default ? 1 : 0) - (a.is_default ? 1 : 0)) ||
+        String(a.nama_varian || '').localeCompare(String(b.nama_varian || '')));
+}
+
+function choosePreviewVariant(sortedVariants, variantId) {
+    if (!sortedVariants.length) return null;
+    if (variantId) {
+        const match = sortedVariants.find(v => String(v.id) === String(variantId));
+        if (match) return match;
     }
+    return sortedVariants.find(v => v.is_default) || sortedVariants[0];
+}
+
+function variantOptionHtml(variant, selected) {
+    const componentCount = Array.isArray(variant.components) ? variant.components.length : 0;
+    return '<option value="' + escapeVariantText(variant.id) + '"' + (selected ? ' selected' : '') + '>' +
+        escapeVariantText(variant.nama_varian) + (variant.is_default ? ' (default)' : '') +
+        ' · ' + componentCount + ' komponen</option>';
+}
+
+function previewComponentHtml(comp) {
+    const active = comp && comp.is_bahan_aktif
+        ? '<span class="ml-1 inline-flex items-center px-1 py-0 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-800">Aktif</span>'
+        : '';
+    const fn = comp && comp.function
+        ? '<span class="text-gray-400"> · ' + escapeVariantText(comp.function) + '</span>'
+        : '';
+    const pct = comp && comp.percent_internal !== null && comp.percent_internal !== undefined
+        ? escapeVariantText(comp.percent_internal)
+        : '0';
+    return '<li class="flex items-start justify-between gap-2 text-[11px]">' +
+        '<span class="min-w-0">' +
+            '<span class="font-medium text-gray-700">' + escapeVariantText(comp && comp.inci_name) + '</span>' +
+            active + fn +
+        '</span>' +
+        '<span class="font-mono text-indigo-600 shrink-0">' + pct + '%</span>' +
+    '</li>';
+}
+
+function previewListHtml(components, remaining) {
+    const items = (components || []).map(previewComponentHtml).join('');
+    const more = remaining > 0
+        ? '<p class="text-[10px] text-gray-500 mt-1">+' + remaining + ' lainnya</p>'
+        : '';
+    return '<ul class="space-y-1">' + items + '</ul>' + more;
+}
+
+function buildRowPreview(variants, legacyComponents, variantId) {
+    const sorted = sortVariantOptions(variants);
+    const chosen = choosePreviewVariant(sorted, variantId);
+    if (chosen) {
+        const components = Array.isArray(chosen.components) ? chosen.components : [];
+        return {
+            has_variants: true,
+            variant_count: sorted.length,
+            selected_variant_id: chosen.id,
+            selected_variant_name: chosen.nama_varian,
+            selected_is_default: !!chosen.is_default,
+            preview_components: components.slice(0, variantPreviewLimit),
+            component_count: components.length,
+            remaining_count: Math.max(components.length - variantPreviewLimit, 0),
+            uses_legacy: false,
+            legacy_components: [],
+            legacy_count: 0,
+            legacy_remaining_count: 0,
+        };
+    }
+    const legacy = Array.isArray(legacyComponents) ? legacyComponents : [];
+    return {
+        has_variants: false,
+        variant_count: 0,
+        selected_variant_id: null,
+        selected_variant_name: null,
+        selected_is_default: false,
+        preview_components: [],
+        component_count: 0,
+        remaining_count: 0,
+        uses_legacy: true,
+        legacy_components: legacy.slice(0, variantPreviewLimit),
+        legacy_count: legacy.length,
+        legacy_remaining_count: Math.max(legacy.length - variantPreviewLimit, 0),
+    };
+}
+
+function updateRowPreview(row, preview) {
+    if (!row) return;
+    const card = row.querySelector('[data-preview]');
+    if (!card) return;
+    const header = card.querySelector('.preview-header');
+    const body = card.querySelector('.preview-body');
+    if (!header || !body) return;
+    const p = preview || {};
+
+    let headerHtml;
+    if (p.has_variants) {
+        headerHtml = '<span class="text-[11px] font-semibold text-gray-700">Komposisi: ' +
+            escapeVariantText(p.selected_variant_name || '-') + '</span>';
+        if (p.selected_is_default) {
+            headerHtml += '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700">default</span>';
+        }
+        if (p.variant_count >= 2) {
+            headerHtml += '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700">' + p.variant_count + ' varian</span>';
+        }
+        headerHtml += '<span class="text-[10px] text-gray-500">' + p.component_count + ' komponen</span>';
+    } else {
+        headerHtml = '<span class="text-[11px] font-semibold text-gray-700">Komponen langsung</span>';
+    }
+    header.innerHTML = headerHtml;
+
+    let bodyHtml;
+    if (p.has_variants) {
+        bodyHtml = p.component_count === 0
+            ? '<p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Varian ini belum punya komponen INCI.</p>'
+            : previewListHtml(p.preview_components, p.remaining_count);
+    } else if (p.legacy_count === 0) {
+        bodyHtml = '<p class="text-[11px] text-gray-500 italic">Belum ada komponen INCI untuk bahan baku ini.</p>';
+    } else {
+        bodyHtml = previewListHtml(p.legacy_components, p.legacy_remaining_count) +
+            '<p class="text-[10px] text-amber-700 mt-1"><i class="fa-solid fa-circle-info mr-1"></i>Bahan baku ini belum punya varian; preview memakai komponen INCI langsung.</p>';
+    }
+    body.innerHTML = bodyHtml;
+}
+
+function showRowPreviewMessage(row, message) {
+    if (!row) return;
+    const card = row.querySelector('[data-preview]');
+    if (!card) return;
+    const header = card.querySelector('.preview-header');
+    const body = card.querySelector('.preview-body');
+    if (header) header.innerHTML = '<span class="text-[11px] font-semibold text-gray-700">Komposisi INCI</span>';
+    if (body) body.innerHTML = '<p class="text-[11px] text-gray-500 italic">' + escapeVariantText(message) + '</p>';
+}
+
+function resetRowPreview(row) {
+    if (!row) return;
+    showRowPreviewMessage(row, 'Pilih bahan baku untuk melihat komposisi INCI.');
+    const card = row.querySelector('[data-preview]');
+    if (!card) return;
+    const body = card.querySelector('.preview-body');
+    const toggle = card.querySelector('.preview-toggle');
+    if (body) body.classList.remove('hidden');
+    if (toggle) {
+        toggle.setAttribute('aria-expanded', 'true');
+        const icon = toggle.querySelector('i');
+        if (icon) {
+            icon.classList.add('fa-chevron-up');
+            icon.classList.remove('fa-chevron-down');
+        }
+    }
+}
+
+function toggleRowPreview(button) {
+    const card = button.closest('[data-preview]');
+    if (!card) return;
+    const body = card.querySelector('.preview-body');
+    if (!body) return;
+    const expanded = button.getAttribute('aria-expanded') === 'true';
+    button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    body.classList.toggle('hidden', expanded);
+    const icon = button.querySelector('i');
+    if (icon) {
+        icon.classList.toggle('fa-chevron-up', !expanded);
+        icon.classList.toggle('fa-chevron-down', expanded);
+    }
+}
+
+function resetRowVariantPicker(container) {
+    const row = container.closest('.class-formula-row');
+    const picker = row ? row.querySelector('.variant-picker') : null;
+    if (picker) {
+        const sel = picker.querySelector('.variant-select');
+        picker.classList.add('hidden');
+        if (sel) {
+            sel.innerHTML = '<option value="">- Pilih bahan baku dulu -</option>';
+            if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
+        }
+    }
+    resetRowPreview(row);
+}
+
+async function fetchRowVariants(rmId) {
+    if (rowVariantsCache.has(rmId)) return rowVariantsCache.get(rmId);
+    const res = await fetch('/raw-materials/' + encodeURIComponent(rmId) + '/variants?include=components');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (!data || data.success === false) throw new Error('Respons varian tidak valid');
+    const payload = {
+        variants: Array.isArray(data.variants) ? data.variants : [],
+        legacy_components: Array.isArray(data.legacy_components) ? data.legacy_components : [],
+    };
+    rowVariantsCache.set(rmId, payload);
+    return payload;
 }
 
 async function loadRowVariants(container, rmId, keepSelectedId) {
@@ -841,35 +1132,58 @@ async function loadRowVariants(container, rmId, keepSelectedId) {
     const sel = picker.querySelector('.variant-select');
     if (!rmId) { resetRowVariantPicker(container); return; }
     try {
-        const res = await fetch('/raw-materials/' + rmId + '/variants');
-        const data = await res.json();
-        const variants = (data && data.variants) || [];
-        if (variants.length <= 1) {
-            // 0 varian: kirim '' (default). 1 varian: auto-pilih diam-diam.
+        const data = await fetchRowVariants(rmId);
+        const sorted = sortVariantOptions(data.variants);
+        if (sorted.length === 0) {
+            // 0 varian: kirim '' (default) dan tampilkan komponen langsung.
             picker.classList.add('hidden');
             if (sel) {
-                sel.innerHTML = variants.length === 1
-                    ? '<option value="' + variants[0].id + '" selected></option>'
-                    : '<option value=""></option>';
+                sel.innerHTML = '<option value=""></option>';
                 if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
             }
+            updateRowPreview(row, buildRowPreview([], data.legacy_components, null));
+            return;
+        }
+        if (sorted.length === 1) {
+            // 1 varian: auto-pilih diam-diam, picker tetap tersembunyi.
+            picker.classList.add('hidden');
+            if (sel) {
+                sel.innerHTML = variantOptionHtml(sorted[0], true);
+                if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
+            }
+            updateRowPreview(row, buildRowPreview(sorted, [], sorted[0].id));
             return;
         }
         picker.classList.remove('hidden');
-        const sorted = [...variants].sort((a, b) =>
-            ((b.is_default ? 1 : 0) - (a.is_default ? 1 : 0)) ||
-            String(a.nama_varian || '').localeCompare(String(b.nama_varian || '')));
-        const keep = keepSelectedId || null;
-        sel.innerHTML = sorted.map(v => {
-            const isSel = (keep && String(keep) === String(v.id)) ||
-                (!keep && v.is_default) ? ' selected' : '';
-            return '<option value="' + v.id + '"' + isSel + '>' +
-                escapeVariantText(v.nama_varian) + (v.is_default ? ' (default)' : '') + '</option>';
-        }).join('');
-        if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
+        const chosen = choosePreviewVariant(sorted, keepSelectedId || null);
+        if (sel) {
+            sel.innerHTML = sorted.map(v => variantOptionHtml(
+                v, chosen && String(v.id) === String(chosen.id)
+            )).join('');
+            if (chosen) sel.value = String(chosen.id);
+            if (sel.hasAttribute('name')) sel.setAttribute('name', 'variant_id');
+        }
+        updateRowPreview(row, buildRowPreview(sorted, [], chosen ? chosen.id : null));
     } catch (e) {
         console.error('Gagal memuat varian:', e);
+        showRowPreviewMessage(row, 'Komposisi INCI tidak bisa dimuat. Form tetap bisa digunakan.');
     }
+}
+
+function updateRowPreviewFromSelect(selectElem) {
+    const row = selectElem.closest('.class-formula-row');
+    if (!row) return;
+    const rmInput = row.querySelector('input[name="raw_material_id"]');
+    const rmId = rmInput ? rmInput.value : '';
+    const data = rowVariantsCache.get(rmId);
+    if (!data) {
+        const rmContainer = row.querySelector('.custom-select-container');
+        if (rmContainer) loadRowVariants(rmContainer, rmId, selectElem.value);
+        return;
+    }
+    const sorted = sortVariantOptions(data.variants);
+    const chosen = choosePreviewVariant(sorted, selectElem.value);
+    updateRowPreview(row, buildRowPreview(sorted, data.legacy_components, chosen ? chosen.id : null));
 }
 // ==================== /VARIAN PER BARIS FORMULA ====================
 

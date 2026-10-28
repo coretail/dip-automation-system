@@ -125,6 +125,8 @@ backup-rls/
 !/tests/test_log_activity_normalize.py
 # Unit test murni helper verify_r2_readiness (tanpa koneksi/secret).
 !/tests/test_verify_r2_readiness_logic.py
+# Unit test murni preview komposisi varian (tanpa koneksi/secret).
+!/tests/test_variant_component_preview.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log

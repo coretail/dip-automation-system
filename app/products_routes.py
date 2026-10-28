@@ -16,6 +16,7 @@ from app.excel_generator import XLSX_MIME, build_formula_workbook
 from app import object_store
 from app.file_validation import validate_pdf_bytes
 from app.product_attachments_routes import LAMPIRAN_CATEGORIES
+from app.variant_components import prepare_line_preview
 from xhtml2pdf import pisa
 
 WIB = ZoneInfo("Asia/Jakarta")
@@ -936,14 +937,39 @@ def register_products_routes(
         bab2_materials = []
         sop_cpkb_url = None
         try:
-            formula_resp = supabase.table("product_formula_lines") \
-                .select("*, raw_materials(nama_dagang, kode_bahan_baku, raw_material_composition_variants(id, nama_varian, is_default))") \
-                .eq("product_id", product_id) \
-                .order("created_at").execute()
+            preview_available = True
+            try:
+                formula_resp = supabase.table("product_formula_lines") \
+                    .select(
+                        "*, raw_materials(nama_dagang, kode_bahan_baku, "
+                        "raw_material_composition_variants(id, nama_varian, is_default, "
+                        "raw_material_components(inci_name, function, percent_internal, is_bahan_aktif)), "
+                        "raw_material_components(inci_name, function, percent_internal, is_bahan_aktif, variant_id))"
+                    ) \
+                    .eq("product_id", product_id) \
+                    .order("created_at").execute()
+            except Exception as preview_err:
+                # Fail-soft: kolom/relasi komponen belum tersedia -> halaman dan
+                # dropdown varian tetap tampil, preview diberi state netral.
+                preview_available = False
+                print(
+                    f"Preview komposisi tidak tersedia buat produk {product_id}: "
+                    f"{preview_err}"
+                )
+                formula_resp = supabase.table("product_formula_lines") \
+                    .select(
+                        "*, raw_materials(nama_dagang, kode_bahan_baku, "
+                        "raw_material_composition_variants(id, nama_varian, is_default))"
+                    ) \
+                    .eq("product_id", product_id) \
+                    .order("created_at").execute()
             formula = formula_resp.data or []
 
             # Normalisasi embed raw_materials (dict vs list-of-1) + siapkan daftar
             # varian terurut (default dulu) per baris untuk dropdown Fase 4.
+            # Preview komposisi memakai aturan pilihan yang sama dengan dropdown:
+            # variant_id eksplisit -> default -> varian pertama; tanpa varian
+            # baru memakai komponen langsung (legacy).
             for line in formula:
                 rm_embed = line.get("raw_materials")
                 if isinstance(rm_embed, list):
@@ -952,12 +978,14 @@ def register_products_routes(
                 if not isinstance(rm_embed, dict):
                     rm_embed = {}
                     line["raw_materials"] = rm_embed
-                variants = rm_embed.get("raw_material_composition_variants") or []
-                if isinstance(variants, dict):
-                    variants = [variants]
-                line["rm_variants"] = sorted(
-                    variants,
-                    key=lambda v: (not v.get("is_default"), v.get("nama_varian") or ""),
+
+                variants, preview = prepare_line_preview(
+                    rm_embed, line.get("variant_id")
+                )
+                line["rm_variants"] = variants
+                line["selected_variant_id"] = preview.get("selected_variant_id")
+                line["rm_preview"] = (
+                    preview if preview_available else {"unavailable": True}
                 )
 
             rm_resp = supabase.table("raw_materials") \

@@ -13,6 +13,7 @@ from postgrest.exceptions import APIError
 from app.database import supabase
 from app.file_validation import validate_pdf_bytes
 from app import object_store
+from app.variant_components import normalize_components, normalize_variants
 
 
 def _is_deleted_product(embedded):
@@ -1135,12 +1136,46 @@ def register_raw_materials_routes(
 
     # ==================== ENDPOINT KELOLA VARIAN KOMPOSISI ====================
     @app.get("/raw-materials/{rm_id}/variants")
-    async def list_raw_material_variants(rm_id: str, current_user: dict = Depends(get_current_user)):
-        """JSON daftar varian sebuah bahan baku (dipakai modal edit + Fase 4 formula)."""
+    async def list_raw_material_variants(
+        rm_id: str,
+        include: str | None = None,
+        current_user: dict = Depends(get_current_user),
+    ):
+        """JSON daftar varian sebuah bahan baku (dipakai modal edit + Fase 4 formula).
+
+        Tanpa ``include=components`` respons tetap sama seperti sebelumnya.
+        Dengan ``include=components`` setiap varian membawa komponen INCI
+        terurut, plus ``legacy_components`` (hanya diisi kalau bahan baku belum
+        punya varian).
+        """
+        if (include or "").strip().lower() != "components":
+            resp = supabase.table("raw_material_composition_variants") \
+                .select("id, nama_varian, is_default") \
+                .eq("raw_material_id", rm_id).order("created_at").execute()
+            return JSONResponse(content={"success": True, "variants": resp.data or []})
+
         resp = supabase.table("raw_material_composition_variants") \
-            .select("id, nama_varian, is_default") \
+            .select(
+                "id, nama_varian, is_default, "
+                "raw_material_components(inci_name, function, percent_internal, is_bahan_aktif)"
+            ) \
             .eq("raw_material_id", rm_id).order("created_at").execute()
-        return JSONResponse(content={"success": True, "variants": resp.data or []})
+        variants = normalize_variants(resp.data or [])
+
+        legacy_components = []
+        if not variants:
+            legacy_resp = supabase.table("raw_material_components") \
+                .select("inci_name, function, percent_internal, is_bahan_aktif") \
+                .eq("raw_material_id", rm_id) \
+                .is_("variant_id", None) \
+                .execute()
+            legacy_components = normalize_components(legacy_resp.data or [])
+
+        return JSONResponse(content={
+            "success": True,
+            "variants": variants,
+            "legacy_components": legacy_components,
+        })
 
     @app.post("/raw-materials/{rm_id}/variants/add")
     async def add_raw_material_variant(
