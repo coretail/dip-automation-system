@@ -28,7 +28,7 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-ci.txt
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Install runtime and CI tools
