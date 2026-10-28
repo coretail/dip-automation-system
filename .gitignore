@@ -114,6 +114,7 @@ backup-rls/
 # Regression test temuan audit codebase 2026-10-21 (pure logic, tanpa koneksi/secret).
 !/tests/test_audit_regressions.py
 !/tests/test_profile_routes.py
+!/tests/test_raw_material_variants.py
 !/tests/e2e_profile_staging.py
 # Verifikasi state database staging read-only untuk temuan audit 2026-10-21.
 !/tests/verify_audit_db_state.py
