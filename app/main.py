@@ -1181,6 +1181,7 @@ async def login_submit(
             key="access_token",
             value=f"Bearer {session_token}",
             httponly=True,
+            secure=True,
             max_age=86400,
             samesite="lax"
         )
@@ -1188,6 +1189,7 @@ async def login_submit(
             key="greeting_cache",
             value=json.dumps(greeting),
             httponly=True,
+            secure=True,
             max_age=14400,  # samain sama masa berlaku JWT asli (4 jam), bukan 86400-nya cookie access_token
             samesite="lax"
         )
@@ -1203,8 +1205,8 @@ async def login_submit(
 async def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
     # Hapus cookie token yang tersimpan di browser
-    response.delete_cookie(key="access_token")
-    response.delete_cookie(key="greeting_cache")
+    response.delete_cookie(key="access_token", httponly=True, secure=True, samesite="lax")
+    response.delete_cookie(key="greeting_cache", httponly=True, secure=True, samesite="lax")
 
     # 💡 LOG LOGOUT
     waktu_logout = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")

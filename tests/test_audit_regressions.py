@@ -125,7 +125,7 @@ HTTP_VERBS = ("get", "post", "put", "delete", "patch", "head", "options")
 KNOWN_ISSUES: dict[str, str] = {
     "SEC-02": "assert_same_tenant tidak di-import modul mana pun; isolasi tenant praktis tidak terpasang.",
     "BE-07": "Isolasi tenant hanya sebagian; helper app/security.py masih dead code produksi.",
-    "SEC-04": "Cookie access_token tanpa secure=True (main.py:1121-1134) dan tanpa middleware security header (main.py:339).",
+    "SEC-04": "Tanpa middleware security header (main.py:339). Bagian cookie access_token secure=True sudah diperbaiki (SEC-19).",
     "SEC-07": "Nol security header: tidak ada CSP/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/HSTS.",
     "SEC-14": "escapeHtml punya 4 implementasi terpisah; target audit: satu helper global.",
     "SEC-16": "Logout masih dipicu via GET sehingga bisa dipaksa CSRF (main.py:1143); target: POST.",
