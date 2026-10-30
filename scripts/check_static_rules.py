@@ -80,11 +80,17 @@ def _safe_import_app(findings: list[str]):
     socket.getaddrinfo = blocked_socket
     supabase_package.create_client = blocked_create
     boto3.client = blocked_boto3
+    original_find_dotenv_files = None
     try:
         # Make repeated local runs deterministic without requiring a subprocess.
         for name in list(sys.modules):
             if name == "app.main" or name.startswith("app."):
                 del sys.modules[name]
+        # Simulate CI/Render (no .env on disk) so the G-11 guard passes; the
+        # guard's own behavior is unit-tested in tests/test_env_guard.py.
+        import app.env_guard as env_guard
+        original_find_dotenv_files = env_guard.find_dotenv_files
+        env_guard.find_dotenv_files = lambda: []
         import app.main as main_module
         if calls:
             _fail(findings, "app.main import created external clients/network: " + ", ".join(calls))

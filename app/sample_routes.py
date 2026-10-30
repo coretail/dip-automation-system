@@ -11,6 +11,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 WIB = ZoneInfo("Asia/Jakarta")
 
 
+def _sanitize_ilike(q: str) -> str:
+    # Sama dengan notes_routes/po_routes: buang karakter yang bisa menyuntik
+    # filter PostgREST di .or_() (koma, kurung, kutip, wildcard).
+    return re.sub(r"[%_,()\"'\\]", " ", q or "").strip()[:80]
+
+
 def register_sample_routes(
     app,
     get_current_user,
@@ -395,8 +401,9 @@ def register_sample_routes(
     async def sample_submissions_list(request: Request, search: str = None, current_user: dict = Depends(get_current_user)):
         try:
             query = supabase.table("sample_submissions").select("*, brands(*, producers(*))")
-            if search:
-                search_term = f"%{search}%"
+            search_clean = _sanitize_ilike(search)
+            if search_clean:
+                search_term = f"%{search_clean}%"
                 query = query.or_(f"sample_code.ilike.{search_term},product_name.ilike.{search_term}")
             res = query.order("created_at", desc=True).execute()
             submissions = res.data or []

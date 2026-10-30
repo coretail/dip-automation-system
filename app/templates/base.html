@@ -395,7 +395,12 @@
             }
 
             fetchNotesMentionCount();
-            let notesInterval = setInterval(fetchNotesMentionCount, 30000);
+            // Tab background tidak perlu polling (hemat request + hindari spam
+            // [SESSION EXPIRED] di server); badge disegarkan lagi saat tab visible.
+            let notesInterval = setInterval(function() {
+                if (document.visibilityState === 'hidden') return;
+                fetchNotesMentionCount();
+            }, 30000);
             window.__notesInterval = notesInterval;
             let notesVisibilityTimer = null;
             document.addEventListener('visibilitychange', function() {
