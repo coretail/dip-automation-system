@@ -109,13 +109,13 @@
                    oninput="filterTable()"
                    class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm focus:border-indigo-500 focus:outline-none">
         </div>
-        <select id="filter-perusahaan" onchange="filterTable()"
+        <select id="filter-perusahaan" aria-label="Filter perusahaan" onchange="filterTable()"
                 class="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:border-indigo-500 focus:outline-none">
             <option value="">Semua PT</option>
             <option value="PT Heka">PT Heka</option>
             <option value="PT Erfi">PT Erfi</option>
         </select>
-        <select id="filter-status" onchange="filterTable()"
+        <select id="filter-status" aria-label="Filter status" onchange="filterTable()"
                 class="border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:border-indigo-500 focus:outline-none">
             <option value="">Semua Status</option>
             <option value="belum_terdaftar">Belum Terdaftar</option>
@@ -195,9 +195,9 @@
                         <div class="text-xs font-mono text-gray-500">
                             BPOM:
                             {% if product.status_na == 'aktif' %}
-                                <span class="text-green-600 font-medium">{{ product.no_na_produk }}</span>
+                                <span class="text-green-700 font-medium">{{ product.no_na_produk }}</span>
                             {% elif product.status_na == 'akan_expired' %}
-                                <span class="text-amber-600 font-medium" title="Masa berlaku NA akan habis dalam 6 bulan">⚠ {{ product.no_na_produk }} ({{ product.na_days_remaining }} hari lagi)</span>
+                                <span class="text-amber-700 font-medium" title="Masa berlaku NA akan habis dalam 6 bulan">⚠ {{ product.no_na_produk }} ({{ product.na_days_remaining }} hari lagi)</span>
                             {% elif product.status_na == 'expired' %}
                                 <span class="text-red-600 font-medium" title="Masa berlaku NA sudah habis">{{ product.no_na_produk }} (Expired {{ -product.na_days_remaining }} hari lalu)</span>
                             {% else %}

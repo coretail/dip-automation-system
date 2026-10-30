@@ -398,7 +398,18 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return RedirectResponse(url="/login?error=too_many_attempts", status_code=303)
 
 # Setup static files (Tailwind CSS) dan Jinja2 Templates
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+class _CachedStaticFiles(StaticFiles):
+    """StaticFiles + Cache-Control supaya aset (css/js/gambar) tidak di-download ulang tiap kunjungan.
+    1 jam: cukup untuk menghemat request, tapi perubahan theme.css/sidebar.js tetap cepat terlihat setelah deploy."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code in (200, 304):
+            response.headers.setdefault("Cache-Control", "public, max-age=3600")
+        return response
+
+
+app.mount("/static", _CachedStaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 

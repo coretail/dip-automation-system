@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{% block meta_description %}DIP Kosmetik Automation: sistem dokumentasi regulatori kosmetik BPOM untuk PT Erfi dan PT Heka.{% endblock %}">
     <title>{% block title %}DIP Kosmetik Automation{% endblock %}</title>
 <script>
       // Tema: light | terra | rose | dark (lihat app/static/theme.css).
@@ -46,6 +47,8 @@
        };
     </script>
     <!-- Tailwind CSS via CDN -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/theme.css">
@@ -104,7 +107,7 @@
                     <div class="relative" id="ed-notification-wrapper">
                         <button id="ed-notification-btn" class="relative p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Peringatan Expired & Notifikasi" title="Peringatan Expired & Notifikasi" aria-expanded="false" aria-controls="ed-notification-dropdown">
                             <i class="fa-solid fa-bell text-lg"></i>
-                            <span id="ed-notification-badge" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
+                            <span id="ed-notification-badge" class="absolute -top-1 -right-1 bg-red-700 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
                         </button>
                         <!-- Dropdown -->
                         <div id="ed-notification-dropdown" class="hidden absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl border border-gray-200 z-50">
@@ -262,9 +265,9 @@
                 }
             });
 
+            let edInFlight = false;
             fetchEDNotifications();
 
-            let edInFlight = false;
             async function fetchEDNotifications() {
                 if (edInFlight) return;
                 edInFlight = true;
@@ -292,7 +295,7 @@
                                     <div class="flex-1 min-w-0">
                                         <p class="font-medium text-gray-900 truncate">${escapeHtml(item.nama_dagang)}</p>
                                         <p class="text-xs text-gray-500">Batch: ${escapeHtml(item.no_batch)} | ${escapeHtml(item.perusahaan)}</p>
-                                        <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}">
+                                        <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-700 font-medium' : 'text-amber-700 font-medium'}">
                                             ${item.days_remaining <= 0 ? 'EXPIRED' : `Sisa ${item.days_remaining} hari`} (ED: ${item.tanggal_ed})
                                         </p>
                                     </div>
@@ -313,7 +316,7 @@
                                     <div class="flex-1 min-w-0">
                                         <p class="font-medium text-gray-900 truncate">${escapeHtml(item.nama_produk)}</p>
                                         <p class="text-xs text-gray-500">${escapeHtml(item.no_na_produk)}</p>
-                                        <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-600 font-medium' : 'text-amber-600 font-medium'}">
+                                        <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-700 font-medium' : 'text-amber-700 font-medium'}">
                                             ${item.days_remaining <= 0 ? `Expired ${-item.days_remaining} hari yang lalu` : `Sisa ${item.days_remaining} hari`}
                                         </p>
                                     </div>
