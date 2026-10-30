@@ -70,6 +70,10 @@ jobs:
           python tests/test_log_activity_normalize.py
           python tests/test_profile_routes.py
           python tests/test_variant_component_preview.py
+          python tests/test_profile_validation.py
+          python tests/test_admin_create_user_display_name.py
+          python tests/test_get_current_user_display_name.py
+          python tests/test_profile_display_name_route.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt

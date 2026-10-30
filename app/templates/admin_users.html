@@ -156,6 +156,7 @@
                                         </div>
                                         <div>
                                             <p class="font-bold text-gray-800">{{ u.full_name }}</p>
+                                            {% if u.display_name and u.display_name != u.full_name %}<p class="text-xs text-gray-500">Nama tampilan: {{ u.display_name }}</p>{% endif %}
                                             <p class="text-xs text-gray-400">ID: {{ u.id[:8] }}...</p>
                                         </div>
                                     </div>

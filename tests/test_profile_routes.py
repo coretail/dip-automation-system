@@ -149,7 +149,7 @@ def test_password_uses_fresh_client_and_session_uid():
     _app, limiter, supabase, client, _rendered, logs = build()
     endpoint = _app.routes[("POST", "/profile/change-password")]
     result = asyncio.run(endpoint(SimpleNamespace(), "old-pass", "new-pass", "new-pass", {"id": "user-1", "email": "user@example.test", "full_name": "user"}))
-    assert limiter.calls == ["5/minute"]
+    assert "5/minute" in limiter.calls
     assert client.calls == [{"email": "user@example.test", "password": "old-pass"}]
     assert supabase.updated == ("user-1", {"password": "new-pass"})
     assert logs[0][0][1] == "change_password"

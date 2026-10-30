@@ -80,7 +80,8 @@
 <body class="bg-gray-50 text-gray-900 font-sans antialiased">
 
     {% set _nav_user = current_user if current_user is defined else (user if user is defined else none) %}
-    {% set _nav_initial = ((_nav_user.full_name if _nav_user and _nav_user.full_name else 'U') | string)[0] | upper %}
+    {% set _nav_display_name = (_nav_user.display_name if _nav_user and _nav_user.display_name else (_nav_user.full_name if _nav_user and _nav_user.full_name else 'U')) %}
+    {% set _nav_initial = ((_nav_display_name | string)[0] | upper) %}
 
     <!-- Navbar -->
     <nav class="top-navbar bg-indigo-600 text-white shadow-md no-print" aria-label="Navigasi atas">
@@ -157,13 +158,13 @@
                                 aria-label="Menu akun" title="Menu akun"
                                 aria-haspopup="true" aria-expanded="false" aria-controls="user-menu-dropdown">
                             <span class="w-8 h-8 rounded-full bg-indigo-500 text-white text-xs font-bold flex items-center justify-center shrink-0">{{ _nav_initial }}</span>
-                            <span class="hidden sm:inline max-w-[9rem] truncate text-sm font-medium">{{ _nav_user.full_name if _nav_user else 'Akun' }}</span>
+                            <span class="hidden sm:inline max-w-[9rem] truncate text-sm font-medium">{{ _nav_display_name if _nav_user else 'Akun' }}</span>
                             <i class="fa-solid fa-chevron-down text-xs opacity-80" aria-hidden="true"></i>
                         </button>
                         <div id="user-menu-dropdown"
                              class="hidden absolute right-0 mt-2 w-60 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
                             <div class="px-4 py-3 border-b border-gray-200">
-                                <p class="text-sm font-semibold text-gray-900 truncate">{{ _nav_user.full_name if _nav_user else '-' }}</p>
+                                <p class="text-sm font-semibold text-gray-900 truncate">{{ _nav_display_name if _nav_user else '-' }}</p>
                                 <p class="text-xs text-gray-500 capitalize">{{ _nav_user.role if _nav_user else '-' }}</p>
                             </div>
                             <a href="/profile"
