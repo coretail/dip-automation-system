@@ -123,11 +123,14 @@ def register_admin_users_routes(
 
             new_uid = auth_res.user.id
 
-            # Inject ke tabel profiles dengan role yang dipilih admin (default staff)
+            # Inject ke tabel profiles dengan role yang dipilih admin (default staff).
+            # display_name diisi dengan clean_username[:60] (sesuai constraint DB)
+            # agar akun baru punya nama tampilan default yang sama dengan username.
             final_role = role if role in ("staff", "admin") else "staff"
             supabase.table("profiles").insert({
                 "id": new_uid,
                 "full_name": clean_username,
+                "display_name": clean_username[:60],
                 "role": final_role,
                 # Jangan pakai string "now()" (PostgREST simpan sebagai literal & bisa gagal cast ke timestamptz).
                 # Kirim timestamp ISO nyata dari Python.
@@ -149,6 +152,7 @@ def register_admin_users_routes(
                 changes=[
                     {"field": "Username", "new": clean_username},
                     {"field": "Email", "new": mask_email(clean_email)},
+                    {"field": "Display Name", "new": clean_username[:60]},
                     {"field": "Role", "new": final_role},
                     {"field": "Perusahaan", "new": new_perusahaan},
                 ],

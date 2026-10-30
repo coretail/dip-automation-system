@@ -614,21 +614,46 @@ async def get_current_user(request: Request):
             )
         
         # 4. Tarik info nama & role dari tabel profiles
-        profile_res = supabase.table("profiles").select("full_name", "role", "perusahaan").eq("id", user_data.id).execute()
-        
+        # display_name di-select secara fail-soft: jika kolom belum ada (mis.
+        # sebelum migrasi 011 di-deploy), query akan diulang tanpa kolom itu
+        # agar tidak menyebabkan 401 massal.
+        profile_res = (
+            supabase.table("profiles")
+            .select("full_name, display_name, role, perusahaan")
+            .eq("id", user_data.id)
+            .execute()
+        )
+
+        # Jika kolom display_name belum ada di DB (PostgREST error),
+        # retry tanpa display_name untuk menghindari 401 massal.
+        if not profile_res.data and profile_res.error:
+            try:
+                profile_res = (
+                    supabase.table("profiles")
+                    .select("full_name, role, perusahaan")
+                    .eq("id", user_data.id)
+                    .execute()
+                )
+            except Exception:
+                pass
+
         user_role = "staff"
         full_name = "User Lab"
-        
+        display_name = None
+
         user_perusahaan = None
         if profile_res.data:
-            user_role = profile_res.data[0].get("role", "staff")
-            full_name = profile_res.data[0].get("full_name", "User Lab")
-            user_perusahaan = profile_res.data[0].get("perusahaan")
+            row = profile_res.data[0] or {}
+            user_role = row.get("role", "staff")
+            full_name = row.get("full_name", "User Lab")
+            user_perusahaan = row.get("perusahaan")
+            display_name = row.get("display_name")
 
         return {
             "id": user_data.id,
             "email": user_data.email,
             "full_name": full_name,
+            "display_name": display_name,
             "role": user_role,
             "perusahaan": user_perusahaan,
         }
@@ -1126,10 +1151,15 @@ async def login_submit(
             print(f"[PRESENCE] Gagal set online saat login: {e}")
 
         # Generate greeting (waktu + kalimat AI) sekali di sini, dipakai terus
-        # sepanjang sesi (gak manggil AI lagi tiap buka dashboard)
+        # sepanjang sesi (gak manggil AI lagi tiap buka dashboard).
+        # greeting_cache tidak diperbarui saat profil di-update: isinya frasa AI
+        # yang dibuat saat login. Perubahan display_name muncul di sapaan setelah
+        # login berikutnya.
         import json
-        profile_resp = supabase_admin.table("profiles").select("full_name").eq("id", user_data.id).execute()
-        nama_user = profile_resp.data[0]["full_name"] if profile_resp.data else "Kamu"
+        profile_resp = supabase_admin.table("profiles").select("full_name, display_name").eq("id", user_data.id).execute()
+        profile_row = profile_resp.data[0] if profile_resp.data else {}
+        # greeting menggunakan display_name (atau fallback ke full_name)
+        nama_user = profile_row.get("display_name") or profile_row.get("full_name") or "Kamu"
 
         greeting = get_time_greeting()
         ai_phrase = await _generate_ai_greeting_phrase(nama_user)

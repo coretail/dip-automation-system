@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.profile_validation import validate_display_name
+
 
 WIB = ZoneInfo("Asia/Jakarta")
 MIN_PASSWORD_LENGTH = 6
@@ -14,12 +16,15 @@ MAX_PASSWORD_LENGTH = 72
 
 STATUS_MESSAGES = {
     "password_changed": "Password berhasil diubah. Sesi di perangkat lain dapat tetap aktif sampai JWT kedaluwarsa.",
+    "display_name_changed": "Nama tampilan berhasil diperbarui. Perubahan muncul di navbar dan dashboard setelah halaman dimuat ulang.",
 }
 ERROR_MESSAGES = {
     "password_invalid": "Password baru harus 6–72 karakter dan berbeda dari password lama.",
     "password_mismatch": "Konfirmasi password baru tidak cocok.",
     "current_password_invalid": "Password lama tidak valid.",
     "password_failed": "Password tidak dapat diubah. Silakan coba lagi.",
+    "display_name_invalid": "Nama tampilan tidak valid. Pastikan 1–60 karakter, tidak ada karakter kontrol, dan spasi sudah dibersihkan.",
+    "display_name_failed": "Nama tampilan gagal diperbarui. Silakan coba lagi.",
 }
 
 ACTION_LABELS = {
@@ -174,3 +179,79 @@ def register_profile_routes(
             return RedirectResponse(url="/profile?status=password_changed", status_code=303)
         except Exception:
             return RedirectResponse(url="/profile?error=password_failed", status_code=303)
+
+    @app.post("/profile/display-name")
+    @limiter.limit("10/minute")
+    async def update_display_name(
+        request: Request,
+        display_name: str = Form(""),
+        current_user: dict = Depends(get_current_user),
+    ):
+        # Validasi nama tampilan menggunakan fungsi murni di profile_validation.py.
+        # Aturan: trim, rapikan spasi ganda, panjang 1-60 code point,
+        # tolak karakter kontrol (Cc) dan format (Cf). Input kosong/maybe spasi
+        # di-set ke NULL (fallback ke full_name).
+        cleaned, error = validate_display_name(display_name)
+        if error:
+            log_activity(
+                current_user,
+                "update",
+                "user",
+                current_user["id"],
+                current_user.get("full_name") or "Current user",
+                changes=[{"field": "Display Name", "note": f"rejected: {error}"}],
+                request=request,
+                outcome="rejected",
+            )
+            return RedirectResponse(
+                url=f"/profile?error=display_name_invalid",
+                status_code=303,
+            )
+
+        # Ambil nilai lama untuk diff di activity log.
+        old_display_name = None
+        try:
+            profile_res = (
+                supabase.table("profiles")
+                .select("display_name")
+                .eq("id", current_user["id"])
+                .limit(1)
+                .execute()
+            )
+            if profile_res.data:
+                old_display_name = profile_res.data[0].get("display_name")
+        except Exception:
+            pass
+
+        try:
+            supabase.table("profiles").update({
+                "display_name": cleaned,
+                "updated_at": datetime.now(WIB).isoformat(),
+            }).eq("id", current_user["id"]).execute()
+
+            log_activity(
+                current_user,
+                "update",
+                "user",
+                current_user["id"],
+                current_user.get("full_name") or "Current user",
+                changes=[
+                    {"field": "Display Name", "old": old_display_name, "new": cleaned},
+                ],
+                request=request,
+                outcome="success",
+            )
+            return RedirectResponse(url="/profile?status=display_name_changed", status_code=303)
+        except Exception as e:
+            print(f"Gagal update display_name: {e}")
+            log_activity(
+                current_user,
+                "update",
+                "user",
+                current_user["id"],
+                current_user.get("full_name") or "Current user",
+                changes=[{"field": "Display Name", "note": "update gagal (detail di log server)"}],
+                request=request,
+                outcome="failed",
+            )
+            return RedirectResponse(url="/profile?error=display_name_failed", status_code=303)
