@@ -776,7 +776,8 @@ def section_routes() -> None:
         "route publik tanpa auth: %d (%s)" % (len(public_routes), ", ".join(sorted(public_routes))),
     )
 
-    # SEC-17 - rate limit wajib ada di /login dan /profile/change-password.
+    # SEC-17 - rate limit wajib ada di /login, /profile/change-password,
+    # dan /profile/display-name.
     # Audit: endpoint admin/upload/heartbeat tetap belum dilimit.
     limit_hits: list[str] = []
     for path in app_py_files():
@@ -792,10 +793,11 @@ def section_routes() -> None:
                 "%s:%d -> %s %s" % (path.name, line_of(text, m.start()), method, target)
             )
     check(
-        "SEC-17 rate limit login dan ganti password sendiri tetap ada",
-        len(limit_hits) == 2
+        "SEC-17 rate limit login, ganti password, dan display-name tetap ada",
+        len(limit_hits) == 3
         and any("POST /login" in hit for hit in limit_hits)
-        and any("POST /profile/change-password" in hit for hit in limit_hits),
+        and any("POST /profile/change-password" in hit for hit in limit_hits)
+        and any("POST /profile/display-name" in hit for hit in limit_hits),
         "dekorator @limiter.limit: %s" % ("; ".join(limit_hits) if limit_hits else "tidak ada"),
     )
 
