@@ -20,7 +20,7 @@
 ## CI/CD (GitHub Actions)
 - Sumber kebenaran pipeline adalah `.github/workflows/ci.yml`, `.github/workflows/staging-e2e.yml`, `.github/workflows/dependency-audit.yml`, dan `.github/dependabot.yml`.
 - `ci.yml` berjalan pada `pull_request` dan `push` ke `main`. Job `quality` tidak memakai secret; env dummy level job berisi `SUPABASE_URL=https://ci.invalid.supabase.co`, `SUPABASE_KEY=ci-dummy-anon-key`, `SUPABASE_SERVICE_ROLE_KEY=ci-dummy-service-role-key`, dan `STORAGE_BACKEND=supabase`. `DIP_APP_ENV` **tidak boleh diset** di CI.
-- Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, sembilan test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
+  - Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, tiga belas test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
 - `staging-e2e.yml` hanya memiliki `workflow_dispatch`; trigger `push` dinonaktifkan sampai diputuskan lain. Workflow memakai GitHub Environment `staging`, concurrency tunggal dengan `cancel-in-progress: false`, serta suite `all`, `smoke`, `upload`, `activity`, dan `audit`. Suite `all` tidak memuat `upload`; suite upload memerlukan backend `dual`/`r2`.
 - `dependency-audit.yml` berjalan melalui cron mingguan hari Senin dan `workflow_dispatch`; `pip-audit -r requirements.txt` membuat job gagal bila ada advisory. Pengecualian hanya boleh memakai `--ignore-vuln <ID>` dengan komentar yang mencatat alasan, owner, dan tanggal review.
 - `.github/dependabot.yml` mengatur ekosistem `pip` dan `github-actions` dengan jadwal mingguan; seluruh update masuk melalui PR dan wajib melewati CI.
@@ -86,7 +86,7 @@
 - Untuk perubahan SQL, file sudah direview dan eksekusinya manual lewat Supabase SQL Editor oleh pemilik repo, atau oleh agen hanya atas otorisasi eksplisit pemilik repo per-jalur lewat Supabase Management API (staging lebih dulu, hasil staging dibaca sebelum produksi).
 
 ## 8. Dokumen sumber
-- `README.md`: orientasi dan perintah; tabel migrasi kini mencantumkan 001–010 (009 tidak dipakai) dan inventaris test disesuaikan.
+- `README.md`: orientasi dan perintah; tabel migrasi kini mencantumkan 001–011 (009 tidak dipakai) dan inventaris test disesuaikan.
 - `.github/workflows/*`: sumber kebenaran konfigurasi CI/CD; README dan panduan operasional harus diselaraskan bila perintah pipeline berubah.
 - `panduan_dip_automation_system.md`: panduan operasional/teknis utama dan detail tema, PDF, keamanan, serta migrasi.
 - `catatan/catatan_investigasi_auth500_staging.md`: investigasi Auth staging historis; hasil live belum diverifikasi ulang.

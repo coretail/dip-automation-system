@@ -617,16 +617,19 @@ async def get_current_user(request: Request):
         # display_name di-select secara fail-soft: jika kolom belum ada (mis.
         # sebelum migrasi 011 di-deploy), query akan diulang tanpa kolom itu
         # agar tidak menyebabkan 401 massal.
-        profile_res = (
-            supabase.table("profiles")
-            .select("full_name, display_name, role, perusahaan")
-            .eq("id", user_data.id)
-            .execute()
-        )
+        display_name = None
+        user_role = "staff"
+        full_name = "User Lab"
+        user_perusahaan = None
 
-        # Jika kolom display_name belum ada di DB (PostgREST error),
-        # retry tanpa display_name untuk menghindari 401 massal.
-        if not profile_res.data and profile_res.error:
+        try:
+            profile_res = (
+                supabase.table("profiles")
+                .select("full_name, display_name, role, perusahaan")
+                .eq("id", user_data.id)
+                .execute()
+            )
+        except Exception:
             try:
                 profile_res = (
                     supabase.table("profiles")
@@ -635,14 +638,9 @@ async def get_current_user(request: Request):
                     .execute()
                 )
             except Exception:
-                pass
+                profile_res = None
 
-        user_role = "staff"
-        full_name = "User Lab"
-        display_name = None
-
-        user_perusahaan = None
-        if profile_res.data:
+        if profile_res and profile_res.data:
             row = profile_res.data[0] or {}
             user_role = row.get("role", "staff")
             full_name = row.get("full_name", "User Lab")

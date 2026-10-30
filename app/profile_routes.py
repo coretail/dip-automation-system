@@ -204,7 +204,7 @@ def register_profile_routes(
                 outcome="rejected",
             )
             return RedirectResponse(
-                url=f"/profile?error=display_name_invalid",
+                url="/profile?error=display_name_invalid",
                 status_code=303,
             )
 

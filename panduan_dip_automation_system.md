@@ -72,6 +72,7 @@ Sistem menerapkan mekanisme *Role-Based Access Control (RBAC)* dengan 2 tingkat 
 - **Deteksi Sesi Expired:** jika sesi habis, sistem menampilkan peringatan (*session expired*) dan mengarahkan kembali ke halaman login secara otomatis.
 - **Proteksi Brute-Force:** endpoint `POST /login` dibatasi maksimal **5 percobaan per menit per IP** memakai `slowapi`, dengan alert + countdown timer di halaman login.
 - **Sapaan AI (opsional):** saat login, sistem membangkitkan satu kalimat sapaan melalui Google Gemini API dan menyimpannya di cookie `greeting_cache` (4 jam) supaya tidak dipanggil ulang tiap buka dashboard. Fitur ini **nonaktif otomatis** bila `GEMINI_API_KEY` tidak diisi.
+- **Nama Tampilan (Display Name):** kolom `profiles.display_name` (VARCHAR 60, CHECK `LENGTH(display_name) >= 1`) memungkinkan user mengganti nama tampilan yang dipakai di navbar, dashboard, dan sapaan login. Update via `POST /profile/display-name` (rate-limited 10/m). `get_current_user` fail-soft: bila kolom belum ada di DB, query di-retry tanpa kolom itu sehingga tidak menyebabkan 401. Nama tampilan baru muncul setelah login berikutnya (greeting cache tidak diperbarui otomatis). Akun baru di Panel Admin User menggunakan `username[:60]` sebagai default `display_name`.
 
 ### 2.3 Panel Admin User (`/admin/users`) & Audit Logging
 Melalui menu **Kelola User** (khusus role Admin), Admin dapat:
@@ -582,8 +583,9 @@ Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadshee
 | 007 | `007_add_public_access_capability.sql` | Menambah `public_access_enabled`, `public_access_token`, `public_access_revoked_at`, `bpom_registered_link` + index token | Portal publik `/dip` gagal (kolom tidak ada; fail-closed → 404 untuk semua) |
 | 008 | `008_products_soft_delete_contract.sql` | Kontrak soft delete: kolom `is_deleted`/`deleted_at`, CHECK konsistensi, index | Produk di Sampah tidak konsisten; query sampah/dashboard tanpa index |
 | 010 | `010_replace_product_formula.sql` | Fungsi atomik `replace_product_formula` (transaksi DELETE+INSERT) | Penyimpanan formula Bab 2 gagal dengan pesan "fungsi transaksi belum terpasang" |
+| 011 | `011_add_profile_display_name_and_avatar.sql` | Kolom `display_name`, `avatar_path`, `avatar_updated_at` di `profiles` + CHECK constraint | Nama tampilan & foto profil tidak tersedia |
 
-> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Semua file SQL dijalankan manual lewat Supabase SQL Editor, staging lebih dulu.
+> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). `011` sudah dipersiapkan tapi belum dieksekusi — jalankan manual via Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **012**.
 
 > ⚠️ Skema produksi **tidak dikelola otomatis** — jalankan file SQL ini manual melalui Supabase SQL Editor.
 
@@ -743,7 +745,7 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
 
 ### 6.2 Integrasi Supabase Storage & PostgreSQL Database
 - **Database:** Supabase PostgreSQL. Aplikasi memakai **satu klien Supabase global** yang dibangun dari *service role key* sehingga melewati RLS untuk seluruh request. Tabel yang dipakai aplikasi:
-  - **Master & Produk:** `profiles` (user, role, `is_protected`, data presence), `products`, `brands`, `producers`, `product_formula_lines`, `product_finished_specs`, `product_batches`, `product_attachments` (lampiran produk non-DIP, lihat §4.5a).
+  - **Master & Produk:** `profiles` (user, role, `is_protected`, `display_name`, `avatar_path`, `avatar_updated_at`, data presence), `products`, `brands`, `producers`, `product_formula_lines`, `product_finished_specs`, `product_batches`, `product_attachments` (lampiran produk non-DIP, lihat §4.5a).
   - **Bahan Baku:** `raw_materials`, `raw_material_components`, `raw_material_composition_variants` (varian komposisi), `raw_material_batches`, `raw_material_company_docs` (dokumen per perusahaan).
   - **Produksi:** `purchase_orders`, `purchase_order_items`.
   - **Kolaborasi:** `team_notes`, `team_note_mentions`.

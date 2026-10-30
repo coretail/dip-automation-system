@@ -1,11 +1,19 @@
 """Pure-local tests for get_current_user fail-soft display_name handling.
 
-Tests both scenarios:
+Tests scenarios:
   - Database has display_name column: query succeeds, display_name is populated.
-  - Database lacks display_name column (pre-migration): query fails, retry
-    without display_name succeeds, display_name falls back to None gracefully.
-
+  - Database lacks display_name column (pre-migration): APIError is raised,
+    retry without display_name succeeds, display_name falls back to None.
+  - No profile row returned: display_name defaults to None, full_name defaults
+    to "User Lab".
 No real Supabase/network connection is used.
+
+Per AGENTS.md, tests/test_auth_matrix.py imports app.main which requires
+SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY at import time — these are provided
+via os.environ.setdefault above, but we do NOT import app.main here to avoid
+creating a real Supabase client. Instead we replicate the exact query logic
+pattern from get_current_user (lines ~616-650 of app/main.py) and verify it
+behaves correctly with the mock.
 """
 import os
 from types import SimpleNamespace
@@ -16,26 +24,83 @@ os.environ.setdefault("SUPABASE_KEY", "ci-dummy-anon-key")
 os.environ.setdefault("STORAGE_BACKEND", "supabase")
 
 
-# Simulate the fail-soft logic from get_current_user without importing
-# app.main (which would create real Supabase client at module import time).
-# We replicate the exact logic pattern for unit testing.
+class APIError(Exception):
+    """Simulates postgrest.exceptions.APIError for missing-column scenario."""
 
-def _simulate_get_current_user_query(supabase, uid):
-    """Replicate the fail-soft query logic from app.main.get_current_user.
+    def __init__(self, message, code="PGRST202"):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = {}
+        self.hint = ""
 
-    Try select with display_name; if that errors (column missing), retry
-    without display_name. Return (row_dict, has_display_name_column).
+
+class FakeRequestBuilder:
+    """Mock Supabase request builder.
+
+    Each call to .execute() raises APIError if the select columns contain
+    'display_name' AND the scenario is 'without_column'. Otherwise returns
+    the configured data.
     """
-    # 1. First attempt: select with display_name
-    profile_res = (
-        supabase.table("profiles")
-        .select("full_name, display_name, role, perusahaan")
-        .eq("id", uid)
-        .execute()
-    )
 
-    # 2. Fail-soft: if error (e.g., column doesn't exist), retry without display_name
-    if not profile_res.data and profile_res.error:
+    def __init__(self, scenario="with_column", profile_data=None, error=None):
+        self.scenario = scenario
+        self._profile_data = profile_data
+        self._error = error
+        self._cols_str = ""
+
+    def select(self, *cols):
+        self._cols_str = " ".join(str(c) for c in cols) if cols else ""
+        return self
+
+    def eq(self, key, value):
+        return self
+
+    def execute(self):
+        if "display_name" in self._cols_str and self.scenario == "without_column":
+            raise APIError("column 'display_name' does not exist", code="PGRST202")
+        if self._error:
+            return SimpleNamespace(data=None, error=self._error)
+        return SimpleNamespace(data=self._profile_data, error=None)
+
+
+class FakeSupabase:
+    """Mock Supabase client. Returns FakeRequestBuilder from .table()."""
+
+    def __init__(self, scenario="with_column", profile_data=None):
+        self.scenario = scenario
+        self._profile_data = profile_data
+
+    def table(self, name):
+        assert name == "profiles", f"unexpected table: {name}"
+        return FakeRequestBuilder(
+            scenario=self.scenario,
+            profile_data=self._profile_data,
+        )
+
+
+def _get_current_user_query_pattern(supabase, uid):
+    """Replicates the exact fail-soft query logic from app.main.get_current_user.
+
+    Lines ~616-650 of app/main.py:
+      1. Try select with display_name in try/except Exception
+      2. On exception, retry without display_name
+      3. Handle empty data with `.data[0] or {}` pattern
+      4. display_name defaults to None if not present
+    """
+    display_name = None
+    user_role = "staff"
+    full_name = "User Lab"
+    user_perusahaan = None
+
+    try:
+        profile_res = (
+            supabase.table("profiles")
+            .select("full_name, display_name, role, perusahaan")
+            .eq("id", uid)
+            .execute()
+        )
+    except Exception:
         try:
             profile_res = (
                 supabase.table("profiles")
@@ -44,109 +109,96 @@ def _simulate_get_current_user_query(supabase, uid):
                 .execute()
             )
         except Exception:
-            pass
+            profile_res = None
 
-    row = (profile_res.data or [{}])[0] if profile_res.data else {}
-    return row
+    if profile_res and profile_res.data:
+        row = profile_res.data[0] or {}
+        user_role = row.get("role", "staff")
+        full_name = row.get("full_name", "User Lab")
+        user_perusahaan = row.get("perusahaan")
+        display_name = row.get("display_name")
 
-
-class FakeQuery:
-    def __init__(self, data=None, error=None):
-        self._data = data
-        self._error = error
-        self._select_cols = None
-        self._eq_filter = None
-
-    def select(self, *cols):
-        self._select_cols = cols if cols else None
-        return self
-
-    def eq(self, key, value):
-        self._eq_filter = (key, value)
-        return self
-
-    def execute(self):
-        return SimpleNamespace(data=self._data, error=self._error)
-
-
-class FakeSupabase:
-    """Mock where the first select (with display_name) fails, second (without) succeeds."""
-
-    def __init__(self, scenario="with_column"):
-        self.scenario = scenario
-
-    def table(self, name):
-        assert name == "profiles"
-        return self
-
-    def select(self, *cols):
-        self._cols = cols
-        self._cols_str = " ".join(cols)
-        return self
-
-    def eq(self, key, value):
-        return self
-
-    def execute(self):
-        if "display_name" in self._cols_str:
-            if self.scenario == "with_column":
-                return SimpleNamespace(
-                    data=[{"full_name": "budi", "display_name": "Budiman", "role": "staff", "perusahaan": "PT Heka"}],
-                    error=None,
-                )
-            else:
-                # Column doesn't exist → PostgREST returns error with no data
-                return SimpleNamespace(data=[], error="column 'display_name' does not exist")
-        else:
-            # Retry without display_name
-            return SimpleNamespace(
-                data=[{"full_name": "budi", "display_name": None, "role": "staff", "perusahaan": "PT Heka"}],
-                error=None,
-            )
+    return {
+        "full_name": full_name,
+        "display_name": display_name,
+        "role": user_role,
+        "perusahaan": user_perusahaan,
+    }
 
 
 def test_current_user_with_display_name_column():
     """When DB has display_name column, it is fetched correctly."""
-    sb = FakeSupabase(scenario="with_column")
-    row = _simulate_get_current_user_query(sb, "user-1")
-    assert row["display_name"] == "Budiman"
-    assert row["full_name"] == "budi"
-    assert row["role"] == "staff"
+    profile_data = [
+        {
+            "full_name": "budi",
+            "display_name": "Budiman",
+            "role": "staff",
+            "perusahaan": "PT Heka",
+        }
+    ]
+    sb = FakeSupabase(scenario="with_column", profile_data=profile_data)
+    result = _get_current_user_query_pattern(sb, "user-1")
+
+    assert result["display_name"] == "Budiman"
+    assert result["full_name"] == "budi"
+    assert result["role"] == "staff"
+    assert result["perusahaan"] == "PT Heka"
     print("[PASS] get_current_user fetches display_name when column exists")
 
 
 def test_current_user_fail_soft_no_display_name_column():
-    """When DB lacks display_name column, query retries without it; no 401."""
-    sb = FakeSupabase(scenario="without_column")
-    row = _simulate_get_current_user_query(sb, "user-1")
-    # After fail-soft retry, row should have data (full_name, role, perusahaan)
-    assert row["full_name"] == "budi"
-    assert row["role"] == "staff"
-    assert row["perusahaan"] == "PT Heka"
-    # display_name should be None (not present in retry data)
-    assert row.get("display_name") is None
-    print("[PASS] get_current_user fail-soft retries without display_name column")
+    """When DB lacks display_name column, APIError raised, retry succeeds.
+
+    This validates the fail-soft logic: the exception from the first select
+    (missing column) is caught, and a retry without display_name succeeds
+    without causing a 401.
+    """
+    profile_data = [
+        {
+            "full_name": "budi",
+            "display_name": None,  # not in retry select, so absent
+            "role": "staff",
+            "perusahaan": "PT Heka",
+        }
+    ]
+    sb = FakeSupabase(scenario="without_column", profile_data=profile_data)
+    result = _get_current_user_query_pattern(sb, "user-1")
+
+    assert result["display_name"] is None
+    assert result["full_name"] == "budi"
+    assert result["role"] == "staff"
+    assert result["perusahaan"] == "PT Heka"
+    print("[PASS] get_current_user fail-soft: APIError caught, retry succeeds")
+
+
+def test_current_user_no_profile_row():
+    """When profile_res.data is empty (no matching profile row),
+    display_name defaults to None, full_name defaults to 'User Lab'."""
+    sb = FakeSupabase(scenario="with_column", profile_data=[])
+    result = _get_current_user_query_pattern(sb, "user-1")
+
+    assert result["display_name"] is None
+    assert result["full_name"] == "User Lab"
+    assert result["role"] == "staff"
+    assert result["perusahaan"] is None
+    print("[PASS] get_current_user: empty data -> defaults (no AttributeError)")
 
 
 def test_display_name_none_falls_back_to_full_name():
-    """When display_name is None, the UI should fall back to full_name."""
-    sb = FakeSupabase(scenario="with_column")
-    sb_scenario = FakeSupabase(scenario="with_column")
-    # Override to return None display_name
-    class FakeSupabaseNone:
-        def table(self, name):
-            return self
-        def select(self, *cols):
-            return self
-        def eq(self, *args, **kwargs):
-            return self
-        def execute(self):
-            return SimpleNamespace(data=[{"full_name": "budi", "display_name": None, "role": "staff", "perusahaan": None}], error=None)
+    """When display_name is None (column exists but value is NULL),
+    the effective greeting name should fall back to full_name."""
+    profile_data = [
+        {
+            "full_name": "budi",
+            "display_name": None,
+            "role": "staff",
+            "perusahaan": None,
+        }
+    ]
+    sb = FakeSupabase(scenario="with_column", profile_data=profile_data)
+    result = _get_current_user_query_pattern(sb, "user-1")
 
-    row = _simulate_get_current_user_query(FakeSupabaseNone(), "user-1")
-    display_name = row.get("display_name")
-    full_name = row.get("full_name")
-    effective_name = display_name or full_name
+    effective_name = result["display_name"] or result["full_name"]
     assert effective_name == "budi"
     print("[PASS] display_name=None falls back to full_name")
 
@@ -154,5 +206,6 @@ def test_display_name_none_falls_back_to_full_name():
 if __name__ == "__main__":
     test_current_user_with_display_name_column()
     test_current_user_fail_soft_no_display_name_column()
+    test_current_user_no_profile_row()
     test_display_name_none_falls_back_to_full_name()
     print("All get_current_user display_name tests passed.")
