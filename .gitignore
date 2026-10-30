@@ -123,6 +123,8 @@ backup-rls/
 !/tests/test_dip_public_check.py
 # Unit test murni normalisasi entity_id log_activity (tanpa koneksi/secret).
 !/tests/test_log_activity_normalize.py
+# Unit test murni guard mode produksi implisit G-11 (tanpa koneksi/secret).
+!/tests/test_env_guard.py
 # Unit test murni helper verify_r2_readiness (tanpa koneksi/secret).
 !/tests/test_verify_r2_readiness_logic.py
 # Unit test murni preview komposisi varian (tanpa koneksi/secret).

@@ -8,7 +8,7 @@
 
 ## 2. Perintah yang diaudit
 - Instal dependensi: `pip install -r requirements.txt` (15 paket dipin; `pyflakes`, `pytest`, Playwright, dan `python-dotenv` tidak dipin di sana).
-- Pengembangan lokal hanya lewat `python scripts/run_staging_8017.py`; `uvicorn app.main:app` langsung memakai `.env` produksi dan dilarang untuk pengembangan/tes karena `app/config.py` memilih `.env` saat tidak ada mode staging.
+- Pengembangan lokal hanya lewat `python scripts/run_staging_8017.py`; `uvicorn app.main:app` langsung memakai `.env` produksi dan dilarang untuk pengembangan/tes karena `app/config.py` memilih `.env` saat tidak ada mode staging. Sejak guard G-11 (`app/env_guard.py`), proses tanpa `DIP_APP_ENV` yang menemukan file `.env` ditolak saat import (`RuntimeError`); menjalankan produksi dengan sengaja butuh `DIP_APP_ENV=production`. Render/CI tidak punya file `.env`, jadi tidak terpengaruh.
 - Staging: dari root repo, `python scripts/run_staging_8017.py`; launcher bind ke `127.0.0.1:8017`, tanpa reload.
 - Static check: `python scripts/check_undefined_names.py`; exit 0 bersih, 1 temuan blocking, 2 pyflakes tidak tersedia.
 - Hook: `git config core.hooksPath .githooks`; `.githooks/pre-push` menjalankan static check.

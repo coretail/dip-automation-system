@@ -68,6 +68,7 @@ jobs:
           python tests/test_base_cachebust.py
           python tests/test_dip_public_check.py
           python tests/test_log_activity_normalize.py
+          python tests/test_env_guard.py
           python tests/test_profile_routes.py
           python tests/test_variant_component_preview.py
           python tests/test_profile_validation.py

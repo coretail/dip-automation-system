@@ -53,8 +53,12 @@ if _is_staging():
     # fallback HANYA .env.staging.
     settings = _StagingSettings()
 else:
-    # Produksi: perilaku lama dipertahankan.
+    # Produksi: harus eksplisit bila ada file .env (G-11); tanpa file .env
+    # (Render/CI) perilaku lama dipertahankan.
     from dotenv import load_dotenv
 
+    from app.env_guard import assert_explicit_production, find_dotenv_files
+
+    assert_explicit_production(os.getenv("DIP_APP_ENV", ""), find_dotenv_files())
     load_dotenv(override=False)
     settings = _ProdSettings()
