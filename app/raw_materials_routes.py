@@ -676,7 +676,9 @@ def register_raw_materials_routes(
                 "products": products,
             })
         except Exception as e:
-            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+            # BE-08: detail teknis hanya ke log server, tidak ke klien.
+            print(f"Gagal memuat daftar pemakaian bahan baku: {e}")
+            return JSONResponse(status_code=500, content={"success": False, "error": "Gagal memuat data. Silakan coba lagi."})
 
     @app.post("/raw-materials/{rm_id}/quick-upload-company-doc")
     async def quick_upload_company_doc(
@@ -875,7 +877,9 @@ def register_raw_materials_routes(
                 }
             )
         except Exception as e:
-            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+            # BE-08: detail teknis hanya ke log server, tidak ke klien.
+            print(f"Gagal menambah bahan baku: {e}")
+            return JSONResponse(status_code=500, content={"success": False, "error": "Gagal menyimpan bahan baku. Silakan coba lagi."})
 
     @app.post("/raw-materials/edit/{rm_id}")
     async def edit_raw_material(
@@ -2130,7 +2134,7 @@ def register_raw_materials_routes(
         except Exception as e:
             print(f"Gagal ACC Dipakai: {e}")
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
-            response.set_cookie("error_msg", f"Gagal menyimpan ACC Dipakai: {str(e)}")
+            response.set_cookie("error_msg", "Gagal menyimpan ACC Dipakai. Silakan coba lagi atau hubungi admin.")
             return response
 
     @app.post("/raw-materials/batches/acc-dimusnahkan")
@@ -2169,5 +2173,5 @@ def register_raw_materials_routes(
         except Exception as e:
             print(f"Gagal ACC Dimusnahkan: {e}")
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
-            response.set_cookie("error_msg", f"Gagal memusnahkan batch: {str(e)}")
+            response.set_cookie("error_msg", "Gagal memusnahkan batch. Silakan coba lagi atau hubungi admin.")
             return response
