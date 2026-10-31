@@ -187,8 +187,6 @@ def register_dashboard_routes(
 
                 try:
                     p["status_na"], p["na_days_remaining"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
-                    p["status_na"], p["na_days_remaining"] = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
-
 
                     b1_perusahaan = p.get("perusahaan") or "PT Erfi"
                     b1_brand_id = p.get("brand_id")
