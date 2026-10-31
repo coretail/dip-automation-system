@@ -479,8 +479,17 @@ def register_products_routes(
           - route preview HTML  : /products/{id}/qualitative-quantitative
           - route export Excel  : /products/{id}/qualitative-quantitative/export-xlsx
         """
-        product_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
-        product = product_resp.data
+        try:
+            product_resp = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).limit(1).execute()
+        except Exception as e:
+            # id invalid (cast error) -> 404 ramah, bukan 500 mentah (BE-04)
+            print(f"Produk {product_id} tidak ditemukan (kual-quan): {e}")
+            raise HTTPException(status_code=404, detail="Product not found")
+        if not (product_resp.data or []):
+            # .limit(1) + cek kosong (bukan .single()) supaya produk hilang/terhapus
+            # tidak memicu PGRST116 -> 500 mentah (BE-04).
+            raise HTTPException(status_code=404, detail="Product not found")
+        product = product_resp.data[0]
 
         lines_resp = supabase.table("product_formula_lines") \
             .select(
@@ -741,10 +750,17 @@ def register_products_routes(
         sections_json: str = Form(...),
         current_user: dict = Depends(get_current_user)
     ):
-        product_res = supabase.table("products").select("nama_produk").eq("id", product_id).eq("is_deleted", False).single().execute()
-        if not product_res.data:
+        try:
+            # .limit(1) + cek kosong (bukan .single()) supaya guard 404 di bawah benar-
+            # benar hidup; .single() melempar APIError -> 500 mentah sebelum guard kena
+            # (BE-04).
+            product_res = supabase.table("products").select("nama_produk").eq("id", product_id).eq("is_deleted", False).limit(1).execute()
+        except Exception as e:
+            print(f"Produk {product_id} tidak ditemukan (approval FSP): {e}")
             raise HTTPException(status_code=404, detail="Product not found")
-        product = product_res.data
+        if not (product_res.data or []):
+            raise HTTPException(status_code=404, detail="Product not found")
+        product = product_res.data[0]
 
         try:
             sections_data = json.loads(sections_json)

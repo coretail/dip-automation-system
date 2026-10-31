@@ -1126,25 +1126,30 @@ def section_dead_code() -> None:
 
     # BE-04 - .single() di luar try -> HTTP 500 saat baris tidak ada.
     # Dipakai AST supaya tahan geser baris: yang dicek adalah panggilan
-    # di dalam blok try/except, bukan nomor baris.
-    rm_path = APP_DIR / "raw_materials_routes.py"
-    rm_text = read_text(rm_path)
-    try:
-        tree = ast.parse(rm_text)
-    except SyntaxError as exc:
-        check(
-            "BE-04 tidak ada .single() di luar try pada handler POST raw_materials (AST-based)",
-            False,
-            "gagal parse AST app/raw_materials_routes.py: %s" % exc,
-        )
-    else:
+    # di dalam blok try/except, bukan nomor baris. Cakupan diperluas ke
+    # products_routes.py (round-3): helper qual-quan & approval FSP dulunya
+    # ikut memicu 500 mentah sebelum guard 404 sempat jalan.
+    for be04_file, be04_label in (
+        ("raw_materials_routes.py", "handler POST raw_materials"),
+        ("products_routes.py", "rute produk"),
+    ):
+        be04_path = APP_DIR / be04_file
+        try:
+            be04_tree = ast.parse(read_text(be04_path))
+        except SyntaxError as exc:
+            check(
+                "BE-04 tidak ada .single() di luar try pada %s (AST-based, %s)" % (be04_label, be04_file),
+                False,
+                "gagal parse AST app/%s: %s" % (be04_file, exc),
+            )
+            continue
         guarded: list[tuple[int, int]] = []
-        for node in ast.walk(tree):
+        for node in ast.walk(be04_tree):
             if isinstance(node, ast.Try):
                 for stmt in list(node.body) + list(node.handlers):
                     guarded.append((stmt.lineno, stmt.end_lineno or stmt.lineno))
         unguarded: list[int] = []
-        for node in ast.walk(tree):
+        for node in ast.walk(be04_tree):
             if not isinstance(node, ast.Call):
                 continue
             func = node.func
@@ -1155,7 +1160,7 @@ def section_dead_code() -> None:
                 unguarded.append(ln)
         unguarded.sort()
         check(
-            "BE-04 tidak ada .single() di luar try pada handler POST raw_materials (AST-based)",
+            "BE-04 tidak ada .single() di luar try pada %s (AST-based, %s)" % (be04_label, be04_file),
             not unguarded,
             "%d pemanggilan .single() tanpa try/except (baris %s) -> HTTP 500, bukan 'tidak ditemukan'"
             % (len(unguarded), ", ".join(str(x) for x in unguarded)),
