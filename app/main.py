@@ -1201,7 +1201,7 @@ async def login_submit(
         raise
     except Exception as e:
         # 💡 LOG FAILED LOGIN
-        waktu_gagal = datetime.now(WIB).strftime("%Y-%m-%d%Y-%m-%d %H:%M:%S WIB")
+        waktu_gagal = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
         # BE-13: input mentah (email/username) tidak dicetak penuh ke log.
         identitas = mask_email(email) if "@" in email else f"{(email or '-')[:1]}***"
         print(f"\n❌ [LOGIN FAILED] Input: '{identitas}' | Waktu: {waktu_gagal} | Error: {e}\n")
