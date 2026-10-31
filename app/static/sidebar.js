@@ -183,7 +183,15 @@
     /* ---------- Logout ---------- */
     document.querySelectorAll('[data-logout]').forEach(function (link) {
       link.addEventListener('click', function (event) {
-        if (!window.confirm('Yakin mau keluar dari aplikasi?')) event.preventDefault();
+        if (!window.confirm('Yakin mau keluar dari aplikasi?')) {
+          event.preventDefault();
+          return;
+        }
+        // FE-05: hentikan heartbeat sebelum navigasi /logout supaya request
+        // in-flight (keepalive) tidak menulis is_online=true setelah logout.
+        try {
+          if (typeof window.stopPresenceHeartbeat === 'function') window.stopPresenceHeartbeat();
+        } catch (e) {}
       });
     });
   });
