@@ -1195,10 +1195,16 @@ async def login_submit(
         )
         return redirect
 
+    except HTTPException:
+        # BE-06: kegagalan guard/konfigurasi (HTTPException 500) jangan sampai
+        # tertelan di bawah dan dilaporkan sebagai "invalid_credentials".
+        raise
     except Exception as e:
         # 💡 LOG FAILED LOGIN
         waktu_gagal = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
-        print(f"\n❌ [LOGIN FAILED] Input: '{email}' | Waktu: {waktu_gagal} | Error: {e}\n")
+        # BE-13: input mentah (email/username) tidak dicetak penuh ke log.
+        identitas = mask_email(email) if "@" in email else f"{(email or '-')[:1]}***"
+        print(f"\n❌ [LOGIN FAILED] Input: '{identitas}' | Waktu: {waktu_gagal} | Error: {e}\n")
         return RedirectResponse(url="/login?error=invalid_credentials", status_code=303)
 
 @app.get("/logout")
@@ -1257,10 +1263,15 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
         print("=" * 50 + "\n")
         # Redirect balik ke halaman edit dengan pesan error
         referer = request.headers.get("referer")
+        redirect_url = "/"
         if referer and "/edit" in referer:
-            redirect_url = referer
-        else:
-            redirect_url = "/"
+            # SEC-08: Referer hanya dipercaya bila host-nya sama dengan host
+            # request; substring "/edit" saja bisa dipalsukan lewat
+            # https://evil.example/phish/edit -> open redirect.
+            from urllib.parse import urlsplit
+            _ref_netloc = urlsplit(referer).netloc
+            if _ref_netloc and _ref_netloc == urlsplit(str(request.url)).netloc:
+                redirect_url = referer
         response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
         response.set_cookie("error_msg", str(exc.detail))
         return response
@@ -1417,7 +1428,9 @@ async def quick_add_brand(
             }
         )
     except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+        # BE-08: detail teknis hanya ke log server, tidak ke klien.
+        print(f"Gagal menambah merk: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": "Gagal menambah merk. Silakan coba lagi."})
 
 
 # =====================================================================

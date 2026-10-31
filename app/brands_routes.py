@@ -104,7 +104,7 @@ def register_brands_routes(
                 current_user, "create", "brand", None, brand_name or "-",
                 changes=[{"field": "Nama Merk", "new": brand_name},
                          {"field": "Produsen", "new": producer_name},
-                         {"field": "Error", "note": str(e)[:300]}],
+                         {"field": "Error", "note": "gagal menyimpan (detail di log server)"}],
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url="/brands", status_code=303)
@@ -276,7 +276,7 @@ def register_brands_routes(
                 current_user, "update", "brand_legal_document", brand_id,
                 f"{brand_label} — {perusahaan}",
                 changes=[{"field": "Perusahaan", "new": perusahaan},
-                         {"field": "Error", "note": str(e)[:300]}],
+                         {"field": "Error", "note": "gagal menyimpan (detail di log server)"}],
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url="/brands", status_code=303)

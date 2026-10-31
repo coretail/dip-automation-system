@@ -99,6 +99,16 @@ def register_admin_users_routes(
             clean_username = username.strip().lower()
             clean_email = email.strip().lower()
 
+            # BE-12: policy password saat create akun — minimal 6 karakter, sama
+            # dengan aturan reset-password dan minlength form modal.
+            if len(password.strip()) < 6:
+                log_activity(
+                    current_user, "create", "user", None, clean_username,
+                    changes=[{"field": "Password", "note": "password terlalu pendek (< 6 karakter)"}],
+                    request=request, outcome="rejected",
+                )
+                return RedirectResponse(url="/admin/users?error=password_too_short", status_code=303)
+
             # VALIDASI: Username wajib unik (case-insensitive). Login via username memakai
             # kolom full_name di tabel profiles, jadi kalau dobel, login bisa ambigu.
             existing_profiles = supabase.table("profiles").select("full_name").execute()
@@ -127,15 +137,38 @@ def register_admin_users_routes(
             # display_name diisi dengan clean_username[:60] (sesuai constraint DB)
             # agar akun baru punya nama tampilan default yang sama dengan username.
             final_role = role if role in ("staff", "admin") else "staff"
-            supabase.table("profiles").insert({
-                "id": new_uid,
-                "full_name": clean_username,
-                "display_name": clean_username[:60],
-                "role": final_role,
-                # Jangan pakai string "now()" (PostgREST simpan sebagai literal & bisa gagal cast ke timestamptz).
-                # Kirim timestamp ISO nyata dari Python.
-                "updated_at": datetime.now(WIB).isoformat()
-            }).execute()
+            try:
+                supabase.table("profiles").insert({
+                    "id": new_uid,
+                    "full_name": clean_username,
+                    "display_name": clean_username[:60],
+                    "role": final_role,
+                    # Jangan pakai string "now()" (PostgREST simpan sebagai literal & bisa gagal cast ke timestamptz).
+                    # Kirim timestamp ISO nyata dari Python.
+                    "updated_at": datetime.now(WIB).isoformat()
+                }).execute()
+            except Exception as insert_err:
+                # BE-05: akun auth TERLANJIR terbentuk tapi insert profiles gagal ->
+                # akun yatim (email terblokir "already registered", tak tampil di
+                # /admin/users). Kebijakan: TIDAK menghapus akun auth otomatis;
+                # marker eksplisit untuk bersih-bersih manual pemilik repo.
+                print(
+                    f"[AKUN AUTH YATIM] uid={new_uid} email={mask_email(clean_email)} "
+                    f"username={clean_username} - akun Auth terbentuk tetapi baris profiles "
+                    f"gagal dibuat; perlu tindakan manual via Supabase Auth Admin. "
+                    f"Detail: {insert_err}"
+                )
+                log_activity(
+                    current_user, "create", "user", new_uid, clean_username,
+                    changes=[
+                        {"field": "Email", "new": mask_email(clean_email)},
+                        {"field": "Role", "new": final_role},
+                        {"field": "Error", "note": "akun Auth terbentuk tetapi profil gagal dibuat; "
+                                                   "akun auth perlu dibersihkan manual oleh admin"},
+                    ],
+                    request=request, outcome="failed",
+                )
+                return RedirectResponse(url="/admin/users?error=create_failed", status_code=303)
 
             # Ambil perusahaan account agar tercatat penuh di audit.
             new_perusahaan = None

@@ -676,7 +676,9 @@ def register_raw_materials_routes(
                 "products": products,
             })
         except Exception as e:
-            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+            # BE-08: detail teknis hanya ke log server, tidak ke klien.
+            print(f"Gagal memuat daftar pemakaian bahan baku: {e}")
+            return JSONResponse(status_code=500, content={"success": False, "error": "Gagal memuat data. Silakan coba lagi."})
 
     @app.post("/raw-materials/{rm_id}/quick-upload-company-doc")
     async def quick_upload_company_doc(
@@ -693,13 +695,18 @@ def register_raw_materials_routes(
         # (helper itu selalu menimpa kolom spec_parameters dengan apa yang dikirim).
         import json
 
-        rm_resp = supabase.table("raw_materials").select("kode_bahan_baku, nama_dagang").eq("id", rm_id).single().execute()
-        if not rm_resp.data:
+        try:
+            rm_resp = supabase.table("raw_materials").select("kode_bahan_baku, nama_dagang").eq("id", rm_id).limit(1).execute()
+        except Exception as e:
+            print(f"Gagal memuat bahan baku {rm_id} untuk quick-upload: {e}")
+            rm_resp = None
+        rm_row = (rm_resp.data or [None])[0] if rm_resp else None
+        if not rm_row:
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
             response.set_cookie("error_msg", "Bahan baku tidak ditemukan.")
             return response
-        kode_bahan_baku = rm_resp.data["kode_bahan_baku"]
-        nama_bahan_baku = rm_resp.data.get("nama_dagang") or kode_bahan_baku
+        kode_bahan_baku = rm_row["kode_bahan_baku"]
+        nama_bahan_baku = rm_row.get("nama_dagang") or kode_bahan_baku
 
         existing_resp = supabase.table("raw_material_company_docs") \
             .select("spec_parameters") \
@@ -870,7 +877,9 @@ def register_raw_materials_routes(
                 }
             )
         except Exception as e:
-            return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+            # BE-08: detail teknis hanya ke log server, tidak ke klien.
+            print(f"Gagal menambah bahan baku: {e}")
+            return JSONResponse(status_code=500, content={"success": False, "error": "Gagal menyimpan bahan baku. Silakan coba lagi."})
 
     @app.post("/raw-materials/edit/{rm_id}")
     async def edit_raw_material(
@@ -913,8 +922,18 @@ def register_raw_materials_routes(
             editing_variant_id = _ensure_default_variant(rm_id, produsen)
 
         # --- Ambil data LAMA dulu sebelum diubah, buat dibandingin di activity log ---
-        old_rm_resp = supabase.table("raw_materials").select("*").eq("id", rm_id).single().execute()
-        old_rm = old_rm_resp.data or {}
+        # .limit(1) + cek kosong (bukan .single()) supaya baris yang hilang tidak
+        # memicu PGRST116 -> 500 mentah; diperlakukan sebagai tidak ditemukan.
+        try:
+            old_rm_resp = supabase.table("raw_materials").select("*").eq("id", rm_id).limit(1).execute()
+        except Exception as e:
+            print(f"Gagal memuat bahan baku {rm_id} untuk edit: {e}")
+            old_rm_resp = None
+        old_rm = (old_rm_resp.data or [None])[0] if old_rm_resp else None
+        if not old_rm:
+            response = RedirectResponse(url="/raw-materials", status_code=303)
+            response.set_cookie("error_msg", "Bahan baku tidak ditemukan.")
+            return response
         old_company_docs_resp = supabase.table("raw_material_company_docs").select("*").eq("raw_material_id", rm_id).execute()
         old_company_docs = {d["perusahaan"]: d for d in (old_company_docs_resp.data or [])}
         # --- Ambil data komponen LAMA buat dibandingin (scoped ke varian yang lagi
@@ -1083,8 +1102,19 @@ def register_raw_materials_routes(
             )
 
         # Ambil nama-nya dulu sebelum dihapus, biar activity log masih kebaca gak "id doang"
-        rm_before = supabase.table("raw_materials").select("nama_dagang").eq("id", rm_id).single().execute()
-        nama_sebelum_hapus = rm_before.data.get("nama_dagang") if rm_before.data else rm_id
+        # .limit(1) + cek kosong (bukan .single()) supaya baris yang sudah hilang
+        # tidak memicu PGRST116 -> 500 mentah.
+        try:
+            rm_before = supabase.table("raw_materials").select("nama_dagang").eq("id", rm_id).limit(1).execute()
+        except Exception as e:
+            print(f"Gagal memuat bahan baku {rm_id} sebelum hapus: {e}")
+            rm_before = None
+        rm_row = (rm_before.data or [None])[0] if rm_before else None
+        if not rm_row:
+            response = RedirectResponse(url="/raw-materials", status_code=303)
+            response.set_cookie("error_msg", "Bahan baku tidak ditemukan (mungkin sudah dihapus).")
+            return response
+        nama_sebelum_hapus = rm_row.get("nama_dagang") or rm_id
 
         try:
             # Cascade delete: kumpulkan semua URL file (batch: CoA/Halal/CPBB, company docs: Spek/MSDS)
@@ -2104,7 +2134,7 @@ def register_raw_materials_routes(
         except Exception as e:
             print(f"Gagal ACC Dipakai: {e}")
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
-            response.set_cookie("error_msg", f"Gagal menyimpan ACC Dipakai: {str(e)}")
+            response.set_cookie("error_msg", "Gagal menyimpan ACC Dipakai. Silakan coba lagi atau hubungi admin.")
             return response
 
     @app.post("/raw-materials/batches/acc-dimusnahkan")
@@ -2143,5 +2173,5 @@ def register_raw_materials_routes(
         except Exception as e:
             print(f"Gagal ACC Dimusnahkan: {e}")
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
-            response.set_cookie("error_msg", f"Gagal memusnahkan batch: {str(e)}")
+            response.set_cookie("error_msg", "Gagal memusnahkan batch. Silakan coba lagi atau hubungi admin.")
             return response

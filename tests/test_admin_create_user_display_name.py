@@ -41,6 +41,7 @@ class FakeAuthAdmin:
         self._fake_supabase = fake_supabase
         self.created_users = []
         self.updated_users = []
+        self.deleted_users = []
 
     def create_user(self, payload):
         self.created_users.append(payload)
@@ -51,6 +52,11 @@ class FakeAuthAdmin:
 
     def update_user_by_id(self, uid, payload):
         self.updated_users.append((uid, payload))
+
+    def delete_user(self, uid):
+        # BE-05: kebijakan "flag only" berarti method ini TIDAK boleh dipanggil
+        # saat insert profiles gagal. Direkam supaya test bisa membuktikan.
+        self.deleted_users.append(uid)
 
 
 class FakeAuth:
@@ -94,6 +100,8 @@ class FakeTable:
 
     def execute(self):
         if self._insert_payload is not None:
+            if self.table_name == "profiles" and getattr(self._fake, "fail_profiles_insert", False):
+                raise RuntimeError("insert profiles gagal (disimulasikan)")
             self._fake.inserts.append((self.table_name, self._insert_payload))
             return SimpleNamespace(data=[self._insert_payload], error=None)
         if self._update_payload is not None:
@@ -106,19 +114,20 @@ class FakeTable:
 
 
 class FakeSupabase:
-    def __init__(self):
+    def __init__(self, fail_profiles_insert=False):
         self.auth = FakeAuth(self)
         self.inserts = []
         self.updates = []
         self.profiles_data = [{"full_name": "existing_user"}]
+        self.fail_profiles_insert = fail_profiles_insert
 
     def table(self, name):
         return FakeTable(name, self)
 
 
-def build():
+def build(fail_profiles_insert=False):
     app = FakeApp()
-    supabase = FakeSupabase()
+    supabase = FakeSupabase(fail_profiles_insert=fail_profiles_insert)
     logs = []
 
     async def get_current_user(_request):
@@ -226,8 +235,62 @@ def test_admin_create_user_strips_and_lowercases_username():
     print("[PASS] admin_create_user strips and lowercases for both full_name and display_name")
 
 
+def test_admin_create_user_rejects_short_password():
+    # BE-12: password < 6 karakter ditolak SEBELUM akun Auth dibuat.
+    app, supabase, logs = build()
+    endpoint = app.routes[("POST", "/admin/users/create")]
+    result = asyncio.run(endpoint(
+        SimpleNamespace(),
+        email="pendek@example.com",
+        username="password.pendek",
+        password="abc12",
+        role="staff",
+        current_user={"id": "admin-1", "email": "admin@example.com", "full_name": "admin", "role": "admin", "perusahaan": None},
+    ))
+    assert result.status_code == 303
+    location = result.headers["location"]
+    assert "error=password_too_short" in location, location
+    # Tidak boleh ada akun Auth maupun baris profiles yang terbentuk.
+    assert supabase.auth.admin.created_users == []
+    assert [i for i in supabase.inserts if i[0] == "profiles"] == []
+    # Percobaan ditolak TETAP diaudit (rejected), bukan hilang.
+    assert logs[-1][0][1] == "create"
+    assert logs[-1][1]["outcome"] == "rejected"
+    print("[PASS] BE-12 admin_create_user menolak password < 6 karakter sebelum create_user")
+
+
+def test_admin_create_user_orphan_is_flagged_not_deleted():
+    # BE-05: insert profiles gagal -> akun auth TIDAK dihapus otomatis (flag only),
+    # user tetap dapat redirect generik, dan kegagalan tercatat di audit.
+    app, supabase, logs = build(fail_profiles_insert=True)
+    endpoint = app.routes[("POST", "/admin/users/create")]
+    result = asyncio.run(endpoint(
+        SimpleNamespace(),
+        email="yatin@example.com",
+        username="yatin.user",
+        password="password123",
+        role="staff",
+        current_user={"id": "admin-1", "email": "admin@example.com", "full_name": "admin", "role": "admin", "perusahaan": None},
+    ))
+    assert result.status_code == 303
+    location = result.headers["location"]
+    assert "error=create_failed" in location, location
+    # create_user TERLANJIR dipanggil (itu sumber yatimnya)...
+    assert len(supabase.auth.admin.created_users) == 1
+    # ...tetapi kebijakan flag-only: delete_user tidak boleh dipanggil.
+    assert supabase.auth.admin.deleted_users == []
+    # Kegagalan dicatat ke audit dengan outcome failed + catatan bersih manual.
+    assert logs[-1][0][1] == "create"
+    assert logs[-1][1]["outcome"] == "failed"
+    changes_str = str(logs[-1][1]["changes"])
+    assert "profil gagal dibuat" in changes_str
+    print("[PASS] BE-05 akun yatim ditandai (flag only), tanpa delete_user otomatis")
+
+
 if __name__ == "__main__":
     test_admin_create_user_sets_display_name()
     test_admin_create_user_truncates_long_username()
     test_admin_create_user_strips_and_lowercases_username()
-    print("All admin_create_user display_name tests passed.")
+    test_admin_create_user_rejects_short_password()
+    test_admin_create_user_orphan_is_flagged_not_deleted()
+    print("All admin_create_user tests passed.")
