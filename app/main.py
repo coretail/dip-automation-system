@@ -1428,7 +1428,9 @@ async def quick_add_brand(
             }
         )
     except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+        # BE-08: detail teknis hanya ke log server, tidak ke klien.
+        print(f"Gagal menambah merk: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": "Gagal menambah merk. Silakan coba lagi."})
 
 
 # =====================================================================

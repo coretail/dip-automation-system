@@ -169,7 +169,7 @@ def register_sample_routes(
                     current_user, "create", "sample_submission", None, sample_code,
                     changes=[{"field": "Kode FSP", "new": sample_code},
                              {"field": "Produk", "new": final_product_name},
-                             {"field": "Error", "note": str(e)[:300]}],
+                             {"field": "Error", "note": "gagal menyimpan (detail di log server)"}],
                     request=request, outcome="failed",
                 )
             except Exception:
@@ -312,7 +312,7 @@ def register_sample_routes(
                     old_code,
                     changes=[{"field": "Kode FSP", "old": old_code,
                               "new": new_sample_code},
-                             {"field": "Error", "note": str(e)[:300]}],
+                             {"field": "Error", "note": "gagal menyimpan (detail di log server)"}],
                     request=request, outcome="failed",
                 )
             except Exception:
