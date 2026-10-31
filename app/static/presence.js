@@ -24,6 +24,17 @@
   }
   window.stopPresenceHeartbeat = stopHeartbeat;
 
+  // FE-04: startHeartbeat() idempoten (bersihkan interval lama dulu) supaya bisa
+  // dipanggil ulang saat halaman kembali dari bfcache tanpa membuat interval ganda.
+  function startHeartbeat() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    heartbeatInterval = setInterval(function () {
+      // Background tabs sering ditunda browser; pertahankan grace period Offline yang ada.
+      if (document.visibilityState === "hidden") return;
+      ping(isActive());
+    }, HEARTBEAT_MS);
+  }
+
   function ping(active) {
     if (isRedirecting) return;
     var payload = JSON.stringify({ online: true, active: active !== false });
@@ -79,14 +90,22 @@
 
   ping(true);
   scheduleIdleHeartbeat();
-  heartbeatInterval = setInterval(function () {
-    // Background tabs sering ditunda browser; pertahankan grace period Offline yang ada.
-    if (document.visibilityState === "hidden") return;
-    ping(isActive());
-  }, HEARTBEAT_MS);
+  startHeartbeat();
 
   window.addEventListener("beforeunload", stopHeartbeat);
   window.addEventListener("pagehide", stopHeartbeat);
+
+  // FE-04: kembali dari bfcache (tombol maju/mundur) — pagehide sudah menghentikan
+  // heartbeat tetapi skrip tidak dijalankan ulang; aktifkan lagi agar pengguna
+  // tidak salah ditandai Offline setelah grace period ~90 dtk.
+  window.addEventListener("pageshow", function (event) {
+    if (!event.persisted || isRedirecting) return;
+    if (document.visibilityState !== "visible") return;
+    lastActivityAt = Date.now();
+    scheduleIdleHeartbeat();
+    startHeartbeat();
+    ping(true);
+  });
 
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible") {
