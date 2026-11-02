@@ -12,6 +12,7 @@ from postgrest.exceptions import APIError
 
 from app.database import supabase
 from app.file_validation import validate_pdf_bytes
+from app.security import assert_same_tenant
 from app import object_store
 from app.variant_components import normalize_components, normalize_variants
 
@@ -934,6 +935,17 @@ def register_raw_materials_routes(
             response = RedirectResponse(url="/raw-materials", status_code=303)
             response.set_cookie("error_msg", "Bahan baku tidak ditemukan.")
             return response
+
+        # SEC-02 (future-proof): katalog bahan baku saat ini bersama (header
+        # tanpa perusahaan -> helper fail-open). Bila baris punya perusahaan,
+        # hanya perusahaan itu (atau admin) yang boleh mengubahnya.
+        if not assert_same_tenant(current_user, old_rm):
+            log_activity(
+                current_user, "update", "raw_material", rm_id, nama_dagang,
+                changes=[{"field": "perusahaan", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.")
         old_company_docs_resp = supabase.table("raw_material_company_docs").select("*").eq("raw_material_id", rm_id).execute()
         old_company_docs = {d["perusahaan"]: d for d in (old_company_docs_resp.data or [])}
         # --- Ambil data komponen LAMA buat dibandingin (scoped ke varian yang lagi
@@ -1105,7 +1117,7 @@ def register_raw_materials_routes(
         # .limit(1) + cek kosong (bukan .single()) supaya baris yang sudah hilang
         # tidak memicu PGRST116 -> 500 mentah.
         try:
-            rm_before = supabase.table("raw_materials").select("nama_dagang").eq("id", rm_id).limit(1).execute()
+            rm_before = supabase.table("raw_materials").select("nama_dagang, perusahaan").eq("id", rm_id).limit(1).execute()
         except Exception as e:
             print(f"Gagal memuat bahan baku {rm_id} sebelum hapus: {e}")
             rm_before = None
@@ -1115,6 +1127,16 @@ def register_raw_materials_routes(
             response.set_cookie("error_msg", "Bahan baku tidak ditemukan (mungkin sudah dihapus).")
             return response
         nama_sebelum_hapus = rm_row.get("nama_dagang") or rm_id
+
+        # SEC-02 (future-proof): sama seperti edit -- baris katalog saat ini
+        # fail-open (tanpa perusahaan); guard aktif bila baris punya perusahaan.
+        if not assert_same_tenant(current_user, rm_row):
+            log_activity(
+                current_user, "delete", "raw_material", rm_id, nama_sebelum_hapus,
+                changes=[{"field": "perusahaan", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.")
 
         try:
             # Cascade delete: kumpulkan semua URL file (batch: CoA/Halal/CPBB, company docs: Spek/MSDS)

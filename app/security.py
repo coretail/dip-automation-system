@@ -6,18 +6,28 @@ This module must not import app.main (avoid circular imports).
 from typing import Any
 
 
+def _norm_company(value: str | None) -> str:
+    # Normalisasi sama seperti inline check lama di sample_routes:
+    # "PT Erfi" ~= "erfi". Konsistensi ini yang membuat helper bisa
+    # menggantikan inline check tanpa mengubah perilaku penolakan.
+    return (value or "").strip().lower().replace("pt ", "").strip()
+
+
 def assert_same_tenant(current_user: dict, row: dict | None, new_company: str | None = None) -> bool:
     """Return True when a non-admin user may access/modify a row.
 
     Admins always pass. Backward-compatible: if either side has no company,
-    access is allowed (legacy data). This helper is advisory during refactor;
-    enforcement is intentionally left to callers so behavior stays unchanged.
+    access is allowed (legacy data -- pre-check staging 2026-11-02: 2/5
+    profiles belum punya perusahaan, menolak mereka = lockout).
+    Row perusahaan dibaca dari kunci ``perusahaan`` (products/raw_materials)
+    atau ``company`` (sample_submissions).
     """
     if (current_user or {}).get("role") == "admin":
         return True
-    user_company = ((current_user or {}).get("perusahaan") or "").strip().lower()
-    row_company = ((row or {}).get("perusahaan") or "").strip().lower()
-    requested_company = (new_company or "").strip().lower()
+    user_company = _norm_company((current_user or {}).get("perusahaan"))
+    row_data = row or {}
+    row_company = _norm_company(row_data.get("perusahaan") or row_data.get("company"))
+    requested_company = _norm_company(new_company)
     if not user_company:
         return True
     if row_company and row_company != user_company:

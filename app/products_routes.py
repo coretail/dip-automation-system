@@ -16,6 +16,7 @@ from app.excel_generator import XLSX_MIME, build_formula_workbook
 from app import object_store
 from app.file_validation import validate_pdf_bytes
 from app.product_attachments_routes import LAMPIRAN_CATEGORIES
+from app.security import assert_same_tenant
 from app.variant_components import prepare_line_preview
 from xhtml2pdf import pisa
 
@@ -247,6 +248,17 @@ def register_products_routes(
         if acc_sampel_val == "":
             acc_sampel_val = None
 
+        # SEC-02: non-admin tidak boleh membuat produk atas nama perusahaan lain.
+        if not assert_same_tenant(current_user, None, new_company=perusahaan):
+            log_activity(
+                current_user, "create", "product", None, nama_produk,
+                changes=[{"field": "perusahaan", "note": "ditolak: lintas perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            response = RedirectResponse(url="/", status_code=303)
+            response.set_cookie("error_msg", "Akses ditolak! Produk harus atas nama perusahaan Anda.")
+            return response
+
         tgl_aktif_na_val = tanggal_aktif_na.strip() if tanggal_aktif_na else None
         if tgl_aktif_na_val == "":
             tgl_aktif_na_val = None
@@ -312,7 +324,7 @@ def register_products_routes(
         # dan perlu tahu produknya sudah ada di Sampah atau belum.
         try:
             product_before = supabase.table("products").select(
-                "id, nama_produk, is_deleted, deleted_at"
+                "id, nama_produk, perusahaan, is_deleted, deleted_at"
             ).eq("id", product_id).execute()
         except Exception as e:
             print(f"Gagal baca produk {product_id} saat hapus: {e}")
@@ -337,6 +349,18 @@ def register_products_routes(
             return response
 
         nama_produk = product_row.get("nama_produk") or product_id
+
+        # SEC-02 (future-proof): saat ini hapus khusus admin dan helper selalu
+        # meloloskan admin; guard dipasang supaya aturan tenant tetap berlaku
+        # bila kebijakan role berubah.
+        if not assert_same_tenant(current_user, product_row):
+            log_activity(
+                current_user, "delete", "product", product_id, nama_produk,
+                changes=[{"field": "is_deleted", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
+
         if product_row.get("is_deleted"):
             # Sudah ada di Sampah -> jangan timpa deleted_at lama dan jangan buat
             # baris audit "delete sukses" kedua untuk produk yang sama.
@@ -1185,14 +1209,11 @@ def register_products_routes(
 
         old_product = old_product_resp.data
 
-        # Lapisan authz tenant: non-admin hanya boleh edit produk perusahaannya sendiri
-        # dan tidak boleh memindahkan produk ke perusahaan lain.
-        if current_user.get("role") != "admin":
-            _user_company = (current_user.get("perusahaan") or "").strip().lower()
-            _old_company = (old_product.get("perusahaan") or "").strip().lower()
-            _new_company = (perusahaan or "").strip().lower()
-            if _user_company and (_old_company != _user_company or _new_company != _user_company):
-                raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
+        # Lapisan authz tenant (SEC-02): non-admin hanya boleh edit produk
+        # perusahaannya sendiri dan tidak boleh memindahkan produk ke
+        # perusahaan lain. Inline check lama kini lewat helper bersama.
+        if not assert_same_tenant(current_user, old_product) or not assert_same_tenant(current_user, None, new_company=perusahaan):
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
 
         # --- Validasi total formula Bab 2 (SEBELUM ada perubahan data) ---
         # Validasi total persentase dijalankan paling dulu: kalau totalnya bukan
@@ -1481,16 +1502,14 @@ def register_products_routes(
         product = prod_resp.data
         entity_label = product.get("nama_produk") or product_id
 
-        if current_user.get("role") != "admin":
-            _user_company = (current_user.get("perusahaan") or "").strip().lower()
-            _prod_company = (product.get("perusahaan") or "").strip().lower()
-            if _user_company and _prod_company and _user_company != _prod_company:
-                log_activity(
-                    current_user, "delete", "product_file", product_id, entity_label,
-                    changes=[{"field": label, "note": "ditolak: bukan milik perusahaan"}],
-                    request=request, outcome="rejected",
-                )
-                raise HTTPException(status_code=403, detail="Akses ditolak! File bukan milik perusahaan Anda.")
+        # SEC-02: hapus file dokumen hanya untuk produk milik perusahaan user.
+        if not assert_same_tenant(current_user, product):
+            log_activity(
+                current_user, "delete", "product_file", product_id, entity_label,
+                changes=[{"field": label, "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! File bukan milik perusahaan Anda.")
 
         file_url = product.get(db_field)
         storage_note = None
