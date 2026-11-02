@@ -4,9 +4,30 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+      day: monday
+      time: "02:00"
+      timezone: "Asia/Jakarta"
     open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    groups:
+      # Bump minor/patch rutin digabung jadi satu PR per Senin. Major tetap PR
+      # terpisah. Tiga paket di bawah sengaja tidak digabung karena berisiko:
+      # fastapi (perubahan perilaku form), pydantic* (validasi formula/Decimal),
+      # pypdf (perlu uji manual Bab II dan gabungan Bab I-IV, lihat AGENTS.md).
+      pip-routine:
+        patterns: ["*"]
+        exclude-patterns: ["fastapi", "pydantic*", "pypdf"]
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+      day: monday
+      time: "02:00"
+      timezone: "Asia/Jakarta"
     open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    groups:
+      actions-all:
+        patterns: ["*"]
