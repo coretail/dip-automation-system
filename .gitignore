@@ -174,3 +174,4 @@ ringkas.py
 audit/pip-audit.json
 
 /logs/
+scripts_tmp_list_projects.py
