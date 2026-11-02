@@ -1308,9 +1308,7 @@ let editingRmId = null;
 let editingVariants = [];
 let editingVariantId = null;
 
-function escapeHtmlText(s) {
-    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
+// SEC-14: escaping memakai helper global window.escapeHtml (/static/common.js).
 
 // Validasi URL dokumen (MSDS / spec sheet) sebelum dipasang ke <a href>.
 // Hanya izinkan http/https (dan URL relatif same-origin) supaya skema
@@ -1463,9 +1461,9 @@ function singleVariantRowHtml(comp) {
     const c = comp || {};
     return `
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-5 items-end bg-gray-50 p-3 rounded border border-gray-200 relative class-row">
-                <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" value="${escapeHtmlText(c.inci_name)}" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
-                <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" value="${escapeHtmlText(c.cas_number)}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
-                <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" value="${escapeHtmlText(c.function)}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">INCI Name (Opsional)</label><input type="text" name="inci_name" id="single-inci" value="${escapeHtml(c.inci_name)}" placeholder="Kosongkan jika sama dgn nama dagang" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">CAS Number</label><input type="text" name="cas_number" value="${escapeHtml(c.cas_number)}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
+                <div><label class="block text-xs text-gray-500">Fungsi</label><input type="text" name="function" value="${escapeHtml(c.function)}" class="mt-0.5 block w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"></div>
                 <div><label class="block text-xs text-gray-500">% Internal</label><input type="number" step="0.001" name="percent_internal" id="single-pct" value="100" readonly class="mt-0.5 block w-full bg-gray-200 border border-gray-300 px-2 py-1 text-xs font-mono focus:outline-none"></div>
                 ${bahanAktifControlHtml(isAktifFlag(c.is_bahan_aktif), true)}
             </div>
@@ -1478,11 +1476,11 @@ function kompositVariantRowHtml(comp, idx) {
         ? '<button type="button" onclick="this.parentElement.parentElement.remove(); updateTotalCalculated();" class="text-red-500 hover:text-red-700 cursor-pointer"><i class="fa-solid fa-trash"></i></button>'
         : '<div class="w-4"></div>';
     return `
-                <div><input type="text" name="inci_name" required value="${escapeHtmlText(c.inci_name)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
-                <div><input type="text" name="cas_number" value="${escapeHtmlText(c.cas_number)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
-                <div><input type="text" name="function" value="${escapeHtmlText(c.function)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div><input type="text" name="inci_name" required value="${escapeHtml(c.inci_name)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div><input type="text" name="cas_number" value="${escapeHtml(c.cas_number)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
+                <div><input type="text" name="function" value="${escapeHtml(c.function)}" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs"></div>
                 <div class="flex items-center space-x-2">
-                    <input type="number" step="0.001" name="percent_internal" required value="${escapeHtmlText(c.percent_internal)}" oninput="updateTotalCalculated()" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs font-mono">
+                    <input type="number" step="0.001" name="percent_internal" required value="${escapeHtml(c.percent_internal)}" oninput="updateTotalCalculated()" class="block w-full rounded-md border border-gray-300 px-2 py-1 text-xs font-mono">
                     ${trash}
                 </div>
                 <div class="flex items-end">${bahanAktifControlHtml(isAktifFlag(c.is_bahan_aktif), false)}</div>
@@ -2155,14 +2153,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ==================== MODAL PRODUK PEMAKAI BAHAN BAKU ====================
-// Catatan: escapeHtml() di base.html didefinisikan DI DALAM closure DOMContentLoaded,
-// sehingga TIDAK tersedia sebagai fungsi global -> ReferenceError saat dipanggil di sini.
-// Modal ini memakai helper sendiri.
-function umEscapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = (text === null || text === undefined) ? '' : String(text);
-    return div.innerHTML;
-}
+// SEC-14: modal ini kini memakai helper global window.escapeHtml
+// (/static/common.js) — tidak perlu definisi lokal lagi.
 function openUsedInProductsModal(rmId, rmName) {
     const modal = document.getElementById('usedInProductsModal');
     const tbody = document.getElementById('used-in-products-tbody');
@@ -2186,9 +2178,9 @@ function openUsedInProductsModal(rmId, rmName) {
             }
             tbody.innerHTML = products.map(p => `
                 <tr class="hover:bg-gray-50">
-                    <td class="px-5 py-2.5 font-medium text-gray-900">${umEscapeHtml(p.nama_produk || '-')}</td>
+                    <td class="px-5 py-2.5 font-medium text-gray-900">${escapeHtml(p.nama_produk || '-')}</td>
                     <td class="px-4 py-2.5">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${p.perusahaan === 'PT Heka' ? 'bg-fuchsia-50 text-fuchsia-700' : 'bg-sky-50 text-sky-700'}">${umEscapeHtml(p.perusahaan || '-')}</span>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${p.perusahaan === 'PT Heka' ? 'bg-fuchsia-50 text-fuchsia-700' : 'bg-sky-50 text-sky-700'}">${escapeHtml(p.perusahaan || '-')}</span>
                     </td>
                     <td class="px-4 py-2.5 text-right font-mono text-indigo-600">${Number(p.percent_in_formula || 0)}%</td>
                     <td class="px-4 py-2.5 text-center whitespace-nowrap space-x-2">
@@ -2198,7 +2190,7 @@ function openUsedInProductsModal(rmId, rmName) {
                 </tr>`).join('');
         })
         .catch(err => {
-            tbody.innerHTML = '<tr><td colspan="4" class="px-5 py-8 text-center text-sm text-red-500">Gagal memuat data: ' + umEscapeHtml((err && err.message) ? err.message : 'Unknown error') + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="px-5 py-8 text-center text-sm text-red-500">Gagal memuat data: ' + escapeHtml((err && err.message) ? err.message : 'Unknown error') + '</td></tr>';
         });
 }
 

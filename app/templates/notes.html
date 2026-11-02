@@ -424,11 +424,7 @@
         });
     }
 
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text == null ? '' : String(text);
-        return div.innerHTML;
-    }
+    // SEC-14: escapeHtml kini helper global tunggal dari /static/common.js
 
     function insertAtTrigger(replacement) {
         if (triggerStart < 0) return;
