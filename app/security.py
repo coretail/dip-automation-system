@@ -32,6 +32,13 @@ def assert_same_tenant(current_user: dict, row: dict | None, new_company: str | 
         return True
     if row_company and row_company != user_company:
         return False
+    # new_company DIBERIKAN tapi kosong setelah normalisasi (mis. "   "):
+    # FastAPI hanya menolak string kosong persis pada Form(...), sedangkan
+    # spasi lolos dan tersimpan mentah. Tanpa cek ini non-admin bisa
+    # mengosongkan perusahaan produk, lalu produk itu fail-open untuk semua
+    # tenant. None (tidak ada perubahan perusahaan) tetap diizinkan.
+    if new_company is not None and not requested_company:
+        return False
     if requested_company and requested_company != user_company:
         return False
     return True
