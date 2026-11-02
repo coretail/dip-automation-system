@@ -183,15 +183,20 @@
     /* ---------- Logout ---------- */
     document.querySelectorAll('[data-logout]').forEach(function (link) {
       link.addEventListener('click', function (event) {
+        event.preventDefault(); // SEC-16: logout HANYA via POST; navigasi GET link dimatikan.
         if (!window.confirm('Yakin mau keluar dari aplikasi?')) {
-          event.preventDefault();
           return;
         }
-        // FE-05: hentikan heartbeat sebelum navigasi /logout supaya request
+        // FE-05: hentikan heartbeat sebelum logout supaya request
         // in-flight (keepalive) tidak menulis is_online=true setelah logout.
         try {
           if (typeof window.stopPresenceHeartbeat === 'function') window.stopPresenceHeartbeat();
         } catch (e) {}
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/logout';
+        document.body.appendChild(form);
+        form.submit();
       });
     });
   });

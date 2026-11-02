@@ -1207,7 +1207,7 @@ async def login_submit(
         print(f"\n❌ [LOGIN FAILED] Input: '{identitas}' | Waktu: {waktu_gagal} | Error: {e}\n")
         return RedirectResponse(url="/login?error=invalid_credentials", status_code=303)
 
-@app.get("/logout")
+@app.post("/logout")
 async def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=303)
     # Hapus cookie token yang tersimpan di browser
