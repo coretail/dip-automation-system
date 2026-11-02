@@ -120,6 +120,7 @@ def _render_note_html(
     live_product_ids: set | None = None,
     live_rm_ids: set | None = None,
     live_brand_ids: set | None = None,
+    mention_display_names: dict | None = None,
 ) -> str:
     escaped = _html.escape(body or "")
 
@@ -184,10 +185,13 @@ def _render_note_html(
     rendered = _BRAND_TOKEN_RE.sub(_brand, rendered)
 
     def _mention(m):
+        username = m.group(1)
+        display_name = (mention_display_names or {}).get(username.lower())
+        suffix = f" ({_html.escape(display_name)})" if display_name and display_name.lower() != username.lower() else ""
         return (
             f'<span class="inline-flex items-center px-1.5 py-0.5 rounded '
             f'bg-indigo-100 text-indigo-700 font-semibold text-xs">@'
-            f'{m.group(1)}</span>'
+            f'{username}{suffix}</span>'
         )
 
     rendered = _MENTION_RE.sub(_mention, rendered)
@@ -242,7 +246,10 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
     @app.get("/api/notes/users")
     async def api_notes_users(q: str = "", current_user: dict = Depends(get_current_user)):
         try:
-            res = supabase.table("profiles").select("id, full_name").order("full_name").execute()
+            try:
+                res = supabase.table("profiles").select("id, full_name, display_name").order("full_name").execute()
+            except Exception:
+                res = supabase.table("profiles").select("id, full_name").order("full_name").execute()
             rows = res.data or []
         except Exception as e:
             print(f"[NOTES] Gagal ambil users: {e}")
@@ -250,12 +257,13 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
         qn = (q or "").strip().lower()
         items = []
         for r in rows:
-            name = (r.get("full_name") or "").strip()
-            if not name or r.get("id") == current_user.get("id"):
+            username = (r.get("full_name") or "").strip()
+            display_name = (r.get("display_name") or "").strip() or username
+            if not username or r.get("id") == current_user.get("id"):
                 continue
-            if qn and qn not in name.lower():
+            if qn and qn not in username.lower() and qn not in display_name.lower():
                 continue
-            items.append({"id": r["id"], "full_name": name})
+            items.append({"id": r["id"], "full_name": username, "display_name": display_name})
             if len(items) >= 12:
                 break
         return JSONResponse({"items": items})
@@ -395,6 +403,9 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             notes = []
 
         mentions_by_note = {}
+        profile_by_id = {}
+        profile_by_username = {}
+        mention_display_names = {}
         try:
             if notes:
                 note_ids = [n["id"] for n in notes]
@@ -405,6 +416,83 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                         mention_count += 1
         except Exception as e:
             print(f"[NOTES] Gagal tarik mentions: {e}")
+
+        profile_ids = {
+            str(value)
+            for n in notes
+            for value in (n.get("author_id"), n.get("completed_by_user_id"))
+            if value
+        }
+        profile_ids.update(
+            str(m.get("mentioned_user_id"))
+            for rows in mentions_by_note.values()
+            for m in rows
+            if m.get("mentioned_user_id")
+        )
+        if profile_ids:
+            try:
+                try:
+                    profile_res = supabase.table("profiles").select(
+                        "id, full_name, display_name"
+                    ).in_("id", list(profile_ids)).execute()
+                except Exception:
+                    profile_res = supabase.table("profiles").select(
+                        "id, full_name"
+                    ).in_("id", list(profile_ids)).execute()
+                profile_by_id = {str(row.get("id")): row for row in (profile_res.data or [])}
+                for row in profile_by_id.values():
+                    username = (row.get("full_name") or "").strip()
+                    display_name = (row.get("display_name") or "").strip()
+                    if username:
+                        profile_by_username[username.lower()] = row
+                    if username and display_name:
+                        mention_display_names[username.lower()] = display_name
+            except Exception as e:
+                print(f"[NOTES] Gagal tarik display names: {e}")
+
+        # Older notes may not have a usable author_id. Resolve their stored
+        # author_name snapshot against profiles as a second lookup path.
+        author_names = {
+            (n.get("author_name") or "").strip()
+            for n in notes
+            if (n.get("author_name") or "").strip()
+        }
+        # Always resolve the denormalized username snapshot as well. A note may
+        # contain a legacy/mismatched author_id even when the profile exists.
+        if author_names:
+            try:
+                try:
+                    legacy_profiles = supabase.table("profiles").select(
+                        "id, full_name, display_name"
+                    ).in_("full_name", list(author_names)).execute()
+                except Exception:
+                    legacy_profiles = supabase.table("profiles").select(
+                        "id, full_name"
+                    ).in_("full_name", list(author_names)).execute()
+                for row in (legacy_profiles.data or []):
+                    username = (row.get("full_name") or "").strip()
+                    if username:
+                        profile_by_username[username.lower()] = row
+            except Exception as e:
+                print(f"[NOTES] Gagal cocokkan author note lama: {e}")
+
+        # The current user's authenticated profile is already available and is
+        # a reliable final fallback for notes authored by that user.
+        current_username = (current_user.get("full_name") or "").strip().lower()
+        if current_username and current_user.get("display_name"):
+            profile_by_username.setdefault(current_username, {
+                "id": current_user.get("id"),
+                "full_name": current_user.get("full_name"),
+                "display_name": current_user.get("display_name"),
+            })
+
+        current_id = str(current_user.get("id") or "")
+        if current_id and current_user.get("display_name"):
+            profile_by_id.setdefault(current_id, {
+                "id": current_user.get("id"),
+                "full_name": current_user.get("full_name"),
+                "display_name": current_user.get("display_name"),
+            })
 
         live_product_ids: set = set()
         try:
@@ -482,7 +570,21 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
 
         enriched = []
         for n in notes:
+            # Prefer the username snapshot because it identifies the author
+            # even when an old note has a stale or mismatched author_id.
+            author_profile = (
+                profile_by_username.get((n.get("author_name") or "").strip().lower())
+                or profile_by_id.get(str(n.get("author_id")))
+                or {}
+            )
+            completed_profile = profile_by_id.get(str(n.get("completed_by_user_id"))) or {}
             ments = mentions_by_note.get(n["id"], [])
+            for mention in ments:
+                mentioned_profile = profile_by_id.get(str(mention.get("mentioned_user_id"))) or {}
+                mention["mentioned_display_name"] = (
+                    (mentioned_profile.get("display_name") or "").strip()
+                    or (mentioned_profile.get("full_name") or "").strip()
+                )
             prefs = _parse_product_refs(n.get("body") or "")
             for pref in prefs:
                 pid = pref["id"]
@@ -513,8 +615,20 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
                 bref["search_url"] = f"/brands?brand={bid}"
             enriched.append({
                 **n,
-                "body_html": _render_note_html(n.get("body") or "", live_product_ids, live_rm_ids, live_brand_ids),
-                "completion_note_html": _render_note_html(n.get("completion_note") or "", live_product_ids, live_rm_ids, live_brand_ids) if n.get("is_completed") else None,
+                "author_display_name": (
+                    (author_profile.get("display_name") or "").strip()
+                    or (author_profile.get("full_name") or "").strip()
+                    or n.get("author_name")
+                    or "User"
+                ),
+                "completed_by_display_name": (
+                    (completed_profile.get("display_name") or "").strip()
+                    or (completed_profile.get("full_name") or "").strip()
+                    or n.get("completed_by_user_name")
+                    or "User"
+                ),
+                "body_html": _render_note_html(n.get("body") or "", live_product_ids, live_rm_ids, live_brand_ids, mention_display_names),
+                "completion_note_html": _render_note_html(n.get("completion_note") or "", live_product_ids, live_rm_ids, live_brand_ids, mention_display_names) if n.get("is_completed") else None,
                 "mentions": ments,
                 "product_refs": prefs,
                 "rm_refs": rrefs,

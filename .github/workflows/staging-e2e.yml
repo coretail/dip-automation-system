@@ -7,7 +7,7 @@ on:
         description: Upload requires staging backend dual/r2; all excludes upload.
         required: true
         type: choice
-        options: [all, smoke, upload, activity, audit]
+        options: [all, smoke, upload, activity, notes, audit]
         default: all
 permissions:
   contents: read
@@ -84,11 +84,12 @@ jobs:
         run: |
           set -euo pipefail
           case "$E2E_SUITE" in
-            all) python tests/e2e_smoke_refactor.py; python tests/e2e_activity_request_id.py; python tests/e2e_audit_staging.py --quick ;;
+            all) python tests/e2e_smoke_refactor.py; python tests/e2e_activity_request_id.py; python tests/e2e_notes_display_name.py; python tests/e2e_audit_staging.py --quick ;;
             smoke) python tests/e2e_smoke_refactor.py ;;
             # R2-specific check; run only when staging backend is dual or r2.
             upload) python tests/e2e_upload_staging.py --log staging.log ;;
             activity) python tests/e2e_activity_request_id.py ;;
+            notes) python tests/e2e_notes_display_name.py ;;
             audit) python tests/e2e_audit_staging.py --quick ;;
             *) echo 'Invalid suite selection' >&2; exit 2 ;;
           esac
