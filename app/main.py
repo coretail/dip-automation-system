@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request, Form, HTTPException, Response, File, Uploa
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.datastructures import MutableHeaders
 from typing import List
 from app.database import supabase
 from app.object_store import parse_storage_url as _parse_storage_url
@@ -337,6 +338,55 @@ def _client_ip(request: Request) -> str:
 
 
 app = FastAPI(title="DIP Kosmetik Automation")
+
+
+# SEC-04/SEC-07: security header untuk semua respons.
+# - X-Frame-Options SAMEORIGIN (BUKAN DENY): halaman seperti edit_product
+#   me-embed preview PDF dari origin sendiri; DENY akan memecahnya.
+# - Referrer-Policy no-referrer juga meredam kebocoran token ?access= lewat
+#   Referer lintas situs (sebagian F-02/F-06).
+# - Content-Security-Policy dan Strict-Transport-Security DIDEFINISIKAN tapi
+#   di-gate env dan default OFF: CSP butuh penyesuaian Tailwind CDN + inline
+#   script (proyek sendiri), HSTS hanya layak di-host HTTPS produksi.
+_SEC_CSP_VALUE = (_os.getenv("DIP_SECURITY_CSP") or "").strip()
+_SEC_HSTS_VALUE = (_os.getenv("DIP_SECURITY_HSTS") or "").strip()
+SECURITY_HEADER_NAMES = ("X-Frame-Options", "X-Content-Type-Options", "Referrer-Policy")
+OPTIONAL_SECURITY_HEADER_NAMES = ("Content-Security-Policy", "Strict-Transport-Security")
+
+
+class SecurityHeadersMiddleware:
+    """ASGI middleware murni: tempel header defensif saat response start.
+
+    Header yang sudah diset handler tidak ditimpa (mis. cache header khusus).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                if "x-frame-options" not in headers:
+                    headers["X-Frame-Options"] = "SAMEORIGIN"
+                if "x-content-type-options" not in headers:
+                    headers["X-Content-Type-Options"] = "nosniff"
+                if "referrer-policy" not in headers:
+                    headers["Referrer-Policy"] = "no-referrer"
+                if _SEC_CSP_VALUE and "content-security-policy" not in headers:
+                    headers["Content-Security-Policy"] = _SEC_CSP_VALUE
+                if _SEC_HSTS_VALUE and "strict-transport-security" not in headers:
+                    headers["Strict-Transport-Security"] = _SEC_HSTS_VALUE
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Rate limiter (proteksi brute-force di /login, dibatasi per-IP)
 limiter = Limiter(key_func=_client_ip)
