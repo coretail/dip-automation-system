@@ -115,6 +115,23 @@ def _parse_product_ids_field(raw: str) -> list:
     return out
 
 
+def _resolve_author_profile(note: dict, profile_by_id: dict, profile_by_username: dict) -> dict:
+    """Profil penulis catatan untuk menampilkan display_name.
+
+    ``author_id`` (diisi dari user yang login saat catatan dibuat, dan juga
+    dasar hak edit/hapus) adalah identitas resmi, jadi dicocokkan lewat id.
+    Snapshot ``author_name`` HANYA dipakai bila catatan tidak punya
+    ``author_id`` (catatan lama). Bila ``author_id`` ada tetapi profilnya
+    tidak ditemukan (mis. akun sudah dihapus), kembalikan {} supaya template
+    menampilkan snapshot ``author_name`` apa adanya, bukan display_name milik
+    orang lain yang kebetulan memakai nama sama.
+    """
+    author_id = note.get("author_id")
+    if author_id:
+        return profile_by_id.get(str(author_id)) or {}
+    return profile_by_username.get((note.get("author_name") or "").strip().lower()) or {}
+
+
 def _render_note_html(
     body: str,
     live_product_ids: set | None = None,
@@ -450,15 +467,14 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             except Exception as e:
                 print(f"[NOTES] Gagal tarik display names: {e}")
 
-        # Older notes may not have a usable author_id. Resolve their stored
-        # author_name snapshot against profiles as a second lookup path.
+        # Catatan yang punya author_id dicocokkan lewat id (lihat
+        # _resolve_author_profile). Snapshot author_name hanya dicari untuk
+        # catatan lama TANPA author_id, jadi query ini biasanya tidak jalan.
         author_names = {
             (n.get("author_name") or "").strip()
             for n in notes
-            if (n.get("author_name") or "").strip()
+            if not n.get("author_id") and (n.get("author_name") or "").strip()
         }
-        # Always resolve the denormalized username snapshot as well. A note may
-        # contain a legacy/mismatched author_id even when the profile exists.
         if author_names:
             try:
                 try:
@@ -570,13 +586,9 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
 
         enriched = []
         for n in notes:
-            # Prefer the username snapshot because it identifies the author
-            # even when an old note has a stale or mismatched author_id.
-            author_profile = (
-                profile_by_username.get((n.get("author_name") or "").strip().lower())
-                or profile_by_id.get(str(n.get("author_id")))
-                or {}
-            )
+            # Penulis dicocokkan lewat author_id; nama hanya fallback untuk
+            # catatan lama tanpa author_id.
+            author_profile = _resolve_author_profile(n, profile_by_id, profile_by_username)
             completed_profile = profile_by_id.get(str(n.get("completed_by_user_id"))) or {}
             ments = mentions_by_note.get(n["id"], [])
             for mention in ments:
