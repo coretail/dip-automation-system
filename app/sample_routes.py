@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.security import assert_same_tenant
+
 WIB = ZoneInfo("Asia/Jakarta")
 
 
@@ -243,15 +245,17 @@ def register_sample_routes(
             sub_resp = supabase.table("sample_submissions").select("*").eq("id", submission_id).single().execute()
             old_row = sub_resp.data or {}
             old_code = old_row.get("sample_code") or "FSP/01-01-2026/1.1"
-
-            # Tenant check: non-admin hanya boleh mengubah sample perusahaannya sendiri.
-            if current_user.get("role") != "admin":
-                _user_company = (current_user.get("perusahaan") or "").strip().lower().replace("pt ", "")
-                _old_company = (old_row.get("company") or "").strip().lower().replace("pt ", "")
-                if _user_company and _old_company and _user_company != _old_company:
-                    raise HTTPException(status_code=403, detail="Akses ditolak! Sample bukan milik perusahaan Anda.")
+        except HTTPException:
+            raise
         except Exception:
             raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan")
+
+        # Tenant check (SEC-02): non-admin hanya boleh mengubah sample
+        # perusahaannya sendiri DAN tidak boleh memindahkannya ke perusahaan
+        # lain. Dulu inline check ikut tertelan except di atas sehingga 403
+        # berubah jadi 404; kini dievaluasi DI LUAR try dan lewat helper.
+        if not assert_same_tenant(current_user, old_row) or not assert_same_tenant(current_user, None, new_company=company):
+            raise HTTPException(status_code=403, detail="Akses ditolak! Sample bukan milik perusahaan Anda.")
 
         prefix_clean = sample_prefix.strip().upper() if sample_prefix and sample_prefix.strip() else "FSP"
 
@@ -353,11 +357,8 @@ def register_sample_routes(
 
         old_code = old_row.get("sample_code") or f"Sample {submission_id}"
 
-        if current_user.get("role") != "admin":
-            _user_company = (current_user.get("perusahaan") or "").strip().lower().replace("pt ", "")
-            _old_company = (old_row.get("company") or "").strip().lower().replace("pt ", "")
-            if _user_company and _old_company and _user_company != _old_company:
-                raise HTTPException(status_code=403, detail="Akses ditolak! Sample bukan milik perusahaan Anda.")
+        if not assert_same_tenant(current_user, old_row):
+            raise HTTPException(status_code=403, detail="Akses ditolak! Sample bukan milik perusahaan Anda.")
 
         try:
             supabase.table("sample_submissions").delete().eq("id", submission_id).execute()

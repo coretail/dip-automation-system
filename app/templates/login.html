@@ -61,7 +61,7 @@
         {% endif %}
 
         <!-- Form Login -->
-        <form action="/login" method="POST" class="space-y-5" onsubmit="handleLoginSubmit()">
+        <form action="/login" method="POST" class="space-y-5" onsubmit="return handleLoginSubmit(event)">
             <div>
                 <!-- Ubah label jadi Username / Email -->
                 <label class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">Username / Email</label>
@@ -102,7 +102,14 @@
     
 
     <script>
-        function handleLoginSubmit() {
+        function handleLoginSubmit(event) {
+            // FE-07: selama countdown lockout aktif, submit form DITAHAN total.
+            // Tombol disabled tidak menahan implicit submit via Enter, jadi
+            // flag ini penjaga sebenarnya (server tetap punya rate limit 5/mnt).
+            if (window.__loginLocked) {
+                if (event) event.preventDefault();
+                return false;
+            }
             const btnEl = document.getElementById('login-submit-btn');
             const btnTextEl = document.getElementById('login-submit-text');
             // Cegah double-submit: disable tombol begitu form dikirim, biar klik
@@ -120,6 +127,7 @@
 <script>
 (function() {
     let remaining = 60;
+    window.__loginLocked = true; // FE-07: handleLoginSubmit membaca flag ini.
     const timerEl = document.getElementById('countdown-timer');
     const btnEl = document.getElementById('login-submit-btn');
     const btnTextEl = document.getElementById('login-submit-text');
@@ -135,6 +143,7 @@
 
         if (remaining <= 0) {
             clearInterval(interval);
+            window.__loginLocked = false;
             btnEl.disabled = false;
             btnTextEl.textContent = 'Masuk ke Aplikasi';
             if (alertEl) alertEl.classList.add('hidden');

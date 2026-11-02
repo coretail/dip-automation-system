@@ -9,6 +9,20 @@ import os
 import sys
 
 
+def logout_via_post(page, base_url):
+    # SEC-16: /logout kini POST-only; kirim form POST nyata lalu tunggu /login.
+    try:
+        page.goto(base_url + "/")
+    except Exception:
+        pass
+    page.evaluate(
+        "() => { const f = document.createElement('form');"
+        " f.method = 'POST'; f.action = '/logout';"
+        " document.body.appendChild(f); f.submit(); }"
+    )
+    page.wait_for_url(lambda url: "/login" in url)
+
+
 def main():
     required = ("STAGING_ADMIN_EMAIL", "STAGING_ADMIN_PASSWORD")
     missing = [name for name in required if not os.getenv(name)]
@@ -48,7 +62,7 @@ def main():
             page.wait_for_url(lambda url: "/admin/users" in url)
             created = True
 
-            page.goto(base_url + "/logout")
+            logout_via_post(page, base_url)
             page.goto(base_url + "/login")
             page.locator('input[name="email"]').fill(disposable_email)
             page.locator('input[name="password"]').fill(disposable_password)
@@ -90,7 +104,7 @@ def main():
                 other_page.close()
             if created:
                 try:
-                    page.goto(base_url + "/logout")
+                    logout_via_post(page, base_url)
                     page.goto(base_url + "/login")
                     page.locator('input[name="email"]').fill(os.environ["STAGING_ADMIN_EMAIL"])
                     page.locator('input[name="password"]').fill(os.environ["STAGING_ADMIN_PASSWORD"])

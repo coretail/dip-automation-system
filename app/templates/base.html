@@ -78,7 +78,7 @@
             animation: fadeInUp 0.5s ease-out both;
         }
     </style>
-    {% block head_extra %}{% endblock %}
+    {% block head_extra %}{% endblock %}<script src="/static/common.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans antialiased">
 
@@ -296,7 +296,7 @@
                                         <p class="font-medium text-gray-900 truncate">${escapeHtml(item.nama_dagang)}</p>
                                         <p class="text-xs text-gray-500">Batch: ${escapeHtml(item.no_batch)} | ${escapeHtml(item.perusahaan)}</p>
                                         <p class="text-xs ${item.days_remaining <= 0 ? 'text-red-700 font-medium' : 'text-amber-700 font-medium'}">
-                                            ${item.days_remaining <= 0 ? 'EXPIRED' : `Sisa ${item.days_remaining} hari`} (ED: ${item.tanggal_ed})
+                                            ${item.days_remaining <= 0 ? 'EXPIRED' : `Sisa ${item.days_remaining} hari`} (ED: ${escapeHtml(item.tanggal_ed)})
                                         </p>
                                     </div>
                                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusBadgeClass(item.status_ed)} whitespace-nowrap">
@@ -352,11 +352,7 @@
                 }
             }
 
-            function escapeHtml(text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
-            }
+            // SEC-14: escapeHtml kini helper global tunggal dari /static/common.js
         });
     </script>
     <script>

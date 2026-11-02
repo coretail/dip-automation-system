@@ -175,6 +175,30 @@ def visit(page, path: str, label: str | None = None) -> bool:
     return record(label, ok, detail if not ok else "")
 
 
+def relax_secure_cookies(ctx) -> None:
+    """e2e berjalan lewat http://127.0.0.1. SEC-19 menandai access_token &
+    greeting_cache Secure; Chromium menempelkan cookie Secure untuk navigasi
+    halaman localhost (secure context) tapi TIDAK untuk browserContext.request
+    lewat http, sehingga ctx.request kehilangan sesi -> endpoint JSON ter-
+    redirect ke HTML login (HTTP 200 non-JSON). Re-inject cookie sesi tanpa
+    Secure agar ctx.request membawa sesi, mencerminkan klien HTTPS nyata yang
+    memang mengirim cookie Secure di staging/produksi."""
+    relaxed = []
+    for c in ctx.cookies():
+        if c.get("secure") and c["name"] in ("access_token", "greeting_cache"):
+            relaxed.append({
+                "name": c["name"],
+                "value": c["value"],
+                "domain": c["domain"],
+                "path": c["path"],
+                "secure": False,
+                "httpOnly": c.get("httpOnly", False),
+                "sameSite": c.get("sameSite", "Lax"),
+            })
+    if relaxed:
+        ctx.add_cookies(relaxed)
+
+
 def api_check(ctx, base_url: str) -> None:
     """C. Endpoint JSON (memakai cookie sesi browser)."""
     for path in ("/api/ed-notifications", "/api/admin/users/presence"):
@@ -394,6 +418,7 @@ def run_ui(base_url: str, email: str, password: str, db, marker: str,
                 record("login admin staging", False, f"masih di {page.url}")
                 return
 
+            relax_secure_cookies(ctx)
             dashboard_cookie_paths(ctx, page, base_url)          # B
             for path in STATIC_PAGES:                            # A
                 visit(page, path)

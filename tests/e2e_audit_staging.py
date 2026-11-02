@@ -414,9 +414,17 @@ def group_auth(browser, base_url: str, email: str, password: str, login: dict) -
     ctx.close()
 
     # --- A6: logout -> cookie access_token dihapus, halaman ke /login ------
+    # SEC-16: /logout kini POST-only; kirim lewat form POST nyata (bukan goto GET).
     ctx = browser.new_context(base_url=base_url, storage_state=state)
     page = new_page(ctx, "A:logout")
-    page.goto("/logout")
+    page.goto("/")
+    wait_idle(page)
+    page.evaluate(
+        "() => { const f = document.createElement('form');"
+        " f.method = 'POST'; f.action = '/logout';"
+        " document.body.appendChild(f); f.submit(); }"
+    )
+    page.wait_for_url("**/login**")
     wait_idle(page)
     after = {c["name"] for c in ctx.cookies()}
     ok_a6 = "access_token" not in after and "/login" in page.url
