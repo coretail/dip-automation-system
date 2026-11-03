@@ -111,6 +111,8 @@ backup-rls/
 !/tests/test_security_helpers.py
 !/tests/test_upload_validation.py
 !/tests/test_auth_matrix.py
+# Unit test guard tenant SEC-02 API PO + tulis raw-materials (pure-local, fake supabase).
+!/tests/test_sec02_po_rm_guard.py
 # Regression test temuan audit codebase 2026-10-21 (pure logic, tanpa koneksi/secret).
 !/tests/test_audit_regressions.py
 !/tests/test_profile_routes.py
