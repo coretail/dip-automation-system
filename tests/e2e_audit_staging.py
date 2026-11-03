@@ -305,6 +305,31 @@ def decode_jwt_claims(raw: str) -> dict:
         return {}
 
 
+def relax_secure_cookies(ctx) -> None:
+    """e2e berjalan lewat http://127.0.0.1. SEC-19 menandai access_token &
+    greeting_cache Secure; Chromium menempelkan cookie Secure untuk navigasi
+    halaman localhost (secure context) tapi TIDAK untuk browserContext.request
+    lewat http, sehingga ctx.request kehilangan sesi -> endpoint JSON ter-
+    redirect ke HTML login (HTTP 200 non-JSON). Re-inject cookie sesi tanpa
+    Secure agar ctx.request membawa sesi, mencerminkan klien HTTPS nyata.
+    (Pola sama dengan relax_secure_cookies di tests/e2e_smoke_refactor.py;
+    assertion A2 membaca atribut Secure dari state SEBELUM relaksasi.)"""
+    relaxed = []
+    for c in ctx.cookies():
+        if c.get("secure") and c["name"] in ("access_token", "greeting_cache"):
+            relaxed.append({
+                "name": c["name"],
+                "value": c["value"],
+                "domain": c["domain"],
+                "path": c["path"],
+                "secure": False,
+                "httpOnly": c.get("httpOnly", False),
+                "sameSite": c.get("sameSite", "Lax"),
+            })
+    if relaxed:
+        ctx.add_cookies(relaxed)
+
+
 def login_via_form(browser, base_url: str, email: str, password: str, label: str):
     """Login lewat form /login. Return (ctx, page, header_set_cookie)."""
     ctx = browser.new_context(base_url=base_url)
@@ -789,6 +814,8 @@ def group_tenant(browser, base_url: str, db, creds: tuple[str, str] | None) -> N
              f"login akun tenant kedua gagal (url={page.url})")
         ctx.close()
         return
+    # ctx.request (D1a/D1c) butuh sesi lewat http -> relaks flag Secure (lihat helper).
+    relax_secure_cookies(ctx)
 
     tok = next((c for c in ctx.cookies() if c["name"] == "access_token"), {})
     claims = decode_jwt_claims(tok.get("value", ""))
