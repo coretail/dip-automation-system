@@ -123,7 +123,7 @@ HTTP_VERBS = ("get", "post", "put", "delete", "patch", "head", "options")
 # Key = id audit, value = ringkasan singkat temuan.
 # ---------------------------------------------------------------------------
 KNOWN_ISSUES: dict[str, str] = {
-    "SEC-02": "assert_same_tenant tidak di-import modul mana pun; isolasi tenant praktis tidak terpasang.",
+    "SEC-02": "Guard tenant terpasang di rute tulis utama; sisa = daftar bahan baku tanpa filter tenant (menunggu keputusan produk).",
     "BE-07": "Isolasi tenant hanya sebagian; helper app/security.py masih dead code produksi.",
     "SEC-04": "Tanpa middleware security header (main.py:339). Bagian cookie access_token secure=True sudah diperbaiki (SEC-19).",
     "SEC-07": "Nol security header: tidak ada CSP/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/HSTS.",

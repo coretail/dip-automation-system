@@ -96,8 +96,9 @@ DIALOGS: list[str] = []
 
 # Temuan audit yang saat ini memang masih gagal -> baseline [KNOWN], bukan FAIL.
 KNOWN_ISSUES = {
-    "SEC-02": "Isolasi tenant nyaris tidak ada: assert_same_tenant tidak di-import modul "
-              "mana pun -> daftar & tulis lintas badan hukum lolos.",
+    "SEC-02": "Guard assert_same_tenant terpasang di rute tulis utama (produk/sample, "
+              "raw-material edit/delete/varian/company-doc, daftar produk & batch PO). "
+              "Sisa: daftar bahan baku tanpa filter tenant (D1b, menunggu keputusan produk).",
     "SEC-04": "Cookie sesi access_token (dan greeting_cache) diset tanpa secure=True.",
     "SEC-12": "login.html & public_error.html memuat Tailwind Play CDN v3 (EOL) sementara "
               "halaman aplikasi memuat Tailwind v4 (browser build).",
@@ -302,6 +303,31 @@ def decode_jwt_claims(raw: str) -> dict:
         return json.loads(base64.urlsafe_b64decode(parts[1] + pad).decode("utf-8"))
     except Exception:  # noqa: BLE001
         return {}
+
+
+def relax_secure_cookies(ctx) -> None:
+    """e2e berjalan lewat http://127.0.0.1. SEC-19 menandai access_token &
+    greeting_cache Secure; Chromium menempelkan cookie Secure untuk navigasi
+    halaman localhost (secure context) tapi TIDAK untuk browserContext.request
+    lewat http, sehingga ctx.request kehilangan sesi -> endpoint JSON ter-
+    redirect ke HTML login (HTTP 200 non-JSON). Re-inject cookie sesi tanpa
+    Secure agar ctx.request membawa sesi, mencerminkan klien HTTPS nyata.
+    (Pola sama dengan relax_secure_cookies di tests/e2e_smoke_refactor.py;
+    assertion A2 membaca atribut Secure dari state SEBELUM relaksasi.)"""
+    relaxed = []
+    for c in ctx.cookies():
+        if c.get("secure") and c["name"] in ("access_token", "greeting_cache"):
+            relaxed.append({
+                "name": c["name"],
+                "value": c["value"],
+                "domain": c["domain"],
+                "path": c["path"],
+                "secure": False,
+                "httpOnly": c.get("httpOnly", False),
+                "sameSite": c.get("sameSite", "Lax"),
+            })
+    if relaxed:
+        ctx.add_cookies(relaxed)
 
 
 def login_via_form(browser, base_url: str, email: str, password: str, label: str):
@@ -788,6 +814,8 @@ def group_tenant(browser, base_url: str, db, creds: tuple[str, str] | None) -> N
              f"login akun tenant kedua gagal (url={page.url})")
         ctx.close()
         return
+    # ctx.request (D1a/D1c) butuh sesi lewat http -> relaks flag Secure (lihat helper).
+    relax_secure_cookies(ctx)
 
     tok = next((c for c in ctx.cookies() if c["name"] == "access_token"), {})
     claims = decode_jwt_claims(tok.get("value", ""))
@@ -821,8 +849,7 @@ def group_tenant(browser, base_url: str, db, creds: tuple[str, str] | None) -> N
     check("D1a /api/po/products tidak membocorkan produk badan hukum lain",
           not leak_products,
           f"{len(items)} produk dikembalikan, {len(leak_products)} milik badan hukum lain "
-          f"(contoh: {[r.get('perusahaan') for r in leak_products[:3]]})",
-          known=KNOWN_ISSUES["SEC-02"])
+          f"(contoh: {[r.get('perusahaan') for r in leak_products[:3]]})")
 
     # D1b: halaman daftar bahan baku -> apakah baris badan hukum lain terlihat?
     try:
@@ -838,24 +865,38 @@ def group_tenant(browser, base_url: str, db, creds: tuple[str, str] | None) -> N
     wait_idle(page)
     html = page.content()
     seen = [r["nama_dagang"] for r in foreign if r["nama_dagang"] in html]
+    # Pecah dua angka: baris berperusahaan lain (kebocoran lintas tenant sungguhan)
+    # vs baris tanpa perusahaan (katalog bersama -- fail-open disengaja) supaya
+    # keputusan produk untuk D1b tidak tercampur dengan residu yang by-design.
+    seen_tenant = [r for r in foreign if r["nama_dagang"] in html and (r.get("perusahaan") or "").strip()]
+    seen_shared = [r for r in foreign if r["nama_dagang"] in html and not (r.get("perusahaan") or "").strip()]
     check("D1b daftar bahan baku tidak menampilkan baris badan hukum lain", not seen,
           f"{len(seen)} baris milik badan hukum lain terlihat di /raw-materials "
-          f"(dari {len(foreign)} kandidat)",
+          f"(berperusahaan lain: {len(seen_tenant)}, baris kosong/katalog bersama: {len(seen_shared)}; "
+          f"dari {len(foreign)} kandidat)",
           known=KNOWN_ISSUES["SEC-02"])
 
-    # D1c: tulis lintas tenant harus DITOLAK 403.
-    # Payload dijamin ditolak validasi lebih dulu (kode bahan baku bentrok),
-    # jadi tidak ada baris yang benar-benar berubah.
-    target = foreign[0] if foreign else None
+    # D1c: tulis lintas tenant harus DITOLAK 403 (guard assert_same_tenant kini
+    # PALING AWAL di edit_raw_material, sebelum cek duplikat/variant/_ensure_
+    # default_variant). Target HANYA baris dengan perusahaan terisi dan beda
+    # dengan akun uji (baris kosong = fail-open disengaja, tidak boleh jadi target).
+    # Kode donor tetap dibuat bentrok sebagai lapisan kedua: seandainya guard
+    # bolong, validasi duplikat menolak (400) sebelum update sehingga data aman.
+    foreign_tenant = [r for r in foreign if (r.get("perusahaan") or "").strip()]
+    target = foreign_tenant[0] if foreign_tenant else None
     donor = None
     if target:
         for r in rm_rows:
             if r.get("id") != target.get("id") and (r.get("kode_bahan_baku") or "").strip():
                 donor = r
                 break
-    if not target or not donor:
+    if not target:
         skip("D1c tulis lintas tenant ditolak 403",
-             "tidak ada pasangan baris (target + kode donor) untuk uji tanpa mengubah data")
+             "tidak ada baris raw_materials dengan perusahaan lain yang terisi "
+             "(baris tanpa perusahaan = fail-open disengaja, bukan target)")
+    elif not donor:
+        skip("D1c tulis lintas tenant ditolak 403",
+             "tidak ada kode donor (baris lain dengan kode bahan baku terisi)")
     else:
         before = (db.table("raw_materials").select("nama_dagang,kode_bahan_baku")
                   .eq("id", target["id"]).execute().data or [{}])[0]
@@ -876,10 +917,10 @@ def group_tenant(browser, base_url: str, db, creds: tuple[str, str] | None) -> N
                  .eq("id", target["id"]).execute().data or [{}])[0]
         unchanged = (before.get("nama_dagang") == after.get("nama_dagang")
                      and before.get("kode_bahan_baku") == after.get("kode_bahan_baku"))
-        check("D1c tulis lintas tenant ditolak 403 (tidak ada cek tenant)", status == 403,
-              f"HTTP {status} untuk baris milik badan hukum lain "
-              f"(probe memakai kode bentrok -> validasi menolak sebelum update)",
-              known=KNOWN_ISSUES["SEC-02"])
+        check("D1c tulis lintas tenant ditolak 403 (guard assert_same_tenant di awal)",
+              status == 403,
+              f"HTTP {status} untuk baris perusahaan {target.get('perusahaan')!r} "
+              f"(kode bentrok hanya lapisan kedua bila guard bolong)")
         check("D1c-2 data uji tidak berubah setelah probe tulis", unchanged,
               f"nama_dagang sama={before.get('nama_dagang') == after.get('nama_dagang')} "
               f"kode sama={before.get('kode_bahan_baku') == after.get('kode_bahan_baku')}")

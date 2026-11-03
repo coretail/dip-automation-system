@@ -62,6 +62,7 @@ jobs:
           python tests/test_parse_storage_url.py
           python tests/test_object_store_r2.py
           python tests/test_security_helpers.py
+          python tests/test_sec02_po_rm_guard.py
           python tests/test_upload_validation.py
           python tests/test_auth_matrix.py
           python tests/test_audit_regressions.py
