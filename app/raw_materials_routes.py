@@ -697,7 +697,7 @@ def register_raw_materials_routes(
         import json
 
         try:
-            rm_resp = supabase.table("raw_materials").select("kode_bahan_baku, nama_dagang").eq("id", rm_id).limit(1).execute()
+            rm_resp = supabase.table("raw_materials").select("kode_bahan_baku, nama_dagang, perusahaan").eq("id", rm_id).limit(1).execute()
         except Exception as e:
             print(f"Gagal memuat bahan baku {rm_id} untuk quick-upload: {e}")
             rm_resp = None
@@ -706,6 +706,15 @@ def register_raw_materials_routes(
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
             response.set_cookie("error_msg", "Bahan baku tidak ditemukan.")
             return response
+        # SEC-02: guard sebelum helper menulis (upload storage + upsert company doc).
+        if not assert_same_tenant(current_user, rm_row):
+            log_activity(
+                current_user, "edit", "raw_material_company_doc", rm_id,
+                rm_row.get("nama_dagang") or rm_row.get("kode_bahan_baku") or rm_id,
+                changes=[{"field": "perusahaan", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.")
         kode_bahan_baku = rm_row["kode_bahan_baku"]
         nama_bahan_baku = rm_row.get("nama_dagang") or kode_bahan_baku
 
@@ -904,25 +913,9 @@ def register_raw_materials_routes(
         current_user: dict = Depends(get_current_user),
         variant_id: str = Form(None),
     ):
-        kode_check = " ".join(kode_bahan_baku.split())  # trim + collapse spasi ganda jadi 1
-        existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).neq("id", rm_id).execute()
-
-        if existing_rm.data:
-            raise HTTPException(status_code=400, detail=f"Gagal Edit! Kode '{kode_check}' sudah dipakai oleh bahan baku lain.")
-
-        # --- Target varian yang lagi diedit (form baru kirim variant_id; form lama
-        #     / tanpa kirim = varian default, get-or-create biar selalu ada) ---
-        editing_variant_id = (variant_id or "").strip() or None
-        if editing_variant_id:
-            variant_check = supabase.table("raw_material_composition_variants") \
-                .select("id").eq("id", editing_variant_id).eq("raw_material_id", rm_id) \
-                .limit(1).execute()
-            if not variant_check.data:
-                raise HTTPException(status_code=400, detail="Varian yang dipilih tidak cocok dengan bahan baku ini.")
-        else:
-            editing_variant_id = _ensure_default_variant(rm_id, produsen)
-
-        # --- Ambil data LAMA dulu sebelum diubah, buat dibandingin di activity log ---
+        # --- SEC-02: guard tenant PALING AWAL, sebelum query tulis apa pun ---
+        # Urutan lama (cek duplikat kode -> cek varian + _ensure_default_variant
+        # (TULIS) -> baru guard) membiarkan operasi tulis terjadi sebelum authz.
         # .limit(1) + cek kosong (bukan .single()) supaya baris yang hilang tidak
         # memicu PGRST116 -> 500 mentah; diperlakukan sebagai tidak ditemukan.
         try:
@@ -946,6 +939,25 @@ def register_raw_materials_routes(
                 request=request, outcome="rejected",
             )
             raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.")
+
+        kode_check = " ".join(kode_bahan_baku.split())  # trim + collapse spasi ganda jadi 1
+        existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).neq("id", rm_id).execute()
+
+        if existing_rm.data:
+            raise HTTPException(status_code=400, detail=f"Gagal Edit! Kode '{kode_check}' sudah dipakai oleh bahan baku lain.")
+
+        # --- Target varian yang lagi diedit (form baru kirim variant_id; form lama
+        #     / tanpa kirim = varian default, get-or-create biar selalu ada) ---
+        editing_variant_id = (variant_id or "").strip() or None
+        if editing_variant_id:
+            variant_check = supabase.table("raw_material_composition_variants") \
+                .select("id").eq("id", editing_variant_id).eq("raw_material_id", rm_id) \
+                .limit(1).execute()
+            if not variant_check.data:
+                raise HTTPException(status_code=400, detail="Varian yang dipilih tidak cocok dengan bahan baku ini.")
+        else:
+            editing_variant_id = _ensure_default_variant(rm_id, produsen)
+
         old_company_docs_resp = supabase.table("raw_material_company_docs").select("*").eq("raw_material_id", rm_id).execute()
         old_company_docs = {d["perusahaan"]: d for d in (old_company_docs_resp.data or [])}
         # --- Ambil data komponen LAMA buat dibandingin (scoped ke varian yang lagi
@@ -1241,9 +1253,18 @@ def register_raw_materials_routes(
             response = RedirectResponse(url="/raw-materials", status_code=303)
             response.set_cookie("error_msg", "Nama varian/produsen wajib diisi.")
             return response
-        rm_check = supabase.table("raw_materials").select("id, nama_dagang").eq("id", rm_id).limit(1).execute()
+        rm_check = supabase.table("raw_materials").select("id, nama_dagang, perusahaan").eq("id", rm_id).limit(1).execute()
         if not rm_check.data:
             raise HTTPException(status_code=404, detail="Bahan baku tidak ditemukan.")
+        # SEC-02: guard sebelum insert varian (sebelumnya tulis tanpa authz).
+        if not assert_same_tenant(current_user, rm_check.data[0]):
+            log_activity(
+                current_user, "create", "raw_material_variant", rm_id,
+                f"{rm_check.data[0].get('nama_dagang')} / {nama}",
+                changes=[{"field": "perusahaan", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.")
         dup = supabase.table("raw_material_composition_variants") \
             .select("id").eq("raw_material_id", rm_id).ilike("nama_varian", nama).limit(1).execute()
         if dup.data:
@@ -1268,6 +1289,18 @@ def register_raw_materials_routes(
             .select("id, nama_varian, raw_material_id").eq("id", variant_id).limit(1).execute()
         if not target.data or target.data[0].get("raw_material_id") != rm_id:
             raise HTTPException(status_code=400, detail="Varian yang dipilih tidak cocok dengan bahan baku ini.")
+        # SEC-02: guard sebelum update is_default (sebelumnya tulis tanpa authz).
+        rm_check = supabase.table("raw_materials").select("id, nama_dagang, perusahaan").eq("id", rm_id).limit(1).execute()
+        if not rm_check.data:
+            raise HTTPException(status_code=404, detail="Bahan baku tidak ditemukan.")
+        if not assert_same_tenant(current_user, rm_check.data[0]):
+            log_activity(
+                current_user, "update", "raw_material_variant", variant_id,
+                f"{rm_check.data[0].get('nama_dagang')} / {target.data[0].get('nama_varian')}",
+                changes=[{"field": "perusahaan", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.")
         # Unset semua dulu baru set yang baru (aman terhadap unique index 1-default).
         supabase.table("raw_material_composition_variants") \
             .update({"is_default": False}).eq("raw_material_id", rm_id).execute()
@@ -1287,6 +1320,18 @@ def register_raw_materials_routes(
         if not target.data or target.data[0].get("raw_material_id") != rm_id:
             raise HTTPException(status_code=400, detail="Varian yang dipilih tidak cocok dengan bahan baku ini.")
         nama_varian = target.data[0].get("nama_varian") or variant_id
+
+        # SEC-02: guard sebelum delete komponen/varian (sebelumnya tulis tanpa authz).
+        rm_check = supabase.table("raw_materials").select("id, nama_dagang, perusahaan").eq("id", rm_id).limit(1).execute()
+        if not rm_check.data:
+            raise HTTPException(status_code=404, detail="Bahan baku tidak ditemukan.")
+        if not assert_same_tenant(current_user, rm_check.data[0]):
+            log_activity(
+                current_user, "delete", "raw_material_variant", variant_id, nama_varian,
+                changes=[{"field": "perusahaan", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.")
 
         # Guard 1: minimal harus ada 1 varian yang tersisa.
         all_variants = supabase.table("raw_material_composition_variants") \

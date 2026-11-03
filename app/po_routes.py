@@ -3,9 +3,10 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from fastapi import Depends, Form, Request
+from fastapi import Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.database import supabase
+from app.security import assert_same_tenant
 WIB = ZoneInfo("Asia/Jakarta")
 
 # Label field item PO untuk activity log (dipakai _build_diff_changes),
@@ -923,11 +924,26 @@ def register_po_routes(app, get_current_user, log_activity, templates,
     async def api_po_products(q: str = "", current_user: dict = Depends(get_current_user)):
         qn = _sanitize_ilike(q)
         rows = []
-        q3 = supabase.table("products").select("id, nama_produk, no_na_produk").eq("is_deleted", False)
+        q3 = supabase.table("products").select("id, nama_produk, no_na_produk, perusahaan").eq("is_deleted", False)
         if qn:
             q3 = q3.or_(f"no_na_produk.ilike.%{qn}%,nama_produk.ilike.%{qn}%")
+        # SEC-02: staff hanya melihat produk perusahaannya sendiri + produk tanpa
+        # perusahaan (katalog bersama -- helper fail-open oleh desain). Admin dan
+        # user tanpa perusahaan melihat semua (perilaku helper).
+        tenant_limited = (
+            str(current_user.get("role") or "").lower() != "admin"
+            and bool(str(current_user.get("perusahaan") or "").strip())
+        )
         try:
-            rows = (q3.order("nama_produk").limit(20).execute().data or [])
+            if tenant_limited:
+                # Normalisasi helper ("PT ERFI" ~ "erfi") tidak bisa ditiru filter
+                # exact-match PostgREST, jadi over-fetch lalu saring lewat helper,
+                # BARU potong 20 -- hasil tidak boleh <20 hanya karena limit
+                # diterapkan sebelum filter.
+                fetched = q3.order("nama_produk").limit(200).execute().data or []
+                rows = [r for r in fetched if assert_same_tenant(current_user, r)][:20]
+            else:
+                rows = (q3.order("nama_produk").limit(20).execute().data or [])
         except Exception as ex:
             print(f"[PO] products gagal: {ex}")
         if qn:
@@ -940,6 +956,16 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         pid = (product_id or "").strip()
         if not pid:
             return JSONResponse({"items": []})
+        # SEC-02: batch hanya untuk produk yang boleh diakses user ini. Produk
+        # tidak ditemukan (atau gagal dibaca) -> items kosong seperti sebelumnya.
+        try:
+            prod_res = supabase.table("products").select("id, perusahaan").eq("id", pid).limit(1).execute()
+            prod_row = (prod_res.data or [None])[0]
+        except Exception as ex:
+            print(f"[PO] cek produk batches gagal: {ex}")
+            prod_row = None
+        if prod_row and not assert_same_tenant(current_user, prod_row):
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
         rows = []
         try:
             res = supabase.table("product_batches").select("id, no_batch, tanggal_produksi, tanggal_ed").eq("product_id", pid).order("tanggal_produksi", desc=True).limit(50).execute()
