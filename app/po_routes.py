@@ -964,6 +964,8 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         except Exception as ex:
             print(f"[PO] cek produk batches gagal: {ex}")
             prod_row = None
+        if not prod_row:
+            return JSONResponse({"items": []})
         if prod_row and not assert_same_tenant(current_user, prod_row):
             raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
         rows = []
@@ -1016,9 +1018,11 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                 return JSONResponse({"ok": False, "error": msg}, status_code=400)
             return _redirect_po(back, err=msg)
         ok_prod = False
+        prod_row = None
         try:
-            pr = supabase.table("products").select("id").eq("id", pid).eq("is_deleted", False).limit(1).execute()
-            ok_prod = bool(pr.data)
+            pr = supabase.table("products").select("id, perusahaan").eq("id", pid).eq("is_deleted", False).limit(1).execute()
+            prod_row = (pr.data or [None])[0]
+            ok_prod = bool(prod_row)
         except Exception:
             ok_prod = False
         if not ok_prod:
@@ -1026,6 +1030,13 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             if wants_json:
                 return JSONResponse({"ok": False, "error": msg}, status_code=404)
             return _redirect_po(back, err=msg)
+        # SEC-02: purchase_orders tidak punya kolom perusahaan; tenant PO/batch
+        # diturunkan dari produknya. Guard sebelum insert apa pun.
+        if prod_row and not assert_same_tenant(current_user, prod_row):
+            log_activity(current_user, "create", "product_batch", None, nb,
+                         changes=[{"field": "perusahaan", "note": "ditolak: produk bukan milik perusahaan"}],
+                         request=request, outcome="rejected")
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
         tprod = _parse_opt_date(tanggal_produksi)
         if tprod == "INVALID":
             msg = "Format Tgl Produksi tidak valid."
@@ -1082,13 +1093,23 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         if not po:
             return _redirect_po(None, err="PO tidak ditemukan.")
         ok_prod = False
+        prod_row = None
         try:
-            pr = supabase.table("products").select("id").eq("id", pid).eq("is_deleted", False).limit(1).execute()
-            ok_prod = bool(pr.data)
+            pr = supabase.table("products").select("id, perusahaan").eq("id", pid).eq("is_deleted", False).limit(1).execute()
+            prod_row = (pr.data or [None])[0]
+            ok_prod = bool(prod_row)
         except Exception:
             return _redirect_po(po_id, err="Gagal validasi produk.")
         if not ok_prod:
             return _redirect_po(po_id, err="Produk tidak ditemukan.")
+        # SEC-02: item PO hanya untuk produk yang boleh diakses user ini
+        # (tenant PO diturunkan dari produk item). Guard sebelum insert.
+        if prod_row and not assert_same_tenant(current_user, prod_row):
+            log_activity(current_user, "create", "purchase_order_item", None,
+                         f"{po.get('no_po')} (produk {pid[:8]})",
+                         changes=[{"field": "perusahaan", "note": "ditolak: produk bukan milik perusahaan"}],
+                         request=request, outcome="rejected")
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
         brow = None
         try:
             br = supabase.table("product_batches").select("id, product_id").eq("id", bid).limit(1).execute()
@@ -1166,6 +1187,39 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             currow = None
         if not currow or str(currow.get("purchase_order_id") or "") != str(po_id):
             return _redirect_po(po_id, err="Item tidak ditemukan di PO ini.")
+        # SEC-02: guard produk LAMA lebih dulu (sebelum validasi/update); produk
+        # BARU dicek setelah validasi batch di bawah. Lama maupun baru harus
+        # boleh diakses user ini (tenant PO diturunkan dari produk item).
+        old_pid = str(currow.get("product_id") or "")
+        old_prod_row = None
+        if old_pid:
+            try:
+                opr = supabase.table("products").select("id, perusahaan").eq("id", old_pid).limit(1).execute()
+                old_prod_row = (opr.data or [None])[0]
+            except Exception:
+                old_prod_row = None
+        if old_prod_row and not assert_same_tenant(current_user, old_prod_row):
+            log_activity(current_user, "update", "purchase_order_item", item_id,
+                         f"item {item_id[:8]}",
+                         changes=[{"field": "perusahaan", "note": "ditolak: produk lama item bukan milik perusahaan"}],
+                         request=request, outcome="rejected")
+            raise HTTPException(status_code=403, detail="Akses ditolak! Item milik produk badan hukum lain.")
+        # Cek juga produk BARU sedini mungkin. Selain menutup akses lintas
+        # tenant, ini menjaga validasi/tulis berikutnya tetap berada setelah
+        # authorization, walau batch/tanggal form tidak valid.
+        new_prod_row = None
+        if pid and pid != old_pid:
+            try:
+                npr = supabase.table("products").select("id, perusahaan").eq("id", pid).limit(1).execute()
+                new_prod_row = (npr.data or [None])[0]
+            except Exception:
+                new_prod_row = None
+            if new_prod_row and not assert_same_tenant(current_user, new_prod_row):
+                log_activity(current_user, "update", "purchase_order_item", item_id,
+                             f"item {item_id[:8]}",
+                             changes=[{"field": "perusahaan", "note": "ditolak: produk baru bukan milik perusahaan"}],
+                             request=request, outcome="rejected")
+                raise HTTPException(status_code=403, detail="Akses ditolak! Produk baru bukan milik perusahaan Anda.")
         tgl = _parse_opt_date(tanggal_catatan_batch)
         if tgl == "INVALID":
             return _redirect_po(po_id, err="Format Tgl Catatan tidak valid.")
@@ -1219,12 +1273,28 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                              current_user: dict = Depends(get_current_user)):
         currow = None
         try:
-            cur = supabase.table("purchase_order_items").select("id, purchase_order_id, urutan").eq("id", item_id).limit(1).execute()
+            cur = supabase.table("purchase_order_items").select("id, purchase_order_id, urutan, product_id").eq("id", item_id).limit(1).execute()
             currow = (cur.data or [None])[0]
         except Exception:
             currow = None
         if not currow or str(currow.get("purchase_order_id") or "") != str(po_id):
             return _redirect_po(po_id, err="Item tidak ditemukan di PO ini.")
+        # SEC-02: hapus hanya untuk item dengan produk yang boleh diakses user
+        # ini (tenant PO diturunkan dari produk item). Guard sebelum delete.
+        item_pid = str(currow.get("product_id") or "")
+        if item_pid:
+            item_prod_row = None
+            try:
+                ipr = supabase.table("products").select("id, perusahaan").eq("id", item_pid).limit(1).execute()
+                item_prod_row = (ipr.data or [None])[0]
+            except Exception:
+                item_prod_row = None
+            if item_prod_row and not assert_same_tenant(current_user, item_prod_row):
+                log_activity(current_user, "delete", "purchase_order_item", item_id,
+                             f"urutan {currow.get('urutan')}",
+                             changes=[{"field": "perusahaan", "note": "ditolak: produk item bukan milik perusahaan"}],
+                             request=request, outcome="rejected")
+                raise HTTPException(status_code=403, detail="Akses ditolak! Item milik produk badan hukum lain.")
         try:
             supabase.table("purchase_order_items").delete().eq("id", item_id).execute()
         except Exception as ex:

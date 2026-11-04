@@ -1402,6 +1402,28 @@ def register_raw_materials_routes(
     ):
         import json
 
+        # SEC-02: guard tenant PALING AWAL, sebelum upload storage dan insert
+        # apa pun. Tenant batch = perusahaan bahan baku induk (raw_material_id)
+        # DAN nilai form `perusahaan` (new_company); keduanya harus lolos
+        # helper. Bahan baku induk tidak terbaca -> helper memperlakukannya
+        # tanpa perusahaan (fail-open lama); insert tetap dikawal FK seperti
+        # sebelumnya.
+        try:
+            rm_batch_parent = supabase.table("raw_materials").select(
+                "id, nama_dagang, perusahaan").eq("id", raw_material_id).limit(1).execute()
+            rm_parent_row = (rm_batch_parent.data or [None])[0]
+        except Exception as e:
+            print(f"Gagal memuat bahan baku induk {raw_material_id} untuk guard batch: {e}")
+            rm_parent_row = None
+        if not assert_same_tenant(current_user, rm_parent_row, new_company=perusahaan):
+            log_activity(
+                current_user, "create", "raw_material_batch", None,
+                f"Batch {no_batch.strip()}",
+                changes=[{"field": "perusahaan", "note": "ditolak: bahan baku induk/perusahaan form bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku/perusahaan bukan milik perusahaan Anda.")
+
         clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
         # Sufiks unik per operasi. Path file WAJIB unik supaya:
         #   - upload baru tidak menimpa file lama milik batch lain yang nomor
@@ -1653,7 +1675,8 @@ def register_raw_materials_routes(
         # melempar error -> ditolak sendiri dengan pesan yang jelas, dan
         # tidak ada file terunggah yang jadi yatim.
         pre_resp = supabase.table("raw_material_batches").select(
-            "id, no_batch, coa_file_url, halal_batch_file_url, qc_report_file_url"
+            "id, no_batch, coa_file_url, halal_batch_file_url, qc_report_file_url, "
+            "perusahaan, raw_materials(perusahaan)"
         ).eq("id", batch_id).limit(1).execute()
         batch_row = (pre_resp.data or [None])[0]
         if not batch_row:
@@ -1667,6 +1690,25 @@ def register_raw_materials_routes(
             response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
             response.set_cookie("error_msg", "Batch tidak ditemukan. Perubahan tidak disimpan.")
             return response
+
+        # SEC-02: guard sebelum upload/update. Tenant batch = kolom perusahaan
+        # batch itu sendiri DAN bahan baku induknya; keduanya diuji helper
+        # (baris tanpa perusahaan = fail-open disengaja, katalog lama tetap bisa).
+        _rm_parent_edit = batch_row.get("raw_materials")
+        if isinstance(_rm_parent_edit, list):
+            _rm_parent_edit = _rm_parent_edit[0] if _rm_parent_edit else None
+        _edit_rejected = (not assert_same_tenant(current_user, batch_row)) or (
+            isinstance(_rm_parent_edit, dict)
+            and not assert_same_tenant(current_user, _rm_parent_edit)
+        )
+        if _edit_rejected:
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                f"Update batch {no_batch.strip()}",
+                changes=[{"field": "perusahaan", "note": "ditolak: batch/bahan baku induk bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Batch bukan milik perusahaan Anda.")
 
         # URL dokumen LAMA -> dipakai nanti untuk menghapus objek yang
         # digantikan, kalau objek itu memang tidak dirujuk baris lain.
@@ -1877,7 +1919,7 @@ def register_raw_materials_routes(
         # melempar error -> ditolak dengan pesan yang jelas.
         batch_resp = supabase.table("raw_material_batches").select(
             "no_batch, coa_file_url, halal_batch_file_url, qc_report_file_url, "
-            "raw_materials(nama_dagang)"
+            "perusahaan, raw_materials(nama_dagang, perusahaan)"
         ).eq("id", batch_id).limit(1).execute()
         batch_row = (batch_resp.data or [None])[0]
         if not batch_row:
@@ -1891,6 +1933,25 @@ def register_raw_materials_routes(
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
             response.set_cookie("error_msg", "Batch tidak ditemukan.")
             return response
+
+        # SEC-02: guard sebelum upload storage apa pun. Tenant batch = kolom
+        # perusahaan batch + bahan baku induknya (helper fail-open untuk baris
+        # tanpa perusahaan).
+        _rm_parent_qd = batch_row.get("raw_materials")
+        if isinstance(_rm_parent_qd, list):
+            _rm_parent_qd = _rm_parent_qd[0] if _rm_parent_qd else None
+        _qd_rejected = (not assert_same_tenant(current_user, batch_row)) or (
+            isinstance(_rm_parent_qd, dict)
+            and not assert_same_tenant(current_user, _rm_parent_qd)
+        )
+        if _qd_rejected:
+            log_activity(
+                current_user, "edit", "raw_material_batch", batch_id,
+                "Upload cepat dokumen batch",
+                changes=[{"field": "perusahaan", "note": "ditolak: batch/bahan baku induk bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Batch bukan milik perusahaan Anda.")
 
         no_batch = batch_row["no_batch"]
         # URL dokumen LAMA -> dipakai untuk menghapus objek yang digantikan,
@@ -2181,6 +2242,31 @@ def register_raw_materials_routes(
         now = datetime.now(WIB)
 
         try:
+            # SEC-02: baca baris batch + bahan baku induk SEBELUM update (rute
+            # ini dulu langsung UPDATE tanpa baca). Batch tidak ditemukan ->
+            # helper lolos dan update tetap no-op seperti perilaku lama.
+            ed_guard_resp = supabase.table("raw_material_batches").select(
+                "id, perusahaan, raw_materials(perusahaan)"
+            ).eq("id", batch_id).limit(1).execute()
+            ed_batch_row = (ed_guard_resp.data or [None])[0]
+            _rm_parent_ed = (ed_batch_row or {}).get("raw_materials")
+            if isinstance(_rm_parent_ed, list):
+                _rm_parent_ed = _rm_parent_ed[0] if _rm_parent_ed else None
+            _ed_rejected = ed_batch_row and (
+                (not assert_same_tenant(current_user, ed_batch_row)) or (
+                    isinstance(_rm_parent_ed, dict)
+                    and not assert_same_tenant(current_user, _rm_parent_ed)
+                )
+            )
+            if _ed_rejected:
+                log_activity(
+                    current_user, "acc_dipakai", "raw_material_batch", batch_id,
+                    f"ED diperpanjang ke {new_expiry_date}",
+                    changes=[{"field": "perusahaan", "note": "ditolak: batch/bahan baku induk bukan milik perusahaan"}],
+                    request=request, outcome="rejected",
+                )
+                raise HTTPException(status_code=403, detail="Akses ditolak! Batch bukan milik perusahaan Anda.")
+
             # Update batch with new ED, status, and QC notes
             update_data = {
                 "tanggal_ed": new_expiry_date,
@@ -2198,6 +2284,10 @@ def register_raw_materials_routes(
             response.set_cookie("success_msg", f"ACC Dipakai berhasil disimpan. ED baru: {new_expiry_date}")
             return response
 
+        except HTTPException:
+            # Guard tenant (403) jangan sampai tertelan dan dilaporkan sebagai
+            # "gagal menyimpan" generik (pola BE-06 di login).
+            raise
         except Exception as e:
             print(f"Gagal ACC Dipakai: {e}")
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
@@ -2219,6 +2309,31 @@ def register_raw_materials_routes(
         now = datetime.now(WIB)
 
         try:
+            # SEC-02: baca baris batch + bahan baku induk SEBELUM update (rute
+            # ini dulu langsung UPDATE tanpa baca). Batch tidak ditemukan ->
+            # helper lolos dan update tetap no-op seperti perilaku lama.
+            disp_guard_resp = supabase.table("raw_material_batches").select(
+                "id, perusahaan, raw_materials(perusahaan)"
+            ).eq("id", batch_id).limit(1).execute()
+            disp_batch_row = (disp_guard_resp.data or [None])[0]
+            _rm_parent_disp = (disp_batch_row or {}).get("raw_materials")
+            if isinstance(_rm_parent_disp, list):
+                _rm_parent_disp = _rm_parent_disp[0] if _rm_parent_disp else None
+            _disp_rejected = disp_batch_row and (
+                (not assert_same_tenant(current_user, disp_batch_row)) or (
+                    isinstance(_rm_parent_disp, dict)
+                    and not assert_same_tenant(current_user, _rm_parent_disp)
+                )
+            )
+            if _disp_rejected:
+                log_activity(
+                    current_user, "acc_dimusnahkan", "raw_material_batch", batch_id,
+                    "Batch dimusnahkan (dispose)",
+                    changes=[{"field": "perusahaan", "note": "ditolak: batch/bahan baku induk bukan milik perusahaan"}],
+                    request=request, outcome="rejected",
+                )
+                raise HTTPException(status_code=403, detail="Akses ditolak! Batch bukan milik perusahaan Anda.")
+
             # Update batch: status = Dimusnahkan, stok = 0, save QC notes and timestamp
             update_data = {
                 "status_ed": "Dimusnahkan",
@@ -2237,6 +2352,9 @@ def register_raw_materials_routes(
             response.set_cookie("success_msg", "Batch berhasil dimusnahkan (ACC Dimusnahkan).")
             return response
 
+        except HTTPException:
+            # Guard tenant (403) jangan tertelan sebagai "gagal memusnahkan".
+            raise
         except Exception as e:
             print(f"Gagal ACC Dimusnahkan: {e}")
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)

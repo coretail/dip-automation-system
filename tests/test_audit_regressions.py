@@ -7,8 +7,8 @@ sudah CONFIRMED punya satu baris executable yang berubah dari [KNOWN] jadi
 
 Cakupan (ID audit yang dilindungi):
   - Inventaris route       : SEC-01, SEC-09, SEC-16, SEC-17
-  - Header & flag cookie   : SEC-04, SEC-07
-  - Kontrak error jujur    : BE-01, BE-02, BE-03, BE-08, BE-21
+  - Header & flag cookie   : SEC-07, SEC-19
+  - Kontrak error jujur    : BE-01, BE-02, BE-03, BE-08
   - Dead code & duplikasi  : SEC-02, BE-04, BE-07, SEC-14, SEC-18
   - Template & escaping    : SEC-14, FE-05
   - Polling frontend       : FE-05, FE-06, FE-07
@@ -123,18 +123,14 @@ HTTP_VERBS = ("get", "post", "put", "delete", "patch", "head", "options")
 # Key = id audit, value = ringkasan singkat temuan.
 # ---------------------------------------------------------------------------
 KNOWN_ISSUES: dict[str, str] = {
-    "SEC-02": "Guard tenant terpasang di rute tulis utama; sisa = daftar bahan baku tanpa filter tenant (menunggu keputusan produk).",
+    "SEC-02": "Guard terpasang di rute tulis utama; sisa D1b daftar bahan baku bersama dan filter daftar PO per perusahaan (menunggu keputusan produk).",
     "BE-07": "Isolasi tenant hanya sebagian; helper app/security.py masih dead code produksi.",
-    "SEC-04": "Tanpa middleware security header (main.py:339). Bagian cookie access_token secure=True sudah diperbaiki (SEC-19).",
     "SEC-07": "Nol security header: tidak ada CSP/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/HSTS.",
     "SEC-14": "escapeHtml punya 4 implementasi terpisah; target audit: satu helper global.",
     "SEC-16": "Logout masih dipicu via GET sehingga bisa dipaksa CSRF (main.py:1143); target: POST.",
     "SEC-18": "Artefak teks 'omniroute' masih ada di brands.html:1 sebelum blok extends.",
-    "BE-04": "Query .single() di luar try -> baris tidak ada jadi HTTP 500 (bukan 'tidak ditemukan').",
     "BE-08": "str(e) bocor ke browser dan dipersistensi ke activity_logs (PostgREST message/hint/details).",
     "DUPL-01": "compute_status_na() dipanggil dua kali berturut-turut (sisa bad merge di dashboard_routes.py).",
-    "FE-05": "Link logout di sidebar tidak menghentikan heartbeat presence.",
-    "FE-06": "window.__adminPresenceInterval tidak pernah di-assign di admin_users.html.",
     "FE-07": "Countdown lockout tidak menjaga submit form login (submit via Enter menembus limiter).",
     "U6": "Tabel entitas audit (panduan:699-713) belum menyebut 5 nilai entity_type: "
           "product_attachment, product_file, product_batch, purchase_order, purchase_order_item.",
@@ -845,13 +841,12 @@ def section_security_headers() -> None:
     main_path = APP_DIR / "main.py"
     main_text = read_text(main_path)
 
-    # SEC-04 (bagian middleware) - audit: app/main.py:339 tidak punya middleware.
+    # Security middleware must remain installed; a regression is an unexpected failure.
     middleware_calls = re.findall(r"^[ \t]*app\.add_middleware\(", main_text, re.MULTILINE)
     check(
-        "SEC-04 middleware security header terpasang (main.py:339)",
+        "SEC-07 middleware security header terpasang (main.py:339)",
         bool(middleware_calls),
         "tidak ada app.add_middleware() di app/main.py (nol security header)",
-        known="SEC-04",
     )
 
     # SEC-07 - header defensif yang harusnya dikirim.
@@ -872,7 +867,7 @@ def section_security_headers() -> None:
         known="SEC-07",
     )
 
-    # SEC-04 (bagian cookie) - parsing pemanggilan set_cookie untuk access_token.
+    # SEC-19: parsing pemanggilan set_cookie untuk access_token.
     cookie_calls: list[tuple[str, int]] = []
     for m in re.finditer(r"\.set_cookie\(", main_text):
         call = extract_call(main_text, m.end() - 1)
@@ -886,27 +881,25 @@ def section_security_headers() -> None:
             break
     if not access_cookie:
         check(
-            "SEC-04 cookie access_token memakai secure=True (main.py:1121-1134)",
+            "SEC-19 cookie access_token memakai secure=True (main.py:1121-1134)",
             False,
             "pemanggilan set_cookie untuk access_token tidak ditemukan di app/main.py",
-            known="SEC-04",
         )
     else:
         check(
-            "SEC-04 cookie access_token memakai secure=True (main.py:1121-1134)",
+            "SEC-19 cookie access_token memakai secure=True (main.py:1121-1134)",
             "secure=True" in access_cookie.replace(" ", ""),
             "set_cookie access_token (main.py:%d) tidak memuat secure=True" % access_line,
-            known="SEC-04",
         )
 
     # httponly + samesite saat ini sudah benar -> harus PASS dan menjaga regresi.
     check(
-        "SEC-04 cookie access_token tetap httponly=True (main.py:1124)",
+        "SEC-19 cookie access_token tetap httponly=True (main.py:1124)",
         "httponly=True" in access_cookie.replace(" ", ""),
         "set_cookie access_token (main.py:%d) kehilangan httponly=True" % access_line,
     )
     check(
-        "SEC-04 cookie access_token tetap samesite=lax (main.py:1126)",
+        "SEC-19 cookie access_token tetap samesite=lax (main.py:1126)",
         re.search(r"""samesite\s*=\s*["']lax["']""", access_cookie) is not None,
         "set_cookie access_token (main.py:%d) kehilangan samesite=lax" % access_line,
     )
@@ -1097,7 +1090,6 @@ def section_error_honesty() -> None:
         if warn_idx >= 0
         else "tidak ada template yang membaca warning_msg "
              "(produsennya tidak ditemukan di app/products_routes.py)",
-        known="BE-21",
     )
 
 
@@ -1164,7 +1156,6 @@ def section_dead_code() -> None:
             not unguarded,
             "%d pemanggilan .single() tanpa try/except (baris %s) -> HTTP 500, bukan 'tidak ditemukan'"
             % (len(unguarded), ", ".join(str(x) for x in unguarded)),
-            known="BE-04",
         )
 
     # Duplikasi - compute_status_na() dua kali berturut-turut.
@@ -1349,7 +1340,6 @@ def section_templates() -> None:
         base_ok and (sidebar_ok or sidebar_js_ok),
         "base.html: %s, _sidebar.html: %s, sidebar.js: %s"
         % (base_ok, sidebar_ok, sidebar_js_ok),
-        known="FE-05",
     )
 
     # U6 - doc-drift tabel entitas audit: setiap entity_type yang dipancarkan
@@ -1501,7 +1491,6 @@ def section_frontend() -> None:
         "FE-06 window.__adminPresenceInterval di-assign di admin_users.html (base.html:44)",
         assigned,
         "hanya di-clear di base.html:44, tidak pernah di-assign di admin_users.html",
-        known="FE-06",
     )
 
     # FE-07 - submit form login harus ditahan selama countdown lockout.

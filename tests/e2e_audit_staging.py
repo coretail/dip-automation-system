@@ -97,19 +97,11 @@ DIALOGS: list[str] = []
 # Temuan audit yang saat ini memang masih gagal -> baseline [KNOWN], bukan FAIL.
 KNOWN_ISSUES = {
     "SEC-02": "Guard assert_same_tenant terpasang di rute tulis utama (produk/sample, "
-              "raw-material edit/delete/varian/company-doc, daftar produk & batch PO). "
-              "Sisa: daftar bahan baku tanpa filter tenant (D1b, menunggu keputusan produk).",
-    "SEC-04": "Cookie sesi access_token (dan greeting_cache) diset tanpa secure=True.",
+              "raw-material edit/delete/varian/company-doc dan rute tulis batch/PO). "
+              "Sisa: daftar bahan baku bersama (D1b) dan filter daftar PO per perusahaan, "
+              "keduanya menunggu keputusan produk.",
     "SEC-12": "login.html & public_error.html memuat Tailwind Play CDN v3 (EOL) sementara "
               "halaman aplikasi memuat Tailwind v4 (browser build).",
-    "BE-04": ".single() dijalankan di luar try pada 4 route raw-materials -> HTTP 500 "
-             "untuk baris yang tidak ada, bukan pesan 'tidak ditemukan'.",
-    "BE-21": "Cookie warning_msg diset oleh route tetapi tidak pernah dirender di template "
-             "mana pun (grep app/ hanya menemukan 1 kemunculan = produsernya).",
-    "FE-05": "Link logout di sidebar tidak memanggil stopPresenceHeartbeat -> heartbeat "
-             "in-flight bisa menulis is_online=true setelah /logout.",
-    "FE-06": "window.__adminPresenceInterval tidak pernah di-assign -> jalur cleanup di "
-             "base.html:44 mati.",
 }
 
 ERROR_MARKERS = ("Internal Server Error", "Traceback (most recent call last)", "NameError")
@@ -398,8 +390,7 @@ def group_auth(browser, base_url: str, email: str, password: str, login: dict) -
           f"httpOnly={tok.get('httpOnly')} sameSite={tok.get('sameSite')}")
 
     check("A2 cookie access_token punya atribut Secure", bool(tok.get("secure")),
-          f"secure={tok.get('secure')} (diharapkan True)",
-          known=KNOWN_ISSUES["SEC-04"])
+          f"secure={tok.get('secure')} (diharapkan True)")
 
     greet = cookies.get("greeting_cache") or {}
     attrs = set_cookie_attrs(login["raw_cookie"], "greeting_cache") or {}
@@ -593,8 +584,7 @@ def group_polling(browser, base_url: str, state: dict, quick: bool, is_admin: bo
         check("B5 logout via link sidebar memanggil stopPresenceHeartbeat", called,
               f"stop_dipanggil={called} url={page.url} "
               f"heartbeat_setelah_logout={d_after} (interval ikut mati karena unload) "
-              f"handler_per_link={handlers}",
-              known=KNOWN_ISSUES["FE-05"])
+              f"handler_per_link={handlers}")
     ctx.close()
 
     # --- B6: window.__adminPresenceInterval di /admin/users -----------------
@@ -612,8 +602,7 @@ def group_polling(browser, base_url: str, state: dict, quick: bool, is_admin: bo
         else:
             val = page.evaluate("() => typeof window.__adminPresenceInterval")
             check("B6 window.__adminPresenceInterval ter-assign di /admin/users",
-                  val != "undefined", f"typeof={val} (diharapkan 'number')",
-                  known=KNOWN_ISSUES["FE-06"])
+                  val != "undefined", f"typeof={val} (diharapkan 'number')")
         ctx.close()
 
 # --------------------------------------------------------------------------- #
@@ -711,8 +700,7 @@ def group_pages(browser, base_url: str, state: dict, is_admin: bool = False) -> 
     loc = (r.headers.get("location") or "")[:60]
     check("C2 GET /products/<uuid-acak>/edit -> 404/redirect ramah, bukan 500",
           r.status != 500 and r.status in (303, 302, 404),
-          f"HTTP {r.status} location={loc!r}",
-          known=KNOWN_ISSUES["BE-04"])
+          f"HTTP {r.status} location={loc!r}")
 
     # --- C3: cookie warning_msg tidak pernah dirender ---------------------
     canary = "E2E_WARNING_MSG_CANARY"
@@ -724,9 +712,7 @@ def group_pages(browser, base_url: str, state: dict, is_admin: bool = False) -> 
         wait_idle(page)
         rendered[label] = canary in page.content()
     check("C3 cookie warning_msg dirender di halaman", any(rendered.values()),
-          f"canary={canary} terlihat={rendered} "
-          f"(producer di products_routes.py:1167, tidak ada di template mana pun)",
-          known=KNOWN_ISSUES["BE-21"])
+          f"canary={canary} terlihat={rendered}")
     ctx.clear_cookies(name="warning_msg")
 
     # --- C4: greeting_cache bebas suntik kelas CSS (tanpa XSS) ------------
@@ -924,6 +910,253 @@ def group_tenant(browser, base_url: str, db, creds: tuple[str, str] | None) -> N
         check("D1c-2 data uji tidak berubah setelah probe tulis", unchanged,
               f"nama_dagang sama={before.get('nama_dagang') == after.get('nama_dagang')} "
               f"kode sama={before.get('kode_bahan_baku') == after.get('kode_bahan_baku')}")
+
+    # D2 probes write routes. Targets are selected only when their company is
+    # explicit and foreign; each mutating probe restores/removes its marker.
+    def foreign_company(value: object) -> bool:
+        return bool(own_company and str(value or "").strip()
+                    and str(value).strip().lower() != own_company.lower())
+
+    def api_post(path: str, form: dict | None = None, files: dict | None = None):
+        return ctx.request.post(base_url + path, form=form, multipart=files)
+
+    rm_target = next((r for r in rm_rows if foreign_company(r.get("perusahaan"))), None)
+    batch_rows = []
+    try:
+        batch_rows = (db.table("raw_material_batches").select(
+            "*, raw_materials(perusahaan)").execute().data or [])
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] baca kandidat batch D2 gagal: {type(exc).__name__}: {exc}")
+    def relation_row(value: object) -> dict:
+        if isinstance(value, list):
+            value = value[0] if value else None
+        return value if isinstance(value, dict) else {}
+
+    foreign_batch = next((r for r in batch_rows
+                          if foreign_company(r.get("perusahaan"))
+                          or foreign_company(relation_row(r.get("raw_materials")).get("perusahaan"))), None)
+
+    # D2a add batch: unique marker is removed in finally even if a missing
+    # guard allowed the insert. No file is attached, so storage is untouched.
+    if not rm_target:
+        skip("D2a POST /raw-materials/batches/add", "tidak ada bahan baku dengan perusahaan asing terisi")
+    else:
+        marker = "E2E-SEC02-" + uuid.uuid4().hex[:12]
+        inserted_id = None
+        status = 0
+        try:
+            r = api_post("/raw-materials/batches/add", form={
+                "raw_material_id": rm_target["id"], "no_batch": marker, "supplier": "E2E",
+                "tanggal_terima_sampel": "2026-01-01", "tanggal_ed": "2030-01-01",
+                "kesimpulan": "lab", "perusahaan": rm_target.get("perusahaan") or own_company,
+            })
+            status = r.status
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] D2a probe error: {type(exc).__name__}: {exc}")
+        finally:
+            try:
+                matches = (db.table("raw_material_batches").select("id")
+                           .eq("raw_material_id", rm_target["id"]).eq("no_batch", marker)
+                           .execute().data or [])
+                if matches:
+                    inserted_id = matches[0]["id"]
+                    db.table("raw_material_batches").delete().eq("id", inserted_id).execute()
+                residual = (db.table("raw_material_batches").select("id")
+                            .eq("raw_material_id", rm_target["id"]).eq("no_batch", marker)
+                            .execute().data or [])
+            except Exception as exc:  # noqa: BLE001
+                residual = [{"cleanup_error": type(exc).__name__}]
+        check("D2a POST /raw-materials/batches/add ditolak 403", status == 403,
+              f"HTTP {status}; marker dibuat lalu dibersihkan={bool(inserted_id)}")
+        check("D2a-2 marker batch add dibersihkan", not residual, f"residu={len(residual)}")
+
+    if not foreign_batch:
+        for label, route in (
+            ("D2b POST /raw-materials/batches/edit/{batch_id}", "edit"),
+            ("D2c POST /raw-materials/batches/{batch_id}/quick-upload-doc", "upload"),
+            ("D2d POST /raw-materials/batches/acc-dipakai", "acc"),
+            ("D2e POST /raw-materials/batches/acc-dimusnahkan", "dispose"),
+        ):
+            skip(label, "tidak ada batch yang perusahaan batch/induknya terisi dan berbeda")
+    else:
+        batch_id = foreign_batch["id"]
+        parent_company = relation_row(foreign_batch.get("raw_materials")).get("perusahaan") or ""
+        batch_company = foreign_batch.get("perusahaan") or parent_company
+
+        # D2b edit: snapshot the only field sent with a distinct marker and
+        # restore it unconditionally, then verify exact equality.
+        edit_columns = (
+            "no_batch", "supplier", "tanggal_terima_sampel", "tanggal_ed", "kesimpulan",
+            "asal_negara", "quantity", "quantity_unit", "keterangan",
+        )
+        before_edit = {k: foreign_batch.get(k) for k in edit_columns}
+        marker = "E2E-SEC02-" + uuid.uuid4().hex[:12]
+        status = 0
+        try:
+            r = api_post(f"/raw-materials/batches/edit/{batch_id}", form={
+                "no_batch": marker, "supplier": foreign_batch.get("supplier") or "E2E",
+                "tanggal_terima_sampel": foreign_batch.get("tanggal_terima_sampel") or "2026-01-01",
+                "tanggal_ed": foreign_batch.get("tanggal_ed") or "2030-01-01",
+                "kesimpulan": foreign_batch.get("kesimpulan") or "lab",
+            })
+            status = r.status
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] D2b probe error: {type(exc).__name__}: {exc}")
+        finally:
+            try:
+                db.table("raw_material_batches").update(before_edit).eq("id", batch_id).execute()
+                after_edit = (db.table("raw_material_batches").select(",".join(edit_columns))
+                              .eq("id", batch_id).execute().data or [{}])[0]
+            except Exception as exc:  # noqa: BLE001
+                after_edit = {"cleanup_error": type(exc).__name__}
+        check("D2b POST /raw-materials/batches/edit/{batch_id} ditolak 403", status == 403,
+              f"HTTP {status} untuk perusahaan {batch_company!r}")
+        check("D2b-2 nilai batch dipulihkan",
+              all(after_edit.get(k) == before_edit[k] for k in edit_columns),
+              f"semua_kolom_sama={all(after_edit.get(k) == before_edit[k] for k in edit_columns)}")
+
+        # D2c sends an invalid PDF. If authorization regresses, file validation
+        # rejects it before storage or database changes.
+        status = 0
+        try:
+            r = api_post(f"/raw-materials/batches/{batch_id}/quick-upload-doc",
+                         files={"coa_file": {"name": "probe.pdf", "mimeType": "application/pdf",
+                                             "buffer": b"not-a-pdf"}})
+            status = r.status
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] D2c probe error: {type(exc).__name__}: {exc}")
+        check("D2c POST quick-upload-doc foreign batch ditolak 403", status == 403,
+              f"HTTP {status}; payload PDF invalid sebagai pengaman bila guard absen")
+
+        # D2d / D2e snapshot all columns they can update and restore in finally.
+        for label, route, values, columns in (
+            ("D2d POST /raw-materials/batches/acc-dipakai", "acc",
+             {"new_expiry_date": "not-a-date", "new_status_ed": "ACC Dipakai", "catatan_qc": "E2E probe"},
+             ("tanggal_ed", "status_ed", "catatan_qc", "tanggal_acc_qc")),
+            ("D2e POST /raw-materials/batches/acc-dimusnahkan", "dispose",
+             {"catatan_qc": "E2E probe"}, ("status_ed", "catatan_qc", "tanggal_acc_qc")),
+        ):
+            snapshot = {k: foreign_batch.get(k) for k in columns}
+            status = 0
+            try:
+                form = {"batch_id": batch_id, **values}
+                r = api_post("/raw-materials/batches/acc-dipakai" if route == "acc"
+                             else "/raw-materials/batches/acc-dimusnahkan", form=form)
+                status = r.status
+            except Exception as exc:  # noqa: BLE001
+                print(f"[WARN] {label} probe error: {type(exc).__name__}: {exc}")
+            finally:
+                try:
+                    db.table("raw_material_batches").update(snapshot).eq("id", batch_id).execute()
+                    restored = (db.table("raw_material_batches").select(",".join(columns))
+                                .eq("id", batch_id).execute().data or [{}])[0]
+                except Exception as exc:  # noqa: BLE001
+                    restored = {"cleanup_error": type(exc).__name__}
+            unchanged = all(restored.get(k) == snapshot[k] for k in columns)
+            check(f"{label} ditolak 403", status == 403,
+                  f"HTTP {status} untuk perusahaan {batch_company!r}")
+            check(f"{label} data dipulihkan", unchanged, f"kolom_dipulihkan={unchanged}")
+
+    # Product and PO write routes are similarly probed only with explicit
+    # foreign-company targets. Mutating targets use unique markers or snapshots.
+    foreign_product = None
+    try:
+        products = db.table("products").select("id,perusahaan").eq("is_deleted", False).execute().data or []
+        foreign_product = next((r for r in products if foreign_company(r.get("perusahaan"))), None)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] baca kandidat produk D2 gagal: {type(exc).__name__}: {exc}")
+
+    if not foreign_product:
+        for label in ("D2f POST /product-batches", "D2g POST purchase-order item create",
+                      "D2h POST purchase-order item update", "D2i POST purchase-order item delete"):
+            skip(label, "tidak ada produk dengan perusahaan asing terisi")
+    else:
+        foreign_pid = foreign_product["id"]
+        marker = "E2E-SEC02-" + uuid.uuid4().hex[:12]
+        status = 0
+        try:
+            r = api_post("/product-batches", form={"product_id": foreign_pid, "no_batch": marker,
+                                                     "tanggal_produksi": "not-a-date"})
+            status = r.status
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] D2f probe error: {type(exc).__name__}: {exc}")
+        finally:
+            try:
+                db.table("product_batches").delete().eq("product_id", foreign_pid).eq("no_batch", marker).execute()
+                residual = (db.table("product_batches").select("id").eq("product_id", foreign_pid)
+                            .eq("no_batch", marker).execute().data or [])
+            except Exception as exc:  # noqa: BLE001
+                residual = [{"cleanup_error": type(exc).__name__}]
+        check("D2f POST /product-batches foreign product ditolak 403", status == 403,
+              f"HTTP {status}; marker residual={len(residual)}")
+
+        # Existing foreign batch and PO are required for item create/update/delete probes.
+        foreign_pb = next((r for r in (db.table("product_batches").select("id,product_id")
+                           .eq("product_id", foreign_pid).execute().data or [])), None)
+        po = next(iter(db.table("purchase_orders").select("id,no_po").limit(1).execute().data or []), None)
+        if not foreign_pb or not po:
+            reason = "memerlukan product_batch asing dan purchase_order yang tersedia"
+            skip("D2g POST purchase-order item create", reason)
+            skip("D2h POST purchase-order item update", reason)
+            skip("D2i POST purchase-order item delete", reason)
+        else:
+            before_item_ids = {r.get("id") for r in (db.table("purchase_order_items").select("id")
+                               .eq("purchase_order_id", po["id"]).eq("product_id", foreign_pid)
+                               .eq("product_batch_id", foreign_pb["id"]).execute().data or [])}
+            status = 0
+            try:
+                r = api_post(f"/purchase-orders/{po['id']}/items", form={
+                    "product_id": foreign_pid, "product_batch_id": foreign_pb["id"],
+                })
+                status = r.status
+            finally:
+                new_items = (db.table("purchase_order_items").select("id")
+                             .eq("purchase_order_id", po["id"]).eq("product_id", foreign_pid)
+                             .eq("product_batch_id", foreign_pb["id"]).execute().data or [])
+                for new_item in new_items:
+                    if new_item.get("id") not in before_item_ids:
+                        db.table("purchase_order_items").delete().eq("id", new_item["id"]).execute()
+                remaining_new = (db.table("purchase_order_items").select("id")
+                                 .eq("purchase_order_id", po["id"]).eq("product_id", foreign_pid)
+                                 .eq("product_batch_id", foreign_pb["id"]).execute().data or [])
+            check("D2g POST purchase-order item create foreign product ditolak 403", status == 403,
+                  f"HTTP {status}; item_probe_residual={sum(r.get('id') not in before_item_ids for r in remaining_new)}")
+
+            foreign_item = next(iter(db.table("purchase_order_items").select("*")
+                                     .eq("product_id", foreign_pid).limit(1).execute().data or []), None)
+            if not foreign_item:
+                skip("D2h POST purchase-order item update", "tidak ada item PO existing untuk produk asing")
+                skip("D2i POST purchase-order item delete", "tidak ada item PO existing untuk produk asing")
+            else:
+                item_id = foreign_item["id"]
+                status = 0
+                r = api_post(f"/purchase-orders/{foreign_item['purchase_order_id']}/items/{item_id}/update",
+                             form={"product_id": foreign_pid, "product_batch_id": foreign_item.get("product_batch_id") or "missing",
+                                   "tanggal_catatan_batch": "not-a-date"})
+                status = r.status
+                check("D2h POST purchase-order item update foreign old product ditolak 403",
+                      status == 403, f"HTTP {status}; invalid date melindungi write bila guard absen")
+
+                snapshot_item = dict(foreign_item)
+                status = 0
+                try:
+                    r = api_post(f"/purchase-orders/{foreign_item['purchase_order_id']}/items/{item_id}/delete")
+                    status = r.status
+                finally:
+                    try:
+                        still = db.table("purchase_order_items").select("id").eq("id", item_id).execute().data or []
+                        if not still:
+                            db.table("purchase_order_items").insert(snapshot_item).execute()
+                        restored_item = db.table("purchase_order_items").select("*").eq("id", item_id).execute().data or []
+                    except Exception as exc:  # noqa: BLE001
+                        restored_item = [{"cleanup_error": type(exc).__name__}]
+                check("D2i POST purchase-order item delete foreign product ditolak 403",
+                      status == 403, f"HTTP {status}")
+                item_restored = bool(restored_item) and all(
+                    restored_item[0].get(k) == v for k, v in snapshot_item.items()
+                )
+                check("D2i-2 item PO dipulihkan", item_restored,
+                      f"seluruh_kolom_sama={item_restored}")
     ctx.close()
 
 # --------------------------------------------------------------------------- #

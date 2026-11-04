@@ -140,6 +140,18 @@ def build_rm(ensure_variant):
     return app, w, logs
 
 
+class FakeRequest:
+    def __init__(self):
+        self.headers = {}
+
+
+class FakeFile:
+    filename = "probe.pdf"
+
+    async def read(self):
+        return b""
+
+
 def _json(resp):
     return json.loads(resp.body)
 
@@ -264,6 +276,209 @@ def test_edit_raw_material_shared_row_passes_guard():
     else:
         raise AssertionError("cek duplikat kode seharusnya menolak dengan 400")
     assert ensure_calls == [], ensure_calls
+
+
+def test_acc_dipakai_foreign_batch_forbidden_before_update():
+    app, w, logs = build_rm(lambda *_args: None)
+    w.tables.update({
+        "raw_material_batches": [{"id": "b-erfi", "perusahaan": "PT Erfi",
+                                  "raw_materials": {"perusahaan": "PT Erfi"}}],
+    })
+    handler = app.routes[("POST", "/raw-materials/batches/acc-dipakai")]
+    try:
+        asyncio.run(handler(request=FakeRequest(), batch_id="b-erfi", new_expiry_date="2030-01-01",
+                             new_status_ed="ACC Dipakai", catatan_qc="ok", current_user=STAFF_HEKA))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("foreign ACC batch harus 403")
+    assert w.writes == []
+    assert any(kwargs.get("outcome") == "rejected" for _args, kwargs in logs)
+
+
+def test_acc_dimusnahkan_foreign_batch_forbidden_before_update():
+    app, w, logs = build_rm(lambda *_args: None)
+    w.tables.update({
+        "raw_material_batches": [{"id": "b-erfi", "perusahaan": "PT Erfi",
+                                  "raw_materials": {"perusahaan": "PT Erfi"}}],
+    })
+    handler = app.routes[("POST", "/raw-materials/batches/acc-dimusnahkan")]
+    try:
+        asyncio.run(handler(request=FakeRequest(), batch_id="b-erfi", catatan_qc="ok",
+                             current_user=STAFF_HEKA))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("foreign dispose batch harus 403")
+    assert w.writes == []
+    assert any(kwargs.get("outcome") == "rejected" for _args, kwargs in logs)
+
+
+def test_edit_batch_foreign_company_forbidden_before_upload():
+    app, w, logs = build_rm(lambda *_args: None)
+    w.tables.update({
+        "raw_material_batches": [{"id": "b-erfi", "no_batch": "B-1",
+                                  "coa_file_url": None, "halal_batch_file_url": None,
+                                  "qc_report_file_url": None, "perusahaan": "PT Erfi",
+                                  "raw_materials": {"perusahaan": "PT Erfi"}}],
+    })
+    handler = app.routes[("POST", "/raw-materials/batches/edit/{batch_id}")]
+    try:
+        asyncio.run(handler(
+            request=FakeRequest(), batch_id="b-erfi", no_batch="B-1", supplier="S",
+            tanggal_terima_sampel="2026-01-01", tanggal_ed="2027-01-01", kesimpulan="ok",
+            asal_negara=None, nama_produsen=None, coa_file=FakeFile(), halal_file=FakeFile(),
+            qc_report_file=FakeFile(), quantity=None, quantity_unit=None, keterangan=None,
+            current_user=STAFF_HEKA,
+        ))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("foreign batch edit harus 403")
+    assert w.writes == []
+    assert any(kwargs.get("outcome") == "rejected" for _args, kwargs in logs)
+
+
+def test_add_batch_foreign_parent_forbidden_before_upload_or_insert():
+    app, w, logs = build_rm(lambda *_args: None)
+    w.tables["raw_materials"] = [{"id": "rm-erfi", "nama_dagang": "Bahan Erfi",
+                                  "perusahaan": "PT Erfi"}]
+    uploads = []
+    old_upload = raw_materials_routes.object_store.upload_pdf
+    raw_materials_routes.object_store.upload_pdf = lambda *args, **kwargs: uploads.append(args)
+    handler = app.routes[("POST", "/raw-materials/batches/add")]
+    try:
+        try:
+            asyncio.run(handler(
+                request=FakeRequest(), raw_material_id="rm-erfi", no_batch="B-1", supplier="S",
+                tanggal_terima_sampel="2026-01-01", tanggal_ed="2027-01-01", kesimpulan="ok",
+                perusahaan="PT Erfi", asal_negara=None, nama_produsen=None,
+                tanggal_sampling=None, qc_signer=None, qa_signer=None, qc_results="[]",
+                harga_per_kg=1.0, coa_file=FakeFile(), halal_file=None, qc_report_file=None,
+                quantity=None, quantity_unit=None, keterangan=None, current_user=STAFF_HEKA,
+            ))
+        except HTTPException as exc:
+            assert exc.status_code == 403
+        else:
+            raise AssertionError("foreign parent batch create harus 403")
+    finally:
+        raw_materials_routes.object_store.upload_pdf = old_upload
+    assert w.writes == []
+    assert uploads == []
+    assert any(kwargs.get("outcome") == "rejected" for _args, kwargs in logs)
+
+
+def test_quick_upload_foreign_batch_forbidden_before_upload_or_write():
+    app, w, logs = build_rm(lambda *_args: None)
+    w.tables["raw_material_batches"] = [{
+        "id": "b-erfi", "no_batch": "B-1", "perusahaan": "PT Erfi",
+        "coa_file_url": None, "halal_batch_file_url": None, "qc_report_file_url": None,
+        "raw_materials": {"nama_dagang": "Bahan Erfi", "perusahaan": "PT Erfi"},
+    }]
+    uploads = []
+    old_upload = raw_materials_routes.object_store.upload_pdf
+    raw_materials_routes.object_store.upload_pdf = lambda *args, **kwargs: uploads.append(args)
+    handler = app.routes[("POST", "/raw-materials/batches/{batch_id}/quick-upload-doc")]
+    try:
+        try:
+            asyncio.run(handler(request=FakeRequest(), batch_id="b-erfi", coa_file=FakeFile(),
+                                 halal_file=None, qc_report_file=None, current_user=STAFF_HEKA))
+        except HTTPException as exc:
+            assert exc.status_code == 403
+        else:
+            raise AssertionError("foreign quick upload harus 403")
+    finally:
+        raw_materials_routes.object_store.upload_pdf = old_upload
+    assert w.writes == []
+    assert uploads == []
+    assert any(kwargs.get("outcome") == "rejected" for _args, kwargs in logs)
+
+
+def test_po_product_batch_foreign_product_forbidden_before_insert():
+    app, w = build_po(FakeSupabase({"products": [{"id": "p2", "perusahaan": "PT Erfi", "is_deleted": False}]}))
+    handler = app.routes[("POST", "/product-batches")]
+    try:
+        asyncio.run(handler(request=FakeRequest(), product_id="p2", no_batch="B-1",
+                             tanggal_produksi=None, tanggal_ed=None, po_id=None,
+                             current_user=STAFF_HEKA))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("foreign product batch harus 403")
+    assert w.writes == []
+
+
+def test_po_item_create_foreign_product_forbidden_before_insert():
+    app, w = build_po(FakeSupabase({
+        "purchase_orders": [{"id": "po1", "no_po": "PO-1"}],
+        "products": [{"id": "p2", "perusahaan": "PT Erfi", "is_deleted": False}],
+    }))
+    handler = app.routes[("POST", "/purchase-orders/{po_id}/items")]
+    try:
+        asyncio.run(handler(request=FakeRequest(), po_id="po1", product_id="p2", product_batch_id="b2",
+                             current_user=STAFF_HEKA))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("foreign PO item create harus 403")
+    assert w.writes == []
+
+
+def test_po_item_update_foreign_old_product_forbidden_before_update():
+    app, w = build_po(FakeSupabase({
+        "purchase_order_items": [{"id": "i1", "purchase_order_id": "po1", "product_id": "p2"}],
+        "products": [{"id": "p2", "perusahaan": "PT Erfi"}],
+    }))
+    handler = app.routes[("POST", "/purchase-orders/{po_id}/items/{item_id}/update")]
+    try:
+        asyncio.run(handler(request=FakeRequest(), po_id="po1", item_id="i1", product_id="p1",
+                             product_batch_id="b1", current_user=STAFF_HEKA))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("update item dengan produk lama foreign harus 403")
+    assert w.writes == []
+
+
+def test_po_item_update_foreign_new_product_forbidden_before_validation_or_update():
+    app, w = build_po(FakeSupabase({
+        "purchase_order_items": [{"id": "i1", "purchase_order_id": "po1", "product_id": "p1"}],
+        "products": [
+            {"id": "p1", "perusahaan": "PT Heka"},
+            {"id": "p2", "perusahaan": "PT Erfi"},
+        ],
+    }))
+    handler = app.routes[("POST", "/purchase-orders/{po_id}/items/{item_id}/update")]
+    try:
+        asyncio.run(handler(request=FakeRequest(), po_id="po1", item_id="i1", product_id="p2",
+                             product_batch_id="b2", tanggal_catatan_batch="not-a-date",
+                             current_user=STAFF_HEKA))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("produk baru foreign harus ditolak sebelum validasi tanggal")
+    assert w.writes == []
+
+
+def test_po_item_delete_foreign_product_forbidden_before_delete():
+    app, w = build_po(FakeSupabase({
+        "purchase_order_items": [{"id": "i1", "purchase_order_id": "po1", "product_id": "p2"}],
+        "products": [{"id": "p2", "perusahaan": "PT Erfi"}],
+    }))
+    handler = app.routes[("POST", "/purchase-orders/{po_id}/items/{item_id}/delete")]
+    try:
+        asyncio.run(handler(request=FakeRequest(), po_id="po1", item_id="i1", current_user=STAFF_HEKA))
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("delete item foreign harus 403")
+    assert w.writes == []
+
+
+def test_po_batches_missing_product_returns_empty_items():
+    w = FakeSupabase({"products": [], "product_batches": [{"id": "orphan", "product_id": "missing"}]})
+    out = asyncio.run(_batches_handler(w)(product_id="missing", current_user=STAFF_HEKA))
+    assert _json(out)["items"] == []
 
 
 def main():
