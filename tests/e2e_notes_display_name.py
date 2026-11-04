@@ -90,9 +90,11 @@ def main() -> int:
             login(page, base_url, email, password)
             page.goto(base_url + "/notes")
             note = page.locator("article", has_text=marker)
-            assert note.get_by_text(display_name, exact=True).is_visible()
-            assert note.get_by_text(f"@{disposable_username} ({display_name})", exact=True).is_visible()
-            print("[PASS] Team Notes author and mention display_name rendering verified")
+            # Catatan ditulis oleh admin, jadi display_name user sekali-pakai hanya
+            # tampil di chip mention. Ikon "@" adalah glyph CSS (fa-at), bukan teks.
+            chip = note.get_by_text(f"{disposable_username} ({display_name})", exact=True)
+            assert chip.is_visible(), "mention chip did not render the live display_name"
+            print("[PASS] Team Notes mention display_name rendering verified")
             return 0
         finally:
             if created:
