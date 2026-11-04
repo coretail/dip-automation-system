@@ -1187,33 +1187,38 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             currow = None
         if not currow or str(currow.get("purchase_order_id") or "") != str(po_id):
             return _redirect_po(po_id, err="Item tidak ditemukan di PO ini.")
-        # SEC-02: guard produk LAMA lebih dulu (sebelum validasi/update); produk
-        # BARU dicek setelah validasi batch di bawah. Lama maupun baru harus
-        # boleh diakses user ini (tenant PO diturunkan dari produk item).
+        # SEC-02: guard produk LAMA lebih dulu, lalu produk BARU, semuanya SEBELUM
+        # validasi form dan update. Lama maupun baru harus boleh diakses user ini
+        # (tenant PO diturunkan dari produk item). Pembacaan produk yang GAGAL
+        # (exception) menolak tulis -- fail-closed -- supaya gangguan DB sesaat
+        # tidak melewati otorisasi; produk yang tidak ditemukan tetap fail-open
+        # seperti perilaku helper.
         old_pid = str(currow.get("product_id") or "")
         old_prod_row = None
         if old_pid:
             try:
                 opr = supabase.table("products").select("id, perusahaan").eq("id", old_pid).limit(1).execute()
                 old_prod_row = (opr.data or [None])[0]
-            except Exception:
-                old_prod_row = None
+            except Exception as ex:
+                print(f"[PO] cek produk lama item gagal: {ex}")
+                return _redirect_po(po_id, err="Gagal memverifikasi akses produk. Silakan coba lagi.")
         if old_prod_row and not assert_same_tenant(current_user, old_prod_row):
             log_activity(current_user, "update", "purchase_order_item", item_id,
                          f"item {item_id[:8]}",
                          changes=[{"field": "perusahaan", "note": "ditolak: produk lama item bukan milik perusahaan"}],
                          request=request, outcome="rejected")
             raise HTTPException(status_code=403, detail="Akses ditolak! Item milik produk badan hukum lain.")
-        # Cek juga produk BARU sedini mungkin. Selain menutup akses lintas
-        # tenant, ini menjaga validasi/tulis berikutnya tetap berada setelah
-        # authorization, walau batch/tanggal form tidak valid.
+        # Produk BARU dicek langsung di sini (bukan setelah validasi batch), supaya
+        # validasi/tulis berikutnya selalu berada setelah authorization, walau
+        # batch/tanggal form tidak valid.
         new_prod_row = None
         if pid and pid != old_pid:
             try:
                 npr = supabase.table("products").select("id, perusahaan").eq("id", pid).limit(1).execute()
                 new_prod_row = (npr.data or [None])[0]
-            except Exception:
-                new_prod_row = None
+            except Exception as ex:
+                print(f"[PO] cek produk baru item gagal: {ex}")
+                return _redirect_po(po_id, err="Gagal memverifikasi akses produk. Silakan coba lagi.")
             if new_prod_row and not assert_same_tenant(current_user, new_prod_row):
                 log_activity(current_user, "update", "purchase_order_item", item_id,
                              f"item {item_id[:8]}",
@@ -1281,14 +1286,16 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             return _redirect_po(po_id, err="Item tidak ditemukan di PO ini.")
         # SEC-02: hapus hanya untuk item dengan produk yang boleh diakses user
         # ini (tenant PO diturunkan dari produk item). Guard sebelum delete.
+        # Pembacaan produk yang gagal (exception) menolak hapus -- fail-closed.
         item_pid = str(currow.get("product_id") or "")
         if item_pid:
             item_prod_row = None
             try:
                 ipr = supabase.table("products").select("id, perusahaan").eq("id", item_pid).limit(1).execute()
                 item_prod_row = (ipr.data or [None])[0]
-            except Exception:
-                item_prod_row = None
+            except Exception as ex:
+                print(f"[PO] cek produk item untuk hapus gagal: {ex}")
+                return _redirect_po(po_id, err="Gagal memverifikasi akses produk. Silakan coba lagi.")
             if item_prod_row and not assert_same_tenant(current_user, item_prod_row):
                 log_activity(current_user, "delete", "purchase_order_item", item_id,
                              f"urutan {currow.get('urutan')}",
