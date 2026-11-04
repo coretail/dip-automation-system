@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 
 
 def login(page, base_url: str, email: str, password: str) -> None:
@@ -45,7 +46,9 @@ def main() -> int:
     disposable_email = "e2e-notes-display@example.invalid"
     disposable_password = "Notes-display-e2e-6"
     display_name = "Notes Display QA"
-    marker = "e2e-notes-display-name"
+    marker_base = "e2e-notes-display-name"
+    # Marker unik per run: sisa note dari run gagal sebelumnya tidak ikut cocok.
+    marker = f"{marker_base}-{uuid.uuid4().hex[:8]}"
     created = False
 
     with sync_playwright() as playwright:
@@ -101,6 +104,15 @@ def main() -> int:
                 try:
                     logout(page, base_url)
                     login(page, base_url, email, password)
+                    # Hapus note e2e (run ini dan sisa run gagal) sebelum user dihapus.
+                    page.goto(base_url + "/notes")
+                    for _ in range(20):
+                        leftover = page.locator("article", has_text=marker_base)
+                        if leftover.count() == 0:
+                            break
+                        leftover.first.locator('form[action$="/delete"]').evaluate("form => form.submit()")
+                        page.wait_for_url(lambda url: "status=deleted" in url or "error=" in url)
+                        page.goto(base_url + "/notes")
                     page.goto(base_url + "/admin/users")
                     row = page.locator("tr", has_text=disposable_username)
                     row.locator('form[action="/admin/users/delete"]').evaluate("form => form.submit()")
