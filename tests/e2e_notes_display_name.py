@@ -57,7 +57,7 @@ def main() -> int:
             page.locator('input[name="email"]').fill(disposable_email)
             page.locator('input[name="username"]').fill(disposable_username)
             page.locator('input[name="password"]').fill(disposable_password)
-            page.locator('button[type="submit"]').click()
+            page.locator('form[action="/admin/users/create"] button[type="submit"]').click()
             page.wait_for_url(lambda url: "/admin/users" in url)
             created = True
 
