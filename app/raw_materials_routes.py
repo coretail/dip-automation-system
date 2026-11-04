@@ -1405,16 +1405,19 @@ def register_raw_materials_routes(
         # SEC-02: guard tenant PALING AWAL, sebelum upload storage dan insert
         # apa pun. Tenant batch = perusahaan bahan baku induk (raw_material_id)
         # DAN nilai form `perusahaan` (new_company); keduanya harus lolos
-        # helper. Bahan baku induk tidak terbaca -> helper memperlakukannya
-        # tanpa perusahaan (fail-open lama); insert tetap dikawal FK seperti
-        # sebelumnya.
+        # helper. Bahan baku induk yang TIDAK DITEMUKAN -> helper memperlakukannya
+        # tanpa perusahaan (perilaku lama; insert tetap dikawal FK). Pembacaan
+        # yang GAGAL (exception) menolak tulis -- fail-closed -- supaya gangguan
+        # DB sesaat tidak melewati otorisasi.
         try:
             rm_batch_parent = supabase.table("raw_materials").select(
                 "id, nama_dagang, perusahaan").eq("id", raw_material_id).limit(1).execute()
             rm_parent_row = (rm_batch_parent.data or [None])[0]
         except Exception as e:
             print(f"Gagal memuat bahan baku induk {raw_material_id} untuk guard batch: {e}")
-            rm_parent_row = None
+            response = RedirectResponse(url="/raw-materials", status_code=303)
+            response.set_cookie("error_msg", "Gagal memverifikasi akses bahan baku. Silakan coba lagi.")
+            return response
         if not assert_same_tenant(current_user, rm_parent_row, new_company=perusahaan):
             log_activity(
                 current_user, "create", "raw_material_batch", None,
