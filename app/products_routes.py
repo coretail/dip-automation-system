@@ -778,13 +778,19 @@ def register_products_routes(
             # .limit(1) + cek kosong (bukan .single()) supaya guard 404 di bawah benar-
             # benar hidup; .single() melempar APIError -> 500 mentah sebelum guard kena
             # (BE-04).
-            product_res = supabase.table("products").select("nama_produk").eq("id", product_id).eq("is_deleted", False).limit(1).execute()
+            product_res = supabase.table("products").select("nama_produk, perusahaan").eq("id", product_id).eq("is_deleted", False).limit(1).execute()
         except Exception as e:
-            print(f"Produk {product_id} tidak ditemukan (approval FSP): {e}")
+            print(f"Produk {product_id} tidak ditemukan (finished-spec): {e}")
             raise HTTPException(status_code=404, detail="Product not found")
         if not (product_res.data or []):
             raise HTTPException(status_code=404, detail="Product not found")
         product = product_res.data[0]
+
+        if not assert_same_tenant(current_user, product):
+            log_activity(current_user, "update", "product_finished_specs", product_id,
+                         f"Spesifikasi Produk Jadi - {product['nama_produk']}",
+                         request=request, outcome="rejected")
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
 
         try:
             sections_data = json.loads(sections_json)

@@ -143,6 +143,8 @@ backup-rls/
 !/tests/test_profile_display_name_route.py
 # Unit test guard greeting_cache (pure-local, tanpa koneksi/secret).
 !/tests/test_greeting_cache_guard.py
+# Unit test guard tenant finished-spec (pure-local, tanpa koneksi/secret).
+!/tests/test_tenant_guard_finished_spec.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log
