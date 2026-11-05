@@ -147,6 +147,8 @@ backup-rls/
 !/tests/test_tenant_guard_efek_lampiran.py
 !/tests/test_tenant_guard_finished_spec.py
 !/tests/test_tenant_guard_sample.py
+# Unit test guard tenant finished-spec (pure-local, tanpa koneksi/secret).
+!/tests/test_tenant_guard_finished_spec.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log

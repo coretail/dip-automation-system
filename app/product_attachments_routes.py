@@ -12,6 +12,7 @@ from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app import object_store
+from app.security import assert_same_tenant
 
 LAMPIRAN_CATEGORIES = (
     "Form ACC Sample",
@@ -96,6 +97,17 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
             return None, (409, "Produk ada di sampah (trash). Kembalikan dulu dari trash sebelum mengelola lampiran.")
         return product, None
 
+    def _guard_product(product, current_user, product_id, action_name, request=None):
+        if assert_same_tenant(current_user, product):
+            return None
+        log_activity(
+            current_user, action_name, "product", product_id,
+            product.get("nama_produk") or product_id,
+            request=request,
+            outcome="rejected",
+        )
+        raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
+
     def _validation_error(kategori: str, catatan: str):
         if kategori not in LAMPIRAN_CATEGORIES:
             return "Kategori lampiran tidak valid."
@@ -120,6 +132,10 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
         if error:
             return RedirectResponse(url="/", status_code=303)
         try:
+            _guard_product(product, current_user, product_id, "view", request)
+        except HTTPException:
+            return RedirectResponse(url="/", status_code=303)
+        try:
             rows = supabase.table("product_attachments").select("*").eq("product_id", product_id).order("created_at", desc=True).execute().data or []
         except Exception as exc:
             print(f"[PRODUCT ATTACHMENTS] list gagal: {exc}")
@@ -138,6 +154,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
         product, error = _load_active_product(product_id)
         if error:
             raise HTTPException(status_code=error[0], detail=error[1])
+        _guard_product(product, current_user, product_id, "upload", request)
         if len(files) > MAX_FILES_PER_REQUEST:
             raise HTTPException(400, "Maksimal 10 file per unggahan.")
         if not files or not any(f.filename for f in files):
@@ -191,10 +208,11 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
             row["signed_url"] = urls.get(row.get("file_path"))
         return JSONResponse({"success": True, "uploaded": [_attachment_json(r, current_user) for r in uploaded], "failed": failed})
 
-    async def _owned_attachment(product_id, attachment_id, user, action):
-        _, error = _load_active_product(product_id)
+    async def _owned_attachment(product_id, attachment_id, user, action, request=None):
+        product, error = _load_active_product(product_id)
         if error:
             raise HTTPException(error[0], error[1])
+        _guard_product(product, user, product_id, action, request)
         try:
             response = supabase.table("product_attachments").select("*").eq("id", attachment_id).eq("product_id", product_id).execute()
             row = (response.data or [None])[0]
@@ -202,6 +220,8 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
             row = None
         if not row:
             raise HTTPException(404, "Lampiran tidak ditemukan.")
+        if str(row.get("product_id")) != str(product_id):
+            raise HTTPException(403, "Lampiran tidak ditemukan.")
         if not _can_manage_attachment(row, user):
             verb = "menghapus" if action == "delete" else "mengubah"
             raise HTTPException(403, f"Hanya pengunggah atau admin yang boleh {verb} lampiran ini.")
@@ -211,7 +231,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
     async def edit_product_attachment(request: Request, product_id: str, attachment_id: str,
                                       kategori: str = Form(...), catatan: str = Form(""),
                                       current_user: dict = Depends(get_current_user)):
-        row = await _owned_attachment(product_id, attachment_id, current_user, "edit")
+        row = await _owned_attachment(product_id, attachment_id, current_user, "edit", request)
         validation = _validation_error(kategori, catatan)
         if validation:
             raise HTTPException(400, validation)
@@ -225,7 +245,7 @@ def register_product_attachment_routes(app, *, get_current_user, log_activity, t
     @app.post("/products/{product_id}/lampiran/{attachment_id}/delete")
     async def delete_product_attachment(request: Request, product_id: str, attachment_id: str,
                                         current_user: dict = Depends(get_current_user)):
-        row = await _owned_attachment(product_id, attachment_id, current_user, "delete")
+        row = await _owned_attachment(product_id, attachment_id, current_user, "delete", request)
         path = row.get("file_path") or ""
         prefix = f"products/{product_id}/"
         if (not path.startswith(prefix) or "\\" in path or

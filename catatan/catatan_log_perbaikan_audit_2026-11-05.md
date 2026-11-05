@@ -213,6 +213,53 @@ Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server
 
 - C3 (respons 404 konsisten) tetap **TERBUKA**.
 - Blocker cutover lain (SSRF, soak privat, `pypdf` ≥6.21.4) tetap **BELUM**.
+- A-11 (efek samping) & A-12 (lampiran) → **SELESAI** (PR1, sesi 5); A-10 → PR2; A-13 → PR3.
+
+---
+
+## Sesi 5 — 2026-11-05: PR1 tenant guard A-11/A-12 (efek samping + lampiran)
+
+**Ruang lingkup:** A-11 `app/efek_samping.py` generate/delete; A-12 `app/product_attachments_routes.py` GET/POST/edit/delete. Hanya temuan ini; C-14/B-series/R2/pypdf/CSRF tidak disentuh.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah) |
+|---|---|---|---|
+| A-11 | `app/efek_samping.py:20` | `from app.security import assert_same_tenant` | Sebelum: tanpa import guard |
+| A-11 | `app/efek_samping.py:244-252` (generate) | Setelah `product` dibaca: `assert_same_tenant(current_user, product)` → `log_activity(..., outcome="rejected")` + redirect error | Sebelum: generate lolos untuk tenant mana pun. Sesudah: 403-equivalent via redirect error + nol tulis |
+| A-11 | `app/efek_samping.py:401-417` (delete) | Select diperluas `nama_produk, perusahaan, monitoring_efek_samping_file_url`; guard sebelum hapus file/DB; fail-closed: exception baca → redirect “Produk tidak ditemukan” (nol tulis) | Sebelum: delete lolos + fail-open bila baca gagal. Sesudah: sama pola po_item_delete |
+| A-12 | `app/product_attachments_routes.py:14` | `from app.security import assert_same_tenant` | — |
+| A-12 | `app/product_attachments_routes.py:86-110` | `_load_active_product` diperluas return product (tidak hanya error); helper `_guard_product` + `log_activity rejected` + `HTTPException(403)` | Sebelum: tanpa tenant guard |
+| A-12 | `app/product_attachments_routes.py:116-121` (GET) | Guard sebelum list (redirect `/` bila ditolak) | Sebelum: daftar lampiran tenant lain bocor |
+| A-12 | `app/product_attachments_routes.py:138-140` (POST) | Guard sebelum validasi/upload — objek storage yatim tidak terjadi | Sebelum: upload duluan, guard tidak ada |
+| A-12 | `app/product_attachments_routes.py:194-210` (edit/delete) | `_owned_attachment` kini guard produk + cek `row.product_id == product_id` (403 bila lintas produk) + owner/admin | Sebelum: `product_id` milik sendiri + `attachment_id` milik tenant lain bisa lolos |
+| — | `tests/test_tenant_guard_efek_lampiran.py`, `.gitignore`, `.github/workflows/ci.yml` | Test baru 10 kasus (efek 6 + lampiran 4) + whitelist + CI baris ke-21 | 21/21 pure-local LULUS; FAIL-CLOSED terbukti gagal di kode lama |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi` |
+| `scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 21 test pure-local CI (clone bersih) | 0 semua | **PASS=21 FAIL=0** (termasuk `test_tenant_guard_efek_lampiran` 10 kasus) |
+| Fail-closed di kode lama (`git stash push -- app/`, jalankan test baru) | 1 | FAIL pada `test_efek_generate_other_tenant_blocked_no_writes` — `assert outcome == "rejected"` gagal (alasan benar: guard tidak ada di kode lama) |
+| `tests/e2e_smoke_refactor.py` (staging) | 0 | **34/34 PASS** |
+| `tests/e2e_activity_request_id.py` | 0 | **19/19 PASS** |
+| `tests/e2e_notes_display_name.py` | 0 | PASS |
+| `tests/e2e_audit_staging.py` (penuh) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah audit. Kredensial hanya di-export di shell yang sama.
+
+### Risiko & yang tidak berubah
+
+- Perilaku admin & user satu-tenant, owner lampiran, dan bucket privat `product-attachments` tidak berubah; semantik `object_store` tidak diubah.
+- Baris tanpa `perusahaan` tetap lolos (fail-open legacy disengaja, bukan diubah).
+
+### Keputusan yang masih terbuka
+
+- A-10 (finished-spec) → **PR2**; A-13 (sample create/delete/edit) + brands → **PR3**.
+- C-01/A-17 (akun tanpa profil), PO lintas tenant, katalog RM bersama → tetap TERBUKA.
 
 ---
 
@@ -253,3 +300,14 @@ Salin blok di bawah ini untuk sesi lanjutan; isi tanggal, ruang lingkup, perubah
 **Test:** `tests/test_tenant_guard_sample.py` baru (6 kasus) + whitelist + CI baris ke-23.
 
 **Validasi:** `check_undefined_names` 0; `check_static_rules` 0; `compileall` 0; **21 test pure-local PASS=21 FAIL=0**; fail-closed di kode lama FAIL `harus 403`; E2E staging: smoke 34/34, activity 19/19, audit 41/0/3 skip.
+## Sesi 6 — 2026-11-05: PR2 tenant guard A-10 (finished-spec)
+
+**Ruang lingkup:** hanya A-10 (`products_routes.py` POST `/products/{product_id}/finished-spec`). C-14/B-series/R2/pypdf/CSRF tidak disentuh.
+
+**Perubahan:** `select("nama_produk, perusahaan")` + `assert_same_tenant(current_user, product)` dengan `log_activity(..., outcome="rejected")` + `HTTPException(403)` sebelum `json.loads` dan tulis apa pun; pola sama dengan rute produk lain (252, 356, 1215, 1506). Baca gagal → 404 tetap (perilaku lama). Audit rute tulis lain di `products_routes.py`: `/products/add` (252 guard), `/products/delete` (356 guard), `/products/{id}/edit` (1215 guard), `/products/{id}/delete-file` (1506 guard) — sudah ber-guard; hanya finished-spec yang belum.
+
+**Test:** `tests/test_tenant_guard_finished_spec.py` baru (5 kasus: tenant lain 403 + nol tulis + rejected, tenant sama insert, admin, tanpa perusahaan, baca gagal 404) + whitelist + CI baris ke-22.
+
+**Validasi:** `check_undefined_names` 0; `check_static_rules` 0; `compileall` 0; **22 test pure-local PASS=22 FAIL=0**; fail-closed di kode lama (stash app/): FAIL `harus 403`; E2E staging: smoke 34/34, activity 19/19, notes PASS, audit 41/0/3 skip.
+
+**Risiko:** perilaku admin/satu-tenant tidak berubah; baris tanpa `perusahaan` tetap fail-open legacy.

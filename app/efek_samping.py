@@ -18,6 +18,7 @@ from pypdf import PdfReader, PdfWriter
 from xhtml2pdf import pisa
 
 from app import object_store
+from app.security import assert_same_tenant
 
 _EFEK_PERIOD_RE = re.compile(r"^(\d{4})-H([12])$")
 APT_SIGNATURE_URI = "/static/images/apt.png"
@@ -242,6 +243,13 @@ def register_efek_samping_routes(
             return RedirectResponse(url="/", status_code=303)
 
         product = prod_resp.data
+        if not assert_same_tenant(current_user, product):
+            log_activity(
+                current_user, "generate", "product", product_id,
+                product.get("nama_produk") or product_id,
+                request=request, outcome="rejected",
+            )
+            return _redirect("Akses ditolak! Produk bukan milik perusahaan Anda.", error=True)
         year, half = _next_efek_semester(product.get("last_efek_samping_period"))
         period_key = _format_efek_period(year, half)
         period_label = _efek_period_label(year, half)
@@ -393,7 +401,7 @@ def register_efek_samping_routes(
         try:
             prod_resp = (
                 supabase.table("products")
-                .select("nama_produk, monitoring_efek_samping_file_url")
+                .select("nama_produk, perusahaan, monitoring_efek_samping_file_url")
                 .eq("id", product_id)
                 .single()
                 .execute()
@@ -405,6 +413,14 @@ def register_efek_samping_routes(
         product = prod_resp.data
         if not product:
             return _redirect("Produk tidak ditemukan.", error=True)
+
+        if not assert_same_tenant(current_user, product):
+            log_activity(
+                current_user, "delete", "product", product_id,
+                product.get("nama_produk") or product_id,
+                request=request, outcome="rejected",
+            )
+            return _redirect("Akses ditolak! Produk bukan milik perusahaan Anda.", error=True)
 
         file_url = product.get("monitoring_efek_samping_file_url")
         if file_url:
