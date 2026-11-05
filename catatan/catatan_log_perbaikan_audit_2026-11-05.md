@@ -26,7 +26,7 @@
 | B7 (§4 F-07) | MutationObserver po-analytics tanpa debounce | SELESAI | 2026-11-05 (sesi 2) |
 | B8 (§5 C-05) | Tipe exception greeting AI tidak dicatat | SELESAI | 2026-11-05 (sesi 2) |
 | B9 (§4 F-04) | Spam log `[SESSION EXPIRED]` (gabungkan ringkasan 5-menit + debug) | SELESAI | 2026-11-05 (sesi 2) |
-| B4 (§3 F-07) | Timing-safe token publik | TERBUKA (ditunda ke PR terpisah) | Keputusan konfirmasi 2026-11-05 |
+| B4 (§3 F-07) | Timing-safe token publik | SELESAI | 2026-11-05 (sesi 4) |
 | B10 (§4 F-07 alt) | Disconnect observer saat print | SELESAI (digabung B7) | 2026-11-05 (sesi 2) |
 | C1 (§6 E-05) | `parse_storage_url` tanpa `unquote` — path `%20` salah target | SELESAI | 2026-11-05 (sesi 3) |
 | C2 (§6 E-06) | Upload tanpa validasi base dulu → orphan bila base kurang | SELESAI | 2026-11-05 (sesi 3) |
@@ -170,8 +170,49 @@ Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server
 ### Keputusan yang masih terbuka
 
 - C3 (respons 404 konsisten) **TERBUKA** (di-skip sesuai keputusan).
-- B4 timing-safe token **TERBUKA** (PR terpisah).
+- B4 timing-safe token **SELESAI** (sesi 4).
 - Blocker cutover lain (SSRF `dip_documents`, soak privat, `pypdf` ≥6.21.4) **BELUM**.
+
+---
+
+## Sesi 4 — 2026-11-05: B4 timing-safe public token
+
+**Ruang lingkup:** hanya B4. Tidak menyentuh C3/C-14 atau temuan audit lain.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| B4 | `app/dip_public.py:24` | `import hmac` | Sebelum: tidak ada `hmac` di `app/` |
+| B4 | `app/dip_public.py:270-279` | Helper `_tokens_equal(a, b)` = `hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))`, return `False` bila kosong/None | Sebelum: `provided_token == token` (`dip_public.py:289`). Sesudah: timing-safe bytes; non-ASCII tidak TypeError |
+| B4 | `app/dip_public.py:301` | `if token: if _tokens_equal(provided_token, token): return True` | Cabang BPOM tanpa token (`registered and not provided_token`) tetap di bawahnya; fail-closed `except Exception -> False` tetap |
+| — | Grep `public_access_token`, `provided_token`, `== token`/`!= token` di `app/` | Satu-satunya perbandingan token publik adalah `dip_public.py:289` (kini `_tokens_equal`). `products_routes.py:286,295` hanya generate/cleanup token (`token_urlsafe(32)` + hapus fallback), bukan perbandingan. `dip_public.py:154` hanya meneruskan `provided_token` ke checker; baris 260 hanya mengekspor token ke template bila bukan `bpom_registered_link` | Tidak ada perbandingan token lain yang perlu dijadikan timing-safe |
+| — | `tests/test_dip_public_check.py` | 7 kasus baru + `main()` diperbarui: salah panjang sama→404, salah panjang beda→404, kosong non-BPOM→404, non-ASCII→404 bukan 500, BPOM tanpa token→200, BPOM token salah→404, tanpa token→200 | 11 test total; `Semua test F-01 fail-closed LULUS` (RC=0). Whitelist & CI tidak diubah |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi` |
+| `scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| Import terisolasi `app.main` | 0* | Ter-cover `check_static_rules` (“app import … passed”); skrip heredoc manual di PowerShell gagal sintaks, tidak relevan |
+| 20 test pure-local CI (clone bersih) | 0 semua | **PASS=20 FAIL=0** (termasuk `test_dip_public_check` diperluas) |
+| `tests/e2e_dip_public_link.py` (staging) | 2 (argumen) | Tidak dijalankan — wajib `--url "<live DIP URL>"` (hub URL + token live); tidak ada token yang di-print |
+| `tests/e2e_smoke_refactor.py` (staging) | 0 | **34/34 PASS** |
+| `tests/e2e_audit_staging.py --quick` (staging) | 0 | PASS 37 / SKIP 7 / FAIL 0 |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah audit. Kredensial hanya di-export di shell yang sama.
+
+### Risiko & yang tidak berubah
+
+- Perilaku akses identik: token benar→True, token salah/kosong→False, BPOM tanpa token→True (legacy), tanpa token→True, exception→False (fail-closed tetap).
+- Token valid non-ASCII (bila ada) tetap diterima karena bytes di-encode UTF-8 — tidak ada regresi TypeError.
+
+### Keputusan yang masih terbuka
+
+- C3 (respons 404 konsisten) tetap **TERBUKA**.
+- Blocker cutover lain (SSRF, soak privat, `pypdf` ≥6.21.4) tetap **BELUM**.
 
 ---
 

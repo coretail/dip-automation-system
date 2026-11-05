@@ -179,11 +179,92 @@ def test_valid_token_passes_check():
     print("[PASS] token cocok -> checker lolos, hub dirender (200)")
 
 
+def test_wrong_token_same_length_404():
+    """Token salah dengan panjang sama -> 404 (timing-safe, bukan 500)."""
+    app = _register(FakeSupabase())
+    client = TestClient(app, raise_server_exceptions=False)
+    slug = f"produk-uji-{uuid.uuid4()}"
+    resp = client.get(f"/dip/{slug}?access=tok999")
+    assert resp.status_code == 404, f"token salah panjang sama harus 404, dapat {resp.status_code}"
+    print("[PASS] token salah panjang sama -> 404")
+
+
+def test_wrong_token_different_length_404():
+    """Token salah dengan panjang berbeda -> 404."""
+    app = _register(FakeSupabase())
+    client = TestClient(app, raise_server_exceptions=False)
+    slug = f"produk-uji-{uuid.uuid4()}"
+    resp = client.get(f"/dip/{slug}?access=salah-panjangnya-lebih-lama")
+    assert resp.status_code == 404, f"token salah panjang beda harus 404, dapat {resp.status_code}"
+    print("[PASS] token salah panjang berbeda -> 404")
+
+
+def test_empty_token_non_bpom_404():
+    """Token kosong (?access=) pada produk bertoken non-BPOM -> 404."""
+    app = _register(FakeSupabase())
+    client = TestClient(app, raise_server_exceptions=False)
+    slug = f"produk-uji-{uuid.uuid4()}"
+    resp = client.get(f"/dip/{slug}?access=")
+    assert resp.status_code == 404, f"token kosong (non-BPOM) harus 404, dapat {resp.status_code}"
+    print("[PASS] token kosong (non-BPOM) -> 404")
+
+
+def test_non_ascii_token_404_not_500():
+    """Token non-ASCII -> 404, BUKAN 500 (compare_digest bytes tidak TypeError)."""
+    app = _register(FakeSupabase())
+    client = TestClient(app, raise_server_exceptions=False)
+    slug = f"produk-uji-{uuid.uuid4()}"
+    resp = client.get(f"/dip/{slug}?access=tok%C3%A9n")
+    assert resp.status_code == 404, f"token non-ASCII harus 404 (bukan 500), dapat {resp.status_code}"
+    print("[PASS] token non-ASCII -> 404 (bukan 500)")
+
+
+def test_bpom_registered_without_token_200():
+    """Produk bertoken terdaftar BPOM tanpa ?access= -> 200 (legacy tetap)."""
+    fake = FakeSupabase()
+    fake.product["bpom_registered_link"] = True
+    app = _register(fake)
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get(f"/dip/produk-uji-{fake.product['id']}")
+    assert resp.status_code == 200, f"BPOM legacy tanpa token harus 200, dapat {resp.status_code}"
+    print("[PASS] produk BPOM-registered tanpa token -> 200 (legacy)")
+
+
+def test_bpom_registered_wrong_token_404():
+    """Produk bertoken terdaftar BPOM dengan token SALAH -> 404."""
+    fake = FakeSupabase()
+    fake.product["bpom_registered_link"] = True
+    app = _register(fake)
+    client = TestClient(app, raise_server_exceptions=False)
+    slug = f"produk-uji-{fake.product['id']}"
+    resp = client.get(f"/dip/{slug}?access=salah")
+    assert resp.status_code == 404, f"BPOM dengan token salah harus 404, dapat {resp.status_code}"
+    print("[PASS] produk BPOM-registered dengan token salah -> 404")
+
+
+def test_no_token_product_200():
+    """Produk tanpa token -> 200 seperti sekarang (legacy mode)."""
+    fake = FakeSupabase()
+    fake.product["public_access_token"] = None
+    app = _register(fake)
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.get(f"/dip/produk-uji-{fake.product['id']}")
+    assert resp.status_code == 200, f"produk tanpa token harus 200, dapat {resp.status_code}"
+    print("[PASS] produk tanpa token -> 200")
+
+
 def main():
     test_exception_fail_closed_404()
     test_exception_fail_closed_direct()
     test_token_enforced()
     test_valid_token_passes_check()
+    test_wrong_token_same_length_404()
+    test_wrong_token_different_length_404()
+    test_empty_token_non_bpom_404()
+    test_non_ascii_token_404_not_500()
+    test_bpom_registered_without_token_200()
+    test_bpom_registered_wrong_token_404()
+    test_no_token_product_200()
     print("\nSemua test F-01 fail-closed LULUS.")
 
 
