@@ -147,8 +147,8 @@ Semua dipin dengan versi exact:
 | `starlette` | 1.6.0 | `pypdf` | 6.21.1 |
 | `uvicorn` | 0.53.0 | `httpx` | 0.28.1 |
 | `supabase` | 2.31.0 | `slowapi` | 0.1.10 |
-| `boto3` | 1.43.114 | `python-slugify` | 9.0.0 |
-| `pydantic-settings` | 2.15.0 | `openpyxl` | 3.1.5 |
+| `boto3` | 1.43.115 | `python-slugify` | 9.0.0 |
+| `pydantic-settings` | 2.16.0 | `openpyxl` | 3.1.5 |
 | `jinja2` | 3.1.6 | `tzdata` | 2026.4 |
 | `python-multipart` | 0.0.32 | | |
 
@@ -211,11 +211,17 @@ GEMINI_API_KEY=your-google-gemini-api-key
 
 ### 4. Jalankan Aplikasi
 
+**Perintah development lokal (wajib lewat launcher staging agar guard isolasi staging/produksi aktif):**
+
 ```bash
-uvicorn app.main:app --reload
+python scripts/run_staging_8017.py
 ```
 
-### 4a. Lingkungan Staging (opsional)
+Launcher membaca `.env.staging` sebagai sumber tunggal, memvalidasi sebelum import app (tanpa mencetak secret), dan melayani di `127.0.0.1:8017` tanpa reload. Lihat `.env.staging.example` untuk template dan salin ke `.env.staging` lalu isi nilai staging secara lokal; jangan commit file tersebut.
+
+> ⚠️ `uvicorn app.main:app` langsung **dilarang** untuk development/testing lokal: `app/config.py` memilih `.env` produksi saat tidak ada mode staging, dan sejak guard G-11 (`app/env_guard.py`) proses tanpa `DIP_APP_ENV` yang menemukan file `.env` ditolak saat import. Menjalankan aplikasi langsung hanya untuk produksi yang disengaja dengan `DIP_APP_ENV=production` (mis. Render, yang tidak punya file `.env`).
+
+### 4a. Detail Lingkungan Staging
 
 Mode staging diaktifkan dengan `DIP_APP_ENV=staging` + file `.env.staging` (contoh: `.env.staging.example`), diluncurkan lewat `python scripts/run_staging_8017.py` (melayani di `127.0.0.1:8017`). Dua guard fail-closed (`app/staging_guard.py`, `app/staging_preflight.py`) menolak startup bila `SUPABASE_URL` tidak menunjuk project staging yang eksak — sehingga staging mustahil salah-sasaran ke database produksi. Bedanya dengan produksi: `.env` produksi bukan sumber konfigurasi (hanya env proses + `.env.staging`), dotenv tidak dipanggil, dan **`SUPABASE_KEY` wajib** diisi.
 
@@ -248,20 +254,36 @@ dip-automation-system/
 │   ├── main.py                 # Entrypoint FastAPI: auth, produk, dashboard, admin, samples,
 │   │                           #   brands, finished-spec, inci-breakdown, qual-quan, activity log,
 │   │                           #   health, presence, ED notifications, COMPANY_INFO, filter Jinja
+│   ├── admin_users_routes.py   # Panel manajemen user admin + presence & akun terproteksi
+│   ├── brands_routes.py        # Brand & dokumen legal merek
+│   ├── company_docs_routes.py  # Dokumen perusahaan (log activity + evidence row_id)
 │   ├── config.py               # Settings pydantic (supabase_url/key/service_role, gemini_api_key)
+│   ├── dashboard_routes.py     # Dashboard & Sampah/restore produk
 │   ├── database.py             # Klien Supabase global (service role, melewati RLS)
+│   ├── env_guard.py            # Guard produki implisit G-11 (tolak .env tanpa DIP_APP_ENV)
 │   ├── excel_generator.py      # Workbook .xlsx Qual-Quan 3 sheet (openpyxl)
 │   ├── bab2_pdf.py             # Komposisi layout PDF Bab II via content stream pypdf
 │   ├── efek_samping.py         # Generator laporan NIES per semester (append, locking per produk)
 │   ├── dip_documents.py        # Generator Bab I–IV, ZIP Bab II, & preview (butuh login)
 │   ├── dip_public.py           # Portal publik /dip/{slug} untuk verifikator BPOM (tanpa login)
+│   ├── file_validation.py      # Validasi upload PDF (magic bytes, ukuran)
+│   ├── object_store.py         # Abstraksi object storage (Supabase | dual | R2)
+│   ├── products_routes.py      # Produk & formula + lampiran & finished-spec
+│   ├── presence_routes.py      # Heartbeat presence + notifikasi ED
+│   ├── profile_routes.py       # Profil user (display_name, avatar)
+│   ├── profile_validation.py   # Validasi display_name
 │   ├── raw_materials_routes.py # CRUD bahan baku, batch, varian komposisi, usage badge
+│   ├── sample_routes.py        # FSP (Form Pengajuan Sample)
+│   ├── profile_routes.py       # Profil user (display_name, avatar)
+│   ├── security.py             # assert_same_tenant + helper tenant/role
 │   ├── po_routes.py            # Produksi: PO, batch produk, item PO, + halaman analitik PO
 │   ├── notes_routes.py         # Notes tim, @mention, token referensi
 │   ├── product_attachments_routes.py # Lampiran produk privat non-DIP (bucket product-attachments)
 │   ├── staging_guard.py        # Guard fail-closed isolasi staging (DIP_APP_ENV=staging)
 │   ├── staging_preflight.py    # Validasi env-efektif untuk mode staging
+│   ├── variant_components.py   # Komponen varian komposisi bahan baku
 │   ├── static/
+│   │   ├── common.js           # Helper bersama (escapeHtml dsb.)
 │   │   ├── theme.css           # Sistem token 4 tema (light / terra / rose / dark)
 │   │   ├── sidebar.css         # Layout app, drawer mobile, collapsed mode
 │   │   ├── sidebar.js          # Sidebar: collapse, drawer, submenu, tooltip, user menu
@@ -271,7 +293,7 @@ dip-automation-system/
 │   │   ├── efek_samping.js     # Helper form NIES
 │   │   ├── lampiran.js         # Uploader & daftar lampiran produk (signed URL)
 │   │   └── images/             # logo_erfi, logo_heka, kop_erfi, kop_heka, apt, favicon
-│   └── templates/              # 17 halaman extend base.html + template PDF/partial tersendiri
+│   └── templates/              # 18 halaman extend base.html + template PDF/partial tersendiri
 ├── migration/                  # Toolkit migrasi data (SQL skema di-commit; skrip & data tidak)
 ├── tests/                      # Skrip verifikasi. Di-commit (whitelist `.gitignore`): test_parse_storage_url.py, test_object_store_r2.py, test_security_helpers.py, test_upload_validation.py, test_auth_matrix.py, test_audit_regressions.py, test_base_cachebust.py, test_dip_public_check.py, test_log_activity_normalize.py, test_verify_r2_readiness_logic.py, verify_*.py, e2e_*.py. Test baru harus ditambahkan ke whitelist `!/tests/nama.py` karena `/tests/*` di-ignore
 ├── scripts/                    # Launcher staging (run_staging_8017.py) & util pendukung
@@ -283,7 +305,7 @@ dip-automation-system/
 
 > **Arsitektur.** `main.py` menangani routing inti dan menjadi pemanggil semua `register_*_routes`. Fitur yang cukup besar dipisah menjadi modul router terpisah dengan fungsi `register_*_routes(app, ...)`, sehingga `main.py` tidak terus membesar tanpa batas. Semua dependensi antar modul di-*inject* lewat parameter fungsi tersebut, sehingga tidak ada modul yang perlu meng-import `main.py` (circular import). Batas keamanan sengaja terlihat di struktur berkas: `dip_documents.py` berisi generator DIP yang **butuh login**, sedangkan `dip_public.py` berisi portal `/dip/{slug}` yang **tanpa login**.
 
-> **Template.** 17 template mewarisi `base.html` lewat `{% extends %}` dengan 4 block yang tersedia: `html_class`, `title`, `head_extra`, dan `content`. Halaman preview FSP meng-override `html_class` dengan `force-light` supaya tema dipaksa light dan tombol switcher disembunyikan. Template yang berdiri sendiri (login, halaman error publik, Public Hub, dan seluruh template PDF) punya `<head>` sendiri. Struktur internal halaman masih memakai `{% macro %}` — belum ada pustaka komponen.
+> **Template.** 18 template mewarisi `base.html` lewat `{% extends %}` dengan 4 block yang tersedia: `html_class`, `title`, `head_extra`, dan `content`. Halaman preview FSP meng-override `html_class` dengan `force-light` supaya tema dipaksa light dan tombol switcher disembunyikan. Template yang berdiri sendiri (login, halaman error publik, Public Hub, dan seluruh template PDF) punya `<head>` sendiri. Struktur internal halaman masih memakai `{% macro %}` — belum ada pustaka komponen.
 
 > **Filter Jinja global** yang terdaftar di `main.py`: `slugify`, `clean_pct`, dan `format_date_dd_mm_yyyy`. ⚠️ Catatan: `notes_routes.py` membuat `Jinja2Templates` sendiri sehingga template Notes **tidak** mewarisi filter kustom tersebut.
 

@@ -29,3 +29,8 @@ def test_anonymous_requests_are_redirected_or_denied():
         if response.status_code == 303:
             location = response.headers.get("location", "")
             assert "/login" in location, (path, location)
+
+
+if __name__ == "__main__":
+    test_anonymous_requests_are_redirected_or_denied()
+    print("PASS test_anonymous_requests_are_redirected_or_denied")

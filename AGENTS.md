@@ -4,7 +4,7 @@
 - Aplikasi web FastAPI + Jinja2 untuk data bahan baku, formula, produksi, dan dokumen DIP kosmetik.
 - Supabase/PostgreSQL menjadi database; akses object storage dipusatkan di `app/object_store.py`.
 - Entrypoint ASGI adalah `app.main:app`; template mewarisi `base.html` bila memakai shell aplikasi.
-- Runtime yang dipin repo adalah Python `3.11.0` (`.python-version`); README menyatakan Python 3.10+.
+- Runtime yang dipin repo adalah Python `3.11.0` (`.python-version`); README pin `3.11.0`.
 
 ## 2. Perintah yang diaudit
 - Instal dependensi: `pip install -r requirements.txt` (15 paket dipin; `pyflakes`, `pytest`, Playwright, dan `python-dotenv` tidak dipin di sana).
@@ -20,8 +20,8 @@
 ## CI/CD (GitHub Actions)
 - Sumber kebenaran pipeline adalah `.github/workflows/ci.yml`, `.github/workflows/staging-e2e.yml`, `.github/workflows/dependency-audit.yml`, dan `.github/dependabot.yml`.
 - `ci.yml` berjalan pada `pull_request` dan `push` ke `main`. Job `quality` tidak memakai secret; env dummy level job berisi `SUPABASE_URL=https://ci.invalid.supabase.co`, `SUPABASE_KEY=ci-dummy-anon-key`, `SUPABASE_SERVICE_ROLE_KEY=ci-dummy-service-role-key`, dan `STORAGE_BACKEND=supabase`. `DIP_APP_ENV` **tidak boleh diset** di CI.
-  - Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, delapan belas test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
-- `staging-e2e.yml` hanya memiliki `workflow_dispatch`; trigger `push` dinonaktifkan sampai diputuskan lain. Workflow memakai GitHub Environment `staging`, concurrency tunggal dengan `cancel-in-progress: false`, serta suite `all`, `smoke`, `upload`, `activity`, dan `audit`. Suite `all` tidak memuat `upload`; suite upload memerlukan backend `dual`/`r2`.
+  - Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, sembilan belas test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
+- `staging-e2e.yml` hanya memiliki `workflow_dispatch`; trigger `push` dinonaktifkan sampai diputuskan lain. Workflow memakai GitHub Environment `staging`, concurrency tunggal dengan `cancel-in-progress: false`, serta suite `all`, `smoke`, `upload`, `activity`, `notes`, dan `audit`. Suite `all` tidak memuat `upload`; suite upload memerlukan backend `dual`/`r2`.
 - `dependency-audit.yml` berjalan melalui cron mingguan hari Senin dan `workflow_dispatch`; `pip-audit -r requirements.txt` membuat job gagal bila ada advisory. Pengecualian hanya boleh memakai `--ignore-vuln <ID>` dengan komentar yang mencatat alasan, owner, dan tanggal review.
 - `.github/dependabot.yml` mengatur ekosistem `pip` dan `github-actions`, terjadwal Senin 02:00 WIB. Update minor/patch pip digabung jadi satu PR grup (`pip-routine`) dan semua update actions jadi satu PR (`actions-all`); `fastapi`, `pydantic*`, dan `pypdf` dikecualikan dari grup sehingga tiap bump-nya PR sendiri, dan update major selalu PR terpisah. Seluruh update masuk melalui PR dan wajib melewati CI. Dependabot juga langsung memeriksa saat file konfigurasi ini berubah, jadi satu PR grup bisa muncul segera setelah merge. Security updates berjalan terpisah dari jadwal ini.
 - `requirements-ci.txt` berisi tool CI. `scripts/check_static_rules.py` memeriksa syntax Python, duplikat route FastAPI berdasarkan method+path, kompilasi seluruh template Jinja, script HTML yang mencampur `src` dan inline code, serta syntax JavaScript inline melalui `node --check`.
