@@ -28,8 +28,10 @@
 | B9 (§4 F-04) | Spam log `[SESSION EXPIRED]` (gabungkan ringkasan 5-menit + debug) | SELESAI | 2026-11-05 (sesi 2) |
 | B4 (§3 F-07) | Timing-safe token publik | TERBUKA (ditunda ke PR terpisah) | Keputusan konfirmasi 2026-11-05 |
 | B10 (§4 F-07 alt) | Disconnect observer saat print | SELESAI (digabung B7) | 2026-11-05 (sesi 2) |
-| C1–C3 | Saran low-risk lainnya (§6–§8 audit) | BELUM | — |
-| A-02 s.d. A-20, B, C, E, F, G §3–§8 | Temuan keamanan, frontend, backend, storage, CI | BELUM | — |
+| C1 (§6 E-05) | `parse_storage_url` tanpa `unquote` — path `%20` salah target | SELESAI | 2026-11-05 (sesi 3) |
+| C2 (§6 E-06) | Upload tanpa validasi base dulu → orphan bila base kurang | SELESAI | 2026-11-05 (sesi 3) |
+| C3 (§5 C-14) | `.single()` vs cek manual tidak konsisten | TERBUKA (skip sesuai keputusan) | Keputusan konfirmasi 2026-11-05 |
+| C4–C12+ | Blocker cutover R2 (encoding, base, SSRF, privat, selektor) + pypdf | BELUM | — |
 | D-08, D-09, D-10, D-14 | Status migrasi 011 ambigu; handoff R2 tertinggal; catatan historis tanpa banner | BELUM | — |
 | E-04 s.d. E-08 | Blocker cutover R2 (encoding, base, SSRF, soak privat, selektor) | BELUM | — |
 | pypdf ≥6.21.4 | 10 advisory terbuka (butuh PR terpisah + uji manual) | BELUM | — |
@@ -125,6 +127,51 @@ Kredensial E2E dibaca dari `LOGIN.md` lalu di-export sebagai `STAGING_ADMIN_EMAI
 
 - Kategori C (C1 encoding, C2 validasi base, C3 respons 404) dan blocker cutover R2 (E-04..E-08) tetap **BELUM**.
 - `pypdf` ≥6.21.4 tetap **BELUM** (PR terpisah + uji manual).
+
+---
+
+## Sesi 3 — 2026-11-05: Kategori C (C1 encoding + C2 fail-fast; C3/B4 skip)
+
+**Ruang lingkup:** C1 (E-05), C2 (E-06). C3 di-skip, B4 tetap ditunda sesuai keputusan konfirmasi.
+
+**Keputusan konfirmasi yang dipakai:** branch baru dari `main` (PR #53 sudah merge); C1 urutan “roundtrip test dlu, baru remove” — test roundtrip ditulis pertama (TDD, terbukti gagal 3 kasus), baru `unquote` di parser + perbarui ekspektasi lama; C2 gagal sebelum `upload_pdf`; validasi **unit + E2E staging khusus** upload.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| C1 | `app/object_store.py:27,195-200,215-219` | `from urllib.parse import quote, unquote`; `unquote(path)` pada keduanya (Supabase dan R2) di `parse_storage_url` | Sebelum: path `%20` dikembalikan verbatim → `remove`/presign menarget key literal `%20` (orphan). Sesudah: `coa/file%20name.pdf` → `coa/file name.pdf`; test roundtrip 3 kasus + 18 kasus lama + 1 longest-base = 19 LULUS. |
+| C1 | `tests/test_parse_storage_url.py:33-34,41` | Ekspektasi lama `file%20name.pdf`/`hak%20lisensi.pdf` → `file name.pdf`/`hak lisensi.pdf`; blok `roundtrip_cases` 3 kasus (Supabase `%20`, R2 `%20`, `%25%20` → `%`) | TDD: sebelum unquote, test gagal tepat 3 roundtrip (exit 1); sesudah, 19/19 LULUS. |
+| C2 | `app/object_store.py:316-327` | `assert_public_base(bucket)` raise `RuntimeError("... tidak punya base publik di R2_PUBLIC_BASES")`; dipanggil di `upload_pdf` sebelum `_r2_upload` untuk `r2`/`dual` (kecuali `product-attachments` privat) | Sebelum: objek tertulis lalu `public_url` raise (orphan). Sesudah: tidak ada `put_object` saat base kurang; test `fail-fast before upload when base missing` + `does not call put_object` LULUS. |
+| C2 | `tests/test_object_store_r2.py:131-147` | Blok fail-fast: `install("r2", s3_missing, bases={})` → upload harus raise, `len(s3_missing.puts)==0` | `object_store dispatch r2/dual: semua kasus LULUS` (termasuk dual/supabase tidak berubah). |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `tests/test_parse_storage_url.py` | 0 | **19 kasus LULUS** (18 lama + 1 longest-base, termasuk 3 roundtrip E-05) |
+| `tests/test_object_store_r2.py` | 0 | **semua kasus LULUS** (termasuk fail-fast C2 baru) |
+| 20 test pure-local CI (clone bersih) | 0 semua | **PASS=20 FAIL=0** |
+| `scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi / syntax error (28 file)` |
+| `scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `tests/e2e_upload_staging.py` (staging khusus, dual) | 0 | **6/6 PASS** — upload NIB PT Erfi → objek `legal-documents-stg/company-docs/nib_erfi.pdf` 592 byte di R2, isi identik |
+| `tests/e2e_smoke_refactor.py` (Trace Viewer on) | 0 | **34/34 PASS** |
+| `tests/e2e_activity_request_id.py` | 0 | **19/19 PASS** |
+| `tests/e2e_notes_display_name.py` | 0 | PASS |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah audit. Kredensial hanya di-export di shell yang sama.
+
+### Risiko & yang tidak berubah
+
+- Mode `supabase` tidak berubah (tanpa base check, tanpa R2).
+- `product-attachments` (privat, tanpa base) dikecualikan dari fail-fast — presigned tetap lewat S3 tanpa base.
+- `remove`/`signed_url` di mode `r2` kini menerima path mentah ( hasil unquote ) sehingga target key sama dengan key fisik; kolom DB lama ber-`%20` tetap terbaca sebagai path mentah.
+
+### Keputusan yang masih terbuka
+
+- C3 (respons 404 konsisten) **TERBUKA** (di-skip sesuai keputusan).
+- B4 timing-safe token **TERBUKA** (PR terpisah).
+- Blocker cutover lain (SSRF `dip_documents`, soak privat, `pypdf` ≥6.21.4) **BELUM**.
 
 ---
 
