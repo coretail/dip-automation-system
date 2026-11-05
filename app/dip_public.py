@@ -21,6 +21,7 @@ circular import (pola yang sama seperti notes_routes, efek_samping,
 raw_materials_routes, dan po_routes).
 """
 
+import hmac
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -267,6 +268,16 @@ def register_dip_public_routes(
             }
         )
 
+    def _tokens_equal(a: str | None, b: str | None) -> bool:
+        """Perbandingan timing-safe untuk token publik.
+
+        Bytes dipakai agar token non-ASCII tidak melempar TypeError
+        (bila terjadi, exception di jalur ini berarti akses ditolak).
+        """
+        if not a or not b:
+            return False
+        return hmac.compare_digest(str(a).encode("utf-8"), str(b).encode("utf-8"))
+
     def _dip_public_check_product(product_id: str, provided_token: str = None) -> bool:
         """Validasi produk untuk akses publik /dip/.
 
@@ -286,7 +297,7 @@ def register_dip_public_routes(
             token = product.get("public_access_token")
             registered = bool(product.get("bpom_registered_link"))
             if token:
-                if provided_token == token:
+                if _tokens_equal(provided_token, token):
                     return True
                 # Produk terdaftar BPOM: izinkan akses legacy tanpa token agar
                 # link yang sudah masuk registrasi tetap berfungsi.
