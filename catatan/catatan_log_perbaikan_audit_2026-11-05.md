@@ -282,4 +282,19 @@ Salin blok di bawah ini untuk sesi lanjutan; isi tanggal, ruang lingkup, perubah
 
 ### Keputusan yang masih terbuka
 - ...
+
 ```
+
+---
+
+## Sesi 6 — 2026-11-05: PR2 tenant guard A-10 (finished-spec)
+
+**Ruang lingkup:** hanya A-10 (`products_routes.py` POST `/products/{product_id}/finished-spec`). C-14/B-series/R2/pypdf/CSRF tidak disentuh.
+
+**Perubahan:** `select("nama_produk, perusahaan")` + `assert_same_tenant(current_user, product)` dengan `log_activity(..., outcome="rejected")` + `HTTPException(403)` sebelum `json.loads` dan tulis apa pun; pola sama dengan rute produk lain (252, 356, 1215, 1506). Baca gagal → 404 tetap (perilaku lama). Audit rute tulis lain di `products_routes.py`: `/products/add` (252 guard), `/products/delete` (356 guard), `/products/{id}/edit` (1215 guard), `/products/{id}/delete-file` (1506 guard) — sudah ber-guard; hanya finished-spec yang belum.
+
+**Test:** `tests/test_tenant_guard_finished_spec.py` baru (5 kasus: tenant lain 403 + nol tulis + rejected, tenant sama insert, admin, tanpa perusahaan, baca gagal 404) + whitelist + CI baris ke-22.
+
+**Validasi:** `check_undefined_names` 0; `check_static_rules` 0; `compileall` 0; **22 test pure-local PASS=22 FAIL=0**; fail-closed di kode lama (stash app/): FAIL `harus 403`; E2E staging: smoke 34/34, activity 19/19, notes PASS, audit 41/0/3 skip.
+
+**Risiko:** perilaku admin/satu-tenant tidak berubah; baris tanpa `perusahaan` tetap fail-open legacy.
