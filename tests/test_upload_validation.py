@@ -30,3 +30,18 @@ def test_exact_limit_accepted():
 def test_wrong_magic_bytes_rejected():
     data = b"XPDF" + b"x" * 100
     assert validate_pdf_bytes(data, "doc.pdf") is not None
+
+
+if __name__ == "__main__":
+    test_valid_pdf_accepted()
+    print("PASS test_valid_pdf_accepted")
+    test_empty_rejected()
+    print("PASS test_empty_rejected")
+    test_non_pdf_rejected()
+    print("PASS test_non_pdf_rejected")
+    test_oversized_rejected()
+    print("PASS test_oversized_rejected")
+    test_exact_limit_accepted()
+    print("PASS test_exact_limit_accepted")
+    test_wrong_magic_bytes_rejected()
+    print("PASS test_wrong_magic_bytes_rejected")

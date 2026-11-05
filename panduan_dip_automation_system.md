@@ -560,7 +560,7 @@ Keempat path tersebut juga disaring dari access log server agar terminal tetap t
 
 ### 4.14 Toolkit Migrasi Data (`migration/`)
 
-Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadsheet ke Supabase. **Hanya file SQL skema (`*.sql`) yang di-commit ke git** (lihat `.gitignore`); skrip impor/rollback dan data spreadsheet/CSV tetap tidak di-commit karena berisi data operasional perusahaan.
+Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadsheet ke Supabase. **File SQL skema (`*.sql`) di-commit ke git** (lihat `.gitignore`); selain itu `audit_storage.py`, `backfill_r2_urls.py`, dan `verify_r2_readiness.py` juga di-commit karena read-only/audit. Skrip impor/rollback dan data spreadsheet/CSV tetap tidak di-commit karena berisi data operasional perusahaan.
 
 #### A. Konvensi yang dipatuhi seluruh skrip
 
@@ -719,6 +719,11 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
 | `raw_material_batch` | `edit`, `acc_dipakai`, `acc_dimusnahkan` |
 | `raw_material_company_doc` | `edit` |
 | `note` | `create`, `delete`, `complete`, `reopen` |
+| `product_attachment` | `create`, `update`, `delete` |
+| `product_file` | `update` (penggantian file produk) |
+| `product_batch` | `create` |
+| `purchase_order` | `create` |
+| `purchase_order_item` | `create`, `update`, `delete` |
 
 #### Aturan pencatatan yang perlu diketahui
 
