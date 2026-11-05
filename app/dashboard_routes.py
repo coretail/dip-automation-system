@@ -65,6 +65,13 @@ def register_dashboard_routes(
                        .select("id, nama_produk, deleted_at")
                        .eq("id", product_id).limit(1).execute().data or [None])[0]
             old_deleted_at = (old_row or {}).get("deleted_at")
+            if not old_row or not old_deleted_at:
+                log_activity(current_user, "restore", "product", product_id,
+                             "Restore produk ditolak: produk tidak ditemukan atau tidak berada di Sampah",
+                             changes=[{"field": "restore", "note": "rejected: 0 baris"}],
+                             request=request,
+                             outcome="rejected")
+                return RedirectResponse(url="/admin/trash?error=Produk tidak ditemukan atau sudah tidak berada di Sampah", status_code=303)
 
             supabase.table("products").update({"is_deleted": False, "deleted_at": None}).eq("id", product_id).execute()
             # Perlu fungsi log_activity yang sudah ada di main.py
@@ -285,10 +292,19 @@ def register_dashboard_routes(
         ed_notification_count = await get_ed_notification_count()
 
         import json
-        try:
-            greeting = json.loads(request.cookies.get("greeting_cache", ""))
-        except Exception:
-            greeting = get_time_greeting()
+
+        greeting = get_time_greeting()
+        _greeting_cache = request.cookies.get("greeting_cache", "")
+        if _greeting_cache:
+            try:
+                _parsed_greeting = json.loads(_greeting_cache)
+            except Exception:
+                _parsed_greeting = None
+            if isinstance(_parsed_greeting, dict) and (
+                isinstance(_parsed_greeting.get("phrase"), str)
+                or isinstance(_parsed_greeting.get("text"), str)
+            ):
+                greeting = _parsed_greeting
 
         return templates.TemplateResponse(
             request=request,

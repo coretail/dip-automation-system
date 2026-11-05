@@ -311,7 +311,7 @@
                     if (data.na_items && data.na_items.length > 0) {
                         html += '<div class="px-4 py-2 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">Notifikasi Produk (NA)</div>';
                         html += data.na_items.map(item => `
-                            <a href="/products/${item.id}/edit" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-100 transition">
+                            <a href="/products/${encodeURIComponent(item.id)}/edit" class="block px-4 py-3 hover:bg-gray-50 border-b border-gray-100 transition">
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="flex-1 min-w-0">
                                         <p class="font-medium text-gray-900 truncate">${escapeHtml(item.nama_produk)}</p>
@@ -444,9 +444,9 @@
                 var u = frame.getAttribute('src');
                 if (u) frame.setAttribute('src', bust(u));
             });
-            document.querySelectorAll('a[href*="raw-material-docs"], a[href*="legal-documents"]').forEach(function(a) {
-                var u = a.getAttribute('href');
-                if (u && /\.pdf(\?|$)/i.test(u)) a.setAttribute('href', bust(u));
+            document.querySelectorAll('a[href*="raw-material-docs"], a[href*="legal-documents"], a[href*=".r2.dev/"], iframe[src*=".r2.dev/"]').forEach(function(el) {
+                var u = el.getAttribute('href') || el.getAttribute('src');
+                if (u && /\.pdf(\?|$)/i.test(u)) el.setAttribute(el.hasAttribute('href') ? 'href' : 'src', bust(u));
             });
         });
     </script>

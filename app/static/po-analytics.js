@@ -338,9 +338,19 @@
     // chart akan menampilkan warna tema sebelumnya.
     var root = document.documentElement;
     if (window.MutationObserver) {
-      new MutationObserver(function () {
-        if (palette && palette.name !== themeName()) render();
-      }).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+      var __renderTimer = null;
+      var __observer = new MutationObserver(function () {
+        if (palette && palette.name !== themeName()) {
+          if (__renderTimer) clearTimeout(__renderTimer);
+          __renderTimer = setTimeout(function () { render(); }, 120);
+        }
+      });
+      __observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+      window.addEventListener('beforeprint', function () { __observer.disconnect(); });
+      window.addEventListener('afterprint', function () {
+        if (!__observer) __observer = __observer;
+        __observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+      }, true);
     }
   });
 })();
