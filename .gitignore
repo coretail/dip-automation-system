@@ -147,6 +147,8 @@ backup-rls/
 !/tests/test_tenant_guard_efek_lampiran.py
 !/tests/test_tenant_guard_finished_spec.py
 !/tests/test_tenant_guard_sample.py
+# Unit test render penandatangan Mengetahui Bab II (pure-local, Jinja2).
+!/tests/test_bab2_qc_mengetahui.py
 # Unit test guard tenant finished-spec (pure-local, tanpa koneksi/secret).
 !/tests/test_tenant_guard_finished_spec.py
 

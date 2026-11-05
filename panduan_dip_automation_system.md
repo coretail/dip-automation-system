@@ -205,7 +205,7 @@ Setiap kedatangan bahan baku wajib dicatat sebagai batch, dan di-scope ke perusa
 - **Pengurutan Log:** Log kedatangan batch diurutkan berdasarkan `created_at DESC` (terbaru di baris paling atas).
 - **Status Batch:** pada log batch tersedia aksi **"Dipakai"** (produk sudah digunakan/CONDOH) dan **"Dimusnahkan"**, lengkap dengan input tanggal serta alasan. Status ini terpisah dari `kesimpulan` kelulusan QC.
    - **Laporan Pemeriksaan Aktual** — opsional; kalau ada dokumen fisik/scan hasil pemeriksaan, upload di sini. PDF ini dipakai sebagai sumber **Catatan Pemeriksaan di PDF gabungan maupun ZIP**; kalau tidak ada, PDF gabungan tetap menampilkannya dari data batch (§4.6).
-5. **Input Parameter Uji Laboratorium Aktual** (kalau tidak upload laporan PDF di atas): hasil pemeriksaan fisik/kimia aktual, kesimpulan, serta nama yang memeriksa (QC) dan menyetujui (QA). Data ini dipakai sebagai sumber Catatan Pemeriksaan di PDF gabungan, dan sebagai fallback di ZIP.
+5. **Input Parameter Uji Laboratorium Aktual** (kalau tidak upload laporan PDF di atas): hasil pemeriksaan fisik/kimia aktual, kesimpulan, serta nama yang memeriksa (QC), menyetujui (QC), dan mengetahui (Kepala QC). Data ini dipakai sebagai sumber Catatan Pemeriksaan di PDF gabungan, dan sebagai fallback di ZIP.
 
 ---
 
@@ -584,8 +584,9 @@ Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadshee
 | 008 | `008_products_soft_delete_contract.sql` | Kontrak soft delete: kolom `is_deleted`/`deleted_at`, CHECK konsistensi, index | Produk di Sampah tidak konsisten; query sampah/dashboard tanpa index |
 | 010 | `010_replace_product_formula.sql` | Fungsi atomik `replace_product_formula` (transaksi DELETE+INSERT) | Penyimpanan formula Bab 2 gagal dengan pesan "fungsi transaksi belum terpasang" |
 | 011 | `011_add_profile_display_name_and_avatar.sql` | Kolom `display_name`, `avatar_path`, `avatar_updated_at` di `profiles` + CHECK constraint | Nama tampilan & foto profil tidak tersedia |
+| 012 | `012_add_batch_mengetahui_signer.sql` | Kolom `mengetahui_signer` (nullable `text`) di `raw_material_batches` — penandatangan ke-3 "Mengetahui (Kepala QC)" | Fitur baru belum tersedia (belum dijalankan) |
 
-> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). `011` sudah dipersiapkan tapi belum dieksekusi — jalankan manual via Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **012**.
+> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). `011` sudah dipersiapkan tapi belum dieksekusi; `012` sudah dipersiapkan tapi belum dijalankan — jalankan manual via Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **013**.
 
 > ⚠️ Skema produksi **tidak dikelola otomatis** — jalankan file SQL ini manual melalui Supabase SQL Editor.
 

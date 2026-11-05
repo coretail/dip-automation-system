@@ -46,7 +46,8 @@
                 {% endif %}
             </td></tr>
         <tr><td class="label-col">Diperiksa Oleh (QC)</td><td>{{ batch.get('qc_signer') or '-' }}</td></tr>
-        <tr><td class="label-col">Disetujui Oleh (QA)</td><td>{{ batch.get('qa_signer') or '-' }}</td></tr>
+        <tr><td class="label-col">Disetujui Oleh (QC)</td><td>{{ batch.get('qa_signer') or '-' }}</td></tr>
+<tr><td class="label-col">Mengetahui (Kepala QC)</td><td>{{ batch.get('mengetahui_signer') or '-' }}</td></tr>
     </table>
 </body>
 </html>

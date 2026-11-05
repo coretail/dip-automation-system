@@ -859,14 +859,18 @@
 
             <!-- KESIMPULAN & SIGNER -->
             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 border-t pt-4">3. Otorisasi & Kesimpulan</h4>
-            <div class="grid grid-cols-3 gap-4 mb-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <div>
                     <label class="block text-xs font-medium text-gray-700 mb-1">Diperiksa Oleh (QC)</label>
                     <input type="text" name="qc_signer" placeholder="Nama Personel QC" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-700 mb-1">Disetujui Oleh</label>
-                    <input type="text" name="qa_signer" placeholder="Nama Kepala QC" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                    <input type="text" name="qa_signer" placeholder="Nama Penyetuju (QC)" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Mengetahui</label>
+                    <input type="text" name="mengetahui_signer" placeholder="Nama Kepala QC" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-gray-700 mb-1">Kesimpulan Akhir *</label>

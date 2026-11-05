@@ -1390,6 +1390,7 @@ def register_raw_materials_routes(
         tanggal_sampling: str = Form(None),
         qc_signer: str = Form(None),
         qa_signer: str = Form(None),
+        mengetahui_signer: str = Form(None),
         qc_results: str = Form("[]"),
         harga_per_kg: float = Form(0.0),
         coa_file: UploadFile = File(None),
@@ -1523,6 +1524,13 @@ def register_raw_materials_routes(
             "halal_batch_file_url": halal_url,
             "qc_report_file_url": qc_report_url
         }
+        # Backward-compat (langkah 6): kolom mengetahui_signer baru ada setelah
+        # migration/012 dijalankan. Bila nilai kosong, kunci tidak disertakan
+        # sehingga kode tetap bisa menyimpan batch sebelum SQL dijalankan.
+        if mengetahui_signer and mengetahui_signer.strip():
+            batch_data["mengetahui_signer"] = mengetahui_signer.strip()
+        # Bila kolom sudah ada tetapi nilai kosong, payload tanpa kunci di atas
+        # sudah cukup (NULL default); tidak perlu mengirim None eksplisit.
 
         try:
             ins_resp = supabase.table("raw_material_batches").insert(batch_data).execute()
