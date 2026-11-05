@@ -241,8 +241,9 @@ Skema produksi tidak dikelola otomatis. Jalankan file SQL di folder `migration/`
 | 008 | `migration/008_products_soft_delete_contract.sql` | Kontrak soft delete: kolom `is_deleted`/`deleted_at`, CHECK konsistensi, index | Produk di Sampah tidak konsisten; query sampah/dashboard tanpa index |
 | 010 | `migration/010_replace_product_formula.sql` | Fungsi atomik `replace_product_formula` (transaksi DELETE+INSERT) | Penyimpanan formula Bab 2 gagal dengan pesan "fungsi transaksi belum terpasang" |
 | 011 | `migration/011_add_profile_display_name_and_avatar.sql` | Kolom `display_name`, `avatar_path`, `avatar_updated_at` di `profiles` + CHECK constraint | Nama tampilan & foto profil tidak tersedia |
+| 012 | `migration/012_add_batch_mengetahui_signer.sql` | Kolom `mengetahui_signer` (nullable `text`) di `raw_material_batches` — penandatangan "Mengetahui (Kepala QC)" | Fitur baru belum tersedia (belum dijalankan) |
 
-> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Semua file SQL dijalankan manual lewat Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **012**.
+> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Semua file SQL dijalankan manual lewat Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **013**.
 
 ---
 

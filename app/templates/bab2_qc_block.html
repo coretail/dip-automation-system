@@ -49,7 +49,8 @@
                 {% endif %}
             </td></tr>
         <tr><td class="label-col">Diperiksa Oleh (QC)</td><td>{{ item.get('batch', {}).get('qc_signer') or '-' }}</td></tr>
-        <tr><td class="label-col">Disetujui Oleh (QA)</td><td>{{ item.get('batch', {}).get('qa_signer') or '-' }}</td></tr>
+        <tr><td class="label-col">Disetujui Oleh (QC)</td><td>{{ item.get('batch', {}).get('qa_signer') or '-' }}</td></tr>
+<tr><td class="label-col">Mengetahui (Kepala QC)</td><td>{{ item.get('batch', {}).get('mengetahui_signer') or '-' }}</td></tr>
     </table>
     <p style="font-size: 8.5pt; color: #666;">CoA, Sertifikat Halal, dan MSDS bahan baku ini dilampirkan setelah halaman ini.</p>
     {% else %}

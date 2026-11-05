@@ -362,7 +362,7 @@ def test_add_batch_foreign_parent_forbidden_before_upload_or_insert():
                 request=FakeRequest(), raw_material_id="rm-erfi", no_batch="B-1", supplier="S",
                 tanggal_terima_sampel="2026-01-01", tanggal_ed="2027-01-01", kesimpulan="ok",
                 perusahaan="PT Erfi", asal_negara=None, nama_produsen=None,
-                tanggal_sampling=None, qc_signer=None, qa_signer=None, qc_results="[]",
+                tanggal_sampling=None, qc_signer=None, qa_signer=None, mengetahui_signer=None, qc_results="[]",
                 harga_per_kg=1.0, coa_file=FakeFile(), halal_file=None, qc_report_file=None,
                 quantity=None, quantity_unit=None, keterangan=None, current_user=STAFF_HEKA,
             ))
@@ -580,7 +580,7 @@ def test_add_batch_parent_lookup_failure_fails_closed_before_upload_or_insert():
             request=FakeRequest(), raw_material_id="rm-erfi", no_batch="B-1", supplier="S",
             tanggal_terima_sampel="2026-01-01", tanggal_ed="2027-01-01", kesimpulan="ok",
             perusahaan="PT Heka", asal_negara=None, nama_produsen=None,
-            tanggal_sampling=None, qc_signer=None, qa_signer=None, qc_results="[]",
+            tanggal_sampling=None, qc_signer=None, qa_signer=None, mengetahui_signer=None, qc_results="[]",
             harga_per_kg=1.0, coa_file=FakeFile(), halal_file=None, qc_report_file=None,
             quantity=None, quantity_unit=None, keterangan=None, current_user=STAFF_HEKA,
         ))
