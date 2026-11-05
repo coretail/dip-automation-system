@@ -28,7 +28,12 @@ def main() -> int:
             print(f"FAIL {failure}")
         return 1
 
+    if 'a[href*=".r2.dev/"]' not in source:
+        print("FAIL selektor cache-bust pola host .r2.dev/ tidak ditemukan di base.html")
+        return 1
+
     print("PASS guard URL presign pada cache-bust base.html")
+    print("PASS selektor cache-bust pola host .r2.dev/ pada base.html")
     return 0
 
 

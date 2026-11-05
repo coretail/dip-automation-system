@@ -9,6 +9,11 @@ if _os.getenv("DIP_APP_ENV", "").strip().lower() == "staging":
     _preflight_startup(_os.environ, caller="startup")
 
 from fastapi import FastAPI, Request, Form, HTTPException, Response, File, UploadFile, status, Depends
+import logging as _logging
+
+_logger = _logging.getLogger("dip.session")
+_session_expired_last: dict[tuple[str, str], int] = {}
+_SESSION_SUMMARY_INTERVAL = 300  # detik; ringkas 401 berulang per (email, path)
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -216,7 +221,7 @@ async def _generate_ai_greeting_phrase(nama_user: str) -> str | None:
                 if text:
                     return text
             except Exception as e:
-                print(f"[AI GREETING] Model {model} error: {e}, coba model berikutnya.")
+                print(f"[AI GREETING] Model {model} error ({type(e).__name__}: {e}), coba model berikutnya.")
                 continue
     return None
 
@@ -717,6 +722,8 @@ async def get_current_user(request: Request):
             "perusahaan": user_perusahaan,
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Token invalid atau expired: {e}")
         # Lempar 401 biar ditangkap handler
@@ -1295,11 +1302,18 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
             email_log = _extract_jwt_email(token_cookie.replace("Bearer ", "")) if token_cookie else "-"
         except Exception:
             email_log = "-"
-        print("\n" + _LOG_RULE)
-        print(f"⏰ [SESSION EXPIRED] Path: {request.url.path}")
-        print(_log_field("Email", email_log))
-        print(_log_field("Waktu", waktu_exp))
-        print(_LOG_RULE + "\n")
+        _now_ts = int(datetime.now(WIB).timestamp())
+        _key = (str(email_log), request.url.path)
+        _last = _session_expired_last.get(_key)
+        if _last is None or (_now_ts - _last) >= _SESSION_SUMMARY_INTERVAL:
+            _session_expired_last[_key] = _now_ts
+            print("\n" + _LOG_RULE)
+            print(f"⏰ [SESSION EXPIRED] Path: {request.url.path}")
+            print(_log_field("Email", email_log))
+            print(_log_field("Waktu", waktu_exp))
+            print(_LOG_RULE + "\n")
+        else:
+            _logger.debug("[SESSION EXPIRED] %s email=%s suppressed_until=%ss", request.url.path, email_log, _SESSION_SUMMARY_INTERVAL - (_now_ts - _last))
 
         return RedirectResponse(
             url="/login?warning=session_expired", 

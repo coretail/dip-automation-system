@@ -18,7 +18,17 @@
 | A3 (D-04 §7) | README instruksikan `uvicorn app.main:app --reload` (dilarang AGENTS/guard) | SELESAI | 2026-11-05 (edisi ini) |
 | A3 (D-01/D-02/D-03 §7) | Versi dep tertinggal; hitungan template 17 vs 18; pohon `app/` tak lengkap | SELESAI | 2026-11-05 (edisi ini) |
 | A4 (D-05/D-06/D-07/D-13 §7) | Suite `notes` tak disebut; klaim Python 3.10+ usang; §4.14 “hanya SQL di-commit”; tabel `entity_type` kurang 5 | SELESAI | 2026-11-05 (edisi ini) |
-| B1–B10, C1–C3 | Saran low-risk lainnya (§3–§5 audit) | BELUM | — |
+| B1 (§5 C-12) | Guard `greeting_cache` tanpa validasi skema | SELESAI | 2026-11-05 (sesi 2) |
+| B2 (§5 C-11) | `HTTPException` ditelan di `get_current_user` | SELESAI | 2026-11-05 (sesi 2) |
+| B3 (§5 C-06) | Restore selalu “sukses” walau 0 baris | SELESAI | 2026-11-05 (sesi 2) |
+| B5 (§3 A-04) | Interpolasi `item.id` tanpa encodeURIComponent di ED bell | SELESAI | 2026-11-05 (sesi 2) |
+| B6 (§4 F-05) | Selektor cache-bust tak cocok `pub-*.r2.dev` | SELESAI | 2026-11-05 (sesi 2) |
+| B7 (§4 F-07) | MutationObserver po-analytics tanpa debounce | SELESAI | 2026-11-05 (sesi 2) |
+| B8 (§5 C-05) | Tipe exception greeting AI tidak dicatat | SELESAI | 2026-11-05 (sesi 2) |
+| B9 (§4 F-04) | Spam log `[SESSION EXPIRED]` (gabungkan ringkasan 5-menit + debug) | SELESAI | 2026-11-05 (sesi 2) |
+| B4 (§3 F-07) | Timing-safe token publik | TERBUKA (ditunda ke PR terpisah) | Keputusan konfirmasi 2026-11-05 |
+| B10 (§4 F-07 alt) | Disconnect observer saat print | SELESAI (digabung B7) | 2026-11-05 (sesi 2) |
+| C1–C3 | Saran low-risk lainnya (§6–§8 audit) | BELUM | — |
 | A-02 s.d. A-20, B, C, E, F, G §3–§8 | Temuan keamanan, frontend, backend, storage, CI | BELUM | — |
 | D-08, D-09, D-10, D-14 | Status migrasi 011 ambigu; handoff R2 tertinggal; catatan historis tanpa banner | BELUM | — |
 | E-04 s.d. E-08 | Blocker cutover R2 (encoding, base, SSRF, soak privat, selektor) | BELUM | — |
@@ -67,6 +77,54 @@ Catatan validasi: menjalankan `test_auth_matrix.py` di working directory lokal d
 ### Keputusan yang masih terbuka
 
 - Item audit §9 (nomor 3, 6–12) dan §3–§8 (temuan A–G) tetap **BELUM** kecuali baris SELESAI di atas. Lihat tabel ringkasan status di awal dokumen ini untuk prioritas lanjutan (Kategori B → C → blocker cutover R2).
+
+---
+
+## Sesi 2 — 2026-11-05: Kategori B (low-risk, bukan B4)
+
+**Ruang lingkup:** B1, B2, B3, B5, B6, B7, B8, B9 (+ B10 gabung B7). **B4 ditunda** ke PR terpisah sesuai keputusan konfirmasi (opsi “Tunda B4”).
+
+**Keputusan konfirmasi yang dipakai:** branch baru dari `main` (PR #52 sudah merge); B3 = redirect + pesan error; B9 = gabungkan ringkasan 5-menit + debug; B6 = pola host `.r2.dev/`; validasi = unit test + E2E staging penuh dengan Playwright Trace Viewer (`PLAYWRIGHT_TRACE=1`).
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah) |
+|---|---|---|---|
+| B1 | `app/dashboard_routes.py:296-307` | `greeting_cache` hanya diterima bila `json.loads` menghasilkan `dict` dengan `phrase`/`text` (string); selain itu jatuh ke `get_time_greeting()` | Sebelum: `json.loads` langsung dipakai; `[]`/`{}`/string valid bisa masuk template. Sesudah: fallback eksplisit; test baru `tests/test_greeting_cache_guard.py` 3 kasus lolos. |
+| B2 | `app/main.py:720-721` | Tambah `except HTTPException: raise` sebelum `except Exception` di `get_current_user` | Sebelum: 401 “User tidak valid” ditelan menjadi 401 generik. Sesudah: detail asli diteruskan; status akhir sama. |
+| B3 | `app/dashboard_routes.py:68-77` | Bila `old_row` kosong atau `deleted_at` kosong → log `rejected` + redirect `/admin/trash?error=Produk tidak ditemukan atau sudah tidak berada di Sampah` | Sebelum: update 0 baris tetap log `restore` sukses. Sesudah: 0-baris ditolak dengan pesan; restore valid tidak berubah. |
+| B5 | `app/templates/base.html:314` | `encodeURIComponent(item.id)` pada href ED | Sebelum: `item.id` tanpa escape. Sesudah: UUID tidak berubah; ID beracun ter-encode. |
+| B6 | `app/templates/base.html:447-450` | Selektor diperluas `, a[href*=".r2.dev/"], iframe[src*=".r2.dev/"]`; penulisan ke `href`/`src` sesuai atribut; guard presign tetap pertama | `tests/test_base_cachebust.py` kini menegaskan selektor pola host ada (2 PASS). |
+| B7+B10 | `app/static/po-analytics.js:340-355` | Debounce 120 ms; `disconnect()` saat `beforeprint`, `observe()` kembali saat `afterprint` | Sebelum: `render()` langsung tiap mutasi (2× saat print). Sesudah: −33% render tanpa ubah data/logika chart. |
+| B8 | `app/main.py:218-220` | Log `type(e).__name__` pada error greeting AI | Sebelum: hanya `{e}`. Sesudah: `TimeoutException: ...` terbaca; timeout/model/urutan fallback tidak berubah. |
+| B9 | `app/main.py:11-14,1299-1315` | `_session_expired_last` dict + `_SESSION_SUMMARY_INTERVAL=300`; 401 pertama per `(email, path)` dicetak penuh, sisanya `_logger.debug` | Sebelum: blok 4-baris `[SESSION EXPIRED]` tiap polling. Sesudah: deduplikasi 5-menit; respons 303 tidak berubah; detail tersedia di level debug. |
+| — | `tests/test_greeting_cache_guard.py`, `.gitignore`, `.github/workflows/ci.yml` | Test baru B1 (3 kasus) + whitelist + CI baris ke-20 | `PASS=20 FAIL=0` di clone bersih (lihat validasi). |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi / syntax error (28 file)` |
+| `scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| 20 test pure-local CI (clone bersih `TEMP\kilo-ci-check`, env dummy CI) | 0 semua | **PASS=20 FAIL=0** (termasuk `test_greeting_cache_guard` 3 OK, `test_base_cachebust` 2 PASS) |
+| `tests/e2e_smoke_refactor.py` (staging, Playwright 1.64.0, Trace `PLAYWRIGHT_TRACE=1`) | 0 | **34/34 PASS** (health, login, dashboard, GET, presence/notify, sample CRUD, brand legal, tanpa 5xx) |
+| `tests/e2e_activity_request_id.py` | 0 | **19/19 PASS** (create→complete→reopen→delete, `request_id` UUID unik) |
+| `tests/e2e_notes_display_name.py` | 0 | PASS |
+| `tests/e2e_audit_staging.py --quick` | 0 | PASS 37 / SKIP 7 / FAIL 0 |
+| `tests/e2e_audit_staging.py` (penuh) | 0 | **PASS 41 / SKIP 3 / FAIL 0** (A–G, RPC replace, restore, konkurensi; SKIP: D1 tenant kedua, G1, G2 tanpa kanal SQL) |
+
+Kredensial E2E dibaca dari `LOGIN.md` lalu di-export sebagai `STAGING_ADMIN_EMAIL`/`STAGING_ADMIN_PASSWORD` di shell yang sama (tidak di-echo/log/disalin). Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah audit.
+
+### Risiko & yang tidak berubah
+
+- Perilaku bisnis utama tidak berubah: restore valid, login, gating tenant, storage, dan generate PDF identik.
+- B4 (timing-safe token) **sengaja tidak dikerjakan** — tetap TERBUKA.
+- Data staging sementara (sample, note, formula) dipulihkan/dibersihkan skrip; 1 artefak `brand_legal_documents` smoke seperti sesi audit tidak dibersihkan skrip (diterima sebagai OBSERVATION).
+
+### Keputusan yang masih terbuka
+
+- Kategori C (C1 encoding, C2 validasi base, C3 respons 404) dan blocker cutover R2 (E-04..E-08) tetap **BELUM**.
+- `pypdf` ≥6.21.4 tetap **BELUM** (PR terpisah + uji manual).
 
 ---
 
