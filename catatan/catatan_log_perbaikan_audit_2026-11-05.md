@@ -287,6 +287,19 @@ Salin blok di bawah ini untuk sesi lanjutan; isi tanggal, ruang lingkup, perubah
 
 ---
 
+## Sesi 7 — 2026-11-05: PR3 tenant guard A-13 (sample) + brands investigation
+
+**Ruang lingkup:** A-13 `app/sample_routes.py` create/delete/edit; brands investigation (keputusan terbuka).
+
+**Perubahan:**
+- `POST /sample-submissions/create`: baca produk dulu (fail-closed bila exception → 403 “Gagal memverifikasi akses produk”); guard produk rujukan dan `new_company=final_company` (403 + `rejected`); nol tulis sebelum guard.
+- `POST /sample-submissions/delete/{id}`: baca gagal → fail-closed 403 (bukan fail-open); baris tidak ditemukan → 404 tetap.
+- `GET /sample-submissions/edit/{id}`: `except HTTPException: raise` (404 tidak ditelan 500) + `assert_same_tenant` → 403.
+- Brands: `migration/*.sql` tidak membuat tabel `brands`/`producers` (pra-ada), tidak ada kolom tenant; `brand_legal_documents.perusahaan` hanya per-dokumen; `brands_routes.py:128` dokumen per-perusahaan, tetapi brand/producer tanpa tenant. **Keputusan terbuka**: tidak di-fix.
+
+**Test:** `tests/test_tenant_guard_sample.py` baru (6 kasus) + whitelist + CI baris ke-23.
+
+**Validasi:** `check_undefined_names` 0; `check_static_rules` 0; `compileall` 0; **21 test pure-local PASS=21 FAIL=0**; fail-closed di kode lama FAIL `harus 403`; E2E staging: smoke 34/34, activity 19/19, audit 41/0/3 skip.
 ## Sesi 6 — 2026-11-05: PR2 tenant guard A-10 (finished-spec)
 
 **Ruang lingkup:** hanya A-10 (`products_routes.py` POST `/products/{product_id}/finished-spec`). C-14/B-series/R2/pypdf/CSRF tidak disentuh.

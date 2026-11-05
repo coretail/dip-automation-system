@@ -59,19 +59,46 @@ def register_sample_routes(
         current_user: dict = Depends(get_current_user)
     ):
         final_product_id = None if not product_id else product_id
+        _final_company_for_guard = company
+        _prod_row_for_guard = None
         if final_product_id:
-            prod_master = supabase.table("products").select("nama_produk", "perusahaan").eq("id", final_product_id).execute()
-            if prod_master.data:
-                final_product_name = prod_master.data[0]['nama_produk']
-                # sample_submissions.company constraint: 'Erfi'|'Heka' (tanpa prefix "PT")
-                raw_company = (prod_master.data[0].get("perusahaan") or "").strip()
-                final_company = re.sub(r"(?i)^PT\s+", "", raw_company).strip()
-            else:
-                final_product_name = product_name
-                final_company = company
+            try:
+                prod_master = supabase.table("products").select("nama_produk", "perusahaan").eq("id", final_product_id).execute()
+                if prod_master.data:
+                    _prod_row_for_guard = prod_master.data[0]
+                    final_product_name = prod_master.data[0]['nama_produk']
+                    raw_company = (prod_master.data[0].get("perusahaan") or "").strip()
+                    final_company = re.sub(r"(?i)^PT\s+", "", raw_company).strip()
+                    _final_company_for_guard = final_company
+                else:
+                    final_product_name = product_name
+                    final_company = company
+            except Exception:
+                log_activity(
+                    current_user, "create", "sample_submission", None, "Gagal memverifikasi akses FSP",
+                    changes=[{"field": "Error", "note": "Gagal memverifikasi akses produk. Silakan coba lagi."}],
+                    request=request, outcome="rejected",
+                )
+                raise HTTPException(status_code=403, detail="Gagal memverifikasi akses produk. Silakan coba lagi.")
         else:
             final_product_name = product_name
             final_company = company
+
+        if _prod_row_for_guard is not None:
+            if not assert_same_tenant(current_user, _prod_row_for_guard):
+                log_activity(
+                    current_user, "create", "sample_submission", None, "Akses ditolak: produk bukan milik perusahaan Anda",
+                    changes=[{"field": "Perusahaan", "new": _final_company_for_guard}],
+                    request=request, outcome="rejected",
+                )
+                raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
+        if not assert_same_tenant(current_user, None, new_company=_final_company_for_guard):
+            log_activity(
+                current_user, "create", "sample_submission", None, "Akses ditolak: perusahaan tidak cocok",
+                changes=[{"field": "Perusahaan", "new": _final_company_for_guard}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Perusahaan tidak cocok.")
 
         # --- 1. HITUNG SUFFIX /TGL/X.Y OTOMATIS ---
         prefix_clean = sample_prefix.strip().upper() if sample_prefix and sample_prefix.strip() else "FSP"
@@ -189,15 +216,20 @@ def register_sample_routes(
             submission = sub_resp.data
             if not submission:
                 raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan")
-
-            brand_query = supabase.table("brands").select("*, producers(*)").execute()
-            brands = brand_query.data or []
-
-            product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan, perusahaan").eq("is_deleted", False).execute()
-            products = product_query.data or []
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"Gagal muat data edit sample: {e}")
             raise HTTPException(status_code=500, detail="Gagal memuat form edit")
+
+        if not assert_same_tenant(current_user, submission):
+            raise HTTPException(status_code=403, detail="Akses ditolak! Sample bukan milik perusahaan Anda.")
+
+        brand_query = supabase.table("brands").select("*, producers(*)").execute()
+        brands = brand_query.data or []
+
+        product_query = supabase.table("products").select("id, nama_produk, netto, sediaan, kemasan, perusahaan").eq("is_deleted", False).execute()
+        products = product_query.data or []
 
         return templates.TemplateResponse(
             request=request,
@@ -348,12 +380,25 @@ def register_sample_routes(
         # Baca baris SEBELUM dihapus. Setelah dihapus, isinya hilang begitu saja
         # dan tidak ada cara merekonstruksi apa yang pernah tersimpan.
         old_row = {}
+        _read_failed = False
         try:
             old_res = supabase.table("sample_submissions").select("*").eq("id", submission_id).execute()
             if old_res.data:
                 old_row = old_res.data[0] or {}
         except Exception as e:
             print(f"Gagal baca sample submission sebelum hapus: {e}")
+            _read_failed = True
+
+        if _read_failed:
+            log_activity(
+                current_user, "delete", "sample_submission", submission_id, submission_id,
+                changes=[{"field": "Error", "note": "Gagal memverifikasi akses FSP. Silakan coba lagi."}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Gagal memverifikasi akses FSP. Silakan coba lagi.")
+
+        if not old_row:
+            raise HTTPException(status_code=404, detail="Pengajuan tidak ditemukan")
 
         old_code = old_row.get("sample_code") or f"Sample {submission_id}"
 

@@ -143,6 +143,10 @@ backup-rls/
 !/tests/test_profile_display_name_route.py
 # Unit test guard greeting_cache (pure-local, tanpa koneksi/secret).
 !/tests/test_greeting_cache_guard.py
+# Unit test guard tenant efek+lampiran, finished-spec, sample (pure-local).
+!/tests/test_tenant_guard_efek_lampiran.py
+!/tests/test_tenant_guard_finished_spec.py
+!/tests/test_tenant_guard_sample.py
 # Unit test guard tenant finished-spec (pure-local, tanpa koneksi/secret).
 !/tests/test_tenant_guard_finished_spec.py
 
