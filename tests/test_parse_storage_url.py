@@ -31,14 +31,14 @@ def main():
         (f"{SUPABASE}/storage/v1/object/public/product-attachments/a/b.pdf?token=xyz&t=1",
          ("product-attachments", "a/b.pdf")),
         (f"{SUPABASE}/storage/v1/object/public/raw-material-docs/coa/file%20name.pdf",
-         ("raw-material-docs", "coa/file%20name.pdf")),
+         ("raw-material-docs", "coa/file name.pdf")),
         # bucket kosong path -> None
         (f"{SUPABASE}/storage/v1/object/public/raw-material-docs",
          (None, None)),
         # --- R2 (base per bucket) ---
         ("https://pub-rmd.r2.dev/coa/coa_B1.pdf", ("raw-material-docs", "coa/coa_B1.pdf")),
         ("https://pub-legal.r2.dev/brands/hak lisensi.pdf", ("legal-documents", "brands/hak lisensi.pdf")),
-        ("https://pub-legal.r2.dev/brands/hak%20lisensi.pdf", ("legal-documents", "brands/hak%20lisensi.pdf")),
+        ("https://pub-legal.r2.dev/brands/hak%20lisensi.pdf", ("legal-documents", "brands/hak lisensi.pdf")),
         ("https://pub-att.r2.dev/products/p/2026-10-16/ab12_lampiran.pdf",
          ("product-attachments", "products/p/2026-10-16/ab12_lampiran.pdf")),
         ("https://pub-att.r2.dev/a/b.pdf?token=xyz", ("product-attachments", "a/b.pdf")),
@@ -61,6 +61,23 @@ def main():
         if got != expected:
             failures += 1
             print(f"FAIL {label!r}: got={got!r} expected={expected!r}")
+
+    # Round-trip E-05: path ter-encode (%20) diparse menjadi path mentah yang
+    # sama dengan key fisik; spasi mentah tetap dikembalikan mentah.
+    roundtrip_cases = [
+        (f"{SUPABASE}/storage/v1/object/public/raw-material-docs/coa/file%20name.pdf",
+         ("raw-material-docs", "coa/file name.pdf")),
+        ("https://pub-legal.r2.dev/brands/hak%20lisensi.pdf",
+         ("legal-documents", "brands/hak lisensi.pdf")),
+        ("https://pub-legal.r2.dev/brands/100%25%20resmi.pdf",
+         ("legal-documents", "brands/100% resmi.pdf")),
+    ]
+    for url, expected in roundtrip_cases:
+        got = parse_storage_url(url, BASES)
+        label = (url or "")[:70]
+        if got != expected:
+            failures += 1
+            print(f"FAIL roundtrip {label!r}: got={got!r} expected={expected!r}")
 
     # Base terpanjang menang saat ada prefix mirip (bukan crash/salah bucket).
     bases_overlap = dict(BASES)

@@ -132,6 +132,17 @@ def main():
     check("r2 remove has only r2 key", set(res) == {"r2"}, res)
     check("r2 primary_result -> r2", object_store.primary_result(res).get("ok") is True, res)
 
+    # Gagal-cepat sebelum tulis bila base R2 kurang (E-06): upload_pdf harus
+    # raise RuntimeError tanpa memanggil put_object.
+    s3_missing = FakeS3()
+    install("r2", s3_missing, bases={})
+    try:
+        object_store.upload_pdf("raw-material-docs", "coa/missing-base.pdf", b"%PDF-")
+        check("fail-fast before upload when base missing", False, "tidak raise")
+    except RuntimeError:
+        check("fail-fast before upload when base missing", True)
+        check("fail-fast does not call put_object", len(s3_missing.puts) == 0, s3_missing.puts)
+
     # ---------------- mode dual ----------------
     s3 = FakeS3()
     install("dual", s3)

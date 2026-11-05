@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import logging
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ def parse_storage_url(url: str, public_bases: dict | None = None):
         if "/" not in rest:
             return None, None
         bucket, path = rest.split("/", 1)
-        return bucket, path
+        return bucket, unquote(path)
 
     if public_bases is None:
         bases, suffix = r2_public_bases(), r2_bucket_suffix()
@@ -216,7 +216,7 @@ def parse_storage_url(url: str, public_bases: dict | None = None):
             rest = url[len(base) + 1:].split("?", 1)[0]
             if not rest:
                 return logical, None
-            return logical, rest
+            return logical, unquote(rest)
     return None, None
 
 
@@ -313,6 +313,19 @@ def _r2_object_exists(s3, bucket: str, path: str) -> bool:
         raise
 
 
+def assert_public_base(bucket: str) -> None:
+    """Gagal-cepat bila bucket publik butuh base R2 tetapi tidak terconfigured.
+
+    Dipanggil sebelum upload agar objek tidak terunggah tanpa base (orphan
+    tanpa cara menjangkau via ``public_url``).
+    """
+    if not _r2_public_base(bucket):
+        raise RuntimeError(
+            f"[STORAGE] bucket '{bucket}' (suffix '{r2_bucket_suffix()}') tidak punya "
+            "base publik di R2_PUBLIC_BASES."
+        )
+
+
 def _r2_upload(bucket: str, path: str, data: bytes, upsert: bool = True):
     """Upload PDF ke R2. Exception naik ke pemanggil.
 
@@ -397,6 +410,8 @@ def upload_pdf(bucket: str, path: str, data: bytes, upsert: bool = True, client=
     sebagai kompensasi best-effort dan exception diteruskan. ``r2`` hanya R2.
     """
     backend = _active_backend()
+    if backend in {"r2", "dual"} and bucket != "product-attachments":
+        assert_public_base(bucket)
     if backend == "r2":
         return _r2_upload(bucket, path, data, upsert)
     if backend == "dual":
