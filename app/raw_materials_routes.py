@@ -6,7 +6,7 @@ from typing import List
 from uuid import uuid4
 
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from httpx import HTTPStatusError
 from postgrest.exceptions import APIError
 
@@ -744,6 +744,97 @@ def register_raw_materials_routes(
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
             response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
         return response
+
+    @app.get("/raw-materials/{rm_id}/spec-manual-preview")
+    async def spec_manual_preview(
+        rm_id: str,
+        perusahaan: str = "",
+        current_user: dict = Depends(get_current_user),
+    ):
+        """Preview PDF spesifikasi dari input teks manual (tanpa file upload).
+
+        Bukan endpoint audit: hanya baca, tanpa ``log_activity``.
+        """
+        from app.bab2_pdf import render_manual_spec_pdf
+
+        rm_resp = supabase.table("raw_materials").select(
+            "id, nama_dagang, kode_bahan_baku, produsen, perusahaan"
+        ).eq("id", rm_id).limit(1).execute()
+        rm_row = (rm_resp.data or [None])[0]
+        if not rm_row:
+            raise HTTPException(status_code=404, detail="Bahan baku tidak ditemukan.")
+
+        if not assert_same_tenant(current_user, rm_row):
+            raise HTTPException(
+                status_code=403,
+                detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.",
+            )
+
+        company = (perusahaan or rm_row.get("perusahaan") or "").strip()
+        doc_resp = supabase.table("raw_material_company_docs").select(
+            "spec_parameters"
+        ).eq("raw_material_id", rm_id)
+        if company:
+            doc_resp = doc_resp.eq("perusahaan", company)
+        doc_resp = doc_resp.limit(1).execute()
+        doc_row = (doc_resp.data or [None])[0]
+        params = (doc_row or {}).get("spec_parameters") or []
+        filled = [item for item in params
+                  if isinstance(item, dict) and (item.get("value") or "").strip()]
+        if not filled:
+            raise HTTPException(status_code=404, detail="Spesifikasi manual belum diisi.")
+
+        pdf_bytes = render_manual_spec_pdf(templates, rm_row, filled)
+        if pdf_bytes is None:
+            raise HTTPException(status_code=500, detail="Gagal membuat preview PDF. Silakan coba lagi.")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline"},
+        )
+
+    @app.get("/raw-materials/batches/{batch_id}/qc-manual-preview")
+    async def qc_manual_preview(
+        batch_id: str,
+        current_user: dict = Depends(get_current_user),
+    ):
+        """Preview PDF catatan pemeriksaan dari input teks manual (tanpa file upload).
+
+        Bukan endpoint audit: hanya baca, tanpa ``log_activity``.
+        """
+        from app.bab2_pdf import render_manual_qc_pdf
+
+        batch_resp = supabase.table("raw_material_batches").select(
+            "*, raw_materials(nama_dagang, perusahaan)"
+        ).eq("id", batch_id).limit(1).execute()
+        batch_row = (batch_resp.data or [None])[0]
+        if not batch_row:
+            raise HTTPException(status_code=404, detail="Batch tidak ditemukan.")
+
+        rm_parent = batch_row.get("raw_materials")
+        if isinstance(rm_parent, list):
+            rm_parent = rm_parent[0] if rm_parent else None
+        tenant_ok = assert_same_tenant(current_user, batch_row) and (
+            not isinstance(rm_parent, dict) or assert_same_tenant(current_user, rm_parent)
+        )
+        if not tenant_ok:
+            raise HTTPException(
+                status_code=403,
+                detail="Akses ditolak! Batch bukan milik perusahaan Anda.",
+            )
+
+        try:
+            pdf_bytes = render_manual_qc_pdf(templates, batch_row)
+        except Exception as exc:
+            print(f"Gagal render preview QC batch {batch_id}: {exc}")
+            pdf_bytes = None
+        if pdf_bytes is None:
+            raise HTTPException(status_code=500, detail="Gagal membuat preview PDF. Silakan coba lagi.")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline"},
+        )
 
     @app.post("/raw-materials/add")
     async def add_raw_material(

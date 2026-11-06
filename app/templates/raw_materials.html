@@ -452,10 +452,13 @@
                                     <i class="fa-solid fa-circle-check"></i>
                                 </button>
                             {% elif s.spec_ok %}
+                                <button type="button" onclick='openDocPreview("/raw-materials/{{ rm.id }}/spec-manual-preview?perusahaan={{ company | urlencode }}", {{ ("Spesifikasi (manual) - " + rm.nama_dagang + " (" + company + ")") | tojson }})' class="text-amber-500 hover:text-indigo-600 transition cursor-pointer" title="Data manual, klik untuk preview (belum ada PDF)">
+                                    <i class="fa-solid fa-circle-check"></i>
+                                </button>
                                 <form action="/raw-materials/{{ rm.id }}/quick-upload-company-doc" method="POST" enctype="multipart/form-data" class="inline">
                                     <input type="hidden" name="perusahaan" value="{{ company }}">
-                                    <label class="cursor-pointer text-amber-500 hover:text-indigo-600 transition" title="Terisi (text). Klik untuk upload/update PDF Spesifikasi">
-                                        <i class="fa-solid fa-circle-check"></i>
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload/update PDF Spesifikasi">
+                                        <i class="fa-solid fa-upload"></i>
                                         <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
                                     </label>
                                 </form>
@@ -530,10 +533,18 @@
                                     <i class="fa-solid fa-circle-check"></i>
                                 </button>
                             {% elif s.qc_ok %}
-                                <span class="text-amber-500" title="Terisi (text), belum ada PDF laporan"><i class="fa-solid fa-circle-check"></i></span>
+                                <button type="button" onclick='openDocPreview("/raw-materials/batches/{{ s.batch_id }}/qc-manual-preview", {{ ("Catatan Pemeriksaan (manual) - " + rm.nama_dagang + " (" + company + ")") | tojson }})' class="text-amber-500 hover:text-indigo-600 transition cursor-pointer" title="Data manual, klik untuk preview (belum ada PDF)">
+                                    <i class="fa-solid fa-circle-check"></i>
+                                </button>
+                                <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Laporan Pemeriksaan ke batch terbaru">
+                                        <i class="fa-solid fa-upload"></i>
+                                        <input type="file" name="qc_report_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                    </label>
+                                </form>
                             {% elif s.batch_id %}
                                 <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
-                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload CPBB ke batch terbaru">
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Laporan Pemeriksaan ke batch terbaru">
                                         <i class="fa-solid fa-upload"></i>
                                         <input type="file" name="qc_report_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
                                     </label>
@@ -555,7 +566,7 @@
     </div>
     <p class="text-xs text-gray-400 mt-3">
         <i class="fa-solid fa-circle-check text-green-600"></i> = ada file PDF, klik buat preview &nbsp;|&nbsp;
-        <i class="fa-solid fa-circle-check text-amber-500"></i> = terisi text doang, belum ada PDF &nbsp;|&nbsp;
+        <i class="fa-solid fa-circle-check text-amber-500"></i> = terisi manual, preview digenerate otomatis, belum ada PDF &nbsp;|&nbsp;
         <i class="fa-solid fa-circle-xmark text-gray-300"></i> = belum diisi
     </p>
 </div>
