@@ -447,22 +447,18 @@
                         {% set s = status.get(company, {}) %}
                         <!-- Spesifikasi -->
                         <td class="px-2 py-3 text-center border-l border-gray-100">
+                            <div class="flex items-center justify-center gap-1.5">
                             {% if s.spec_sheet_url %}
                                 <button type="button" onclick='openDocPreview({{ s.spec_sheet_url | tojson }}, {{ ("Spesifikasi - " + rm.nama_dagang + " (" + company + ")") | tojson }})' class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview PDF Spesifikasi">
                                     <i class="fa-solid fa-circle-check"></i>
                                 </button>
-                            {% elif s.spec_ok %}
-                                <button type="button" onclick='openDocPreview("/raw-materials/{{ rm.id }}/spec-manual-preview?perusahaan={{ company | urlencode }}", {{ ("Spesifikasi (manual) - " + rm.nama_dagang + " (" + company + ")") | tojson }})' class="text-amber-500 hover:text-indigo-600 transition cursor-pointer" title="Data manual, klik untuk preview (belum ada PDF)">
-                                    <i class="fa-solid fa-circle-check"></i>
+                            {% endif %}
+                            {% if s.spec_text_ok %}
+                                <button type="button" onclick='openDocPreview("/raw-materials/{{ rm.id }}/spec-manual-preview?perusahaan={{ company | urlencode }}", {{ ("Spesifikasi (manual) - " + rm.nama_dagang + " (" + company + ")") | tojson }})' class="text-amber-500 hover:text-indigo-600 transition cursor-pointer" title="Preview Spesifikasi (manual)">
+                                    <i class="fa-solid fa-file-lines"></i>
                                 </button>
-                                <form action="/raw-materials/{{ rm.id }}/quick-upload-company-doc" method="POST" enctype="multipart/form-data" class="inline">
-                                    <input type="hidden" name="perusahaan" value="{{ company }}">
-                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload/update PDF Spesifikasi">
-                                        <i class="fa-solid fa-upload"></i>
-                                        <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
-                                    </label>
-                                </form>
-                            {% else %}
+                            {% endif %}
+                            {% if not s.spec_sheet_url and not s.spec_text_ok %}
                                 <form action="/raw-materials/{{ rm.id }}/quick-upload-company-doc" method="POST" enctype="multipart/form-data" class="inline">
                                     <input type="hidden" name="perusahaan" value="{{ company }}">
                                     <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Spesifikasi">
@@ -470,7 +466,16 @@
                                         <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
                                     </label>
                                 </form>
+                            {% else %}
+                                <form action="/raw-materials/{{ rm.id }}/quick-upload-company-doc" method="POST" enctype="multipart/form-data" class="inline">
+                                    <input type="hidden" name="perusahaan" value="{{ company }}">
+                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload/update PDF Spesifikasi">
+                                        <i class="fa-solid fa-upload"></i>
+                                        <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                    </label>
+                                </form>
                             {% endif %}
+                            </div>
                         </td>
                         <!-- MSDS -->
                         <td class="px-2 py-3 text-center">
@@ -528,21 +533,18 @@
                         </td>
                         <!-- Catatan Pemeriksaan -->
                         <td class="px-2 py-3 text-center">
+                            <div class="flex items-center justify-center gap-1.5">
                             {% if s.qc_report_url %}
                                 <button type="button" onclick='openDocPreview({{ s.qc_report_url | tojson }}, {{ ("Laporan Pemeriksaan - " + rm.nama_dagang + " (" + company + ")") | tojson }})' class="text-green-600 hover:text-green-800 cursor-pointer" title="Preview Laporan Pemeriksaan">
                                     <i class="fa-solid fa-circle-check"></i>
                                 </button>
-                            {% elif s.qc_ok %}
-                                <button type="button" onclick='openDocPreview("/raw-materials/batches/{{ s.batch_id }}/qc-manual-preview", {{ ("Catatan Pemeriksaan (manual) - " + rm.nama_dagang + " (" + company + ")") | tojson }})' class="text-amber-500 hover:text-indigo-600 transition cursor-pointer" title="Data manual, klik untuk preview (belum ada PDF)">
-                                    <i class="fa-solid fa-circle-check"></i>
+                            {% endif %}
+                            {% if s.qc_text_ok %}
+                                <button type="button" onclick='openDocPreview("/raw-materials/batches/{{ s.batch_id }}/qc-manual-preview", {{ ("Catatan Pemeriksaan (manual) - " + rm.nama_dagang + " (" + company + ")") | tojson }})' class="text-amber-500 hover:text-indigo-600 transition cursor-pointer" title="Preview Catatan Pemeriksaan (manual)">
+                                    <i class="fa-solid fa-file-lines"></i>
                                 </button>
-                                <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
-                                    <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Laporan Pemeriksaan ke batch terbaru">
-                                        <i class="fa-solid fa-upload"></i>
-                                        <input type="file" name="qc_report_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
-                                    </label>
-                                </form>
-                            {% elif s.batch_id %}
+                            {% endif %}
+                            {% if s.batch_id %}
                                 <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
                                     <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Laporan Pemeriksaan ke batch terbaru">
                                         <i class="fa-solid fa-upload"></i>
@@ -554,6 +556,7 @@
                                     <i class="fa-solid fa-circle-plus"></i>
                                 </button>
                             {% endif %}
+                            </div>
                         </td>
                         {% endfor %}
                     </tr>
@@ -1653,12 +1656,25 @@ function openEditModal(rm) {
     const companyDocs = rm.raw_material_company_docs || [];
     const perusahaanSlugMap = { 'PT Erfi': 'erfi', 'PT Heka': 'heka' };
 
+    function normalizeSpecs(value) {
+        if (Array.isArray(value)) return value;
+        if (typeof value !== 'string') return [];
+        try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            return [];
+        }
+    }
+
     ['erfi', 'heka'].forEach(slug => {
         const label = slug === 'erfi' ? 'PT Erfi' : 'PT Heka';
         const doc = companyDocs.find(d => perusahaanSlugMap[d.perusahaan] === slug) || {};
-        const specs = doc.spec_parameters || [];
+        const specs = normalizeSpecs(doc.spec_parameters);
         const specMap = {};
-        specs.forEach(item => { specMap[item.key] = item.value; });
+        specs.forEach(item => {
+            if (item && typeof item === 'object') specMap[item.key] = item.value;
+        });
 
         document.getElementById(`edit_spec_pemerian_${slug}`).value = specMap['Pemerian'] || '';
         document.getElementById(`edit_spec_aroma_${slug}`).value = specMap['Aroma'] || '';
