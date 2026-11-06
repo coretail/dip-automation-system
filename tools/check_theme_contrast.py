@@ -67,7 +67,7 @@ def parse_blocks(css: str) -> dict[str, dict[str, str]]:
     kontras jadi tidak bermakna.
     """
     out: dict[str, dict[str, str]] = {}
-    pattern = re.compile(r"(:root,\s*\[data-theme=\"light\"\]|\[data-theme=\"(\w+)\"\])\s*\{(.*?)\n\}", re.S)
+    pattern = re.compile(r"(:root,\s*\[data-theme=\"light\"\]|\[data-theme=\"([\w-]+)\"\])\s*\{(.*?)\n\}", re.S)
     for m in pattern.finditer(css):
         theme = m.group(2) or "light"
         body = m.group(3)
@@ -162,7 +162,7 @@ ACCEPTED = {
 
 def main() -> int:
     blocks = parse_blocks(CSS.read_text(encoding="utf-8"))
-    themes = [t for t in ("light", "terra", "rose", "dark") if t in blocks]
+    themes = [t for t in ("light", "terra", "rose", "dark", "charcoal", "midnight-teal") if t in blocks]
     if not themes:
         print("GAGAL: tidak ada blok token yang terbaca di", CSS)
         return 1
