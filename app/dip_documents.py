@@ -126,10 +126,14 @@ def register_dip_document_routes(
 
         perusahaan = product.get("perusahaan") or "PT Erfi"
         company = get_company_info(perusahaan)
+        # Kop/logo + nomor dokumen untuk template Spesifikasi & Catatan Pemeriksaan.
+        brand = bab2_pdf.brand_assets(perusahaan)
 
         # 2. Ambil semua bahan baku unik yang dipakai di formula produk ini
         lines_resp = supabase.table("product_formula_lines") \
-            .select("raw_material_id, raw_materials(*)") \
+            .select("raw_material_id, variant_id, "
+                    "raw_materials(*, raw_material_components(*), "
+                    "raw_material_composition_variants(*, raw_material_components(*)))") \
             .eq("product_id", product_id) \
             .execute()
 
@@ -141,6 +145,8 @@ def register_dip_document_routes(
                 rm = rm[0]
             if isinstance(rm, dict) and rm.get("id") and rm["id"] not in seen_ids:
                 seen_ids.add(rm["id"])
+                # Header "Nama INCI/Kimia" pada template Spesifikasi.
+                rm["inci_text"] = bab2_pdf.inci_text(_resolve_variant_components, rm, line.get("variant_id"))
                 raw_materials.append(rm)
 
         # 2b. Timpa spec_parameters & msds_file_url tiap bahan baku dengan data company-specific
@@ -256,7 +262,7 @@ def register_dip_document_routes(
                 elif batch:
                     # Batch valid (hasil query existing) -> Catatan Pemeriksaan tetap ditampilkan
                     # dari data batch. Tidak ada empty-note kalau batch tidak ada.
-                    manual_qc = render_block_to_pdf("bab2_qc_section.html", batch=batch)
+                    manual_qc = render_block_to_pdf("bab2_qc_section.html", batch=batch, material=material, brand=brand)
                     if manual_qc:
                         documents.append(("CATATAN PEMERIKSAAN", manual_qc))
                 else:
@@ -357,10 +363,14 @@ def register_dip_document_routes(
 
         perusahaan = product.get("perusahaan") or "PT Erfi"
         company = get_company_info(perusahaan)
+        # Kop/logo + nomor dokumen untuk template Spesifikasi & Catatan Pemeriksaan.
+        brand = bab2_pdf.brand_assets(perusahaan)
 
         # 2. Ambil semua bahan baku unik yang dipakai di formula produk ini
         lines_resp = supabase.table("product_formula_lines") \
-            .select("raw_material_id, raw_materials(*)") \
+            .select("raw_material_id, variant_id, "
+                    "raw_materials(*, raw_material_components(*), "
+                    "raw_material_composition_variants(*, raw_material_components(*)))") \
             .eq("product_id", product_id) \
             .execute()
 
@@ -372,6 +382,8 @@ def register_dip_document_routes(
                 rm = rm[0]
             if isinstance(rm, dict) and rm.get("id") and rm["id"] not in seen_ids:
                 seen_ids.add(rm["id"])
+                # Header "Nama INCI/Kimia" pada template Spesifikasi.
+                rm["inci_text"] = bab2_pdf.inci_text(_resolve_variant_components, rm, line.get("variant_id"))
                 raw_materials.append(rm)
 
         # 2b. Timpa spec_parameters & msds_file_url tiap bahan baku dengan data company-specific
@@ -449,7 +461,7 @@ def register_dip_document_routes(
                     if spec_bytes:
                         zf.writestr(f"{root_folder}/{folder_name}/1_Spesifikasi_Bahan_Baku.pdf", spec_bytes)
                     else:
-                        spec_html = templates.env.get_template("bab2_spec_block.html").render(item=item, index=idx)
+                        spec_html = templates.env.get_template("bab2_spec_block.html").render(item=item, index=idx, brand=brand)
                         spec_buffer = io.BytesIO()
                         spec_status = pisa.CreatePDF(src=spec_html, dest=spec_buffer)
                         if not spec_status.err:
@@ -467,7 +479,7 @@ def register_dip_document_routes(
                     if qc_bytes:
                         zf.writestr(f"{root_folder}/{folder_name}/2_Catatan_Pemeriksaan_Bahan_Baku.pdf", qc_bytes)
                     else:
-                        qc_html = templates.env.get_template("bab2_qc_block.html").render(item=item, index=idx)
+                        qc_html = templates.env.get_template("bab2_qc_block.html").render(item=item, index=idx, brand=brand)
                         qc_buffer = io.BytesIO()
                         qc_status = pisa.CreatePDF(src=qc_html, dest=qc_buffer)
                         if not qc_status.err:
