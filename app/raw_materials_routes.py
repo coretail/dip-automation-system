@@ -806,10 +806,12 @@ def register_raw_materials_routes(
 
         Bukan endpoint audit: hanya baca, tanpa ``log_activity``.
         """
-        from app.bab2_pdf import render_manual_spec_pdf
+        from app.bab2_pdf import inci_text, render_manual_spec_pdf
 
         rm_resp = supabase.table("raw_materials").select(
-            "id, nama_dagang, kode_bahan_baku, produsen, perusahaan"
+            "id, nama_dagang, kode_bahan_baku, produsen, perusahaan, "
+            "raw_material_components(*), "
+            "raw_material_composition_variants(*, raw_material_components(*))"
         ).eq("id", rm_id).limit(1).execute()
         rm_row = (rm_resp.data or [None])[0]
         if not rm_row:
@@ -836,7 +838,9 @@ def register_raw_materials_routes(
         if not filled:
             raise HTTPException(status_code=404, detail="Spesifikasi manual belum diisi.")
 
-        pdf_bytes = render_manual_spec_pdf(templates, rm_row, filled)
+        # Header "Nama INCI/Kimia": komponen varian default digabung "(and)".
+        rm_row = {**rm_row, "inci_text": inci_text(_resolve_variant_components, rm_row, None)}
+        pdf_bytes = render_manual_spec_pdf(templates, rm_row, filled, perusahaan=company)
         if pdf_bytes is None:
             raise HTTPException(status_code=500, detail="Gagal membuat preview PDF. Silakan coba lagi.")
         return Response(
@@ -878,8 +882,22 @@ def register_raw_materials_routes(
         # qc_results legacy bisa berupa string JSON; template mengiterasinya sebagai list.
         batch_row = {**batch_row, "qc_results": _kc_results_from_batch(batch_row)}
 
+        # Kolom Spesifikasi pada Catatan Pemeriksaan diambil dari spesifikasi manual
+        # bahan baku untuk perusahaan batch ini (opsional; kosong -> "-").
+        material = {"nama_dagang": (rm_parent or {}).get("nama_dagang") if isinstance(rm_parent, dict) else None}
         try:
-            pdf_bytes = render_manual_qc_pdf(templates, batch_row)
+            spec_resp = supabase.table("raw_material_company_docs").select(
+                "spec_parameters"
+            ).eq("raw_material_id", batch_row.get("raw_material_id")).eq(
+                "perusahaan", batch_row.get("perusahaan")
+            ).limit(1).execute()
+            spec_row = (spec_resp.data or [None])[0]
+            material["spec_parameters"] = _NormalizeSpecs.normalize((spec_row or {}).get("spec_parameters"))
+        except Exception as exc:
+            print(f"Gagal memuat spesifikasi untuk preview QC batch {batch_id}: {exc}")
+
+        try:
+            pdf_bytes = render_manual_qc_pdf(templates, batch_row, material=material)
         except Exception as exc:
             print(f"Gagal render preview QC batch {batch_id}: {exc}")
             pdf_bytes = None
