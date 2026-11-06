@@ -3,58 +3,204 @@
 <head>
 <meta charset="UTF-8">
 <style>
-    body { font-family: Helvetica, sans-serif; font-size: 10pt; color: #1a1a1a; }
-    h2 { font-size: 12pt; margin-top: 0; margin-bottom: 6px; border-bottom: 1px solid #444; padding-bottom: 3px; }
-    h3 { font-size: 10.5pt; margin-top: 12px; margin-bottom: 4px; color: #333; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    td, th { border: 1px solid #999; padding: 5px 7px; font-size: 9pt; text-align: left; vertical-align: top; }
-    th { background-color: #eeeeee; }
-    .label-col { width: 200px; font-weight: bold; background-color: #f5f5f5; }
-    .empty-note { font-style: italic; color: #777; font-size: 9pt; }
+    @page {
+        size: A4;
+        margin: 16mm 15mm 14mm 15mm;
+    }
+    body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 9pt;
+        color: #111;
+        line-height: 1.35;
+    }
+    .kop {
+        width: 100%;
+        border: 0;
+        display: block;
+        margin-bottom: 10px;
+    }
+    .header-identity {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 8px;
+    }
+    .header-identity td {
+        padding: 0;
+        vertical-align: top;
+    }
+    .small-logo {
+        width: 32mm;
+        display: block;
+        margin-bottom: 4px;
+    }
+    .header-number-cell {
+        text-align: right;
+        vertical-align: bottom;
+    }
+    .document-number {
+        text-align: right;
+        font-size: 9pt;
+        margin: 0 0 5px;
+    }
+    h1 {
+        text-align: center;
+        font-size: 14pt;
+        margin: 0 0 10px;
+        letter-spacing: 0.5px;
+    }
+    .identity-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 10px;
+    }
+    .identity-table td {
+        padding: 2px 4px;
+        vertical-align: top;
+    }
+    .identity-table .field-name {
+        width: 34mm;
+        font-weight: bold;
+    }
+    .identity-table .separator {
+        width: 5mm;
+    }
+    table.sheet {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 8px 0 12px;
+    }
+    table.sheet th,
+    table.sheet td {
+        border: 1px solid #333;
+        padding: 5px 6px;
+        vertical-align: top;
+    }
+    table.sheet th {
+        background: #f0f0f0;
+        text-align: center;
+        font-size: 8.5pt;
+    }
+    .no-col { width: 8%; text-align: center; }
+    .test-col { width: 23%; }
+    .method-col { width: 23%; }
+    .spec-col { width: 28%; }
+    .result-col { width: 18%; }
+    .conclusion {
+        text-align: center;
+        font-size: 10pt;
+        font-weight: bold;
+        margin: 8px 0 0;
+    }
+    .accepted { color: #166534; }
+    .rejected { color: #991b1b; }
+    .quarantine { color: #854d0e; }
+    .signatures {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 28px;
+    }
+    .signatures td {
+        width: 33.33%;
+        padding: 7px 10px 0 0;
+        vertical-align: top;
+        text-align: center;
+    }
+    .signatures .signature-label {
+        height: 18px;
+        font-size: 8.5pt;
+    }
+    .signatures .signature-space {
+        height: 48px;
+    }
+    .signatures .signature-name {
+        font-size: 9pt;
+        font-weight: bold;
+    }
+    .signatures .signature-role {
+        font-size: 8pt;
+    }
+    .empty-note {
+        font-style: italic;
+        color: #666;
+        font-size: 8.5pt;
+    }
 </style>
-</head>
-<body>
-    <h2>{{ index }}. {{ item.get('material', {}).get('nama_dagang') or '-' }} [{{ item.get('material', {}).get('kode_bahan_baku') or '-' }}]</h2>
+{% set material = item.get('material', {}) %}
+{% set batch_data = batch if batch else (item.get('batch') or {}) %}
+{% set company_name = (company_assets.get('nama') if company_assets else '') or company or batch_data.get('perusahaan') or material.get('perusahaan') or 'PT Erfi' %}
+{% set is_heka = 'heka' in company_name.lower() %}
+{% set qc_document_number = batch_data.get('dokumen_nomor') or ('PM/HEKA/FL/003/01' if is_heka else 'PM/EKA/FL/003/02') %}
+<table class="header-identity">
+    <tr>
+        <td class="header-logo-cell">
+            {% if is_heka %}
+                <img class="small-logo" src="file:///D:/dip-app/app/static/images/logo_heka.png" alt="">
+            {% else %}
+                <img class="small-logo" src="file:///D:/dip-app/app/static/images/logo_erfi.png" alt="">
+            {% endif %}
+        </td>
+        <td class="header-number-cell"><p class="document-number">Nomor : {{ qc_document_number }}</p></td>
+    </tr>
+</table>
+<h1>CATATAN PEMERIKSAAN BAHAN BAKU</h1>
 
-    <h3>Catatan Pemeriksaan Bahan Baku</h3>
-    {% if item.get('batch') %}
-    <table>
-        <tr><td class="label-col">No. Batch</td><td>{{ item.get('batch', {}).get('no_batch') or '-' }}</td></tr>
-        <tr><td class="label-col">Supplier</td><td>{{ item.get('batch', {}).get('supplier') or '-' }}</td></tr>
-        <tr><td class="label-col">Asal Negara</td><td>{{ item.get('batch', {}).get('asal_negara') or '-' }}</td></tr>
-        <tr><td class="label-col">Nama Produsen</td><td>{{ item.get('batch', {}).get('nama_produsen') or '-' }}</td></tr>
-        <tr><td class="label-col">Tanggal Sampling</td><td>{{ item.get('batch', {}).get('tanggal_sampling') or '-' }}</td></tr>
-        <tr><td class="label-col">Tanggal Terima Sampel</td><td>{{ item.get('batch', {}).get('tanggal_terima_sampel') or '-' }}</td></tr>
-        <tr><td class="label-col">Tanggal ED</td><td>{{ item.get('batch', {}).get('tanggal_ed') or '-' }}</td></tr>
+<table class="identity-table">
+    <tr><td class="field-name">Nama Bahan Baku</td><td class="separator">:</td><td>{{ material.get('nama_dagang') or batch_data.get('nama_dagang') or '-' }}</td></tr>
+    <tr><td class="field-name">No. Batch</td><td class="separator">:</td><td>{{ batch_data.get('no_batch') or '-' }}</td></tr>
+    <tr><td class="field-name">Supplier</td><td class="separator">:</td><td>{{ batch_data.get('supplier') or '-' }}</td></tr>
+    <tr><td class="field-name">Tanggal Pengambilan Sample</td><td class="separator">:</td><td>{{ batch_data.get('tanggal_sampling') or batch_data.get('tanggal_terima_sampel') or '-' }}</td></tr>
+</table>
 
-        {% if item.get('batch').get('qc_results') %}
-            {% for qc in item['batch']['qc_results'] %}
-            <tr>
-                <td class="label-col">Hasil {{ qc.get('key') }}</td>
-                <td>{{ qc.get('value') or '-' }}</td>
-            </tr>
-            {% endfor %}
-        {% endif %}
+{% if batch_data %}
+<table class="sheet">
+    <thead>
+        <tr><th class="no-col">No</th><th class="test-col">Pengujian</th><th class="method-col">Metode</th><th class="spec-col">Spesifikasi/nilai keberterimaan</th><th class="result-col">Hasil</th></tr>
+    </thead>
+    <tbody>
+        {% for qc in batch_data.get('qc_results') or [] %}
+        <tr>
+            <td class="no-col">{{ loop.index }}</td>
+            <td>{{ qc.get('key') if qc is mapping else qc }}</td>
+            <td>{{ qc.get('metode') if qc is mapping else '' }}</td>
+            <td>{{ qc.get('spesifikasi') if qc is mapping else (qc.get('value') if qc is mapping else '') }}</td>
+            <td>{{ qc.get('hasil') if qc is mapping else (qc.get('value') if qc is mapping else '') }}</td>
+        </tr>
+        {% endfor %}
+        {% for _ in range(6 - ((batch_data.get('qc_results') or []) | length)) %}
+        <tr><td class="no-col">{{ ((batch_data.get('qc_results') or []) | length) + loop.index }}</td><td></td><td></td><td></td><td></td></tr>
+        {% endfor %}
+    </tbody>
+</table>
 
-        <tr><td class="label-col">Kesimpulan</td>
-            <td>
-                {% if item.get('batch', {}).get('kesimpulan') == 'diluluskan' %}
-                    <span style="color: #166534; font-weight: bold;">✓ DILULUSKAN</span>
-                {% elif item.get('batch', {}).get('kesimpulan') == 'ditolak' %}
-                    <span style="color: #991b1b; font-weight: bold;">✗ DITOLAK</span>
-                {% elif item.get('batch', {}).get('kesimpulan') == 'karantina' %}
-                    <span style="color: #854d0e; font-weight: bold;">⚠ KARANTINA</span>
-                {% else %}
-                    {{ item.get('batch', {}).get('kesimpulan') or '-' }}
-                {% endif %}
-            </td></tr>
-        <tr><td class="label-col">Diperiksa Oleh (QC)</td><td>{{ item.get('batch', {}).get('qc_signer') or '-' }}</td></tr>
-        <tr><td class="label-col">Disetujui Oleh (QC)</td><td>{{ item.get('batch', {}).get('qa_signer') or '-' }}</td></tr>
-<tr><td class="label-col">Mengetahui (Kepala QC)</td><td>{{ item.get('batch', {}).get('mengetahui_signer') or '-' }}</td></tr>
-    </table>
-    <p style="font-size: 8.5pt; color: #666;">CoA, Sertifikat Halal, dan MSDS bahan baku ini dilampirkan setelah halaman ini.</p>
+<p class="conclusion">Kesimpulan :</p>
+<p class="conclusion">
+    {% if batch_data.get('kesimpulan') == 'diluluskan' %}
+        <span class="accepted">✓ DILULUSKAN</span>
+    {% elif batch_data.get('kesimpulan') == 'ditolak' %}
+        <span class="rejected">✗ DITOLAK</span>
+    {% elif batch_data.get('kesimpulan') == 'karantina' %}
+        <span class="quarantine">⚠ KARANTINA</span>
     {% else %}
-    <p class="empty-note">Belum ada riwayat batch tercatat untuk bahan baku ini. Catatan Pemeriksaan, CoA, dan Halal belum tersedia.</p>
+        {{ batch_data.get('kesimpulan') or '-' }}
     {% endif %}
+</p>
+
+<table class="signatures">
+    <tr>
+        <td class="signature-label">Disetujui Oleh,</td>
+        <td class="signature-label">Pengujian Dilakukan Oleh,</td>
+        <td class="signature-label">Mengetahui,</td>
+    </tr>
+    <tr><td class="signature-space"></td><td class="signature-space"></td><td class="signature-space"></td></tr>
+    <tr>
+        <td><span class="signature-name">{{ batch_data.get('qa_signer') or '-' }}</span><br><span class="signature-role">Ka. Bagian Pengawasan Mutu</span></td>
+        <td><span class="signature-name">{{ batch_data.get('qc_signer') or '-' }}</span><br><span class="signature-role">QC</span></td>
+        <td><span class="signature-name">{{ batch_data.get('mengetahui_signer') or '-' }}</span><br><span class="signature-role">Kepala QC</span></td>
+    </tr>
+</table>
+<p style="font-size: 8.5pt; color: #666;">CoA, Sertifikat Halal, dan MSDS bahan baku ini dilampirkan setelah halaman ini.</p>
+{% else %}
+<p class="empty-note">Belum ada riwayat batch tercatat untuk bahan baku ini. Catatan Pemeriksaan, CoA, dan Halal belum tersedia.</p>
+{% endif %}
 </body>
 </html>
