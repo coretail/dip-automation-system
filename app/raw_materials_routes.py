@@ -607,8 +607,8 @@ def register_raw_materials_routes(
             status_per_company = {}
             for company in ["PT Erfi", "PT Heka"]:
                 doc = company_docs.get(company, {})
-                spec_params = doc.get("spec_parameters") or []
-                spec_text_filled = any((item.get("value") or "").strip() for item in spec_params if isinstance(item, dict))
+                spec_params = _NormalizeSpecs.normalize(doc.get("spec_parameters"))
+                spec_text_filled = any(_NormalizeSpecs.has_value(item) for item in spec_params)
                 spec_sheet_url = doc.get("spec_sheet_file_url")
                 msds_url = doc.get("msds_file_url")
 
@@ -829,9 +829,10 @@ def register_raw_materials_routes(
             doc_resp = doc_resp.eq("perusahaan", company)
         doc_resp = doc_resp.limit(1).execute()
         doc_row = (doc_resp.data or [None])[0]
-        params = (doc_row or {}).get("spec_parameters") or []
-        filled = [item for item in params
-                  if isinstance(item, dict) and (item.get("value") or "").strip()]
+        # Baris lama bisa menyimpan spec_parameters sebagai string JSON; samakan
+        # dengan perhitungan spec_text_ok di halaman daftar.
+        params = _NormalizeSpecs.normalize((doc_row or {}).get("spec_parameters"))
+        filled = [item for item in params if _NormalizeSpecs.has_value(item)]
         if not filled:
             raise HTTPException(status_code=404, detail="Spesifikasi manual belum diisi.")
 
@@ -873,6 +874,9 @@ def register_raw_materials_routes(
                 status_code=403,
                 detail="Akses ditolak! Batch bukan milik perusahaan Anda.",
             )
+
+        # qc_results legacy bisa berupa string JSON; template mengiterasinya sebagai list.
+        batch_row = {**batch_row, "qc_results": _kc_results_from_batch(batch_row)}
 
         try:
             pdf_bytes = render_manual_qc_pdf(templates, batch_row)
