@@ -58,6 +58,30 @@ def render_html_to_pdf(html: str) -> bytes | None:
     return buffer.getvalue()
 
 
+def render_manual_spec_pdf(templates, material: dict, spec_params: list) -> bytes | None:
+    """Render spesifikasi manual (tanpa PDF upload) dari data input manual.
+
+    Dipakai oleh preview manual dan bisa dipakai ulang fallback Bab II nanti.
+    ``material`` harus sudah membawa ``spec_parameters`` (sudah difilter item
+    dict dengan value terisi). Return ``bytes`` PDF, atau ``None`` bila render gagal.
+    """
+    html = templates.get_template("bab2_spec_block.html").render(
+        item={"material": {**material, "spec_parameters": spec_params}},
+        index="",
+    )
+    return render_html_to_pdf(html)
+
+
+def render_manual_qc_pdf(templates, batch: dict) -> bytes | None:
+    """Render catatan pemeriksaan manual (tanpa PDF upload) dari data input manual.
+
+    Dipakai oleh preview manual dan bisa dipakai ulang fallback Bab II nanti.
+    Return ``bytes`` PDF, atau ``None`` bila render gagal.
+    """
+    html = templates.get_template("bab2_qc_section.html").render(batch=batch)
+    return render_html_to_pdf(html)
+
+
 def read_pdf_pages(pdf_bytes: bytes, label: str) -> list | None:
     """Parse PDF dari bytes. Return list ``PageObject`` atau ``None`` kalau bukan
     PDF valid / rusak (supaya satu file cacat tidak menggagalkan seluruh Bab II)."""
