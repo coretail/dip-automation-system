@@ -66,10 +66,21 @@ async def _upload_msds_and_upsert_company_doc(rm_id, kode_bahan_baku, perusahaan
         except Exception as e:
             print(f"Gagal upload PDF Spesifikasi ({perusahaan}): {e}")
 
+    def _coerce_spec_parameters(value):
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else []
+            except (TypeError, ValueError):
+                return []
+        return []
+
     doc_payload = {
         "raw_material_id": rm_id,
         "perusahaan": perusahaan,
-        "spec_parameters": spec_parameters,
+        "spec_parameters": _coerce_spec_parameters(spec_parameters),
     }
     if msds_url:
         doc_payload["msds_file_url"] = msds_url

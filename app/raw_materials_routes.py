@@ -1,6 +1,7 @@
 """Route /raw-materials/* (master bahan baku, varian komposisi, batch/ED, dokumen company)."""
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from typing import List
 from uuid import uuid4
@@ -408,6 +409,53 @@ def _balas_gagal_ambigu(
     return response
 
 
+class _NormalizeSpecs:
+    @staticmethod
+    def normalize(value):
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else []
+            except (TypeError, ValueError):
+                return []
+        return []
+
+    @staticmethod
+    def has_value(item):
+        return isinstance(item, dict) and bool((item.get("value") or "").strip())
+
+
+def _kc_results_from_batch(batch) -> list:
+    return _NormalizeSpecs.normalize((batch or {}).get("qc_results"))
+
+
+def _apply_company_doc_specs(rm: dict) -> dict:
+    """Salin spec_parameters dari raw_material_company_docs ke rm.
+
+    Kontrak `masterRawMaterials` di raw_materials.html: `rm["spec_parameters"]`
+    selalu berupa list (string JSON dinormalisasi). Tanpa ini modal `+ Batch`
+    tidak menemukan spesifikasi master data dan menampilkan peringatan, walau
+    Spesifikasi (manual) sudah terisi per perusahaan.
+    """
+    company_docs = rm.get("raw_material_company_docs") or []
+    doc_by_company = {doc.get("perusahaan"): doc for doc in company_docs if isinstance(doc, dict)}
+
+    for company in ("PT Erfi", "PT Heka"):
+        doc = doc_by_company.get(company) or {}
+        rm[f"spec_parameters_{'erfi' if company == 'PT Erfi' else 'heka'}"] = _NormalizeSpecs.normalize(
+            doc.get("spec_parameters")
+        )
+        rm[f"spec_sheet_file_url_{'erfi' if company == 'PT Erfi' else 'heka'}"] = doc.get("spec_sheet_file_url")
+        rm[f"msds_file_url_{'erfi' if company == 'PT Erfi' else 'heka'}"] = doc.get("msds_file_url")
+
+    rm["spec_parameters"] = rm.get("spec_parameters_erfi") or rm.get("spec_parameters_heka") or []
+    rm["spec_sheet_file_url"] = rm.get("spec_sheet_file_url_erfi")
+    rm["msds_file_url"] = rm.get("msds_file_url_erfi")
+    return rm
+
+
 def register_raw_materials_routes(
     app,
     get_current_user,
@@ -435,6 +483,7 @@ def register_raw_materials_routes(
         # tetap dibawa buat modal edit (masterRawMaterials di raw_materials.html).
         for rm in (rm_resp.data or []):
             rm["raw_material_components"] = _resolve_variant_components(rm, None)
+            _apply_company_doc_specs(rm)
 
         success_msg = request.cookies.get("success_msg") or request.query_params.get("success")
         error_msg = request.cookies.get("error_msg") or request.query_params.get("error")
@@ -558,26 +607,28 @@ def register_raw_materials_routes(
             status_per_company = {}
             for company in ["PT Erfi", "PT Heka"]:
                 doc = company_docs.get(company, {})
-                spec_params = doc.get("spec_parameters") or []
-                spec_text_filled = any((item.get("value") or "").strip() for item in spec_params if isinstance(item, dict))
+                spec_params = _NormalizeSpecs.normalize(doc.get("spec_parameters"))
+                spec_text_filled = any(_NormalizeSpecs.has_value(item) for item in spec_params)
                 spec_sheet_url = doc.get("spec_sheet_file_url")
                 msds_url = doc.get("msds_file_url")
 
                 batch = latest_batch_map.get((rm["id"], company))
-                qc_results = (batch.get("qc_results") if batch else None) or []
-                qc_text_filled = any((item.get("value") or "").strip() for item in qc_results if isinstance(item, dict))
+                qc_results = _kc_results_from_batch(batch)
+                qc_text_filled = any(_NormalizeSpecs.has_value(item) for item in qc_results)
                 qc_report_url = batch.get("qc_report_file_url") if batch else None
                 coa_url = batch.get("coa_file_url") if batch else None
                 halal_url = batch.get("halal_batch_file_url") if batch else None
 
                 status_per_company[company] = {
                     "spec_ok": bool(spec_text_filled or spec_sheet_url),
+                    "spec_text_ok": bool(spec_text_filled),
                     "spec_sheet_url": spec_sheet_url,
                     "msds_url": msds_url,
                     "coa_url": coa_url,
                     "halal_url": halal_url,
                     "qc_report_url": qc_report_url,
                     "qc_ok": bool(qc_text_filled or qc_report_url),
+                    "qc_text_ok": bool(qc_text_filled),
                     "has_batch": batch is not None,
                     "batch_id": batch.get("id") if batch else None,
                 }
@@ -778,9 +829,10 @@ def register_raw_materials_routes(
             doc_resp = doc_resp.eq("perusahaan", company)
         doc_resp = doc_resp.limit(1).execute()
         doc_row = (doc_resp.data or [None])[0]
-        params = (doc_row or {}).get("spec_parameters") or []
-        filled = [item for item in params
-                  if isinstance(item, dict) and (item.get("value") or "").strip()]
+        # Baris lama bisa menyimpan spec_parameters sebagai string JSON; samakan
+        # dengan perhitungan spec_text_ok di halaman daftar.
+        params = _NormalizeSpecs.normalize((doc_row or {}).get("spec_parameters"))
+        filled = [item for item in params if _NormalizeSpecs.has_value(item)]
         if not filled:
             raise HTTPException(status_code=404, detail="Spesifikasi manual belum diisi.")
 
@@ -822,6 +874,9 @@ def register_raw_materials_routes(
                 status_code=403,
                 detail="Akses ditolak! Batch bukan milik perusahaan Anda.",
             )
+
+        # qc_results legacy bisa berupa string JSON; template mengiterasinya sebagai list.
+        batch_row = {**batch_row, "qc_results": _kc_results_from_batch(batch_row)}
 
         try:
             pdf_bytes = render_manual_qc_pdf(templates, batch_row)
@@ -1609,6 +1664,7 @@ def register_raw_materials_routes(
             "qc_signer": qc_signer.strip() if qc_signer else None,
             "qa_signer": qa_signer.strip() if qa_signer else None,
             "hasil_pemerian": "-",
+            "qc_results": parsed_qc if isinstance(parsed_qc, list) else [],
             "quantity": quantity,
             "quantity_unit": quantity_unit,
             "coa_file_url": coa_url,
@@ -1701,6 +1757,8 @@ def register_raw_materials_routes(
         # dan file yang gagal disebut di `changes`. Outcome "failed" dipakai
         # hanya kalau baris batch-nya sendiri gagal ditulis.
         audit_changes = []
+        nama_produk = (rm_parent_row or {}).get("nama_dagang") or raw_material_id
+        batch_label = f"Batch '{no_batch.strip()}' untuk {nama_produk}"
         if upload_errors:
             audit_changes.append({
                 "field": "File",
@@ -1709,7 +1767,7 @@ def register_raw_materials_routes(
                         + " gagal diunggah. Detail teknis ada di log server.",
             })
             pesan = (
-                f"Batch '{no_batch.strip()}' tersimpan, tetapi file "
+                f"Batch '{no_batch.strip()}' untuk {nama_produk} tersimpan, tetapi file "
                 + ", ".join(upload_errors)
                 + " gagal diunggah."
             )
@@ -1718,12 +1776,12 @@ def register_raw_materials_routes(
                 + " gagal diunggah. Silakan unggah ulang lewat menu upload cepat."
             )
         else:
-            pesan = f"Batch '{no_batch.strip()}' berhasil ditambahkan."
+            pesan = f"Batch '{no_batch.strip()}' untuk {nama_produk} berhasil ditambahkan."
             peringatan = ""
 
         log_activity(
             current_user, "create", "raw_material_batch", batch_id,
-            f"Batch {no_batch.strip()}",
+            batch_label,
             changes=audit_changes or None, request=request,
             outcome="success",
         )
