@@ -103,27 +103,6 @@
                     </a>
                 </div>
                 <div class="flex items-center gap-1 sm:gap-3">
-                    <!-- Notification Bell for ED Alerts -->
-                    <div class="relative" id="ed-notification-wrapper">
-                        <button id="ed-notification-btn" class="relative p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Peringatan Expired & Notifikasi" title="Peringatan Expired & Notifikasi" aria-expanded="false" aria-controls="ed-notification-dropdown">
-                            <i class="fa-solid fa-bell text-lg"></i>
-                            <span id="ed-notification-badge" class="absolute -top-1 -right-1 bg-red-700 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
-                        </button>
-                        <!-- Dropdown -->
-                        <div id="ed-notification-dropdown" class="hidden absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-                            <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-                                <h4 class="font-semibold text-gray-900">Peringatan Expired & Notifikasi</h4>
-                                <a href="/raw-materials?tab=ed-tab" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Lihat Semua <i class="fa-solid fa-arrow-right ml-1"></i></a>
-                            </div>
-                            <div id="ed-notification-list" class="max-h-64 overflow-y-auto">
-                                <!-- Items will be populated via JS -->
-                                <div class="px-4 py-6 text-center text-gray-500 text-sm" id="ed-loading">Memuat...</div>
-                            </div>
-                            <div class="px-4 py-2 border-t border-gray-200 text-right">
-                                <a href="/raw-materials?tab=ed-tab" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Kelola ED & Kadaluwarsa <i class="fa-solid fa-arrow-right ml-1"></i></a>
-                            </div>
-                        </div>
-                    </div>
 <!-- Theme switcher: tombol pemicu + menu horizontal 6 tema, membuka menyamping di dalam navbar -->
                         <div class="relative" id="themeSwitcher">
                             <button type="button" id="theme-toggle"
@@ -162,6 +141,27 @@
                             </div>
                         </div>
 
+                    <!-- Notification Bell for ED Alerts -->
+                    <div class="relative" id="ed-notification-wrapper">
+                        <button id="ed-notification-btn" class="relative p-2 rounded-full hover:bg-indigo-700 transition" aria-label="Peringatan Expired & Notifikasi" title="Peringatan Expired & Notifikasi" aria-expanded="false" aria-controls="ed-notification-dropdown">
+                            <i class="fa-solid fa-bell text-lg"></i>
+                            <span id="ed-notification-badge" class="absolute -top-1 -right-1 bg-red-700 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center hidden">0</span>
+                        </button>
+                        <!-- Dropdown -->
+                        <div id="ed-notification-dropdown" class="hidden absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                            <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                                <h4 class="font-semibold text-gray-900">Peringatan Expired & Notifikasi</h4>
+                                <a href="/raw-materials?tab=ed-tab" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Lihat Semua <i class="fa-solid fa-arrow-right ml-1"></i></a>
+                            </div>
+                            <div id="ed-notification-list" class="max-h-64 overflow-y-auto">
+                                <!-- Items will be populated via JS -->
+                                <div class="px-4 py-6 text-center text-gray-500 text-sm" id="ed-loading">Memuat...</div>
+                            </div>
+                            <div class="px-4 py-2 border-t border-gray-200 text-right">
+                                <a href="/raw-materials?tab=ed-tab" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Kelola ED & Kadaluwarsa <i class="fa-solid fa-arrow-right ml-1"></i></a>
+                            </div>
+                        </div>
+                    </div>
                     <!-- Menu user -->
                     <div class="relative" id="user-menu-wrapper">
                         <button type="button" id="user-menu-btn"
