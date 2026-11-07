@@ -6,7 +6,7 @@
    siklus sekali klik). Menu ditutup dengan Escape, klik di luar, atau Tab. */
 (function () {
   var KEY = "heka-theme";
-  var THEMES = ["light", "terra", "rose", "dark"];
+  var THEMES = ["light", "terra", "rose", "dark", "charcoal", "midnight-teal"];
   var root = document.documentElement;
   if (root.classList.contains("force-light")) return;
 
@@ -32,7 +32,9 @@ var META = {
     light: { icon: "fa-sun", name: "Terah" },
     terra: { icon: "fa-fire", name: "Terra" },
     rose: { icon: "fa-heart", style: "fa-regular", name: "Rose" },
-    dark: { icon: "fa-moon", name: "Gelap" }
+    dark: { icon: "fa-moon", name: "Gelap" },
+    charcoal: { icon: "fa-moon", name: "Charcoal" },
+    "midnight-teal": { icon: "fa-droplet", name: "Midnight Teal" }
   };
 
   var els = {};

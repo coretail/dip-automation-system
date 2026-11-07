@@ -69,6 +69,34 @@
   --sidebar-danger-icon: #FFC9C5;
 }
 
+[data-theme="charcoal"] {
+  --sidebar-bg: #0F0F12;
+  --sidebar-fg: #FFFFFF;
+  --sidebar-fg-muted: rgba(255, 255, 255, 0.72);
+  --sidebar-hover: rgba(255, 255, 255, 0.10);
+  --sidebar-active: rgba(255, 255, 255, 0.18);
+  --sidebar-border: rgba(255, 255, 255, 0.16);
+
+  --sidebar-danger-fg: #fca5a5;
+  --sidebar-danger-fg-hover: #fecaca;
+  --sidebar-danger-bg-hover: rgb(248 113 113 / 0.18);
+  --sidebar-danger-icon: #f87171;
+}
+
+[data-theme="midnight-teal"] {
+  --sidebar-bg: #102E3A;
+  --sidebar-fg: #FFFFFF;
+  --sidebar-fg-muted: rgba(255, 255, 255, 0.72);
+  --sidebar-hover: rgba(255, 255, 255, 0.10);
+  --sidebar-active: rgba(255, 255, 255, 0.18);
+  --sidebar-border: rgba(255, 255, 255, 0.20);
+
+  --sidebar-danger-fg: #fca5a5;
+  --sidebar-danger-fg-hover: #fecaca;
+  --sidebar-danger-bg-hover: rgb(248 113 113 / 0.18);
+  --sidebar-danger-icon: #f87171;
+}
+
 html.sidebar-collapsed {
   --sidebar-width: var(--sidebar-width-collapsed);
 }

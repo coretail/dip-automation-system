@@ -54,6 +54,16 @@
       series: ['#965357', '#EEAAC0', '#FBB0C4', '#6B4A52'],
       tipBg: '#2E1B21', listBg: 'rgba(238,170,192,0.8)',
     },
+    charcoal: {
+      text: '#F2F2F3', muted: '#A8A8B3', grid: 'rgba(168,168,179,0.18)',
+      series: ['#E3C57F', '#8E8E99', '#C4C4CC', '#8A6D3B'],
+      tipBg: '#1F1F23', listBg: 'rgba(138,109,59,0.7)',
+    },
+    "midnight-teal": {
+      text: '#EAF6F7', muted: '#A8C5C8', grid: 'rgba(53,100,119,0.3)',
+      series: ['#2A9D8F', '#8FE3E3', '#7A9AA0', '#4AB8AC'],
+      tipBg: '#102E3A', listBg: 'rgba(42,157,143,0.7)',
+    },
   };
 
   function buildPalette() {
