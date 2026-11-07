@@ -1,4 +1,4 @@
-﻿# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *.class
@@ -147,6 +147,7 @@ backup-rls/
 !/tests/test_tenant_guard_efek_lampiran.py
 !/tests/test_tenant_guard_finished_spec.py
 !/tests/test_tenant_guard_sample.py
+!/tests/test_dip_public_revoke.py
 # Unit test render penandatangan Mengetahui Bab II (pure-local, Jinja2).
 !/tests/test_bab2_qc_mengetahui.py
 # Unit test preview PDF input manual raw materials (pure-local, fake supabase).

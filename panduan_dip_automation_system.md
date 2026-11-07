@@ -707,7 +707,7 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
 
 | Jenis entitas | Aksi yang tercatat |
 |---|---|
-| `product` | `create`, `update`, `delete`, `restore`, `generate` (efek samping), `public_link_visit` |
+| `product` | `create`, `update`, `delete`, `restore`, `generate` (efek samping), `public_link_visit`, `public_access` (akses publik hub/download/ZIP berhasil), `revoke_public_access`, `reactivate_public_access` |
 | `product_finished_specs` | `update` |
 | `product_qualquan_xlsx` | `export` |
 | `{doc_type}` perusahaan | `update` (NIB, CPKB, Surat Tidak Pidana, Protap, CV, SOP CPKB) |
