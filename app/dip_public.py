@@ -46,6 +46,7 @@ def register_dip_public_routes(
     parse_storage_url,
     bab_generators,
     download_bab2_zip,
+    log_activity=None,
 ):
     """Daftarkan seluruh route publik /dip/* ke aplikasi.
 
@@ -77,6 +78,26 @@ def register_dip_public_routes(
         except Exception as e:
             print(f"Gagal generate signed URL ({bucket}/{path}): {e}")
             return None
+
+    def _audit_public_access(product_id: str, bab: str, request: Request):
+        """Catat akses publik yang BERHASIL via log_activity (entity_id UUID produk).
+
+        Aktor sentinel "public" (tanpa profil palsu). Token / query ?access=
+        tidak pernah ditulis ke payload log. Kegagalan log (fail-open di
+        log_activity) tidak boleh membuat request publik gagal.
+        """
+        if log_activity is None:
+            return
+        try:
+            actor = {"id": None, "full_name": "public"}
+            label = "Akses publik DIP Bab %s" % bab if bab else "Akses publik hub DIP"
+            log_activity(
+                actor, "public_access", "product", product_id, label,
+                changes=[{"field": "bab", "note": bab or "hub"}],
+                request=request, source="public",
+            )
+        except Exception:
+            pass
 
     def _get_audit_username(request: Request) -> str:
         """Best-effort ambil username (full_name) user yang sedang login, buat log audit
@@ -178,6 +199,7 @@ def register_dip_public_routes(
             user_agent=request.headers.get("user-agent") or "-",
             username=_get_audit_username(request),
         )
+        _audit_public_access(product_id, "", request)
 
         perusahaan = product.get("perusahaan") or "PT Erfi"
         company = get_company_info(perusahaan)
@@ -284,15 +306,23 @@ def register_dip_public_routes(
         UUID tetap dipakai sebagai identifier/routing. Capability token (jika ada)
         menjadi lapisan otorisasi terpisah. Produk lama tanpa token tetap diizinkan
         (legacy mode), termasuk produk yang sudah terdaftar di BPOM.
+
+        Aturan revoke (SATU definisi, dipakai di satu tempat ini): produk dianggap
+        DICABUT bila `public_access_enabled is False` ATAU
+        `public_access_revoked_at` tidak null. Cek revoke terjadi SEBELUM cabang
+        "bpom_registered_link tanpa token", jadi produk BPOM yang dicabut tetap
+        404.
         """
         try:
             check = supabase.table("products").select(
-                "id, is_deleted, public_access_enabled, public_access_token, bpom_registered_link"
+                "id, is_deleted, public_access_enabled, public_access_token, bpom_registered_link, public_access_revoked_at"
             ).eq("id", product_id).single().execute()
             product = check.data if check.data else None
             if not product or product.get("is_deleted"):
                 return False
             if product.get("public_access_enabled") is False:
+                return False
+            if product.get("public_access_revoked_at") is not None:
                 return False
             token = product.get("public_access_token")
             registered = bool(product.get("bpom_registered_link"))
@@ -313,7 +343,7 @@ def register_dip_public_routes(
             print(f"\n[PUBLIC DIP] Gagal memeriksa produk publik (fail-closed, akses ditolak): {type(e).__name__}")
             return False
 
-    async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool, provided_token: str = None):
+    async def _dip_stream_bab(product_id: str, bab_num: str, as_attachment: bool, provided_token: str = None, request=None):
         """Stream PDF gabungan Bab I-IV lewat backend (proxy), tanpa login."""
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
@@ -333,6 +363,8 @@ def register_dip_public_routes(
         disposition = "attachment" if as_attachment else "inline"
         current = resp.headers.get("Content-Disposition") or f"{disposition}; filename=document.pdf"
         resp.headers["Content-Disposition"] = re.sub(r"^(attachment|inline)", disposition, current, flags=re.IGNORECASE)
+        if request is not None:
+            _audit_public_access(product_id, bab_num, request)
         return resp
 
     @app.get("/dip/{slug_id}/bab1")
@@ -341,7 +373,7 @@ def register_dip_public_routes(
         provided_token = access or request.query_params.get("access")
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-        return await _dip_stream_bab(product_id, "1", False, provided_token)
+        return await _dip_stream_bab(product_id, "1", False, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab1/download")
     async def dip_public_bab1_download(slug_id: str, request: Request, access: str = None):
@@ -349,7 +381,7 @@ def register_dip_public_routes(
         provided_token = access or request.query_params.get("access")
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-        return await _dip_stream_bab(product_id, "1", True, provided_token)
+        return await _dip_stream_bab(product_id, "1", True, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab2")
     async def dip_public_bab2(slug_id: str, request: Request, access: str = None):
@@ -357,7 +389,7 @@ def register_dip_public_routes(
         provided_token = access or request.query_params.get("access")
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-        return await _dip_stream_bab(product_id, "2", False, provided_token)
+        return await _dip_stream_bab(product_id, "2", False, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab2/download")
     async def dip_public_bab2_download(slug_id: str, request: Request, access: str = None):
@@ -365,7 +397,7 @@ def register_dip_public_routes(
         provided_token = access or request.query_params.get("access")
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-        return await _dip_stream_bab(product_id, "2", True, provided_token)
+        return await _dip_stream_bab(product_id, "2", True, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab3")
     async def dip_public_bab3(slug_id: str, request: Request, access: str = None):
@@ -373,7 +405,7 @@ def register_dip_public_routes(
         provided_token = access or request.query_params.get("access")
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-        return await _dip_stream_bab(product_id, "3", False, provided_token)
+        return await _dip_stream_bab(product_id, "3", False, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab3/download")
     async def dip_public_bab3_download(slug_id: str, request: Request, access: str = None):
@@ -381,7 +413,7 @@ def register_dip_public_routes(
         provided_token = access or request.query_params.get("access")
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-        return await _dip_stream_bab(product_id, "3", True, provided_token)
+        return await _dip_stream_bab(product_id, "3", True, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab4")
     async def dip_public_bab4(slug_id: str, request: Request, access: str = None):
@@ -389,7 +421,7 @@ def register_dip_public_routes(
         provided_token = access or request.query_params.get("access")
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-        return await _dip_stream_bab(product_id, "4", False, provided_token)
+        return await _dip_stream_bab(product_id, "4", False, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab4/download")
     async def dip_public_bab4_download(slug_id: str, request: Request, access: str = None):
@@ -397,7 +429,7 @@ def register_dip_public_routes(
         provided_token = access or request.query_params.get("access")
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
-        return await _dip_stream_bab(product_id, "4", True, provided_token)
+        return await _dip_stream_bab(product_id, "4", True, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab2/zip")
     async def dip_public_bab2_zip(slug_id: str, request: Request, access: str = None):
@@ -407,7 +439,9 @@ def register_dip_public_routes(
         if not _dip_public_check_product(product_id, provided_token):
             raise HTTPException(status_code=404, detail="Dokumen tidak ditemukan.")
         try:
-            return await download_bab2_zip(product_id, None)
+            _result = await download_bab2_zip(product_id, None)
+            _audit_public_access(product_id, "2-zip", request)
+            return _result
         except HTTPException:
             raise
         except Exception as e:

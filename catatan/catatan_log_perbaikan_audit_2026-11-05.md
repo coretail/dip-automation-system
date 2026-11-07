@@ -35,6 +35,10 @@
 | D-08, D-09, D-10, D-14 | Status migrasi 011 ambigu; handoff R2 tertinggal; catatan historis tanpa banner | BELUM | — |
 | E-04 s.d. E-08 | Blocker cutover R2 (encoding, base, SSRF, soak privat, selektor) | BELUM | — |
 | pypdf ≥6.21.4 | 10 advisory terbuka (butuh PR terpisah + uji manual) | SELESAI | 2026-11-07 (sesi 8) |
+| F-03 (§3) | `public_access_revoked_at` tidak pernah dibaca; revoke tidak fungsional | SELESAI | 2026-11-07 (sesi 9) |
+| F-09 (§3) | Route /dip/* tanpa jejak audit download/ZIP | SELESAI | 2026-11-07 (sesi 9) |
+| F-08 (§3) | Nol rate-limit di /dip/* (PR B terpisah) | BELUM | — |
+| F-05 | Token `?access=` di access log (PR B terpisah) | BELUM | — |
 
 ---
 
@@ -354,4 +358,49 @@ Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server
 ### Keputusan yang masih terbuka
 
 - Duplikat PR Dependabot #41 vs PR `chore/bump-pypdf`: salah satu ditutup saat merge (preferensi pemilik repo).
-- Temuan audit lain (CSRF A-07, tenant guard sisa, R2 E-04/E-07/E-08, portal publik F-08/F-09, dll) tetap di luar ruang lingkup sesi ini.
+- Temuan audit lain (CSRF A-07, tenant guard sisa, R2 E-04/E-07/E-08, portal publik F-08, F-05, dll) tetap di luar ruang lingkup.
+
+---
+
+## Sesi 9 — 2026-11-07: revoke link publik DIP (F-03) + audit akses publik (F-09)
+
+**Ruang lingkup:** F-03 revoke + F-09 audit akses publik. F-08 rate-limit dan F-05 masking token sengaja TIDAK dikerjakan (PR B terpisah). Tidak ada migrasi SQL.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| F-03 | `app/dip_public.py:281-310` | `public_access_revoked_at` ditambahkan ke select `_dip_public_check_product`; revoke = `enabled is False` ATAU `revoked_at` tidak null; cek revoke SEBELUM cabang BPOM; tetap fail-closed + timing-safe | Sebelum: kolom tidak dibaca, produk BPOM dicabut tetap 200. Sesudah: 404 untuk semua bentuk revoke |
+| F-03 | `app/products_routes.py` (2 route POST admin) | `POST /products/{id}/public-access/revoke`: `enabled=False` + `revoked_at=<ISO nyata>` (tanpa string now()); `POST .../reactivate`: `enabled=True` + `revoked_at=None`. Token tidak diubah dua-duanya; hanya admin; `assert_same_tenant`; baca dulu fail-closed; tolak `is_deleted`; nol tulis bila guard menolak; `log_activity` entity_id UUID tanpa token | Pola sama dengan delete_product (SEC-02) |
+| F-03 | `app/templates/qualitative_quantitative.html` | Tombol admin "Cabut Link" (konfirmasi) / "Aktifkan Ulang" + status "Link publik aktif" / "dicabut sejak ..." hanya untuk admin; token tema yang ada | Terverifikasi di staging: UI aktif/dicabut berganti benar |
+| F-09 | `app/dip_public.py` `_audit_public_access` + `app/main.py` | `log_activity` aktor sentinel `{"id": None, "full_name": "public"}`, action `public_access`, entity `product`/UUID, `source="public"`, tanpa token/query; hub + download per Bab + ZIP; 404 tidak dilog; fail-open dipertahankan | Di staging: baris `PUBLIC_ACCESS` + `REVOKE_PUBLIC_ACCESS`/`REACTIVATE_PUBLIC_ACCESS` muncul di log server |
+| — | `panduan_dip_automation_system.md:710` | Tambah `public_access`, `revoke_public_access`, `reactivate_public_access` ke baris `product` tabel entity_type | — |
+| — | `app/main.py:1728` | Teruskan `log_activity` ke `register_dip_public_routes` | Tanpa ini audit publik tidak jalan |
+
+Kontrak publik tidak berubah: link aktif (token benar atau BPOM tanpa token) tetap berfungsi persis seperti sebelumnya selama tidak dicabut. Rotasi token BUKAN bagian PR ini: aktifkan ulang selalu memakai token lama.
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi` |
+| `python scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 26 test pure-local CI (clone bersih tanpa `.env`, env dummy CI) | 0 semua | **PASS=26 FAIL=0** (termasuk `test_dip_public_revoke` 12 kasus baru) |
+| `tests/test_dip_public_revoke.py` di kode lama (`git stash push -- app/`) | 1 | FAIL `TypeError: register_dip_public_routes() got an unexpected keyword argument 'log_activity'` (route/admin/audit belum ada) — bukti test benar-benar mengunci perilaku baru |
+| `tests/e2e_smoke_refactor.py` (staging) | 0 | **34/34 PASS** |
+| `tests/e2e_audit_staging.py` (penuh, staging) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+| Manual staging produk DEMO `dd000000-...-000000000401` (BPOM legacy, tanpa token) | 0 | Hub 200 → cabut → 404 → aktifkan ulang → 200 lagi; log server memuat `REVOKE_PUBLIC_ACCESS`, `REACTIVATE_PUBLIC_ACCESS`, `PUBLIC_ACCESS` (aktor `public`, Bab `hub`) |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah uji. Kredensial hanya di-export di shell yang sama (dari `LOGIN.md`), tidak di-echo/log/disalin. `pip-audit` tidak berubah (tidak ada perubahan dependency).
+
+### Risiko & yang tidak berubah
+
+- Link publik aktif tidak berubah; hanya produk yang dicabut admin yang menjadi 404 (termasuk BPOM).
+- `log_activity`, rate-limit, masking token tidak disentuh (PR B / C-04 terpisah).
+- Yang TIDAK diuji: download/ZIP publik via browser (baru hub yang diuji manual di staging); rotasi token (bukan bagian PR ini).
+
+### Keputusan yang masih terbuka
+
+- F-08 rate-limit + F-05 masking token → PR B terpisah.
+- Rotasi token bila revoke bersifat permanen → keputusan produk terpisah, bukan PR ini.

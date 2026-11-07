@@ -1725,4 +1725,5 @@ register_dip_public_routes(
     parse_storage_url=_parse_storage_url,
     bab_generators=_dip_bab_generators,
     download_bab2_zip=_dip_docs["bab2_zip"],
+    log_activity=log_activity,
 )

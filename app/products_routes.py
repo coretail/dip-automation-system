@@ -417,6 +417,141 @@ def register_products_routes(
         response.set_cookie("success_msg", f"Produk '{nama_produk}' dipindahkan ke Sampah.")
         return response
 
+    @app.post("/products/{product_id}/public-access/revoke")
+    async def revoke_public_access(request: Request, product_id: str,
+                                   current_user: dict = Depends(get_current_user)):
+        """Cabut link publik DIP (admin). Token tidak diubah."""
+        if current_user.get("role") != "admin":
+            log_activity(
+                current_user, "revoke_public_access", "product", product_id, product_id,
+                changes=[{"field": "public_access_enabled", "note": "ditolak: bukan admin"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Admin.")
+        try:
+            product_before = supabase.table("products").select(
+                "id, nama_produk, perusahaan, is_deleted"
+            ).eq("id", product_id).execute()
+        except Exception as e:
+            print(f"Gagal baca produk {product_id} saat revoke public access: {e}")
+            log_activity(
+                current_user, "revoke_public_access", "product", product_id, product_id,
+                changes=[{"field": "public_access_enabled", "note": "gagal membaca data produk"}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+            response.set_cookie("error_msg", "Gagal memuat produk. Silakan coba lagi.")
+            return response
+        product_row = (product_before.data or [None])[0]
+        if not product_row or product_row.get("is_deleted"):
+            log_activity(
+                current_user, "revoke_public_access", "product", product_id, product_id,
+                changes=[{"field": "public_access_enabled", "note": "ditolak: produk tidak ditemukan atau di Sampah"}],
+                request=request, outcome="rejected",
+            )
+            response = RedirectResponse(url="/", status_code=303)
+            response.set_cookie("error_msg", "Produk tidak ditemukan.")
+            return response
+        nama_produk = product_row.get("nama_produk") or product_id
+        if not assert_same_tenant(current_user, product_row):
+            log_activity(
+                current_user, "revoke_public_access", "product", product_id, nama_produk,
+                changes=[{"field": "public_access_enabled", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
+        try:
+            revoked_at = datetime.now(WIB).isoformat()
+            update_resp = supabase.table("products").update({
+                "public_access_enabled": False,
+                "public_access_revoked_at": revoked_at,
+            }).eq("id", product_id).execute()
+        except Exception as e:
+            print(f"Gagal cabut public access produk {product_id}: {e}")
+            log_activity(
+                current_user, "revoke_public_access", "product", product_id, nama_produk,
+                changes=[{"field": "public_access_enabled", "note": "gagal mencabut link publik"}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+            response.set_cookie("error_msg", "Gagal mencabut link publik. Silakan coba lagi.")
+            return response
+        log_activity(
+            current_user, "revoke_public_access", "product", product_id, nama_produk,
+            changes=[{"field": "public_access_enabled", "note": "dicabut"}],
+            request=request, outcome="success",
+        )
+        response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+        response.set_cookie("success_msg", f"Link publik produk '{nama_produk}' dicabut.")
+        return response
+
+    @app.post("/products/{product_id}/public-access/reactivate")
+    async def reactivate_public_access(request: Request, product_id: str,
+                                       current_user: dict = Depends(get_current_user)):
+        """Aktifkan ulang link publik DIP (admin). Token LAMA tetap dipakai (tidak dirotasi)."""
+        if current_user.get("role") != "admin":
+            log_activity(
+                current_user, "reactivate_public_access", "product", product_id, product_id,
+                changes=[{"field": "public_access_enabled", "note": "ditolak: bukan admin"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Admin.")
+        try:
+            product_before = supabase.table("products").select(
+                "id, nama_produk, perusahaan, is_deleted"
+            ).eq("id", product_id).execute()
+        except Exception as e:
+            print(f"Gagal baca produk {product_id} saat reactivate public access: {e}")
+            log_activity(
+                current_user, "reactivate_public_access", "product", product_id, product_id,
+                changes=[{"field": "public_access_enabled", "note": "gagal membaca data produk"}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+            response.set_cookie("error_msg", "Gagal memuat produk. Silakan coba lagi.")
+            return response
+        product_row = (product_before.data or [None])[0]
+        if not product_row or product_row.get("is_deleted"):
+            log_activity(
+                current_user, "reactivate_public_access", "product", product_id, product_id,
+                changes=[{"field": "public_access_enabled", "note": "ditolak: produk tidak ditemukan atau di Sampah"}],
+                request=request, outcome="rejected",
+            )
+            response = RedirectResponse(url="/", status_code=303)
+            response.set_cookie("error_msg", "Produk tidak ditemukan.")
+            return response
+        nama_produk = product_row.get("nama_produk") or product_id
+        if not assert_same_tenant(current_user, product_row):
+            log_activity(
+                current_user, "reactivate_public_access", "product", product_id, nama_produk,
+                changes=[{"field": "public_access_enabled", "note": "ditolak: bukan milik perusahaan"}],
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
+        try:
+            update_resp = supabase.table("products").update({
+                "public_access_enabled": True,
+                "public_access_revoked_at": None,
+            }).eq("id", product_id).execute()
+        except Exception as e:
+            print(f"Gagal aktifkan ulang public access produk {product_id}: {e}")
+            log_activity(
+                current_user, "reactivate_public_access", "product", product_id, nama_produk,
+                changes=[{"field": "public_access_enabled", "note": "gagal mengaktifkan ulang link publik"}],
+                request=request, outcome="failed",
+            )
+            response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+            response.set_cookie("error_msg", "Gagal mengaktifkan ulang link publik. Silakan coba lagi.")
+            return response
+        log_activity(
+            current_user, "reactivate_public_access", "product", product_id, nama_produk,
+            changes=[{"field": "public_access_enabled", "note": "diaktifkan ulang (token lama tetap dipakai)"}],
+            request=request, outcome="success",
+        )
+        response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
+        response.set_cookie("success_msg", f"Link publik produk '{nama_produk}' diaktifkan ulang.")
+        return response
+
     @app.get("/products/{product_id}/inci-breakdown/report", response_class=HTMLResponse)
     async def generate_inci_report(request: Request, product_id: str, current_user: dict = Depends(get_current_user)):
         try:
