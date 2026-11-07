@@ -569,7 +569,7 @@
     </div>
     <p class="text-xs text-gray-400 mt-3">
         <i class="fa-solid fa-circle-check text-green-600"></i> = ada file PDF, klik buat preview &nbsp;|&nbsp;
-        <i class="fa-solid fa-circle-check text-amber-500"></i> = terisi manual, preview digenerate otomatis, belum ada PDF &nbsp;|&nbsp;
+        <i class="fa-solid fa-file-lines text-amber-500"></i> = terisi manual, preview digenerate otomatis, belum ada PDF &nbsp;|&nbsp;
         <i class="fa-solid fa-circle-xmark text-gray-300"></i> = belum diisi
     </p>
 </div>
@@ -788,7 +788,7 @@
             <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">1. Data Administrasi & Logistik</h4>
             <div class="mb-4">
                 <label class="block text-xs font-medium text-gray-700 mb-1">Perusahaan *</label>
-                <select name="perusahaan" id="batch-perusahaan-select" required class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm bg-white">
+                <select name="perusahaan" id="batch-perusahaan-select" required onchange="renderBatchSpecInputs()" class="block w-full rounded-md border border-gray-300 py-1.5 px-2 text-sm focus:outline-none focus:border-indigo-500 shadow-sm bg-white">
                     <option value="">-- Pilih Perusahaan --</option>
                     <option value="PT Erfi">PT Erfi</option>
                     <option value="PT Heka">PT Heka</option>
@@ -1846,11 +1846,31 @@ function openAddBatchModal(id, namaDagang, perusahaan) {
     document.getElementById('batch-material-name').innerText = namaDagang;
     document.getElementById('batch-perusahaan-select').value = perusahaan || '';
 
+    renderBatchSpecInputs();
+    modal.classList.remove('hidden');
+}
+
+// Spesifikasi standar bersifat per perusahaan (raw_material_company_docs), jadi
+// parameter uji aktual dibangun dari spesifikasi perusahaan yang dipilih di modal.
+// Dipanggil saat modal dibuka dan setiap kali dropdown Perusahaan berubah.
+function renderBatchSpecInputs() {
+    const id = document.getElementById('batch-raw-material-id').value;
+    const perusahaan = document.getElementById('batch-perusahaan-select').value;
     const container = document.getElementById('batch-spec-inputs-container');
-    container.innerHTML = ''; 
+    container.innerHTML = '';
 
     const rm = masterRawMaterials.find(item => item.id === id) || {};
-    const specs = rm.spec_parameters || [];
+    const slug = { 'PT Erfi': 'erfi', 'PT Heka': 'heka' }[perusahaan];
+
+    if (!slug) {
+        const hint = document.createElement('p');
+        hint.className = 'text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-200 text-center';
+        hint.textContent = 'Pilih Perusahaan terlebih dahulu untuk memuat spesifikasi standar.';
+        container.appendChild(hint);
+        return;
+    }
+
+    const specs = rm['spec_parameters_' + slug] || [];
 
     if (specs.length === 0) {
         container.innerHTML = `<p class="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200 text-center font-medium">Peringatan: Spesifikasi standar master data belum diisi. Silakan isi spesifikasi standar via tombol Edit terlebih dahulu.</p>`;
@@ -1897,8 +1917,6 @@ function openAddBatchModal(id, namaDagang, perusahaan) {
             container.appendChild(row);
         });
     }
-
-    modal.classList.remove('hidden');
 }
 
 function validateBatchForm() {

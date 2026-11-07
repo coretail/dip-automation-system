@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+{#
+    Catatan Pemeriksaan Bahan Baku (mengikuti contoh "CPBB PF. Passionate").
+    Satu-satunya sumber layout: dipakai lewat include oleh bab2_qc_section.html
+    (Bab II PDF + preview manual) dan bab2_qc_block.html (ZIP Bab II).
+
+    Konteks:
+      batch    : baris raw_material_batches (boleh None -> formulir kosong + catatan)
+      material : {nama_dagang, spec_parameters} milik perusahaan batch (opsional;
+                 nama juga dicari dari embed batch.raw_materials)
+      brand    : hasil bab2_pdf.brand_assets() -> logo, nomor_catatan, nama
+
+    Penandatangan: "Disetujui Oleh" = qa_signer, "Pengujian Dilakukan Oleh" =
+    qc_signer (keduanya jabatan QC); "Mengetahui" = mengetahui_signer (Kepala QC).
+#}
+<style>
+    @page { size: a4 portrait; margin: 1.3cm 1.6cm; }
+    body { font-family: Times-Roman, serif; font-size: 10.5pt; color: #000000; }
+    table { border-collapse: collapse; width: 100%; }
+    .judul { text-align: center; font-weight: bold; font-size: 12pt; padding: 8px 0 12px 0; }
+    .nomor { text-align: right; font-size: 9.5pt; vertical-align: top; }
+    .info td { border: none; padding: 1px 0; font-size: 10.5pt; vertical-align: top; }
+    .info .lbl { width: 175px; }
+    .info .sep { width: 12px; }
+    .grid th { border: 1px solid #555555; padding: 5px 4px; font-size: 10pt; font-weight: normal; text-align: center; vertical-align: middle; }
+    .grid td { border: 1px solid #555555; font-size: 10pt; vertical-align: middle; }
+    .center { text-align: center; }
+    .ttd td { border: none; font-size: 10.5pt; padding: 0; vertical-align: top; }
+    .note { font-size: 9pt; color: #555555; font-style: italic; }
+</style>
+</head>
+<body>
+{% set bulan = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'] %}
+{% macro tgl(value) -%}
+    {%- set parts = ((value or '')|string)[:10].split('-') -%}
+    {%- if parts|length == 3 and parts[1]|int in range(1, 13) -%}
+        {{ parts[2] }} {{ bulan[parts[1]|int - 1] }} {{ parts[0] }}
+    {%- else -%}
+        {{ value or '-' }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% set b = batch or {} %}
+{% set mat = material or {} %}
+{% set embed = b.get('raw_materials') %}
+{% if embed is sequence and embed is not mapping %}{% set embed = embed[0] if embed else {} %}{% endif %}
+{% set nama_bahan = mat.get('nama_dagang') or (embed or {}).get('nama_dagang') or '-' %}
+
+{% set spec_map = {} %}
+{% for s in (mat.get('spec_parameters') or []) %}
+    {% if s is mapping and s.get('key') %}{% set _ = spec_map.update({s.get('key'): s.get('value')}) %}{% endif %}
+{% endfor %}
+{% set ref_raw = (spec_map.get('Referensi') or '')|string|trim %}
+{% set ref_label = 'CoA' if (ref_raw|lower in ['', 'coa']) else ref_raw %}
+{% set metode_default = {'Pemerian': 'Visual', 'Aroma': 'Organoleptik', 'pH': 'pH Meter', 'Viskositas': '-'} %}
+
+{# Baris pengujian: hasil QC aktual batch + baris Exp Date. #}
+{% set rows = [] %}
+{% for qc in (b.get('qc_results') or []) %}
+    {% set key = qc.get('key') if qc is mapping else qc %}
+    {% set _ = rows.append({
+        'pengujian': key,
+        'metode': (qc.get('metode') if qc is mapping else None) or metode_default.get(key) or '-',
+        'spesifikasi': spec_map.get(key) or '-',
+        'hasil': (qc.get('value') if qc is mapping else '') or '-'}) %}
+{% endfor %}
+{% if b.get('tanggal_ed') %}
+    {% set _ = rows.append({
+        'pengujian': 'Exp Date',
+        'metode': ref_label,
+        'spesifikasi': spec_map.get('Masa Kedaluwarsa') or '-',
+        'hasil': tgl(b.get('tanggal_ed'))}) %}
+{% endif %}
+{% set total_rows = [rows|length, 6]|max %}
+{# Baris lebih rapat bila pengujian banyak, supaya halaman tetap satu lembar. #}
+{% set pad = '8px 5px' if total_rows <= 6 else ('5px 5px' if total_rows <= 9 else '3px 5px') %}
+
+    <table>
+        <tr>
+            <td style="vertical-align: top;">
+                {% if brand and brand.get('logo') %}
+                <img src="{{ brand.logo.src }}" style="width: {{ brand.logo.w }}pt; height: {{ brand.logo.h }}pt;">
+                {% else %}
+                <b>{{ (brand or {}).get('nama') or '' }}</b>
+                {% endif %}
+            </td>
+            <td class="nomor">Nomor : {{ (brand or {}).get('nomor_catatan') or 'PM/EKA/FL/003/01' }}</td>
+        </tr>
+    </table>
+
+    <div class="judul">CATATAN PEMERIKSAAN BAHAN BAKU</div>
+
+    <table class="info">
+        <tr><td class="lbl">Nama Bahan Baku</td><td class="sep">:</td><td>{{ nama_bahan }}</td></tr>
+        <tr><td class="lbl">No. Batch</td><td class="sep">:</td><td>{{ b.get('no_batch') or '-' }}</td></tr>
+        <tr><td class="lbl">Supplier</td><td class="sep">:</td><td>{{ b.get('supplier') or '-' }}</td></tr>
+        <tr><td class="lbl">Tanggal Pengambilan Sample</td><td class="sep">:</td><td>{{ tgl(b.get('tanggal_sampling') or b.get('tanggal_terima_sampel')) }}</td></tr>
+    </table>
+    <br/>
+
+    <table class="grid">
+        <tr>
+            <th style="width: 6%;">No</th>
+            <th style="width: 24%;">Pengujian</th>
+            <th style="width: 20%;">Metode</th>
+            <th style="width: 28%;">Spesifikasi/nilai<br/>keberterimaan</th>
+            <th style="width: 22%;">Hasil</th>
+        </tr>
+        {% for i in range(total_rows) %}
+        {% set r = rows[i] if i < rows|length else {} %}
+        <tr>
+            <td class="center" style="padding: {{ pad }};">{{ i + 1 }}</td>
+            <td style="padding: {{ pad }};">{{ r.get('pengujian') or '' }}&nbsp;</td>
+            <td class="center" style="padding: {{ pad }};">{{ r.get('metode') or '' }}&nbsp;</td>
+            <td class="center" style="padding: {{ pad }};">{{ r.get('spesifikasi') or '' }}&nbsp;</td>
+            <td class="center" style="padding: {{ pad }};">{{ r.get('hasil') or '' }}&nbsp;</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <p style="margin-top: 10px;">Kesimpulan :</p>
+    <p class="center" style="font-size: 11pt; margin-top: 8px;">
+        {% if b.get('kesimpulan') == 'diluluskan' %}
+            DILULUSKAN / <strike>DITOLAK</strike>
+        {% elif b.get('kesimpulan') == 'ditolak' %}
+            <strike>DILULUSKAN</strike> / DITOLAK
+        {% elif b.get('kesimpulan') == 'karantina' %}
+            KARANTINA
+        {% else %}
+            DILULUSKAN / DITOLAK
+        {% endif %}
+    </p>
+    {% if not batch %}
+    <p class="note">Belum ada riwayat batch tercatat untuk bahan baku ini.</p>
+    {% endif %}
+
+    <table class="ttd" style="margin-top: 8px;">
+        <tr>
+            <td style="width: 50%;">
+                Disetujui Oleh,<br/><br/><br/><br/>
+                {{ b.get('qa_signer') or '-' }}<br/>
+                QC
+            </td>
+            <td style="width: 50%;">
+                Pengujian Dilakukan Oleh,<br/><br/><br/><br/>
+                {{ b.get('qc_signer') or '-' }}<br/>
+                QC
+            </td>
+        </tr>
+    </table>
+
+    <table class="ttd" style="margin-top: 12px;">
+        <tr>
+            <td style="width: 25%;">&nbsp;</td>
+            <td style="width: 50%; text-align: center;">
+                Mengetahui,<br/><br/><br/><br/>
+                {{ b.get('mengetahui_signer') or '-' }}<br/>
+                Kepala QC
+            </td>
+            <td style="width: 25%;">&nbsp;</td>
+        </tr>
+    </table>
+</body>
+</html>

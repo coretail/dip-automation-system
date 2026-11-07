@@ -19,7 +19,9 @@ semua proses in-memory.
 
 import io
 import logging
+import os
 
+from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from pypdf import Transformation
 from pypdf.generic import (
@@ -58,27 +60,123 @@ def render_html_to_pdf(html: str) -> bytes | None:
     return buffer.getvalue()
 
 
-def render_manual_spec_pdf(templates, material: dict, spec_params: list) -> bytes | None:
-    """Render spesifikasi manual (tanpa PDF upload) dari data input manual.
+# ---------------------------------------------------------------------------
+# Aset kop/logo + nomor dokumen untuk template Spesifikasi & Catatan Pemeriksaan
+# ---------------------------------------------------------------------------
+_STATIC_IMAGES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "images")
+
+# Nomor dokumen mengikuti contoh template QC (kedua perusahaan memakai kode EKA,
+# sama seperti finished_spec_pdf.html).
+NOMOR_DOKUMEN_SPEK = "PM/EKA/FL/014/00"
+NOMOR_DOKUMEN_CATATAN = "PM/EKA/FL/003/01"
+
+_BRAND_FILES = {
+    "erfi": {"nama": "PT. ERFI KARYA ABADI", "logo": "logo_erfi.png", "kop": "kop_erfi.png"},
+    "heka": {"nama": "PT. HARAKA ERFI KOSMETINDO ABADI", "logo": "logo_heka.png", "kop": "kop_heka.png"},
+}
+_KOP_WIDTH_PT = 250.0   # lebar kop (logo + alamat) di kotak header Spesifikasi
+_LOGO_HEIGHT_PT = 50.0  # tinggi logo di kepala Catatan Pemeriksaan
+
+
+def _brand_image(filename: str, width_pt: float | None = None,
+                 height_pt: float | None = None) -> dict | None:
+    """Referensi gambar kop/logo untuk xhtml2pdf.
+
+    Path absolut ke ``app/static/images`` dipakai langsung: xhtml2pdf (resource
+    policy) hanya mau membaca file di bawah direktori kerja, jadi cache di luar
+    repo (mis. /tmp) ditolak -- pola yang sama dengan ``_kop_image`` di Bab III.
+
+    Return ``{"src", "w", "h"}`` (ukuran dalam pt, proporsional), atau ``None`` bila
+    file tidak ada/rusak, supaya template bisa fallback ke nama perusahaan sebagai teks.
+    """
+    source = os.path.join(_STATIC_IMAGES, filename)
+    if not os.path.isfile(source):
+        logger.warning("Gambar kop/logo tidak ditemukan: %s", source)
+        return None
+    try:
+        with Image.open(source) as image:
+            pixel_w, pixel_h = image.size
+    except Exception as exc:  # pragma: no cover - jaga-jaga file gambar rusak
+        logger.warning("Gagal membaca gambar %s: %s", filename, exc)
+        return None
+    if width_pt:
+        width, height = width_pt, width_pt * pixel_h / pixel_w
+    else:
+        height = height_pt or 50.0
+        width = height * pixel_w / pixel_h
+    return {"src": source, "w": round(width, 1), "h": round(height, 1)}
+
+
+def brand_assets(perusahaan: str | None) -> dict:
+    """Konteks template untuk kop/logo perusahaan (``brand`` di template Bab II).
+
+    PT Heka dikenali dari kata "heka"/"haraka"; selain itu dianggap PT Erfi
+    (sama dengan ``get_company_info``).
+    """
+    name = (perusahaan or "").lower()
+    key = "heka" if ("heka" in name or "haraka" in name) else "erfi"
+    files = _BRAND_FILES[key]
+    kop = _brand_image(files["kop"], width_pt=_KOP_WIDTH_PT)
+    logo = _brand_image(files["logo"], height_pt=_LOGO_HEIGHT_PT)
+    return {
+        "nama": files["nama"],
+        "kop": kop,
+        "logo": logo,
+        "nomor_spek": NOMOR_DOKUMEN_SPEK,
+        "nomor_catatan": NOMOR_DOKUMEN_CATATAN,
+    }
+
+
+def inci_text(resolve_variant_components, raw_material: dict | None, variant_id: str | None = None) -> str:
+    """Nama INCI/Kimia untuk header Spesifikasi: komponen varian digabung ``(and)``.
+
+    ``resolve_variant_components`` adalah ``_resolve_variant_components`` dari main
+    (di-inject). Gagal/kosong -> string kosong (template menampilkan ``-``).
+    """
+    try:
+        components = resolve_variant_components(raw_material, variant_id) or []
+    except Exception as exc:
+        logger.warning("Gagal resolusi INCI bahan baku: %s", exc)
+        return ""
+    names = []
+    for comp in components:
+        name = (comp.get("inci_name") or "").strip() if isinstance(comp, dict) else ""
+        if name and name not in names:
+            names.append(name)
+    return " (and) ".join(names)
+
+
+def render_manual_spec_pdf(templates, material: dict, spec_params: list,
+                           perusahaan: str | None = None) -> bytes | None:
+    """Render Catatan Spesifikasi Bahan Baku dari data input manual (tanpa PDF upload).
 
     Dipakai oleh preview manual dan bisa dipakai ulang fallback Bab II nanti.
     ``material`` harus sudah membawa ``spec_parameters`` (sudah difilter item
-    dict dengan value terisi). Return ``bytes`` PDF, atau ``None`` bila render gagal.
+    dict dengan value terisi); ``inci_text`` opsional. ``perusahaan`` menentukan
+    kop (default: kolom ``perusahaan`` milik material). Return ``bytes`` PDF,
+    atau ``None`` bila render gagal.
     """
     html = templates.get_template("bab2_spec_block.html").render(
         item={"material": {**material, "spec_parameters": spec_params}},
         index="",
+        brand=brand_assets(perusahaan or material.get("perusahaan")),
     )
     return render_html_to_pdf(html)
 
 
-def render_manual_qc_pdf(templates, batch: dict) -> bytes | None:
-    """Render catatan pemeriksaan manual (tanpa PDF upload) dari data input manual.
+def render_manual_qc_pdf(templates, batch: dict, material: dict | None = None) -> bytes | None:
+    """Render Catatan Pemeriksaan Bahan Baku dari data input manual (tanpa PDF upload).
 
-    Dipakai oleh preview manual dan bisa dipakai ulang fallback Bab II nanti.
+    ``material`` (opsional) membawa ``nama_dagang`` dan ``spec_parameters`` company
+    untuk kolom Spesifikasi; tanpa itu nama diambil dari embed ``raw_materials``
+    pada batch. Dipakai oleh preview manual dan bisa dipakai ulang fallback Bab II.
     Return ``bytes`` PDF, atau ``None`` bila render gagal.
     """
-    html = templates.get_template("bab2_qc_section.html").render(batch=batch)
+    html = templates.get_template("bab2_qc_section.html").render(
+        batch=batch,
+        material=material,
+        brand=brand_assets((batch or {}).get("perusahaan")),
+    )
     return render_html_to_pdf(html)
 
 

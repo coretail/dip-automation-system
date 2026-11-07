@@ -84,13 +84,24 @@ class FakeSupabase:
 
 
 class FakeTemplates:
+    # Konteks render terakhir per template, supaya test bisa memeriksa data
+    # yang benar-benar dikirim ke template.
+    last_ctx = {}
+
     def get_template(self, name):
         from jinja2 import Environment
         env = Environment(loader=None)
+
+        def make(html):
+            def render(**ctx):
+                FakeTemplates.last_ctx[name] = ctx
+                return html
+            return type("T", (), {"render": staticmethod(render)})()
+
         if name == "bab2_spec_block.html":
-            return type("T", (), {"render": staticmethod(lambda **ctx: "<html><body>spec-ok</body></html>")})()
+            return make("<html><body>spec-ok</body></html>")
         if name == "bab2_qc_section.html":
-            return type("T", (), {"render": staticmethod(lambda **ctx: "<html><body>qc-ok</body></html>")})()
+            return make("<html><body>qc-ok</body></html>")
         raise AssertionError(f"Unexpected template: {name}")
 
 
@@ -150,6 +161,36 @@ def test_spec_preview_200_pdf():
     print("[PASS] spec manual preview: data terisi -> 200 application/pdf")
 
 
+def test_spec_preview_200_legacy_json_string():
+    # Baris lama menyimpan spec_parameters sebagai string JSON; harus tetap
+    # terbaca (konsisten dengan spec_text_ok di halaman daftar).
+    fake = FakeSupabase({
+        "raw_materials": [{"id": RM_ID, "nama_dagang": "Air", "kode_bahan_baku": "A-01", "produsen": "X", "perusahaan": "PT Erfi"}],
+        "raw_material_company_docs": [{"raw_material_id": RM_ID, "perusahaan": "PT Erfi",
+                                        "spec_parameters": '[{"key": "pH", "value": "7"}]'}],
+    })
+    client = build_client(fake.tables)
+    resp = client.get(f"/raw-materials/{RM_ID}/spec-manual-preview?perusahaan=PT%20Erfi")
+    assert resp.status_code == 200, f"string JSON harus dibaca, dapat {resp.status_code}"
+    sent = FakeTemplates.last_ctx["bab2_spec_block.html"]["item"]["material"]["spec_parameters"]
+    assert sent == [{"key": "pH", "value": "7"}], sent
+    print("[PASS] spec manual preview: spec_parameters string JSON -> 200")
+
+
+def test_qc_preview_legacy_json_string_normalized():
+    fake = FakeSupabase({
+        "raw_material_batches": [{"id": BATCH_ID, "no_batch": "B1", "perusahaan": "PT Erfi",
+                                  "qc_results": '[{"key": "pH", "value": "7"}]',
+                                  "raw_materials": {"nama_dagang": "Air", "perusahaan": "PT Erfi"}}],
+    })
+    client = build_client(fake.tables)
+    resp = client.get(f"/raw-materials/batches/{BATCH_ID}/qc-manual-preview")
+    assert resp.status_code == 200, f"dapat {resp.status_code}"
+    sent = FakeTemplates.last_ctx["bab2_qc_section.html"]["batch"]["qc_results"]
+    assert sent == [{"key": "pH", "value": "7"}], sent
+    print("[PASS] qc manual preview: qc_results string JSON dinormalkan jadi list")
+
+
 def test_qc_preview_404_when_empty():
     fake = FakeSupabase({
         "raw_material_batches": [],
@@ -190,6 +231,8 @@ def main():
     test_spec_preview_404_when_empty()
     test_spec_preview_403_other_tenant()
     test_spec_preview_200_pdf()
+    test_spec_preview_200_legacy_json_string()
+    test_qc_preview_legacy_json_string_normalized()
     test_qc_preview_404_when_empty()
     test_qc_preview_403_other_tenant()
     test_qc_preview_200_pdf()
