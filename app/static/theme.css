@@ -1406,8 +1406,15 @@ html.force-light #theme-toggle {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translateY(-6px) scale(0.97);
-  transform-origin: top right;
+  /* Membuka MENYAMPING: menempel di sisi kiri tombol dan sejajar vertikal
+     dengan navbar, jadi tidak turun keluar dari navbar. */
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  margin-right: 0.5rem;
+  white-space: nowrap;
+  transform: translate(8px, -50%) scale(0.97);
+  transform-origin: center right;
   transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
 }
 
@@ -1415,8 +1422,25 @@ html.force-light #theme-toggle {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transform: translateY(0) scale(1);
+  transform: translate(0, -50%) scale(1);
   transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0s;
+}
+
+/* Layar kecil: tampilkan ikon saja (label tetap terbaca screen reader)
+   supaya 6 opsi muat di samping tombol. */
+@media (max-width: 639px) {
+  .theme-opt span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .theme-opt {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
 }
 
 /* Opsi tema.
@@ -1462,7 +1486,7 @@ html.force-light #theme-toggle {
 @media (prefers-reduced-motion: reduce) {
   .theme-menu {
     transition: none;
-    transform: none;
+    transform: translate(0, -50%);
   }
 }
 
