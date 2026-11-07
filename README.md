@@ -144,7 +144,7 @@ Semua dipin dengan versi exact:
 | Paket | Versi | Paket | Versi |
 |---|---|---|---|
 | `fastapi` | 0.141.1 | `xhtml2pdf` | 0.2.20 |
-| `starlette` | 1.6.0 | `pypdf` | 6.21.1 |
+| `starlette` | 1.6.0 | `pypdf` | 6.21.4 |
 | `uvicorn` | 0.53.0 | `httpx` | 0.28.1 |
 | `supabase` | 2.31.0 | `slowapi` | 0.1.10 |
 | `boto3` | 1.43.115 | `python-slugify` | 9.0.0 |

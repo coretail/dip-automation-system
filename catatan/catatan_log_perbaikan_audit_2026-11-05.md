@@ -34,7 +34,7 @@
 | C4–C12+ | Blocker cutover R2 (encoding, base, SSRF, privat, selektor) + pypdf | BELUM | — |
 | D-08, D-09, D-10, D-14 | Status migrasi 011 ambigu; handoff R2 tertinggal; catatan historis tanpa banner | BELUM | — |
 | E-04 s.d. E-08 | Blocker cutover R2 (encoding, base, SSRF, soak privat, selektor) | BELUM | — |
-| pypdf ≥6.21.4 | 10 advisory terbuka (butuh PR terpisah + uji manual) | BELUM | — |
+| pypdf ≥6.21.4 | 10 advisory terbuka (butuh PR terpisah + uji manual) | SELESAI | 2026-11-07 (sesi 8) |
 
 ---
 
@@ -311,3 +311,47 @@ Salin blok di bawah ini untuk sesi lanjutan; isi tanggal, ruang lingkup, perubah
 **Validasi:** `check_undefined_names` 0; `check_static_rules` 0; `compileall` 0; **22 test pure-local PASS=22 FAIL=0**; fail-closed di kode lama (stash app/): FAIL `harus 403`; E2E staging: smoke 34/34, activity 19/19, notes PASS, audit 41/0/3 skip.
 
 **Risiko:** perilaku admin/satu-tenant tidak berubah; baris tanpa `perusahaan` tetap fail-open legacy.
+
+---
+
+## Sesi 8 — 2026-11-07: bump pypdf 6.21.1 → 6.21.4 (tutup 10 advisory)
+
+**Ruang lingkup:** hanya bump `pypdf` + sinkronisasi dokumen. Tidak menyentuh temuan lain (CSRF, tenant guard, R2, portal publik, dll).
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| P1 | `requirements.txt:11` | `pypdf==6.21.1` → `pypdf==6.21.4` (tetap dipin eksak `==`) | `pip-audit -r requirements.txt`: sebelum 10 advisory (`CVE-2026-115572/-115585/-115580` fix ≥6.21.2, `CVE-2026-119203–119209` fix ≥6.21.3/6.21.4); sesudah `No known vulnerabilities found` |
+| P2 | `README.md:147` | Tabel dependensi: `pypdf` `6.21.1` → `6.21.4` | Sinkron dengan requirements.txt |
+| — | `panduan_dip_automation_system.md` | Tidak mencantumkan angka versi pypdf (hanya menyebut `pypdf` tanpa versi) | grep `pypdf`/`6.21` di panduan: 2 match tanpa angka versi; tidak diubah |
+
+**Versi target:** 6.21.4 = versi TERENDAH yang menutup SEMUA 10 advisory (advisory tertinggi membutuhkan ≥6.21.4). Changelog 6.21.1→6.21.4: hanya Security (SEC) + Bug Fixes + Performance + Robustness + Documentation — **tidak ada breaking change / deprecation API**. pypdf 7.0.0 (2026-11-06) adalah major dengan deprecations/dropped support — sengaja tidak dipilih. API yang dipakai di `app/` (`PdfReader`, `PdfWriter`, `add_page`, `write`, `merge_transformed_page`, `Transformation`) tidak berubah/deprecated di rentang ini.
+
+**Dependabot PR #41:** sudah ada PR Dependabot terbuka `chore(deps): bump pypdf from 6.21.1 to 6.21.4` (https://github.com/coretail/dip-automation-system/pull/41, CI quality SUCCESS) dengan diff identik 1 baris `requirements.txt`. PR ini (`chore/bump-pypdf`) dibuat sesuai instruksi sesi untuk validasi manual PDF + E2E staging + sinkronisasi README + log sesi ini; **PR #41 akan ditutup sebagai duplikat** bila PR ini merge, atau PR ini ditutup dan PR #41 dipakai ulang bila diinginkan pemilik repo. Tidak ada perubahan kode aplikasi.
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi / syntax error (28 file)` |
+| `python scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 25 test pure-local CI (clone bersih tanpa `.env`, env dummy CI persis `ci.yml`, `DIP_APP_ENV` tidak diset) | 0 semua | **PASS=25 FAIL=0** |
+| `pip-audit -r requirements.txt` | 0 | `No known vulnerabilities found` (10 advisory pypdf tertutup, tanpa `--ignore-vuln`) |
+| `tests/e2e_smoke_refactor.py` (staging via `run_staging_8017.py`) | 0 | **34/34 PASS** |
+| `tests/e2e_audit_staging.py --quick` (staging) | 0 | **PASS 37 / SKIP 7 / FAIL 0** |
+| Uji manual staging produk `dd000000-...-000000000401` (DEMO Brightening Serum): Bab II, gabungan Bab I–IV, ZIP Bab II | 0 | Bab II 96.711 byte / 6 halaman; Bab I 2.766 byte / 2 halaman; Bab III 44.551 byte / 2 halaman; Bab IV 43.665 byte / 2 halaman; ZIP 242.853 byte / 16 file (11 PDF di dalam ZIP semua terbaca); gabungan Bab I–IV hasil merge 186.788 byte / 12 halaman (2+6+2+2 MATCH); semua PDF dibuka ulang dengan pypdf 6.21.4 tanpa error |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah uji. Kredensial hanya di-export di shell yang sama (dari `LOGIN.md`), tidak di-echo/log/disalin.
+
+### Risiko & yang tidak berubah
+
+- Perilaku bisnis utama tidak berubah: generate PDF Bab I–IV dan ZIP identik; output dibaca ulang pypdf tanpa error dan jumlah halaman cocok.
+- Yang TIDAK diuji: efek samping PDF (NIES), cetakan fisik, serta perbandingan byte-per-byte dengan output versi 6.21.1 (hanya validasi keterbacaan + jumlah halaman + ukuran file di 6.21.4).
+- Tidak ada migrasi SQL, perubahan skema, atau perubahan kode `app/`.
+
+### Keputusan yang masih terbuka
+
+- Duplikat PR Dependabot #41 vs PR `chore/bump-pypdf`: salah satu ditutup saat merge (preferensi pemilik repo).
+- Temuan audit lain (CSRF A-07, tenant guard sisa, R2 E-04/E-07/E-08, portal publik F-08/F-09, dll) tetap di luar ruang lingkup sesi ini.
