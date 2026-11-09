@@ -61,7 +61,7 @@ Sistem menerapkan mekanisme *Role-Based Access Control (RBAC)* dengan 2 tingkat 
 | Peran | Level | Deskripsi Hak Akses |
 |---|---|---|
 | **Admin** | Full Access | Hak akses penuh ke seluruh fitur aplikasi, termasuk **Panel Manajemen User** (`/admin/users`) untuk menambah akun baru, reset password, mengubah role pengguna, dan menghapus akun. |
-| **Staff** | Operational Access | Hak akses operasional harian: mengelola bahan baku, batch, brand, membuat dan mengedit produk, meracik formula, mengunggah dokumen Bab I–IV, serta membuat Form Pengajuan Sample (FSP). *Tidak memiliki akses ke panel admin user.* |
+| **Staff** | Operational Access | Hak akses operasional harian: mengelola bahan baku, batch, brand, membuat dan mengedit produk, meracik formula, mengunggah dokumen Bab I–IV, serta membuat Form Pengajuan Sample (FSP). *Tidak memiliki akses ke panel admin user.* Per keputusan pemilik repo 2026-11-09, staff dengan `perusahaan` kosong SENGAJA boleh lintas PT Erfi dan PT Heka; guard tenant hanya membatasi akun yang perusahaan-nya diisi. Akun tanpa profil / query profil gagal fail-closed (403/503) sejak PR #69; kode error login `profile_missing` / `service_unavailable`. |
 
 > ⚠️ **Catatan Keamanan:** Fitur pendaftaran mandiri (*Self-Register*) **dimatikan** untuk mencegah akses publik yang tidak terotorisasi. Pendaftaran akun baru wajib dilakukan oleh Admin melalui panel admin.
 

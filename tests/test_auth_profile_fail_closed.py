@@ -200,7 +200,37 @@ def test_login_no_profile_rejected_both_paths():
         _restore_login(main_mod, orig)
 
 
-def _login_client(main_mod, profile_rows):
+def test_login_profile_error_service_unavailable():
+    main_mod = _load_module()
+    client, orig = _login_client(main_mod, profile_rows=[], fail_login_profile=True)
+    try:
+        for identifier in [USER_EMAIL, "testeruser"]:
+            r = client.post("/login", data={"email": identifier, "password": "pw123456"},
+                            follow_redirects=False)
+            assert r.status_code == 303, f"{identifier} harus 303, dapat {r.status_code}"
+            assert "/login?error=service_unavailable" in r.headers.get("location", ""), f"{identifier} location {r.headers.get('location')}"
+            assert "access_token" not in r.headers.get("set-cookie", ""), "tidak boleh Set-Cookie access_token"
+        print("[PASS] login cek profil gagal -> service_unavailable tanpa cookie (username DAN email)")
+    finally:
+        _restore_login(main_mod, orig)
+
+
+def test_login_with_profile_succeeds():
+    main_mod = _load_module()
+    client, orig = _login_client(main_mod, profile_rows=[], has_profile=True)
+    try:
+        r = client.post("/login", data={"email": USER_EMAIL, "password": "pw123456"},
+                        follow_redirects=False)
+        assert r.status_code == 303, f"profil ada harus sukses 303, dapat {r.status_code}"
+        loc = r.headers.get("location", "")
+        assert loc == "/", f"profil ada harus redirect /, dapat {loc}"
+        assert "access_token" in r.headers.get("set-cookie", ""), "profil ada harus set cookie"
+        print("[PASS] login profil ada -> sukses seperti sebelumnya")
+    finally:
+        _restore_login(main_mod, orig)
+
+
+def _login_client(main_mod, profile_rows, fail_login_profile=False, has_profile=False):
     import app.staging_guard as sg
     orig_supabase = main_mod.supabase
     orig_sg = sg.staging_client
@@ -208,9 +238,36 @@ def _login_client(main_mod, profile_rows):
     fake.admin = _FakeAdminAuth(profile_rows + ([{"id": USER_ID, "full_name": "testeruser", "email": USER_EMAIL}] if not profile_rows else []))
     fake.auth = _FakeClientAuth()
     fake.auth.admin = fake.admin
+    if fail_login_profile:
+        old_table = fake.table
+        def _fail_table(name):
+            return _FakeFailTable(fail_on_full_name=False)
+        fake.table = _fail_table
+    elif has_profile:
+        fake.table = lambda name: _FakeProfilesTable([{"id": USER_ID, "full_name": "testeruser", "email": USER_EMAIL}], has_profile_id=True)
     sg.staging_client = lambda caller: fake
     main_mod.supabase = fake
     return TestClient(main_mod.app, raise_server_exceptions=False), (orig_supabase, orig_sg)
+
+
+class _FakeFailTable:
+    def __init__(self, fail_on_full_name=True):
+        self.fail_on_full_name = fail_on_full_name
+
+    def select(self, cols):
+        self._cols = cols
+        return self
+
+    def eq(self, k, v):
+        self._k, self._v = k, v
+        return self
+
+    def execute(self):
+        # Jalur username (lookup full_name) harus menemukan baris agar login
+        # lanjut ke cek profil; cek profil id yang gagal:
+        if getattr(self, "_k", None) == "full_name" and not self.fail_on_full_name:
+            return SimpleNamespace(data=[{"id": USER_ID, "full_name": "testeruser", "email": USER_EMAIL}])
+        raise RuntimeError("gangguan Supabase simulasi")
 
 
 def _restore_login(main_mod, stored):
@@ -256,11 +313,12 @@ class _FakeClientAuth:
 
 
 class _FakeProfilesTable:
-    def __init__(self, profile_rows):
+    def __init__(self, profile_rows, has_profile_id=False):
         # Untuk jalur username (lookup full_name) sediakan baris berikut agar
         # lookup menemukan, tetapi check profil id pada login post-auth
         # harus tetap kosong (sesuai kasus: tanpa profil).
         self.rows = list(profile_rows) + [{"id": USER_ID, "full_name": "testeruser", "email": USER_EMAIL}]
+        self.has_profile_id = has_profile_id
 
     def select(self, cols):
         self._cols = cols
@@ -274,8 +332,8 @@ class _FakeProfilesTable:
         if getattr(self, "_k", None) == "full_name":
             data = [r for r in self.rows if str(r.get("full_name") or "").lower() == str(self._v).lower()]
         elif getattr(self, "_k", None) == "id" and getattr(self, "_cols", "") == "id":
-            # Check profil pasca-auth: bernomor tanpa row (kasus tanpa profil)
-            data = []
+            # Check profil pasca-auth: kosong kecuali kasus has_profile
+            data = ([{"id": self._v}] if self.has_profile_id else [])
         elif getattr(self, "_k", None) == "id":
             data = [r for r in self.rows if r.get("id") == self._v]
         else:
@@ -310,6 +368,8 @@ def main():
     test_no_cookie_401()
     test_invalid_user_401()
     test_login_no_profile_rejected_both_paths()
+    test_login_profile_error_service_unavailable()
+    test_login_with_profile_succeeds()
     test_protected_route_403_no_data()
     print("\nSemua test profil fail-closed LULUS.")
 

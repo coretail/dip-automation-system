@@ -40,6 +40,8 @@
 | F-08 (§3) | Nol rate-limit di /dip/* | SELESAI | 2026-11-09 (sesi 10) |
 | F-05 | Token `?access=` di access log (sisi aplikasi tutup; residu log edge Render di luar repo) | SELESAI (sisi aplikasi) | 2026-11-09 (sesi 10) |
 | C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (parsial: profil-hilang 403 + query-gagal 503; non-admin perusahaan kosong tetap TERBUKA untuk PR berikutnya) | 2026-11-09 (sesi 11) |
+| C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (profil hilang / query gagal, #69) | 2026-11-09 (sesi 12) |
+| C-01/C-02 bagian perusahaan kosong | Non-admin perusahaan kosong lintas tenant | N/A (keputusan pemilik repo 2026-11-09) | 2026-11-09 (sesi 12) |
 
 ---
 
@@ -521,3 +523,49 @@ WHERE p.id IS NULL;
 
 - Pembersihan data perusahaan kosong + PR 2 `assert_same_tenant` fail-closed untuk non-admin.
 - C-14 (`.single()` vs cek manual) dan C-15 (create user) tetap terbuka sesuai keputusan sebelumnya.
+
+---
+
+## Sesi 12 — 2026-11-09: catat keputusan tenant + bedakan gangguan DB di login (PR-A, C-01/C-02 bagian perusahaan kosong N/A)
+
+**Ruang lingkup:** dokumentasi model tenant (keputusan pemilik repo 2026-11-09) + login bedakan gangguan DB dari profil hilang. TIDAK mengubah `assert_same_tenant` (selain docstring), limiter, get_current_user, atau kontrak publik.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| A1 | `AGENTS.md` (§4 subbagian) | Model tenant: admin lolos; non-admin perusahaan kosong sengaja lintas perusahaan; guard hanya untuk akun perusahaan terisi; agen dilarang fail-closed tanpa keputusan; 403/503 sejak #69; kode error login | Generik, tanpa identitas akun nyata |
+| A1 | `panduan_dip_automation_system.md` (§2.1 tabel Staff) | Catatan yang sama + kode error login | — |
+| A1 | `app/security.py` docstring `assert_same_tenant` | Fail-open perusahaan kosong dinyatakan DISENGAJA (keputusan), bukan legacy | Tanpa perubahan logika |
+| A2 | `app/main.py:1303` (`login_submit`) | Exception cek profil → 303 `/login?error=service_unavailable` tanpa cookie (log tipe exception saja); baris kosong tetap `profile_missing` | Sebelum: gangguan DB menyesatkan `profile_missing`. Sesudah: konsisten dengan 503 di get_current_user |
+| A2 | `app/templates/login.html` | Blok `service_unavailable` mengikuti pola blok yang ada | — |
+| A3 | `tests/test_auth_profile_fail_closed.py` | Tambah 2 kasus login (service_unavailable untuk username+email; profil ada sukses) | Semua LULUS; (a) FAIL di kode lama |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | OK |
+| `python scripts/check_static_rules.py` | 0 | OK |
+| `python -m compileall app` | 0 | tanpa error |
+| 29 test pure-local CI (clone bersih) | 0 semua | PASS=29 FAIL=0 (tenant_guard_* tetap lulus) |
+| Kasus service_unavailable di kode lama (stash app/) | 1 | `/login?error=profile_missing` (bukan service_unavailable) |
+| `tests/e2e_audit_staging.py --quick` | 0 | PASS 37 / SKIP 7 / FAIL 0 |
+| Manual staging: login normal | 0 | Dashboard `/` 200 |
+| Smoke 33/34 yang sama (402 PT Heka 403) | 1 | Sama seperti diketahui; bukan perubahan ini |
+
+Staging preflight PASS; server dihentikan. Kredensial hanya di-export di shell yang sama.
+
+### Koreksi riwayat
+
+Kalimat "PR 2 terpisah, menunggu pembersihan data" di Sesi 5 dan Sesi 11 tidak berlaku lagi: non-admin perusahaan kosong TIDAK akan dibuat fail-closed (keputusan pemilik repo 2026-11-09). C-01/C-02 bagian perusahaan kosong berstatus N/A.
+
+### Risiko & yang tidak berubah
+
+- Perilaku bisnis tidak berubah selain pesan error yang lebih tepat saat gangguan DB.
+- `assert_same_tenant`, limiter login, get_current_user, kontrak `/dip/*` tidak disentuh.
+
+### Keputusan yang masih terbuka
+
+- PR-B (edit komponen bahan baku atomik, migrasi 012) menunggu PR-A merge.
+- C-14, C-15 tetap terbuka.
