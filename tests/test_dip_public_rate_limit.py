@@ -260,6 +260,47 @@ def test_per_product_stops_spoofed_ip():
     print(f"[PASS] limit per-produk menghentikan XFF berganti (tercapai di {n})")
 
 
+def test_bare_uuid_stops_at_product_limit():
+    app, limiter = _build()
+    client = TestClient(app, raise_server_exceptions=False)
+    n = _product_limit()
+    codes = []
+    for i in range(n + 5):
+        r = client.get(f"/dip/{PID}/bab1/download?access={PRODUCT_TOKEN}",
+                       headers={"x-forwarded-for": f"10.4.0.{i % 250}"})
+        codes.append(r.status_code)
+    assert 429 in codes, f"UUID polos harus kena batas per-produk di {n}, dapat {codes[:3]}..."
+    print(f"[PASS] UUID polos kena batas per-produk di {n}")
+
+
+def test_uuid_case_variants_share_bucket():
+    app, limiter = _build()
+    client = TestClient(app, raise_server_exceptions=False)
+    n = _product_limit()
+    codes = []
+    for i in range(n + 5):
+        pid = PID.upper() if i % 2 else PID.lower()
+        r = client.get(f"/dip/{pid}/bab1/download?access={PRODUCT_TOKEN}",
+                       headers={"x-forwarded-for": f"10.5.0.{i % 250}"})
+        codes.append(r.status_code)
+    assert 429 in codes, f"variasi huruf harus satu bucket di {n}, dapat {codes[:3]}..."
+    print("[PASS] variasi huruf besar/kecil berbagi satu bucket per-produk")
+
+
+def test_slug_and_bare_uuid_share_bucket():
+    app, limiter = _build()
+    client = TestClient(app, raise_server_exceptions=False)
+    n = _product_limit()
+    codes = []
+    for i in range(n + 5):
+        slug = f"produk-{PID}" if i % 2 else PID
+        r = client.get(f"/dip/{slug}/bab1/download?access={PRODUCT_TOKEN}",
+                       headers={"x-forwarded-for": f"10.6.0.{i % 250}"})
+        codes.append(r.status_code)
+    assert 429 in codes, f"slug vs UUID polos harus satu bucket di {n}, dapat {codes[:3]}..."
+    print("[PASS] slug nama-<uuid> dan UUID polos berbagi bucket yang sama")
+
+
 def test_shared_scope_across_bab_routes():
     app, limiter = _build()
     client = TestClient(app, raise_server_exceptions=False)
@@ -380,6 +421,9 @@ def main():
     test_bpom_spam_does_not_lock_other_ip()
     test_rotating_token_does_not_open_new_bucket()
     test_per_product_stops_spoofed_ip()
+    test_bare_uuid_stops_at_product_limit()
+    test_uuid_case_variants_share_bucket()
+    test_slug_and_bare_uuid_share_bucket()
     test_shared_scope_across_bab_routes()
     test_invalid_slug_falls_back_to_ip()
     test_limiter_required()

@@ -23,6 +23,7 @@ raw_materials_routes, dan po_routes).
 
 import hmac
 import re
+import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -56,15 +57,12 @@ def _dip_product_key(extract_id_from_slug, client_ip):
         try:
             slug_id = str(request.path_params.get("slug_id") or "")
             product_id = extract_id_from_slug(slug_id)
-            if product_id:
-                # extract_id_from_slug (real app) mengembalikan slug asli bila
-                # bukan UUID; test memakai versi regex yang juga mengembalikan
-                # None. Validasi bentuk UUID 36-char di sini.
-                pid = str(product_id)
-                if len(pid) == 36 and pid != slug_id:
-                    return f"dip-product:{pid}"
-                if pid != slug_id:
-                    return f"dip-product:{pid}"
+            pid = str(product_id or "")
+            try:
+                uuid_obj = uuid.UUID(pid)
+                return f"dip-product:{str(uuid_obj).lower()}"
+            except ValueError:
+                pass
         except Exception:
             pass
         try:
