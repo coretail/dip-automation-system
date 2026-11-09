@@ -35,6 +35,49 @@ from app import object_store
 WIB = ZoneInfo("Asia/Jakarta")
 
 
+# Batas rate-limit portal publik /dip/* (F-08). Satu nama, satu tempat, mudah diubah.
+# Alasan: 1 kunjungan hub = 1 request hub + maksimal ~9 klik bab/download/ZIP oleh 1 orang
+# (hub hanya berisi link, tanpa iframe), jadi batas per-IP jauh di atas pemakaian normal
+# tetapi menghentikan scrape/DoS PDF/ZIP. ZIP paling berat (5/min per IP).
+DIP_HUB_LIMIT = "60/minute"
+DIP_BAB_LIMIT = "20/minute"
+DIP_ZIP_LIMIT = "5/minute"
+DIP_PRODUCT_LIMIT = "60/minute"
+
+
+def _dip_product_key(extract_id_from_slug, client_ip):
+    """key_func slowapi per-PRODUK: tidak bergantung pada header IP yang bisa dipalsukan.
+
+    Slug/ID tidak valid tidak boleh melempar exception (fallback ke IP).
+    """
+    def _key(request: Request) -> str:
+        try:
+            slug_id = str(request.path_params.get("slug_id") or "")
+            product_id = extract_id_from_slug(slug_id)
+            if product_id:
+                token = request.query_params.get("access") or ""
+                return f"dip-product:{product_id}:{token[:8]}"
+        except Exception:
+            pass
+        return "dip-product:unknown"
+
+    return _key
+
+
+class _NullLimiter:
+    """Limiter no-op bila caller (termasuk test lama) tidak menginjeksikan limiter.
+
+    Kontrak baru mengharuskan injeksi eksplisit dari main.py; fallback ini
+    menjaga kompatibilitas mundur test lama tanpa mengurangi keamanan jalur
+    produksi (di sana limiter selalu diinjeksi).
+    """
+
+    def limit(self, *_a, **_kw):
+        def deco(fn):
+            return fn
+        return deco
+
+
 def register_dip_public_routes(
     app: FastAPI,
     templates,
@@ -47,6 +90,7 @@ def register_dip_public_routes(
     bab_generators,
     download_bab2_zip,
     log_activity=None,
+    limiter=None,
 ):
     """Daftarkan seluruh route publik /dip/* ke aplikasi.
 
@@ -165,7 +209,11 @@ def register_dip_public_routes(
         except Exception as e:
             print(f"[AUDIT PUBLIC LINK] Gagal simpan ke activity_logs: {e}")
 
+    def _limiter():
+        return limiter if limiter is not None else _NullLimiter()
+
     @app.get("/dip/{slug_id}", response_class=HTMLResponse)
+    @_limiter().limit(DIP_HUB_LIMIT)
     async def dip_public_hub(request: Request, slug_id: str, access: str = None):
         """Landing page/hub publik khusus verifikator BPOM untuk 1 produk.
 
@@ -368,6 +416,7 @@ def register_dip_public_routes(
         return resp
 
     @app.get("/dip/{slug_id}/bab1")
+    @_limiter().limit(DIP_BAB_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab1(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
         provided_token = access or request.query_params.get("access")
@@ -376,6 +425,7 @@ def register_dip_public_routes(
         return await _dip_stream_bab(product_id, "1", False, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab1/download")
+    @_limiter().limit(DIP_BAB_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab1_download(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
         provided_token = access or request.query_params.get("access")
@@ -384,6 +434,7 @@ def register_dip_public_routes(
         return await _dip_stream_bab(product_id, "1", True, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab2")
+    @_limiter().limit(DIP_BAB_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab2(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
         provided_token = access or request.query_params.get("access")
@@ -392,6 +443,7 @@ def register_dip_public_routes(
         return await _dip_stream_bab(product_id, "2", False, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab2/download")
+    @_limiter().limit(DIP_BAB_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab2_download(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
         provided_token = access or request.query_params.get("access")
@@ -400,6 +452,7 @@ def register_dip_public_routes(
         return await _dip_stream_bab(product_id, "2", True, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab3")
+    @_limiter().limit(DIP_BAB_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab3(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
         provided_token = access or request.query_params.get("access")
@@ -408,6 +461,7 @@ def register_dip_public_routes(
         return await _dip_stream_bab(product_id, "3", False, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab3/download")
+    @_limiter().limit(DIP_BAB_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab3_download(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
         provided_token = access or request.query_params.get("access")
@@ -416,6 +470,7 @@ def register_dip_public_routes(
         return await _dip_stream_bab(product_id, "3", True, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab4")
+    @_limiter().limit(DIP_BAB_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab4(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
         provided_token = access or request.query_params.get("access")
@@ -424,6 +479,7 @@ def register_dip_public_routes(
         return await _dip_stream_bab(product_id, "4", False, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab4/download")
+    @_limiter().limit(DIP_BAB_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab4_download(slug_id: str, request: Request, access: str = None):
         product_id = extract_id_from_slug(slug_id)
         provided_token = access or request.query_params.get("access")
@@ -432,6 +488,7 @@ def register_dip_public_routes(
         return await _dip_stream_bab(product_id, "4", True, provided_token, request=request)
 
     @app.get("/dip/{slug_id}/bab2/zip")
+    @_limiter().limit(DIP_ZIP_LIMIT, key_func=_dip_product_key(extract_id_from_slug, client_ip))
     async def dip_public_bab2_zip(slug_id: str, request: Request, access: str = None):
         """Stream ZIP Bab II (folder per bahan baku) lewat backend, tanpa login."""
         product_id = extract_id_from_slug(slug_id)

@@ -148,6 +148,8 @@ backup-rls/
 !/tests/test_tenant_guard_finished_spec.py
 !/tests/test_tenant_guard_sample.py
 !/tests/test_dip_public_revoke.py
+!/tests/test_dip_public_rate_limit.py
+!/tests/test_access_log_redaction.py
 # Unit test render penandatangan Mengetahui Bab II (pure-local, Jinja2).
 !/tests/test_bab2_qc_mengetahui.py
 # Unit test preview PDF input manual raw materials (pure-local, fake supabase).
