@@ -761,6 +761,7 @@ async def get_current_user(request: Request):
         user_role = "staff"
         full_name = "User Lab"
         user_perusahaan = None
+        profile_failed = False
 
         try:
             profile_res = (
@@ -770,6 +771,7 @@ async def get_current_user(request: Request):
                 .execute()
             )
         except Exception:
+            profile_err = None
             try:
                 profile_res = (
                     supabase.table("profiles")
@@ -777,8 +779,18 @@ async def get_current_user(request: Request):
                     .eq("id", user_data.id)
                     .execute()
                 )
-            except Exception:
+            except Exception as e2:
                 profile_res = None
+                profile_err = e2
+            if profile_res is None:
+                profile_failed = True
+                print(f"🚫 [PROFILE DB ERROR] user={user_data.id} reason={type(profile_err).__name__}")
+
+        if profile_failed:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Layanan sementara tidak tersedia. Coba lagi."
+            )
 
         if profile_res and profile_res.data:
             row = profile_res.data[0] or {}
@@ -786,6 +798,12 @@ async def get_current_user(request: Request):
             full_name = row.get("full_name", "User Lab")
             user_perusahaan = row.get("perusahaan")
             display_name = row.get("display_name")
+        else:
+            print(f"🚫 [PROFILE MISSING] user={user_data.id} reason=profile_query_ok_no_row")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Profil akun tidak ditemukan. Hubungi admin."
+            )
 
         return {
             "id": user_data.id,
@@ -1277,6 +1295,14 @@ async def login_submit(
         
         # 💡 LOG SUCCESS LOGIN
         user_data = auth_response.user
+        try:
+            _prof_check = supabase_admin.table("profiles").select("id").eq("id", user_data.id).execute()
+            if not _prof_check.data:
+                print(f"🚫 [LOGIN DENIED] user={user_data.id} reason=profile_missing")
+                return RedirectResponse(url="/login?error=profile_missing", status_code=303)
+        except Exception as e:
+            print(f"🚫 [LOGIN PROFILE CHECK FAIL] user={user_data.id} reason={type(e).__name__}")
+            return RedirectResponse(url="/login?error=profile_missing", status_code=303)
         waktu_login = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
         print("\n" + _LOG_RULE)
         print("🔑 [LOGIN SUCCESS]")

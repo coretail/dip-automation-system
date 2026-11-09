@@ -56,6 +56,11 @@
         stopHeartbeat();
         if (typeof window.handleSessionExpired === "function") window.handleSessionExpired();
       }
+      if (response.status === 403) {
+        isRedirecting = true;
+        stopHeartbeat();
+        window.location.href = "/login";
+      }
     }).catch(function () {});
   }
 

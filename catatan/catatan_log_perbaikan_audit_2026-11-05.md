@@ -39,6 +39,7 @@
 | F-09 (§3) | Route /dip/* tanpa jejak audit download/ZIP | SELESAI | 2026-11-07 (sesi 9) |
 | F-08 (§3) | Nol rate-limit di /dip/* | SELESAI | 2026-11-09 (sesi 10) |
 | F-05 | Token `?access=` di access log (sisi aplikasi tutup; residu log edge Render di luar repo) | SELESAI (sisi aplikasi) | 2026-11-09 (sesi 10) |
+| C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (parsial: profil-hilang 403 + query-gagal 503; non-admin perusahaan kosong tetap TERBUKA untuk PR berikutnya) | 2026-11-09 (sesi 11) |
 
 ---
 
@@ -462,3 +463,61 @@ Staging preflight PASS via `scripts/run_staging_8017.py`; server dihentikan. Kre
 
 - Konfigurasi tepercaya X-Forwarded-For di edge Render/Cloudflare (temiento di atas).
 - Rotasi token bila revoke permanen → keputusan produk terpisah.
+
+---
+
+## Sesi 11 — 2026-11-09: akun tanpa profil / query profil gagal jadi fail-closed (C-01/A-17 parsial)
+
+**Ruang lingkup:** C-01/A-17 bagian get_current_user (profil hilang / query gagal). TIDAK menyentuh `assert_same_tenant`, non-admin perusahaan kosong (PR 2 terpisah), C-14, C-15, atau temuan lain. Tidak ada migrasi SQL.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| C-01 | `app/main.py:765-807` (`get_current_user`) | **3 kondisi:** (a) profil ada → identik dengan semula (termasuk fallback display_name); (b) query OK tanpa baris → HTTPException 403 "Profil akun tidak ditemukan. Hubungi admin." + log `user={id}` (tanpa email/token); (c) kedua query melempar → HTTPException 503 "Layanan sementara tidak tersedia. Coba lagi." + log tipe exception. 401 cookie/token tidak valid tetap; `except HTTPException: raise` tetap | Sebelum: tanpa profil kembali dict default staff lintas tenant. Sesudah: 403/503 fail-closed |
+| C-01 | `app/main.py:1291-1300` (login) | Setelah kredensial benar, cek profil SEBELUM cookie; tanpa profil → 303 `/login?error=profile_missing` tanpa Set-Cookie (kedua jalur username/email); query gagal → pesan sama (tidak bedakan gangguan DB dari profil hilang di login agar tidak bocor oracle) | Sebelum: login berhasil tanpa profil. Sesudah: ditolak |
+| — | `app/templates/login.html` | Blok error `profile_missing` mengikuti pola `invalid_credentials` | — |
+| — | `app/static/presence.js` | Reaksi 403: berhenti heartbeat + redirect `/login` (pola 401); 503 transien TIDAK dieksekusi (polling tetap, tidak logout) → tidak ada loop atau spam | Dipelajari handler 401→redirect login; 403 JSON non-401 tidak di-redirect handler, jadi polling perlu ditangani eksplisit agar berhenti wajar |
+| — | `tests/test_auth_matrix.py` | Tetap LULUS (10 route anonymous semua 401/403/303) | 29/29 pure-local |
+| — | Grep pola `"staff"` / `perusahaan=None` / `profiles` di `app/` | `admin_users_routes.py:91,139` default role form = pemakaian sah pembuatan user (bukan auth); `admin_users_routes.py:174-177` perusahaan None juga pembuatan user (diperbaiki saat insert berhasil) — TIDAK diubah; `main.py:761-763,785-786` satu-satunya jalur auth = sudah diperbaiki | Dilaporkan di deskripsi PR sebagai temuan lanjutan |
+
+`assert_same_tenant` tidak diubah: non-admin perusahaan kosong tetap lolos semua baris (PR 2 terpisah, menunggu pembersihan data). Handler HTTPException global untuk 403/503: 401 tetap redirect `/login?warning=session_expired`; 403/503 kembali JSON bawaan (tidak di-redirect) → tidak ada loop login↔dashboard karena 503 bukan 401 dan 403 profil-hilang berhenti di polling via presence.js.
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi` |
+| `python scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 29 test pure-local CI (clone bersih tanpa .env, env dummy CI) | 0 semua | **PASS=29 FAIL=0** (termasuk `test_auth_profile_fail_closed` 9 kasus + `test_auth_matrix` LULUS) |
+| `tests/test_auth_profile_fail_closed.py` di kode lama (stash app/) | 1 | `AssertionError: harus 403` (tanpa profil kembali dict staff) |
+| `tests/e2e_smoke_refactor.py` (staging) | 1 | 33/34 — kegagalan finished-spec preview produk 402 (PT Heka) → 403, sumber data "produk pertama" (ada di main; bukan perubahan ini) |
+| `tests/e2e_audit_staging.py` (penuh, staging) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+| Manual staging: akun NORMAL login | 0 | Dashboard 200, `/` 200 |
+| Manual staging: kredensial tanpa akun terdaftar | 0 | `/login?error=invalid_credentials` (akun auth uji tanpa profil tidak dibuatkan agar tidak meninggalkan residu di staging; case-nya dibuktikan unit test) |
+
+Staging preflight PASS via `scripts/run_staging_8017.py`; server dihentikan. Kredensial hanya di-export di shell yang sama.
+
+### Risiko & yang tidak berubah
+
+- **Akun auth yang profilnya hilang akan ter-lockout (itu tujuannya). Jumlah akun terdampak di produksi TIDAK diketahui dari repo — pemilik repo menjalankan query pengecekan di Supabase SQL Editor sebelum deploy.**
+- **Profil dengan perusahaan kosong TIDAK ditangani PR ini** (tetap lolos `assert_same_tenant` untuk non-admin; PR 2 terpisah).
+- 503 transien tidak membuat logout massal (bukan 401), dan polling presence.js tidak logout pada 503.
+- Yang TIDAK diuji: membuat akun auth uji tanpa profil di staging live, gangguan DB langsung di staging.
+- `pip-audit` tidak berubah.
+
+### Sebelum deploy ke produksi (wajib pemilik repo)
+
+Jalankan di Supabase SQL Editor:
+```sql
+SELECT a.id, a.email
+FROM auth.users a
+LEFT JOIN public.profiles p ON p.id = a.id
+WHERE p.id IS NULL;
+```
+
+### Keputusan yang masih terbuka
+
+- Pembersihan data perusahaan kosong + PR 2 `assert_same_tenant` fail-closed untuk non-admin.
+- C-14 (`.single()` vs cek manual) dan C-15 (create user) tetap terbuka sesuai keputusan sebelumnya.
