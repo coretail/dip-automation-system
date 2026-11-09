@@ -1302,7 +1302,7 @@ async def login_submit(
                 return RedirectResponse(url="/login?error=profile_missing", status_code=303)
         except Exception as e:
             print(f"🚫 [LOGIN PROFILE CHECK FAIL] user={user_data.id} reason={type(e).__name__}")
-            return RedirectResponse(url="/login?error=profile_missing", status_code=303)
+            return RedirectResponse(url="/login?error=service_unavailable", status_code=303)
         waktu_login = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
         print("\n" + _LOG_RULE)
         print("🔑 [LOGIN SUCCESS]")

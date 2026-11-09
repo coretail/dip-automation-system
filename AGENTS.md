@@ -52,6 +52,13 @@
 - Pastikan path+method unik di seluruh modul; cek route terdaftar untuk mencegah duplikat FastAPI.
 - Setelah refactor, jalankan static checker dan E2E staging relevan karena app dapat boot tetapi gagal `NameError` saat route diakses.
 
+### Model tenant (keputusan pemilik repo 2026-11-09)
+- Admin selalu lolos tenant guard.
+- Non-admin dengan perusahaan kosong SENGAJA boleh lintas perusahaan (PT Erfi dan PT Heka); di produksi per 2026-11-09 belum ada profil yang memiliki perusahaan. Guard tenant hanya membatasi akun dengan perusahaan terisi.
+- Agen DILARANG "memperbaiki" ini menjadi fail-closed tanpa keputusan eksplisit pemilik repo (akan men-lockout staff).
+- Akun tanpa profil / query profil gagal fail-closed (403/503) di `get_current_user` sejak PR #69.
+- Kode error login: `profile_missing` (profil tidak ada) dan `service_unavailable` (gangguan DB saat cek profil).
+
 ## 5. Konvensi kode
 - Panggil `log_activity(..., request=request)` pada route yang menghasilkan audit request-context.
 - Produk dihapus secara soft delete (`is_deleted`, `deleted_at`); route aktif memfilter `is_deleted=False`, dashboard menyediakan restore.
