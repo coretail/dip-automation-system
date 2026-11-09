@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from slowapi import Limiter  # noqa: E402
 
-from app.dip_public import DIP_BAB_LIMIT, DIP_HUB_LIMIT, DIP_ZIP_LIMIT, register_dip_public_routes  # noqa: E402
+from app.dip_public import DIP_BAB_LIMIT, DIP_HUB_LIMIT, DIP_PRODUCT_LIMIT, DIP_ZIP_LIMIT, register_dip_public_routes  # noqa: E402
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 PRODUCT_TOKEN = "tok123"
@@ -36,6 +36,18 @@ def _client_ip(request):
     if fwd:
         return fwd.split(",")[0].strip()
     return request.client.host if request.client else "-"
+
+
+def _extract_slug_uuid(slug):
+    # Sama seperti app/main.py extract_id_from_slug: ambil 36 char terakhir
+    # bila UUID valid, selain itu kembalikan slug (lalu handler 404).
+    if not slug:
+        return slug
+    if len(slug) >= 36:
+        cand = slug[-36:]
+        if re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', cand, re.IGNORECASE):
+            return cand
+    return slug
 
 
 class _FakeBuilder:
@@ -104,7 +116,36 @@ async def _fake_zip(pid, u):
     return Response(content=b"PK", media_type="application/zip")
 
 
-def _build():
+class FakeSupabaseBpom:
+    """Produk BPOM terdaftar: boleh akses tanpa token."""
+
+    def __init__(self):
+        self.product = {
+            "id": PID,
+            "is_deleted": False,
+            "public_access_enabled": True,
+            "public_access_token": PRODUCT_TOKEN,
+            "bpom_registered_link": True,
+            "public_access_revoked_at": None,
+            "nama_produk": "Produk BPOM",
+            "perusahaan": "PT Erfi",
+        }
+
+    def table(self, name):
+        if name == "products":
+            return _FakeBuilder(single_data=dict(self.product))
+        if name in ("public_link_audits", "activity_logs"):
+            return _FakeBuilder()
+        return _FakeBuilder(list_data=[])
+
+    class _Auth:
+        def get_user(self, _token):
+            raise RuntimeError("tanpa sesi")
+
+    auth = _Auth()
+
+
+def _build(supabase=None):
     from fastapi import Request as _Req  # noqa
     from fastapi.responses import JSONResponse as _JR  # noqa
     from slowapi.errors import RateLimitExceeded as _RLE  # noqa
@@ -124,9 +165,9 @@ def _build():
     register_dip_public_routes(
         app=app,
         templates=FakeTemplates(),
-        supabase=FakeSupabase(),
+        supabase=supabase or FakeSupabase(),
         get_company_info=lambda perusahaan: {"name": perusahaan},
-        extract_id_from_slug=lambda slug: (m.group(0) if (m := re.search(UUID_RE, slug)) else None),
+        extract_id_from_slug=_extract_slug_uuid,
         client_ip=_client_ip,
         apply_company_specific_docs=lambda rm, perusahaan: rm,
         parse_storage_url=lambda url: (None, None),
@@ -141,6 +182,11 @@ def _build():
 def _bab_limit():
     m = re.search(r"(\d+)", DIP_BAB_LIMIT)
     return int(m.group(1)) if m else 20
+
+
+def _product_limit():
+    m = re.search(r"(\d+)", DIP_PRODUCT_LIMIT)
+    return int(m.group(1)) if m else 120
 
 
 def _zip_limit():
@@ -158,43 +204,109 @@ def test_bab_burst_429_with_retry_after():
     client = TestClient(app, raise_server_exceptions=False)
     n = _bab_limit()
     for _ in range(n):
-        r = client.get(f"/dip/produk-{PID}/bab1/download?access={PRODUCT_TOKEN}")
+        r = client.get(f"/dip/produk-{PID}/bab1/download?access={PRODUCT_TOKEN}",
+                       headers={"x-forwarded-for": "10.9.9.9"})
         assert r.status_code == 200, f"di bawah batas harus 200, dapat {r.status_code}"
-    r = client.get(f"/dip/produk-{PID}/bab1/download?access={PRODUCT_TOKEN}")
+    r = client.get(f"/dip/produk-{PID}/bab1/download?access={PRODUCT_TOKEN}",
+                   headers={"x-forwarded-for": "10.9.9.9"})
     assert r.status_code == 429, f"request ke-{n + 1} harus 429, dapat {r.status_code}"
     assert r.headers.get("retry-after") is not None, "header Retry-After wajib ada"
     assert "/login" not in str(r.headers.get("location", "")), "bukan redirect ke /login"
     assert PRODUCT_TOKEN not in r.text, "body 429 tidak boleh memuat token"
-    assert str(n) not in r.text and "20" not in r.text, "body 429 tidak boleh memuat angka limit"
-    print(f"[PASS] burst bab: request ke-{n + 1} -> 429 + Retry-After, bukan redirect login")
+    assert str(n) not in r.text, "body 429 tidak boleh memuat angka limit"
+    print(f"[PASS] burst bab per-IP: request ke-{n + 1} -> 429 + Retry-After, bukan redirect login")
 
 
-def test_different_ip_not_locked_by_per_ip():
-    # limit bab memakai key per-produk (anti-spoofing), jadi IP lain tidak
-    # diuji pada route bab; diuji pada hub (per-IP murni) sebagai pengganti.
+def test_bpom_spam_does_not_lock_other_ip():
+    app, limiter = _build(supabase=FakeSupabaseBpom())
+    client = TestClient(app, raise_server_exceptions=False)
+    n = _bab_limit()
+    for _ in range(n):
+        r = client.get(f"/dip/produk-{PID}/bab1/download",
+                       headers={"x-forwarded-for": "10.0.0.9"})
+        assert r.status_code == 200, f"BPOM tanpa token di bawah batas harus 200, dapat {r.status_code}"
+    r_a = client.get(f"/dip/produk-{PID}/bab1/download",
+                     headers={"x-forwarded-for": "10.0.0.9"})
+    assert r_a.status_code == 429, f"IP penyerang harus 429, dapat {r_a.status_code}"
+    r_b = client.get(f"/dip/produk-{PID}/bab1/download",
+                     headers={"x-forwarded-for": "10.0.0.10"})
+    assert r_b.status_code == 200, f"IP reviewer lain tidak boleh terkunci per-IP (dapat {r_b.status_code})"
+    print("[PASS] produk BPOM: spam IP A 429 tidak mengunci IP B")
+
+
+def test_rotating_token_does_not_open_new_bucket():
     app, limiter = _build()
     client = TestClient(app, raise_server_exceptions=False)
-    hn = _hub_limit()
-    for _ in range(hn + 3):
-        client.get(f"/dip/produk-{PID}?access={PRODUCT_TOKEN}",
-                   headers={"x-forwarded-for": "1.2.3.4"})
-    r_other = client.get(f"/dip/produk-{PID}?access={PRODUCT_TOKEN}",
-                         headers={"x-forwarded-for": "5.6.7.8"})
-    assert r_other.status_code in (200, 404), f"IP lain tidak boleh terkunci per-IP (dapat {r_other.status_code})"
-    print("[PASS] IP berbeda tidak saling mengunci pada limit per-IP (hub)")
+    n = _bab_limit()
+    codes = []
+    for i in range(n + 3):
+        r = client.get(f"/dip/produk-{PID}/bab1/download?access=token-{i}",
+                       headers={"x-forwarded-for": "10.1.1.1"})
+        codes.append(r.status_code)
+    assert 429 in codes, f"mengganti ?access= tidak boleh membuka bucket baru, dapat {codes[:3]}..."
+    print("[PASS] mengganti ?access= tidak membuka bucket baru")
 
 
 def test_per_product_stops_spoofed_ip():
     app, limiter = _build()
     client = TestClient(app, raise_server_exceptions=False)
-    n = _bab_limit()
+    n = _product_limit()
     codes = []
-    for i in range(n + 4):
+    for i in range(n + 5):
         r = client.get(f"/dip/produk-{PID}/bab1/download?access={PRODUCT_TOKEN}",
-                       headers={"x-forwarded-for": f"10.0.0.{i}"})
+                       headers={"x-forwarded-for": f"10.0.0.{i % 250}"})
         codes.append(r.status_code)
-    assert 429 in codes, f"limit per-produk harus menghentikan request walau XFF diganti, dapat {codes[:5]}..."
-    print("[PASS] limit per-produk menghentikan request walau X-Forwarded-For diganti-ganti")
+    assert 429 in codes, f"limit per-produk harus menghentikan XFF berganti di {n}, dapat {codes[:3]}..."
+    print(f"[PASS] limit per-produk menghentikan XFF berganti (tercapai di {n})")
+
+
+def test_shared_scope_across_bab_routes():
+    app, limiter = _build()
+    client = TestClient(app, raise_server_exceptions=False)
+    n = _bab_limit()
+    routes = ["bab1/download", "bab1", "bab1/download"]
+    for i in range(n):
+        suf = routes[i % len(routes)]
+        r = client.get(f"/dip/produk-{PID}/{suf}?access={PRODUCT_TOKEN}",
+                       headers={"x-forwarded-for": "10.2.2.2"})
+        assert r.status_code == 200, f"campuran route di bawah total harus 200, dapat {r.status_code}"
+    r = client.get(f"/dip/produk-{PID}/bab1?access={PRODUCT_TOKEN}",
+                   headers={"x-forwarded-for": "10.2.2.2"})
+    assert r.status_code == 429, f"total lintas route harus 429 ke-{n + 1}, dapat {r.status_code}"
+    print("[PASS] scope bersama: campuran bab1/bab1dl total per-IP lintas route")
+
+
+def test_invalid_slug_falls_back_to_ip():
+    app, limiter = _build()
+    client = TestClient(app, raise_server_exceptions=False)
+    n = _bab_limit()
+    codes_a, codes_b = [], []
+    for _ in range(n):
+        codes_a.append(client.get("/dip/produk-INVALID/bab1/download",
+                                  headers={"x-forwarded-for": "10.3.3.3"}).status_code)
+    for _ in range(2):
+        codes_b.append(client.get("/dip/produk-INVALID/bab1/download",
+                                  headers={"x-forwarded-for": "10.3.3.4"}).status_code)
+    assert 429 not in codes_b, f"slug invalid IP lain tidak boleh mengunci, dapat {codes_b}"
+    r_a = client.get("/dip/produk-INVALID/bab1/download",
+                     headers={"x-forwarded-for": "10.3.3.3"})
+    assert r_a.status_code == 429, f"IP slug invalid harus 429 sendiri, dapat {r_a.status_code}"
+    print("[PASS] slug tidak valid -> bucket IP, dua IP tidak saling mengunci")
+
+
+def test_limiter_required():
+    app = FastAPI()
+    try:
+        register_dip_public_routes(
+            app=app, templates=FakeTemplates(), supabase=FakeSupabase(),
+            get_company_info=lambda p: {}, extract_id_from_slug=lambda s: None,
+            client_ip=_client_ip, apply_company_specific_docs=lambda rm, p: rm,
+            parse_storage_url=lambda u: (None, None), bab_generators={},
+            download_bab2_zip=None,
+        )
+        raise AssertionError("tanpa limiter harus TypeError")
+    except TypeError:
+        print("[PASS] register tanpa limiter -> TypeError (limiter wajib)")
 
 
 def test_hub_and_zip_have_own_limits():
@@ -222,6 +334,19 @@ def test_different_products_not_locked():
     r = client.get(f"/dip/produk-{PID2}/bab1/download?access={PRODUCT_TOKEN}")
     assert r.status_code == 200, f"produk berbeda harus 200 pada akses pertama, dapat {r.status_code}"
     print("[PASS] produk berbeda tidak saling mengunci pada limit per-produk")
+
+
+def test_different_ip_not_locked_by_per_ip():
+    app, limiter = _build()
+    client = TestClient(app, raise_server_exceptions=False)
+    hn = _hub_limit()
+    for _ in range(hn + 3):
+        client.get(f"/dip/produk-{PID}?access={PRODUCT_TOKEN}",
+                   headers={"x-forwarded-for": "1.2.3.4"})
+    r_other = client.get(f"/dip/produk-{PID}?access={PRODUCT_TOKEN}",
+                         headers={"x-forwarded-for": "5.6.7.8"})
+    assert r_other.status_code in (200, 404), f"IP lain tidak boleh terkunci per-IP (dapat {r_other.status_code})"
+    print("[PASS] IP berbeda tidak saling mengunci pada limit per-IP (hub)")
 
 
 def test_rejected_requests_still_counted():
@@ -252,8 +377,13 @@ def test_login_still_redirects_after_5():
 
 def main():
     test_bab_burst_429_with_retry_after()
-    test_different_ip_not_locked_by_per_ip()
+    test_bpom_spam_does_not_lock_other_ip()
+    test_rotating_token_does_not_open_new_bucket()
     test_per_product_stops_spoofed_ip()
+    test_shared_scope_across_bab_routes()
+    test_invalid_slug_falls_back_to_ip()
+    test_limiter_required()
+    test_different_ip_not_locked_by_per_ip()
     test_hub_and_zip_have_own_limits()
     test_different_products_not_locked()
     test_rejected_requests_still_counted()

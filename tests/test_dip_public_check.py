@@ -31,6 +31,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
+from slowapi import Limiter
 
 from app.dip_public import register_dip_public_routes
 
@@ -127,6 +128,7 @@ def _register(fake_supabase):
         parse_storage_url=lambda url: (None, None),
         bab_generators={},
         download_bab2_zip=None,
+        limiter=Limiter(key_func=lambda request: "192.0.2.1"),
     )
     return app
 

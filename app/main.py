@@ -505,10 +505,17 @@ async def _on_startup_quiet_access_log():
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    # Portal publik /dip/*: 429 JSON, bukan redirect login (publik tanpa login).
-    # Path lain (login/profil) tetap perilaku lama: redirect /login?error=too_many_attempts.
+    # Portal publik /dip/*: 429 (HTML bila Accept: text/html, selain itu JSON),
+    # bukan redirect login (publik tanpa login). Path lain tetap perilaku lama.
     if request.url.path.startswith("/dip/"):
         print(f"\n🚫 [RATE LIMIT] Terlalu banyak permintaan dokumen dari path: {request.url.path}\n")
+        accept = (request.headers.get("accept") or "").lower()
+        if "text/html" in accept:
+            return HTMLResponse(
+                status_code=429,
+                content="<!DOCTYPE html><html lang=\"id\"><head><meta charset=\"utf-8\"><title>Terlalu Banyak Permintaan</title></head><body><h1>Terlalu banyak permintaan, coba lagi sebentar lagi.</h1></body></html>",
+                headers={"Retry-After": "60"},
+            )
         return JSONResponse(
             status_code=429,
             content={"detail": "Terlalu banyak permintaan, coba lagi sebentar lagi."},
