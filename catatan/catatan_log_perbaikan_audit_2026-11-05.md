@@ -39,7 +39,6 @@
 | F-09 (§3) | Route /dip/* tanpa jejak audit download/ZIP | SELESAI | 2026-11-07 (sesi 9) |
 | F-08 (§3) | Nol rate-limit di /dip/* | SELESAI | 2026-11-09 (sesi 10) |
 | F-05 | Token `?access=` di access log (sisi aplikasi tutup; residu log edge Render di luar repo) | SELESAI (sisi aplikasi) | 2026-11-09 (sesi 10) |
-| C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (parsial: profil-hilang 403 + query-gagal 503; non-admin perusahaan kosong tetap TERBUKA untuk PR berikutnya) | 2026-11-09 (sesi 11) |
 | C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (profil hilang / query gagal, #69) | 2026-11-09 (sesi 12) |
 | C-01/C-02 bagian perusahaan kosong | Non-admin perusahaan kosong lintas tenant | N/A (keputusan pemilik repo 2026-11-09) | 2026-11-09 (sesi 12) |
 
