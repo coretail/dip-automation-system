@@ -55,6 +55,12 @@
 -- Kolom id, is_bahan_aktif, created_at Boleh dilewati saat INSERT bila
 -- punya default; fungsi ini hanya mengisi kolom yang disebut eksplisit.
 --
+-- CATATAN PEMANGGILAN: p_components WAJIB dikirim sebagai array JSON asli
+-- (list Python di PostgREST), BUKAN string JSON. String sampai sebagai
+-- string scalar dan cek jsonb_typeof(v_components) <> 'array' akan menolak
+-- setiap panggilan. Pola yang sama dengan migrasi 010
+-- (replace_product_formula): app/products_routes.py mengirim list langsung.
+--
 -- Tabel pendukung yang dipakai fungsi:
 --   public.raw_materials                        (baris induk yang dikunci)
 --   public.raw_material_composition_variants    (pemilik variant_id)

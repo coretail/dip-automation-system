@@ -223,8 +223,11 @@ def test_edit_single_satu_rpc():
     _, name, params = rpcs[0]
     assert name == "replace_raw_material_components"
     assert params["p_raw_material_id"] == RM_ID and params["p_variant_id"] == VAR_ID
-    assert params["p_components"] and "Aqua" in params["p_components"] and "100" in params["p_components"]
-    print("[PASS] edit single -> satu rpc dengan payload benar")
+    comps = params["p_components"]
+    assert isinstance(comps, list), f"p_components harus list (array JSON), dapat {type(comps).__name__}"
+    assert len(comps) == 1 and comps[0]["inci_name"] == "Aqua"
+    assert comps[0]["percent_internal"] == 100
+    print("[PASS] edit single -> satu rpc dengan p_components list")
 
 
 def test_edit_komposit_satu_rpc():
@@ -238,8 +241,10 @@ def test_edit_komposit_satu_rpc():
     rpcs = [c for c in supa.calls if c[0] == "rpc_call"]
     assert len(rpcs) == 1, f"komposit harus satu rpc, dapat {len(rpcs)}"
     payload = rpcs[0][2]["p_components"]
-    assert "Aqua" in payload and "Glycerin" in payload, "semua baris komposit harus ada"
-    assert OTHER_VAR not in payload, "varian lain tidak boleh muncul"
+    assert isinstance(payload, list), f"komposit payload harus list, dapat {type(payload).__name__}"
+    names = [c["inci_name"] for c in payload]
+    assert "Aqua" in names and "Glycerin" in names, "semua baris komposit harus ada"
+    assert all(c["variant_id"] != OTHER_VAR for c in payload), "varian lain tidak boleh muncul"
     print("[PASS] edit komposit -> satu rpc semua baris, varian lain utuh")
 
 
@@ -278,6 +283,20 @@ def test_input_tidak_valid_nol_tulis():
     print("[PASS] input panjang list tidak sama -> error sebelum tulis apa pun")
 
 
+def test_persentase_nonfinite_ditolak():
+    for bad in ["nan", "inf", "-inf"]:
+        _app, supa, logs, fn = _build()
+        resp = asyncio.run(fn(FakeRequest(), RM_ID, **_form(
+            tipe="komposit", inci_name=["Aqua", "Glycerin"],
+            cas_number=["7732-18-5", "56-81-5"], function=["Solvent", "Humectant"],
+            percent_internal=[bad, 10.0], is_bahan_aktif=["0", "0"],
+        )))
+        assert resp.status_code == 303, f"{bad} harus 303, dapat {resp.status_code}"
+        writes = [c for c in supa.calls if c[0] in ("delete", "insert", "rpc_call", "rpc")]
+        assert writes == [], f"non-finite {bad} NOL tulis, dapat {writes}"
+    print("[PASS] persentase nan/inf/-inf ditolak NOL tulis")
+
+
 def test_guard_tenant_dan_duplikat_regresi():
     # Guard tenant: staff PT Heka tidak boleh edit RM PT Erfi
     _app, supa, logs, fn = _build()
@@ -296,6 +315,7 @@ def main():
     test_tidak_ada_delete_insert_langsung()
     test_rpc_gagal_redirect_error()
     test_input_tidak_valid_nol_tulis()
+    test_persentase_nonfinite_ditolak()
     test_guard_tenant_dan_duplikat_regresi()
     print("\nSemua test komponen atomik LULUS.")
 

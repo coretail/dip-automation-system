@@ -582,8 +582,8 @@ Kalimat "PR 2 terpisah, menunggu pembersihan data" di Sesi 5 dan Sesi 11 tidak b
 
 | # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
 |---|---|---|---|
-| C-07 | `app/raw_materials_routes.py` (edit) | Validasi SEBELUM tulis apa pun (panjang list konsisten, percent via `Decimal` 0–100) → error NOL tulis; ganti 2 delete + insert dengan SATU `supabase.rpc("replace_raw_material_components")`; rpc gagal → log + redirect error (komponen tidak berubah, tidak fallback); `log_activity` sukses hanya setelah rpc berhasil | Sebelum: komponen hilang bila build/insert gagal. Sesudah: atomik; input invalid NOL tulis |
-| C-07 | `migration/013_replace_raw_material_components.sql` | Fungsi `replace_raw_material_components` (delete varian NULL+edit + insert dalam satu transaksi, lock induk `FOR UPDATE`, validasi JSONB, kembalikan jumlah baris; grant hanya `service_role`; pola 010); header pre-check/probe/rehearsal | **BELUM dieksekusi di mana pun** (menunggu pemilik repo manual staging dulu) |
+| C-07 | `app/raw_materials_routes.py` (edit) | Validasi SEBELUM tulis apa pun (panjang list konsisten, percent via `Decimal` 0–100 inkl. non-finite ditolak) → error NOL tulis; ganti 2 delete + insert dengan SATU `supabase.rpc("replace_raw_material_components")` (payload list, bukan string JSON — pola 010); rpc gagal → log + redirect error (komponen tidak berubah, tidak fallback); `log_activity` sukses hanya setelah rpc berhasil; kode mati `if changes: pass` dihapus | Sebelum: komponen hilang bila build/insert gagal. Sesudah: atomik; input invalid NOL tulis; non-finite ditolak |
+| C-07 | `migration/013_replace_raw_material_components.sql` | Fungsi `replace_raw_material_components` (delete varian NULL+edit + insert dalam satu transaksi, lock induk `FOR UPDATE`, validasi JSONB, kembalikan jumlah baris; grant hanya `service_role`; pola 010); header: p_components harus array JSON asli (list), bukan string (merujuk 010); pre-check/probe/rehearsal | **BELUM dieksekusi di mana pun** (menunggu pemilik repo manual staging dulu) |
 | — | `README.md`, `AGENTS.md` | Tabel migrasi 001–013; nomor berikutnya 014; (prompt menuntut 012 — bentrok dengan `012_add_batch_mengetahui_signer.sql` yang sudah ada; dipakai 013) | — |
 
 Asumsi skema (BELUM terverifikasi via information_schema karena tanpa akses DB; pemilik repo wajib jalankan pre-check 0c):
@@ -598,8 +598,8 @@ Urutan deploy: migrasi 013 manual DULU di staging lalu produksi (aditif, hanya m
 | `python scripts/check_undefined_names.py` | 0 | OK |
 | `python scripts/check_static_rules.py` | 0 | OK |
 | `python -m compileall app` | 0 | tanpa error |
-| 30 test pure-local CI (clone bersih) | 0 semua | PASS=30 FAIL=0 (atomik 6 kasus) |
-| Test atomik di kode lama (stash app/) | 1 | `AssertionError: harus tepat satu rpc, dapat []` |
+| 30 test pure-local CI (clone bersih) | 0 semua | PASS=30 FAIL=0 (atomik 7 kasus incl. nan/inf) |
+| Test `p_components` list di kode lama (stash app/) | 1 | `AssertionError: p_components harus list, dapat str` |
 | `tests/e2e_audit_staging.py --quick` | 0 | PASS 37 / SKIP 7 / FAIL 0 |
 | Smoke 33/34 yang sama (402 PT Heka 403) | 1 | Sama seperti diketahui; bukan perubahan ini |
 
@@ -611,6 +611,21 @@ Staging preflight PASS; server dihentikan. E2E jalur ini HANYA setelah pemilik r
 - **C-10 tidak memerlukan perubahan**: `app/static/lampiran.js:103` menangani `failed` per file (`const failed = (data.failed || []).find(...)`); rollback insert sudah ada.
 - **SQL belum dieksekusi di mana pun** (tidak lewat CLI/Management API/MCP/cara lain).
 - **Asumsi skema** di atas;query verifikasi pemilik repo (pre-check 0c di file 013) wajib sebelum deploy.
+
+### Koreksi tambahan (commit fix PR #71)
+
+- `p_components` kini list (array JSON asli), bukan string JSON (bug: string sampai sebagai scalar dan ditolak cek array). Pola mengikuti `replace_product_formula` (migrasi 010).
+- Persentase non-finite (nan/inf/-inf) ditolak (`Decimal.is_finite`).
+- Kode mati `if changes: pass` dihapus.
+- Batas persentase 0..100 di Python adalah perilaku BARU (kode lama menerima angka apa pun).
+- Komposit dengan semua nama bahan kosong tetap menghapus seluruh komposisi varian (sama dengan kode lama).
+- Update header bahan baku dan dokumen perusahaan terjadi SEBELUM RPC, jadi saat RPC gagal header bisa sudah berubah sementara komponen tidak (pesan error sudah menyatakan komponen tidak berubah).
+
+### Uji manual staging setelah migrasi 013 dijalankan pemilik repo
+
+1. Edit komposisi satu bahan baku uji lewat UI; verifikasi komponen berubah dan jumlahnya benar:
+   `SELECT variant_id, COUNT(*) FROM raw_material_components WHERE raw_material_id = '<rm_id>' GROUP BY variant_id;`
+2. Ulangi dengan input tidak valid (persentase negatif / bukan angka); verifikasi komponen lama TIDAK berubah (query yang sama sebelum dan sesudah).
 
 ### Risiko & yang tidak berubah
 

@@ -1161,7 +1161,9 @@ def register_raw_materials_routes(
                     if inci_name[i].strip():
                         try:
                             _pct = Decimal(str(percent_internal[i]))
-                        except Exception:
+                        except (InvalidOperation, ValueError, TypeError):
+                            _pct = None
+                        if _pct is None or not _pct.is_finite():
                             validation_error = (
                                 f"Persentase baris {i + 1} tidak valid. "
                                 "Gunakan angka desimal sederhana."
@@ -1254,17 +1256,14 @@ def register_raw_materials_routes(
         await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Erfi", spec_parameters_erfi, msds_file_erfi, spec_sheet_file_erfi)
         await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
 
-        if changes:
-            pass
-        else:
-            pass
-
         # --- Sisa kode management komponen INCI lu di bawah biarkan utuh ---
-        # ATOMIK via RPC replace_raw_material_components (C-07, migrasi 012):
+        # ATOMIK via RPC replace_raw_material_components (C-07, migrasi 013):
         # fungsi menghapus baris variant_id NULL + varian yang diedit dan
-        # menyisipkan baru dalam SATU transaksi. Tanpa migrasi 012: rpc
+        # menyisipkan baru dalam SATU transaksi. Tanpa migrasi 013: rpc
         # melempar dan komponen TIDAK berubah.
-        import json as _json_comp
+        # p_components dikirim sebagai list Python (array JSON), bukan string
+        # JSON — pola yang sama dengan replace_product_formula (migrasi 010);
+        # string sampai sebagai string scalar dan ditolak jsonb_typeof='array'.
         _payload = [{
             "raw_material_id": rm_id,
             "variant_id": editing_variant_id,
@@ -1281,7 +1280,7 @@ def register_raw_materials_routes(
                 {
                     "p_raw_material_id": rm_id,
                     "p_variant_id": editing_variant_id,
-                    "p_components": _json_comp.dumps(_payload),
+                    "p_components": _payload,
                 },
             ).execute()
             _rpc_written = int((_rpc_result.data if _rpc_result.data is not None else 0) or 0)
