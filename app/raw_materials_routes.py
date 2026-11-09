@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 from typing import List
 from uuid import uuid4
 
@@ -1132,8 +1133,9 @@ def register_raw_materials_routes(
             if c.get("variant_id") in (None, editing_variant_id)
         ]
 
-        # --- Bangun list komponen BARU dari form data ---
+        # --- Bangun dan VALIDASI list komponen BARU dari form (sebelum tulis apa pun) ---
         new_components = []
+        validation_error = None
         if tipe == "single":
             given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
             comp_data = {
@@ -1145,15 +1147,42 @@ def register_raw_materials_routes(
             }
             new_components.append(comp_data)
         elif tipe == "komposit" and inci_name:
-            for i in range(len(inci_name)):
-                if inci_name[i].strip():
-                    new_components.append({
-                        "inci_name": inci_name[i],
-                        "cas_number": cas_number[i] if i < len(cas_number) else None,
-                        "function": function[i] if i < len(function) else None,
-                        "percent_internal": percent_internal[i],
-                        "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, i),
-                    })
+            n = len(inci_name)
+            for field_name, field_list in (("cas_number", cas_number), ("function", function),
+                                           ("percent_internal", percent_internal)):
+                if field_list is not None and len(field_list) < n:
+                    validation_error = (
+                        f"Data komponen tidak lengkap: daftar {field_name} memiliki "
+                        f"{len(field_list)} entri untuk {n} bahan. Periksa formulir dan coba lagi."
+                    )
+                    break
+            if validation_error is None:
+                for i in range(n):
+                    if inci_name[i].strip():
+                        try:
+                            _pct = Decimal(str(percent_internal[i]))
+                        except Exception:
+                            validation_error = (
+                                f"Persentase baris {i + 1} tidak valid. "
+                                "Gunakan angka desimal sederhana."
+                            )
+                            break
+                        if _pct < 0 or _pct > 100:
+                            validation_error = (
+                                f"Persentase baris {i + 1} harus antara 0 dan 100."
+                            )
+                            break
+                        new_components.append({
+                            "inci_name": inci_name[i],
+                            "cas_number": cas_number[i] if i < len(cas_number) else None,
+                            "function": function[i] if i < len(function) else None,
+                            "percent_internal": float(_pct),
+                            "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, i),
+                        })
+        if validation_error is not None:
+            response = RedirectResponse(url="/raw-materials", status_code=303)
+            response.set_cookie("error_msg", validation_error)
+            return response
 
         # --- Bandingin komponen lama vs baru (scoped ke varian yang lagi diedit) ---
         changes = []
@@ -1226,43 +1255,47 @@ def register_raw_materials_routes(
         await _upload_msds_and_upsert_company_doc(rm_id, kode_check, "PT Heka", spec_parameters_heka, msds_file_heka, spec_sheet_file_heka)
 
         if changes:
-            log_activity(current_user, "update", "raw_material", rm_id, nama_dagang, changes,
-                       request=request)
+            pass
+        else:
+            pass
 
         # --- Sisa kode management komponen INCI lu di bawah biarkan utuh ---
-        # TAPI scoped ke varian yang lagi diedit: komponen milik varian itu + sisa
-        # legacy tanpa varian dihapus & diganti (varian lain tidak disentuh).
-        supabase.table("raw_material_components").delete().eq("raw_material_id", rm_id).is_("variant_id", None).execute()
-        supabase.table("raw_material_components").delete().eq("variant_id", editing_variant_id).execute()
+        # ATOMIK via RPC replace_raw_material_components (C-07, migrasi 012):
+        # fungsi menghapus baris variant_id NULL + varian yang diedit dan
+        # menyisipkan baru dalam SATU transaksi. Tanpa migrasi 012: rpc
+        # melempar dan komponen TIDAK berubah.
+        import json as _json_comp
+        _payload = [{
+            "raw_material_id": rm_id,
+            "variant_id": editing_variant_id,
+            "inci_name": c["inci_name"],
+            "cas_number": c.get("cas_number"),
+            "function": c.get("function"),
+            "percent_internal": c["percent_internal"],
+            "is_bahan_aktif": c.get("is_bahan_aktif"),
+        } for c in new_components]
+        _rpc_written = 0
+        try:
+            _rpc_result = supabase.rpc(
+                "replace_raw_material_components",
+                {
+                    "p_raw_material_id": rm_id,
+                    "p_variant_id": editing_variant_id,
+                    "p_components": _json_comp.dumps(_payload),
+                },
+            ).execute()
+            _rpc_written = int((_rpc_result.data if _rpc_result.data is not None else 0) or 0)
+        except Exception as e:
+            print(f"🚫 [RM COMPONENTS RPC FAILED] rm={rm_id} reason={type(e).__name__}")
+            log_activity(current_user, "update", "raw_material", rm_id, nama_dagang, changes,
+                       request=request, outcome="failed")
+            response = RedirectResponse(url="/raw-materials", status_code=303)
+            response.set_cookie("error_msg", "Komponen tidak berubah: penyimpanan atomik belum terpasang atau gagal. Periksa kembali komponen dan coba lagi.")
+            return response
 
-        if tipe == "single":
-            given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
-            comp_data = {
-                "raw_material_id": rm_id,
-                "variant_id": editing_variant_id,
-                "inci_name": given_inci if given_inci else nama_dagang,
-                "cas_number": cas_number[0] if cas_number else None,
-                "function": function[0] if function else None,
-                "percent_internal": 100.0,
-                "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, 0),
-            }
-            supabase.table("raw_material_components").insert(comp_data).execute()
-
-        elif tipe == "komposit" and inci_name:
-            components = []
-            for i in range(len(inci_name)):
-                if inci_name[i].strip():
-                    components.append({
-                        "raw_material_id": rm_id,
-                        "variant_id": editing_variant_id,
-                        "inci_name": inci_name[i],
-                        "cas_number": cas_number[i] if i < len(cas_number) else None,
-                        "function": function[i] if i < len(function) else None,
-                        "percent_internal": percent_internal[i],
-                        "is_bahan_aktif": _flag_bahan_aktif(is_bahan_aktif, i),
-                    })
-            if components:
-                supabase.table("raw_material_components").insert(components).execute()
+        if changes:
+            log_activity(current_user, "update", "raw_material", rm_id, nama_dagang, changes,
+                       request=request, outcome="success")
 
         return RedirectResponse(url="/raw-materials", status_code=303)
 

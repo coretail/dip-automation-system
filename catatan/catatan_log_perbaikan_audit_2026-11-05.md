@@ -41,6 +41,9 @@
 | F-05 | Token `?access=` di access log (sisi aplikasi tutup; residu log edge Render di luar repo) | SELESAI (sisi aplikasi) | 2026-11-09 (sesi 10) |
 | C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (profil hilang / query gagal, #69) | 2026-11-09 (sesi 12) |
 | C-01/C-02 bagian perusahaan kosong | Non-admin perusahaan kosong lintas tenant | N/A (keputusan pemilik repo 2026-11-09) | 2026-11-09 (sesi 12) |
+| C-07 | Edit komponen bahan baku bukan atomik (delete lalu insert) | SELESAI di sisi kode; migrasi 013 menunggu dijalankan manual | 2026-11-09 (sesi 13) |
+| C-08 | Audit sudah tertutup di main | SELESAI | (rapat round 2-equivalent, commit 2b6ee79) |
+| C-10 | Upload lampiran rollback | tidak memerlukan perubahan (lampiran.js menangani `failed` per file; rollback insert sudah ada — app/static/lampiran.js:103) | 2026-11-09 (sesi 13) |
 
 ---
 
@@ -567,4 +570,55 @@ Kalimat "PR 2 terpisah, menunggu pembersihan data" di Sesi 5 dan Sesi 11 tidak b
 ### Keputusan yang masih terbuka
 
 - PR-B (edit komponen bahan baku atomik, migrasi 012) menunggu PR-A merge.
+- C-14, C-15 tetap terbuka.
+
+---
+
+## Sesi 13 — 2026-11-09: edit komponen bahan baku atomik (C-07)
+
+**Ruang lingkup:** C-07 saja (edit komponen bahan baku atomik). TIDAK menyentuh add_raw_material, route varian, delete, assert_same_tenant, get_current_user, limiter, log_activity. Migrasi SQL TIDAK dieksekusi agen (otorisasi tidak diberikan).
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| C-07 | `app/raw_materials_routes.py` (edit) | Validasi SEBELUM tulis apa pun (panjang list konsisten, percent via `Decimal` 0–100) → error NOL tulis; ganti 2 delete + insert dengan SATU `supabase.rpc("replace_raw_material_components")`; rpc gagal → log + redirect error (komponen tidak berubah, tidak fallback); `log_activity` sukses hanya setelah rpc berhasil | Sebelum: komponen hilang bila build/insert gagal. Sesudah: atomik; input invalid NOL tulis |
+| C-07 | `migration/013_replace_raw_material_components.sql` | Fungsi `replace_raw_material_components` (delete varian NULL+edit + insert dalam satu transaksi, lock induk `FOR UPDATE`, validasi JSONB, kembalikan jumlah baris; grant hanya `service_role`; pola 010); header pre-check/probe/rehearsal | **BELUM dieksekusi di mana pun** (menunggu pemilik repo manual staging dulu) |
+| — | `README.md`, `AGENTS.md` | Tabel migrasi 001–013; nomor berikutnya 014; (prompt menuntut 012 — bentrok dengan `012_add_batch_mengetahui_signer.sql` yang sudah ada; dipakai 013) | — |
+
+Asumsi skema (BELUM terverifikasi via information_schema karena tanpa akses DB; pemilik repo wajib jalankan pre-check 0c):
+`raw_material_components(id uuid, raw_material_id uuid, variant_id uuid nullable, inci_name text, cas_number text nullable, "function" text nullable, percent_internal numeric, is_bahan_aktif boolean, created_at timestamptz)`.
+
+Urutan deploy: migrasi 013 manual DULU di staging lalu produksi (aditif, hanya membuat fungsi), BARU kode di-deploy. Bila kode sebelum migrasi, edit komponen gagal dengan pesan error dan komponen TIDAK berubah (fail-safe).
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | OK |
+| `python scripts/check_static_rules.py` | 0 | OK |
+| `python -m compileall app` | 0 | tanpa error |
+| 30 test pure-local CI (clone bersih) | 0 semua | PASS=30 FAIL=0 (atomik 6 kasus) |
+| Test atomik di kode lama (stash app/) | 1 | `AssertionError: harus tepat satu rpc, dapat []` |
+| `tests/e2e_audit_staging.py --quick` | 0 | PASS 37 / SKIP 7 / FAIL 0 |
+| Smoke 33/34 yang sama (402 PT Heka 403) | 1 | Sama seperti diketahui; bukan perubahan ini |
+
+Staging preflight PASS; server dihentikan. E2E jalur ini HANYA setelah pemilik repo menjalankan 013 di staging: edit komposisi bahan baku uji di staging lalu verifikasi komponen; simulasi kegagalan dengan input tidak valid (harus error, komponen tidak berubah).
+
+### Catatan lain
+
+- **C-08 sudah tertutup di main** (commit 2b6ee79; rapat round 2-equivalent).
+- **C-10 tidak memerlukan perubahan**: `app/static/lampiran.js:103` menangani `failed` per file (`const failed = (data.failed || []).find(...)`); rollback insert sudah ada.
+- **SQL belum dieksekusi di mana pun** (tidak lewat CLI/Management API/MCP/cara lain).
+- **Asumsi skema** di atas;query verifikasi pemilik repo (pre-check 0c di file 013) wajib sebelum deploy.
+
+### Risiko & yang tidak berubah
+
+- Tanpa migrasi di staging, edit komponen di staging gagal dengan pesan yang jelas (tidak merusak data).
+- Route tambah bahan baku (C-08-ish) tidak diubah sesuai instruksi.
+- `pip-audit` tidak berubah.
+
+### Keputusan yang masih terbuka
+
+- Pemilik repo menjalankan migrasi 013 manual di staging lalu verifikasi sebelum produksi; lalu uji E2E komponen di staging.
 - C-14, C-15 tetap terbuka.
