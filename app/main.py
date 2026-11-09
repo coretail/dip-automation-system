@@ -442,10 +442,57 @@ class _QuietAccessLogFilter(logging.Filter):
         return path_only not in self.SKIP_PATHS
 
 
+def _redact_access_value(path: str) -> str:
+    """Samarkan nilai parameter query `access` menjadi *** (F-05, sisi aplikasi)."""
+    if not isinstance(path, str) or "access=" not in path:
+        return path
+    if "?" not in path:
+        return path
+    head, qs = path.split("?", 1)
+    parts = qs.split("&")
+    out = []
+    for part in parts:
+        if part == "access" or part.startswith("access="):
+            out.append("access=***")
+        else:
+            out.append(part)
+    return head + "?" + "&".join(out)
+
+
+class _RedactAccessTokenFilter(logging.Filter):
+    """Filter logging TERPISAH dari _QuietAccessLogFilter (F-05).
+
+    Mengganti nilai parameter `access` di path pada record uvicorn.access
+    menjadi `access=***`. Menangani args tuple/list (uvicorn default:
+    client, method, path, http_version, status) dan dict. Selalu return True,
+    tidak pernah melempar exception pada args tak terduga.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            args = record.args
+            if isinstance(args, dict):
+                for _k in ("full_path", "path"):
+                    _v = args.get(_k)
+                    if isinstance(_v, str):
+                        args[_k] = _redact_access_value(_v)
+            elif isinstance(args, (tuple, list)) and len(args) >= 3:
+                _v = args[2]
+                if isinstance(_v, str):
+                    _new = list(args)
+                    _new[2] = _redact_access_value(_v)
+                    record.args = tuple(_new)
+        except Exception:
+            pass
+        return True
+
+
 def _install_quiet_access_log() -> None:
     access_logger = logging.getLogger("uvicorn.access")
     if not any(isinstance(f, _QuietAccessLogFilter) for f in access_logger.filters):
         access_logger.addFilter(_QuietAccessLogFilter())
+    if not any(isinstance(f, _RedactAccessTokenFilter) for f in access_logger.filters):
+        access_logger.addFilter(_RedactAccessTokenFilter())
 
 
 _install_quiet_access_log()
@@ -458,6 +505,22 @@ async def _on_startup_quiet_access_log():
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    # Portal publik /dip/*: 429 (HTML bila Accept: text/html, selain itu JSON),
+    # bukan redirect login (publik tanpa login). Path lain tetap perilaku lama.
+    if request.url.path.startswith("/dip/"):
+        print(f"\n🚫 [RATE LIMIT] Terlalu banyak permintaan dokumen dari path: {request.url.path}\n")
+        accept = (request.headers.get("accept") or "").lower()
+        if "text/html" in accept:
+            return HTMLResponse(
+                status_code=429,
+                content="<!DOCTYPE html><html lang=\"id\"><head><meta charset=\"utf-8\"><title>Terlalu Banyak Permintaan</title></head><body><h1>Terlalu banyak permintaan, coba lagi sebentar lagi.</h1></body></html>",
+                headers={"Retry-After": "60"},
+            )
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Terlalu banyak permintaan, coba lagi sebentar lagi."},
+            headers={"Retry-After": "60"},
+        )
     # Redirect balik ke login dengan pesan, biar konsisten sama flow warning/error yang lain
     # (bukan JSON mentah), dan gak bocorin detail rate limit ke user.
     print(f"\n🚫 [RATE LIMIT] Terlalu banyak percobaan login dari IP: {_client_ip(request)}\n")
@@ -1726,4 +1789,5 @@ register_dip_public_routes(
     bab_generators=_dip_bab_generators,
     download_bab2_zip=_dip_docs["bab2_zip"],
     log_activity=log_activity,
+    limiter=limiter,
 )

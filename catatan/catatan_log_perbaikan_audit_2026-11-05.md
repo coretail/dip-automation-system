@@ -37,8 +37,8 @@
 | pypdf ≥6.21.4 | 10 advisory terbuka (butuh PR terpisah + uji manual) | SELESAI | 2026-11-07 (sesi 8) |
 | F-03 (§3) | `public_access_revoked_at` tidak pernah dibaca; revoke tidak fungsional | SELESAI | 2026-11-07 (sesi 9) |
 | F-09 (§3) | Route /dip/* tanpa jejak audit download/ZIP | SELESAI | 2026-11-07 (sesi 9) |
-| F-08 (§3) | Nol rate-limit di /dip/* (PR B terpisah) | BELUM | — |
-| F-05 | Token `?access=` di access log (PR B terpisah) | BELUM | — |
+| F-08 (§3) | Nol rate-limit di /dip/* | SELESAI | 2026-11-09 (sesi 10) |
+| F-05 | Token `?access=` di access log (sisi aplikasi tutup; residu log edge Render di luar repo) | SELESAI (sisi aplikasi) | 2026-11-09 (sesi 10) |
 
 ---
 
@@ -402,5 +402,63 @@ Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server
 
 ### Keputusan yang masih terbuka
 
-- F-08 rate-limit + F-05 masking token → PR B terpisah.
-- Rotasi token bila revoke bersifat permanen → keputusan produk terpisah, bukan PR ini.
+- F-08 rate-limit + F-05 masking token → SELESAI (sesi 10, PR B). Residu F-05: log edge/proxy Render masih bisa mencatat `?access=` penuh (di luar repo, tidak dapat diverifikasi dari sini) — jangan klaim tertutup; lakukan pemotongan di level Render/Cloudflare bila tersedia.
+
+---
+
+## Sesi 10 — 2026-11-09: rate-limit /dip/* (F-08) + samarkan token di access log (F-05 sisi aplikasi)
+
+**Ruang lingkup:** F-08 + F-05 sisi aplikasi (PR B, lanjutan PR #67). Tidak menyentuh CSRF, tenant guard, R2, portal publik selain ini. Tidak ada migrasi SQL.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| F-08 | `app/dip_public.py:38-72` | **Dual layer via `shared_limit(scope)`** (terverifikasi di source slowapi 0.1.10: `_scope = scope if shared else None`): Lapis 1 per-IP `_bab_ip`/`_zip_ip`/`_hub_ip` 20/5/60 per menit (scope `dip-bab-ip`/`dip-zip-ip`/`dip-hub-ip`, `key_func=client_ip`); Lapis 2 per-produk `_product` 120/menit (scope `dip-product`, key `product_id` saja, tanpa token/query); key divalidasi dengan `uuid.UUID(pid)` dan kanonik huruf kecil (`str(uuid).lower()`), TERMASUK slug UUID polos; `limiter` WAJIB (tanpa default, TypeError bila tidak diinjeksi); `_NullLimiter` DIHAPUS. Fallback slug invalid: IP klien (bukan bucket global). `DIP_PRODUCT_LIMIT=120/minute` DIPAKAI. | BPOM tanpa token: jam IP A 429 tidak mengunci IP B; ganti `?access=` tidak membuka bucket; XFF berganti 429 di 120; UUID polos & variasi huruf berbagi bucket kanonik; scope bersama lintas route terbukti |
+| F-08 | `app/main.py:459-469` | `rate_limit_handler`: `/dip/*` → 429 HTML minimal bila Accept text/html, selain itu JSON Indonesia, tanpa angka limit/token, header `Retry-After: 60`; path lain tetap redirect `/login?error=too_many_attempts`; log path TANPA query/token | Staging burst bab 429 mulai ke-21; login tetap redirect |
+| F-05 | `app/main.py` `_RedactAccessTokenFilter` + `_install_quiet_access_log` | Filter TERPISAH dari `_QuietAccessLogFilter`; tuple/list + dict; selalu return True; tidak melempar pada args tak terduga; idempoten | Log staging: `GET /dip/...?access=***` (nilai token tidak muncul), `foo=1` utuh |
+| — | `app/main.py:1785` | Teruskan `limiter` ke `register_dip_public_routes` | Tanpa ini rate-limit tidak aktif |
+| — | `tests/test_dip_public_check.py`, `test_dip_public_revoke.py` | Injeksi `Limiter` sungguhan (limiter wajib) | Keduanya tetap LULUS |
+| — | `tests/test_dip_public_rate_limit.py` | 15 kasus: per-IP, BPOM tanpa token, token rotate, per-produk 120, UUID polos 120, variasi huruf satu bucket, slug vs UUID polos satu bucket, shared lintas route, invalid slug IP fallback, limiter wajib TypeError, IP lain hub, hub/ZIP, produk berbeda, 404 dihitung, login redirect | Semua LULUS; FAIL di kode lama (`AssertionError` UUID polos di 120; `ImportError: DIP_BAB_LIMIT` untuk suite) |
+
+Alasan angka: 1 kunjungan = 1 hub + ≤9 klik; 20/5 per-IP jauh di atas normal; 120 per-produk di atas beberapa reviewer BPOM bersamaan.
+
+**Investigasi smoke 33/34:** kegagalan yang sama muncul di kode `main` TERBARU (tanpa perubahan PR ini): `GET /products/...402/finished-spec/preview` → **HTTP 403** (guard `produk["perusahaan"] != "PT Erfi"`, produk 402 milik PT Heka). Penyebab: data staging "produk pertama" (402 = PT Heka), bukan regresi PR ini. Audit penuh tetap 41/0/3.
+
+**Hasil grep token ke log/DB (jalur /dip/*):** `_audit_public_link` menulis hanya product_id/nama/IP/User-Agent/username; `_audit_public_access` hanya bab/hub; `print` route /dip hanya path tanpa query; `request.url.path` di main tanpa query. BERSIH — tidak ada penulisan token selain access log uvicorn (kini diredaksi). Residu: log edge/proxy Render masih bisa mencatat `?access=` penuh (di luar repo).
+
+**Temuan X-Forwarded-For (dilaporkan, tidak diubah):** `_client_ip` entri pertama XFF bisa dipalsukan → penyerang bisa capai batas per-produk dan kunci link sampai 120/menit. Rekomendasi: edge tepercaya Render/Cloudflare; jangan ubah `_client_ip` tanpa audit (limiter login + audit IP).
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi` |
+| `python scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 28 test pure-local CI (clone bersih) | 0 semua | **PASS=28 FAIL=0** (termasuk 2 file baru: rate_limit 12 kasus, redaction 7 kasus) |
+| File baru di kode lama (stash app/) | 1 | Rate: `ImportError: DIP_BAB_LIMIT`; Redaction: `RuntimeError` guard G-11 (filter belum ada) |
+| `tests/e2e_smoke_refactor.py` (staging) | 1 | 33/34 — kegagalan SAMA di main baru: finished-spec preview produk 402 (PT Heka) → 403 (guard Hanya PT Erfi); audit penuh tetap 41/0/3 |
+| `tests/e2e_audit_staging.py` (penuh, staging) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+| Manual staging (a) hub→tiap bab/download/ZIP sekali | 0 | Semua 200, tidak ada 429 |
+| Manual (b) burst `/bab1/download` | 0 | 200 lalu 429 sesuai batas per-IP |
+| Manual (c) burst XFF berganti-ganti | 0 | Berhenti di batas per-produk (120) |
+| Manual (d) IP penyerang 429, IP lain (XFF lain) sama produk | 0 | Masih 200 |
+| Manual (e) `?access=TOKENUJI` | 0 | Log server hanya `access=***`; nilai token tidak muncul |
+| Manual (f) /login 6× salah | 0 | Final `/login?error=too_many_attempts` (perilaku lama utuh) |
+
+Staging preflight PASS via `scripts/run_staging_8017.py`; server dihentikan. Kredensial hanya di-export di shell yang sama.
+
+### Risiko & yang tidak berubah
+
+- Pemakaian normal hub→bab→download→ZIP satu orang tetap tanpa 429.
+- **Penyerang yang memalsukan XFF tetap bisa capai batas per-produk dan kunci link sampai 120/menit** (limit per-IP memakai `_client_ip` = entri pertama XFF). Rekomendasi edge di atas.
+- Limiter in-memory per proses: bila Render menjalankan >1 worker/instance, hitungan terbagi per proses (jumlah worker TIDAK dapat diverifikasi dari repo; jangan menebak).
+- Residu F-05: log edge/proxy Render di luar repo juga bisa mencatat token; residu ini TIDAK tertutup PR ini.
+- `_client_ip` tidak diubah (dipakai limiter login + audit IP).
+- Yang TIDAK diuji: bypass XFF penuh sampai 120 di staging (hanya unit test yang membuktikan 120), multi-worker, traffic nyata.
+
+### Keputusan yang masih terbuka
+
+- Konfigurasi tepercaya X-Forwarded-For di edge Render/Cloudflare (temiento di atas).
+- Rotasi token bila revoke permanen → keputusan produk terpisah.

@@ -26,6 +26,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.responses import HTMLResponse  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+from slowapi import Limiter  # noqa: E402
 
 from app.dip_public import register_dip_public_routes  # noqa: E402
 from app.products_routes import register_products_routes  # noqa: E402
@@ -111,6 +112,7 @@ def _register(fake_supabase, logs=None):
         bab_generators={"1": lambda pid, u: _fake_pdf("1")},
         download_bab2_zip=lambda pid, u: _fake_zip(),
         log_activity=(lambda *a, **k: logs.append((a, k))) if logs is not None else None,
+        limiter=Limiter(key_func=lambda request: "192.0.2.1"),
     )
     return app
 
