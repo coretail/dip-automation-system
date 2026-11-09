@@ -1,5 +1,7 @@
 # Catatan Migrasi Storage: Supabase → Cloudflare R2
 
+**DOKUMEN HISTORIS (status per tanggal penulisan). Status live: lihat README (bagian storage) dan AGENTS.md; jangan dianggap benar untuk produksi/staging saat ini.**
+
 > **Catatan historis (2026-10):** dokumen ini merekam format log & probe saat migrasi. Perilaku mode `dual` (fail-loud upload ke R2) mengikuti kode `app/object_store.py` dan panduan bagian **Object Storage**; jangan anggap "best-effort"/"request tetap sukses" sebagai perilaku saat ini.
 
 Dokumen ringkas operasional untuk fase migrasi storage. Rahasia (nilai token/secret)

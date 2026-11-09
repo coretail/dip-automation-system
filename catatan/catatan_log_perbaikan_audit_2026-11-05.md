@@ -41,9 +41,13 @@
 | F-05 | Token `?access=` di access log (sisi aplikasi tutup; residu log edge Render di luar repo) | SELESAI (sisi aplikasi) | 2026-11-09 (sesi 10) |
 | C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (profil hilang / query gagal, #69) | 2026-11-09 (sesi 12) |
 | C-01/C-02 bagian perusahaan kosong | Non-admin perusahaan kosong lintas tenant | N/A (keputusan pemilik repo 2026-11-09) | 2026-11-09 (sesi 12) |
-| C-07 | Edit komponen bahan baku bukan atomik (delete lalu insert) | SELESAI di sisi kode; migrasi 013 menunggu dijalankan manual | 2026-11-09 (sesi 13) |
-| C-08 | Audit sudah tertutup di main | SELESAI | (rapat round 2-equivalent, commit 2b6ee79) |
+| C-07 | Edit komponen bahan baku bukan atomik (delete lalu insert) | SELESAI (kode #71; migrasi 013 dijalankan di staging dan produksi 2026-11-09) | 2026-11-09 (sesi 13) |
+| C-08 | Audit sudah tertutup di main | SELESAI | sudah tertutup di main (commit 2b6ee79), terverifikasi di Sesi 13 |
 | C-10 | Upload lampiran rollback | tidak memerlukan perubahan (lampiran.js menangani `failed` per file; rollback insert sudah ada — app/static/lampiran.js:103) | 2026-11-09 (sesi 13) |
+| D-08 | Status migrasi ambigu (011) | SEBAGIAN: status 007 dan 013 terkonfirmasi, sisanya menunggu hasil query pengecekan pemilik repo | 2026-11-09 (sesi 14) |
+| D-09 | Handoff R2 tertinggal | SEBAGIAN: banner historis ditambahkan; baris produksi ditandai usang (lihat README) | 2026-11-09 (sesi 14) |
+| D-10 | Catatan historis tanpa banner (batch plan + audit 2026-10-27) | SEBAGIAN: banner historis ditambahkan | 2026-11-09 (sesi 14) |
+| D-14 | Status eksekusi migrasi di panduan | SEBAGIAN: paragraf status + query pengecekan ditambahkan | 2026-11-09 (sesi 14) |
 
 ---
 
@@ -607,7 +611,7 @@ Staging preflight PASS; server dihentikan. E2E jalur ini HANYA setelah pemilik r
 
 ### Catatan lain
 
-- **C-08 sudah tertutup di main** (commit 2b6ee79; rapat round 2-equivalent).
+- **C-08 sudah tertutup di main** (commit 2b6ee79), terverifikasi di Sesi 13.
 - **C-10 tidak memerlukan perubahan**: `app/static/lampiran.js:103` menangani `failed` per file (`const failed = (data.failed || []).find(...)`); rollback insert sudah ada.
 - **SQL belum dieksekusi di mana pun** (tidak lewat CLI/Management API/MCP/cara lain).
 - **Asumsi skema** di atas;query verifikasi pemilik repo (pre-check 0c di file 013) wajib sebelum deploy.
@@ -630,10 +634,46 @@ Staging preflight PASS; server dihentikan. E2E jalur ini HANYA setelah pemilik r
 ### Risiko & yang tidak berubah
 
 - Tanpa migrasi di staging, edit komponen di staging gagal dengan pesan yang jelas (tidak merusak data).
-- Route tambah bahan baku (C-08-ish) tidak diubah sesuai instruksi.
+- Route tambah bahan baku tidak diubah sesuai instruksi.
 - `pip-audit` tidak berubah.
 
 ### Keputusan yang masih terbuka
 
 - Pemilik repo menjalankan migrasi 013 manual di staging lalu verifikasi sebelum produksi; lalu uji E2E komponen di staging.
 - C-14, C-15 tetap terbuka.
+
+---
+
+## Sesi 14 — 2026-11-09: perbarui log audit + status migrasi + banner dokumen historis (dokumentasi saja, tanpa perubahan kode)
+
+**Ruang lingkup:** dokumentasi saja (file `.md`); tidak menyentuh `app/`, `tests/`, `migration/`, `scripts/`, workflow, atau dependency. Tidak ada migrasi SQL yang dieksekusi.
+
+### Perubahan per file
+
+| File | Perubahan | Bukti |
+|---|---|---|
+| `catatan/catatan_log_perbaikan_audit_2026-11-05.md` | Baris C-07 → SELESAI (kode #71; migrasi 013 dijalankan staging+produksi 2026-11-09); baris C-08 frasa rapat → "sudah tertutup di main (commit 2b6ee79), terverifikasi di Sesi 13"; frasa "C-08-ish" → netral; baris D-08/D-09/D-10/D-14 → SEBAGIAN (status terkonfirmasi / banner ditambahkan); entri Sesi 14 | Hanya koreksi frasa keliru + status |
+| `panduan_dip_automation_system.md` | Baris 013 di tabel migrasi; paragraf status eksekusi; subbagian "Cek status migrasi" dengan query read-only persis | 007+013 terkonfirmasi; sisanya "belum diverifikasi: jalankan query pengecekan" |
+| `README.md` | 013 di kedua tabel migrasi; nomor berikutnya 014; paragraf status singkat + rujukan panduan | — |
+| `AGENTS.md` | Rujuk paragraf status eksekusi di panduan; konsisten 014 | — |
+| `catatan/catatan_handoff_migrasi_r2.md` + `catatan/catatan_migrasi_storage_r2.md` | Banner historis + tandai baris produksi supabase sebagai "(usang, lihat README)" | Bukan sumber kebenaran saat ini |
+| `catatan/catatan_batch_plan.md` + `catatan/catatan_audit_codebase_2026-10-27.md` | Banner historis (baris pertama) | Isi tidak diubah |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `git diff --stat` | 0 | Hanya file `.md` (7 file) |
+| `python scripts/check_static_rules.py` | 0 | OK |
+| `python scripts/check_undefined_names.py` | 0 | OK |
+| Cek tautan/anchor markdown | 0 | — |
+
+### Risiko & yang tidak berubah
+
+- Tidak ada perubahan perilaku; hanya dokumentasi.
+- REPO PUBLIK: tidak ada project ref, username, id, email, atau data akun nyata yang ditulis ke file mana pun.
+
+### Keputusan yang masih terbuka
+
+- C-04 (log masking token di log server), C-15 (create user), dan opsional: CSRF/CSP, SRI, SSRF `httpx.get` di `dip_documents`, greeting AI, display_name.
+- Status eksekusi migrasi 001-004, 006, 008, 010, 011, 012: "belum diverifikasi" sampai query pengecekan di panduan dijalankan pemilik repo di staging dan produksi.

@@ -246,6 +246,8 @@ Skema produksi tidak dikelola otomatis. Jalankan file SQL di folder `migration/`
 
 > Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Semua file SQL dijalankan manual lewat Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **014**.
 
+Status eksekusi (per 2026-11-09): 007 dan 013 dikonfirmasi dijalankan; 001-004, 006, 008, 010, 011, 012 "belum diverifikasi: jalankan query pengecekan" (lihat subbagian "Cek status migrasi" di panduan). 005 adalah perubahan data, tidak dapat dibuktikan lewat skema.
+
 ---
 
 ## 📁 Struktur Proyek
