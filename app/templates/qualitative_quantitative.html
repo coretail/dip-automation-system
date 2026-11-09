@@ -41,7 +41,7 @@
         </form>
         {% else %}
         <span class="text-xs text-emerald-600 font-semibold">Link publik aktif</span>
-        <form method="post" action="/products/{{ product.id }}/public-access/revoke" onsubmit="return confirm('Yakin ingin mencabut link publik produk {{ product.nama_produk }}? Link publik akan 404 hingga diaktifkan ulang.');" style="display:inline">
+        <form method="post" action="/products/{{ product.id }}/public-access/revoke" onsubmit='return confirm("Yakin ingin mencabut link publik produk " + {{ product.nama_produk | tojson }} + "? Link publik akan 404 hingga diaktifkan ulang.");' style="display:inline">
             <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Cabut link publik DIP">
                 <i class="fa-solid fa-ban mr-1.5"></i> Cabut Link
             </button>
