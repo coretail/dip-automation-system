@@ -31,23 +31,6 @@
         <button onclick="copyBpomLink()" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Salin Public Link BPOM (permalink dokumen DIP) untuk dilampirkan ke portal e-registration BPOM">
             <i class="fa-solid fa-link mr-1.5"></i> Copy Link BPOM
         </button>
-        {% if current_user and current_user.role == "admin" %}
-        {% if (product.public_access_enabled == false) or product.public_access_revoked_at %}
-        <span class="text-xs text-red-600 font-semibold" title="Dicabut sejak {{ product.public_access_revoked_at or '-' }}">Link publik dicabut sejak {{ product.public_access_revoked_at or '-' }}</span>
-        <form method="post" action="/products/{{ product.id }}/public-access/reactivate" style="display:inline">
-            <button type="submit" class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Aktifkan ulang link publik (token lama tetap dipakai)">
-                <i class="fa-solid fa-key mr-1.5"></i> Aktifkan Ulang
-            </button>
-        </form>
-        {% else %}
-        <span class="text-xs text-emerald-600 font-semibold">Link publik aktif</span>
-        <form method="post" action="/products/{{ product.id }}/public-access/revoke" onsubmit='return confirm("Yakin ingin mencabut link publik produk " + {{ product.nama_produk | tojson }} + "? Link publik akan 404 hingga diaktifkan ulang.");' style="display:inline">
-            <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center h-9" title="Cabut link publik DIP">
-                <i class="fa-solid fa-ban mr-1.5"></i> Cabut Link
-            </button>
-        </form>
-        {% endif %}
-        {% endif %}
     </div>
 </div>
 
