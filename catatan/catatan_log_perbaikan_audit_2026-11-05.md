@@ -33,7 +33,8 @@
 | C3 (§5 C-14) | `.single()` vs cek manual tidak konsisten | TERBUKA (skip sesuai keputusan) | Keputusan konfirmasi 2026-11-05 |
 | C4–C12+ | Blocker cutover R2 (encoding, base, SSRF, privat, selektor) + pypdf | BELUM | — |
 | D-08, D-09, D-10, D-14 | Status migrasi 011 ambigu; handoff R2 tertinggal; catatan historis tanpa banner | BELUM | — |
-| E-04 s.d. E-08 | Blocker cutover R2 (encoding, base, SSRF, soak privat, selektor) | BELUM | — |
+| E-04 s.d. E-08 | Blocker cutover R2 (encoding, base, SSRF, soak privat, selektor) | BELUM (E-05 SELESAI sesi 3; E-06 SELESAI sesi 3; E-07b SELESAI sesi 2; E-04 SELESAI sesi 15) | — |
+| E-04 (§6) | 6 `httpx.get` di `dip_documents.py` tanpa SSRF guard | SELESAI (modul `safe_fetch.py` + 6 titik diganti + test 39 kasus + E2E Bab) | 2026-11-10 (sesi 15) |
 | pypdf ≥6.21.4 | 10 advisory terbuka (butuh PR terpisah + uji manual) | SELESAI | 2026-11-07 (sesi 8) |
 | F-03 (§3) | `public_access_revoked_at` tidak pernah dibaca; revoke tidak fungsional | SELESAI | 2026-11-07 (sesi 9) |
 | F-09 (§3) | Route /dip/* tanpa jejak audit download/ZIP | SELESAI | 2026-11-07 (sesi 9) |
@@ -677,3 +678,92 @@ Staging preflight PASS; server dihentikan. E2E jalur ini HANYA setelah pemilik r
 
 - C-04 (log masking token di log server), C-15 (create user), dan opsional: CSRF/CSP, SRI, SSRF `httpx.get` di `dip_documents`, greeting AI, display_name.
 - Status eksekusi migrasi 001-004, 006, 008, 010, 011, 012: "belum diverifikasi" sampai query pengecekan di panduan dijalankan pemilik repo di staging dan produksi.
+
+---
+
+## Sesi 15 — 2026-11-10: E-04 SSRF guard untuk semua pengambilan URL di app/dip_documents.py
+
+**Ruang lingkup:** E-04 saja (guard SSRF untuk fetch URL dokumen dari DB). TIDAK menyentuh temuan lain (CSRF, C-04, C-15, R2 cutover, pypdf, dst). Tidak ada migrasi SQL. Tidak menyentuh `.env*`/`LOGIN.md`.
+
+**Branch:** `fix/ssrf-guard-dip-documents` dari `main` @ `ba73513`. Satu PR untuk temuan ini.
+
+### Inventaris titik fetch yang diganti
+
+`git grep -n "client.get(" app/dip_documents.py` sebelum perubahan menunjukkan 7 titik `httpx` langsung:
+
+| # | File:baris (sebelum) | Perubahan |
+|---|---|---|
+| 1 | `app/dip_documents.py:206` (`fetch_pdf_bytes`) | `client.get(url, timeout=30)` → `fetch_storage_bytes(client, url, label=label, timeout=30)` |
+| 2 | `app/dip_documents.py:423` (`fetch_bytes`) | `client.get(url, timeout=30)` → `fetch_storage_bytes(client, url, label=label, timeout=30)` |
+| 3 | `app/dip_documents.py:604` (`append_pdf_from_url`) | `client.get(url, timeout=30)` → `fetch_storage_bytes(client, url, label=label, timeout=30)` |
+| 4 | `app/dip_documents.py:857` (lampiran Bab III) | `client.get(item, timeout=15.0)` → `fetch_storage_bytes(client, item, label="Bab III lampiran", timeout=15.0)` |
+| 5 | `app/dip_documents.py:1011` (lampiran Bab IV poin 1-4) | `client.get(url, timeout=15.0)` → `fetch_storage_bytes(client, url, label="Bab IV lampiran poin", timeout=15.0)` |
+| 6 | `app/dip_documents.py:1032` (desain kemasan Bab IV) | `client.get(url, timeout=15.0)` → `fetch_storage_bytes(client, url, label="Bab IV desain kemasan", timeout=15.0)` |
+| 7 | import di baris 28 | Tambah `from app.safe_fetch import fetch_storage_bytes` |
+
+Setelah perubahan, `git grep -n "client.get(" app/dip_documents.py` **tidak menyisakan fetch URL mentah**.
+
+**Titik fetch di luar `dip_documents.py` (dilaporkan, TIDAK diubah):**
+- `app/efek_samping.py:328` — sudah punya SSRF guard ad-hoc (cek skema HTTPS + host bukan localhost/private/link-local). Pola berbeda (inline, bukan `safe_fetch`), tidak diubah.
+- `app/main.py:220` — panggil Gemini API (URL bukan dari DB, di luar cakupan E-04).
+- `app/dip_public.py` — tidak melakukan fetch URL, hanya meneruskan URL ke template/link (dipakai oleh `dip_documents.py`).
+
+### Modul baru `app/safe_fetch.py`
+
+| # | Komponen | Deskripsi |
+|---|---|---|
+| S1 | `MAX_BYTES = 25 MB` | Batas ukuran respons dokumen; satu dokumen yang melebihi batas dibatalkan tanpa menggagalkan pipeline Bab |
+| S2 | `build_allowed_hosts(supabase_url, r2_public_bases, r2_account_id)` | Kumpulkan host storage sah dari konfigurasi: host `SUPABASE_URL`, host tiap base `R2_PUBLIC_BASES`, dan host presigned S3 R2 `<account>.r2.cloudflarestorage.com`. Allowlist kosong → tolak semua (fail-closed) + 1 warning |
+| S3 | `is_allowed_storage_url(url, allowed_hosts, supabase_host)` | Validasi fail-closed: hanya HTTPS; tanpa userinfo/port; bukan IP literal/localhost; host EKSAK case-insensitive di allowlist (bukan `endswith`/`in`); host Supabase wajib path `/storage/v1/object/`; path TIDAK di-unquote/dinormalisasi |
+| S4 | `fetch_storage_bytes(client, url, label, timeout, max_bytes, allowed_hosts, supabase_host)` | Ambil bytes dengan guard SSRF: `follow_redirects=False` eksplisit (redirect ditolak), streaming + batalkan bila > `max_bytes`, return `None` bila ditolak/gagal/non-2xx; log `warning` hanya label + alasan + host, TANPA URL/query penuh |
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah) |
+|---|---|---|---|
+| E-04 | `app/safe_fetch.py` (baru) | Modul guard SSRF (S1-S4 di atas) | — |
+| E-04 | `app/dip_documents.py:28,206-211,419-424,600-611,856-863,1010-1017,1031-1038` | Ganti 6 titik `client.get` mentah dengan `fetch_storage_bytes`; pertahankan struktur, label, urutan halaman PDF | Tidak ada fetch URL mentah tersisa (`git grep "client.get(" app/dip_documents.py` = kosong) |
+| E-04 | `tests/test_safe_fetch.py` (baru) | 39 kasus pure-local (tanpa koneksi, `httpx.MockTransport`): lolos (Supabase storage, R2 public, R2 presigned, case-insensitive), tolak (http, IP loopback v4/v6, link-local, localhost, userinfo, host sufiks jahat, port 8443, skema file, Supabase path bukan storage, host tak dikenal, URL kosong/None, allowlist kosong), path `%20`/spasi tidak dinormalisasi, redirect 302 → None (request kedua tidak dilakukan), respons > max_bytes → None, non-2xx → None, exception jaringan → None, log tidak memuat query string | **39/39 PASS** |
+| E-04 | `.gitignore:212` | Tambah `!/tests/test_safe_fetch.py` | Whitelist untuk CI |
+| E-04 | `.github/workflows/ci.yml:92` | Tambah `python tests/test_safe_fetch.py` (baris ke-31) | CI kini menjalankan 31 test pure-local |
+| E-04 | `AGENTS.md:23` | "sembilan belas test" → "tiga puluh satu test pure-local" | Sinkron dengan `ci.yml` |
+| E-04 | `AGENTS.md:71` | Tambah baris jebatan: "Semua fetch URL dokumen WAJIB lewat `app/safe_fetch.py`" | — |
+| E-04 | `tests/verify_bab_e2e.py` (baru) | Skrip verifikasi E2E Bab I-IV + ZIP via cookie header manual (tanpa browser); simpan `baseline_bab_pages.json` untuk perbandingan sebelum/sesudah PR | — |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi / syntax error (29 file)` |
+| `scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 31 test pure-local CI (clone bersih tanpa `.env`, env dummy CI) | 0 semua | **PASS=31 FAIL=0** (termasuk `test_safe_fetch` 39 kasus) |
+| `git grep "client.get(" app/dip_documents.py` | — | 0 match (tidak ada fetch URL mentah tersisa) |
+| Baseline pre-PR (kode main, produk 401) | 0 | Bab1=2, Bab2=6, Bab3=2, Bab4=2, ZIP=16 entri |
+| E2E Bab post-PR (kode PR, produk 401) | 0 | Bab1=2, Bab2=6, Bab3=2, Bab4=2, ZIP=16 entri — **SAMA dengan baseline**, tidak ada `url_ditolak` di log server |
+| `tests/e2e_smoke_refactor.py` (staging, Playwright) | 1 | **33/34 PASS** — kegagalan SAMA seperti diketahui di main (finished-spec preview produk 402 PT Heka → 403, data-dependent, bukan regresi PR ini) |
+| `tests/e2e_audit_staging.py` (penuh, staging) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah audit. Kredensial hanya di-export di shell yang sama (dari `LOGIN.md`), tidak di-echo/log/disalin.
+
+### Risiko & yang tidak berubah
+
+- Perilaku bisnis utama tidak berubah: jumlah halaman PDF per Bab dan entri ZIP identik dengan baseline pre-PR.
+- Satu dokumen yang URL-nya ditolak allowlist / > 25 MB / redirect / non-2xx / gagal → dilewati (`None`), pipeline Bab lanjut — **satu dokumen bermasalah tidak menggagalkan seluruh Bab**.
+- `app/efek_samping.py:328` (SSRF guard ad-hoc) dan `app/main.py:220` (Gemini API) TIDAK diubah.
+- Log server hanya memuat label + alasan + host (bukan URL/query/token presigned).
+- Tidak ada migrasi SQL, perubahan skema, atau perubahan dependency.
+- `pip-audit` tidak berubah.
+
+### Residu jujur
+
+- **Tidak ada DNS-rebinding guard** — sengaja, karena allowlist host EKSAK tanpa resolve (IP literal ditolak `ipaddress`, host dibanding per-string, bukan hasil DNS).
+- **Allowlist bergantung config** `SUPABASE_URL`/`R2_PUBLIC_BASES`/`R2_ACCOUNT_ID`: bila config kosong/ilegal → allowlist kosong → semua URL ditolak (fail-closed + 1 warning log). Staging dan produksi host berbeda, sesuai desain.
+- **C-04, C-15, CSRF/CSP/HSTS (A-07), SRI (A-06), greeting AI (C-05), display_name (A-18)** tetap terbuka sesuai keputusan sebelumnya.
+- **D-08/D-10/D-14** (status migrasi 001-004, 006, 008, 010, 011, 012) masih "belum diverifikasi" sampai query pengecekan dijalankan pemilik repo.
+
+### Keputusan yang masih terbuka
+
+- E-08 (soak `product-attachments` via UI mode r2) dan bukti `put` R2 privat + `r2.dev` terbuka dari kantor → tetap prasyarat cutover R2, belum dikerjakan.
+- C-04, C-15, A-07, A-06, A-09, A-16/A-19, A-18, C-05, F-02/F-01, F-03/F-06 (lampiran.js antrean + autocomplete notes), D-08/D-10/D-14 → tetap terbuka.
+

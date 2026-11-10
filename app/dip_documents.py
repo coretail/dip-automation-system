@@ -25,6 +25,7 @@ from pypdf import PdfReader, PdfWriter
 from xhtml2pdf import pisa
 
 from app import bab2_pdf
+from app.safe_fetch import fetch_storage_bytes
 
 # Catatan: nama logger berubah dari "app.main" menjadi "app.dip_documents".
 logger = logging.getLogger(__name__)
@@ -198,17 +199,12 @@ def register_dip_document_routes(
             writer.add_page(page)
 
         async def fetch_pdf_bytes(client: httpx.AsyncClient, url: str | None, label: str) -> bytes | None:
-            """Ambil PDF dari URL Supabase Storage. Return None kalau URL kosong, HTTP gagal,
-            atau file rusak -- satu dokumen bermasalah tidak boleh menggagalkan seluruh Bab II."""
+            """Ambil PDF dari URL storage. Return None kalau URL kosong, ditolak
+            guard SSRF, HTTP gagal, atau file rusak -- satu dokumen bermasalah
+            tidak boleh menggagalkan seluruh Bab II."""
             if not url:
                 return None
-            try:
-                resp = await client.get(url, timeout=30)
-                resp.raise_for_status()
-                return resp.content
-            except Exception as e:
-                logger.warning("Gagal ambil %s: %s", label, e)
-                return None
+            return await fetch_storage_bytes(client, url, label=label, timeout=30)
 
         async def append_pdf_from_bytes(pdf_bytes: bytes | None, label: str) -> None:
             if not pdf_bytes:
@@ -417,15 +413,11 @@ def register_dip_document_routes(
         root_folder = _safe_zip_name(f"BAB II Data Mutu Bahan Baku - {product.get('nama_produk', 'Produk')}")
 
         async def fetch_bytes(client: httpx.AsyncClient, url: str, label: str):
+            """Ambil bytes dokumen dari URL storage (guard SSRF). None kalau URL
+            kosong, ditolak, atau gagal -- satu dokumen bermasalah dilewati saja."""
             if not url:
                 return None
-            try:
-                resp = await client.get(url, timeout=30)
-                resp.raise_for_status()
-                return resp.content
-            except Exception as e:
-                print(f"[BAB II ZIP] Gagal ambil {label}: {e}")
-                return None
+            return await fetch_storage_bytes(client, url, label=label, timeout=30)
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             # 5a. Checklist Bab II (halaman pembuka) -> PDF
@@ -600,14 +592,15 @@ def register_dip_document_routes(
         async def append_pdf_from_url(client: httpx.AsyncClient, url: str, label: str):
             if not url:
                 return
+            pdf_bytes = await fetch_storage_bytes(client, url, label=label, timeout=30)
+            if not pdf_bytes:
+                return
             try:
-                resp = await client.get(url, timeout=30)
-                resp.raise_for_status()
-                reader = PdfReader(io.BytesIO(resp.content))
+                reader = PdfReader(io.BytesIO(pdf_bytes))
                 for page in reader.pages:
                     writer.add_page(page)
             except Exception as e:
-                print(f"Gagal ambil {label}: {e}")
+                print(f"Gagal memproses {label}: {e}")
 
         async with httpx.AsyncClient() as client:
             await append_pdf_from_url(client, nib_url, f"NIB ({perusahaan})")
@@ -854,9 +847,9 @@ def register_dip_document_routes(
                         for page in doc_reader.pages:
                             pdf_writer.add_page(page)
                     elif isinstance(item, str) and item.startswith("http"):
-                        res = await client.get(item, timeout=15.0)
-                        if res.status_code == 200:
-                            doc_reader = PdfReader(io.BytesIO(res.content))
+                        doc_bytes = await fetch_storage_bytes(client, item, label=f"Bab III lampiran", timeout=15.0)
+                        if doc_bytes:
+                            doc_reader = PdfReader(io.BytesIO(doc_bytes))
                             for page in doc_reader.pages:
                                 pdf_writer.add_page(page)
                 except Exception as e:
@@ -1007,14 +1000,14 @@ def register_dip_document_routes(
             # Append Lampiran Poin 1-4
             for url in attachment_urls:
                 if url:
-                    try:
-                        res = await client.get(url, timeout=15.0)
-                        if res.status_code == 200:
-                            doc_reader = PdfReader(io.BytesIO(res.content))
+                    doc_bytes = await fetch_storage_bytes(client, url, label=f"Bab IV lampiran poin", timeout=15.0)
+                    if doc_bytes:
+                        try:
+                            doc_reader = PdfReader(io.BytesIO(doc_bytes))
                             for page in doc_reader.pages:
                                 pdf_writer.add_page(page)
-                    except Exception as e:
-                        print(f"[BAB 4 MERGE ERROR] Gagal mengunduh {url}: {e}")
+                        except Exception as e:
+                            print(f"[BAB 4 MERGE ERROR] Gagal memproses lampiran: {e}")
 
             # APPEND TEXT DESIGN (SEBELUM DESAIN KEMASAN PRIMER)
             text_design_reader = PdfReader(text_design_pdf_io)
@@ -1028,14 +1021,14 @@ def register_dip_document_routes(
             ]
             for url in design_urls:
                 if url:
-                    try:
-                        res = await client.get(url, timeout=15.0)
-                        if res.status_code == 200:
-                            doc_reader = PdfReader(io.BytesIO(res.content))
+                    doc_bytes = await fetch_storage_bytes(client, url, label=f"Bab IV desain kemasan", timeout=15.0)
+                    if doc_bytes:
+                        try:
+                            doc_reader = PdfReader(io.BytesIO(doc_bytes))
                             for page in doc_reader.pages:
                                 pdf_writer.add_page(page)
-                    except Exception as e:
-                        print(f"[BAB 4 MERGE ERROR] Gagal mengunduh {url}: {e}")
+                        except Exception as e:
+                            print(f"[BAB 4 MERGE ERROR] Gagal memproses desain kemasan: {e}")
 
         output_pdf_io = io.BytesIO()
         pdf_writer.write(output_pdf_io)

@@ -89,6 +89,7 @@ jobs:
           python tests/test_access_log_redaction.py
           python tests/test_auth_profile_fail_closed.py
           python tests/test_raw_material_components_atomic.py
+          python tests/test_safe_fetch.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt
