@@ -194,6 +194,17 @@ scripts/cleanup_repo.py
 ringkas.py
 audit/pip-audit.json
 
+# EDA notebooks dan artefak analisis lokal.
+eda_output/
+.ipynb_checkpoints/
+
+# Arsip patch/status one-off lokal.
+scripts/*.patch
+
+# Artefak dump lokal.
+preview_themes.html
+/data/
+
 /logs/
 scripts_tmp_list_projects.py
 !/tests/test_auth_profile_fail_closed.py
