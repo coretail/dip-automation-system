@@ -209,3 +209,6 @@ preview_themes.html
 scripts_tmp_list_projects.py
 !/tests/test_auth_profile_fail_closed.py
 !/tests/test_raw_material_components_atomic.py
+
+# Local documentation and notes
+/catatan/prompt-tenant-guard-a10-a13.md
