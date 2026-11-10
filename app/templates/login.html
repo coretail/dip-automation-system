@@ -46,6 +46,20 @@
         </div>
         {% endif %}
 
+        {% if error == 'profile_missing' %}
+        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
+            <i class="fa-solid fa-circle-xmark mr-2 text-red-600"></i>
+            <div>Profil akun tidak ditemukan. Hubungi admin.</div>
+        </div>
+        {% endif %}
+
+        {% if error == 'service_unavailable' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
+            <i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i>
+            <div>Layanan sementara tidak tersedia. Coba lagi beberapa saat lagi.</div>
+        </div>
+        {% endif %}
+
         {% if error == 'too_many_attempts' %}
 <div id="rate-limit-alert" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
     <i class="fa-solid fa-triangle-exclamation mr-2 text-red-600"></i>

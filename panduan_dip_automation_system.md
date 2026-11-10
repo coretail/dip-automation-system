@@ -61,7 +61,7 @@ Sistem menerapkan mekanisme *Role-Based Access Control (RBAC)* dengan 2 tingkat 
 | Peran | Level | Deskripsi Hak Akses |
 |---|---|---|
 | **Admin** | Full Access | Hak akses penuh ke seluruh fitur aplikasi, termasuk **Panel Manajemen User** (`/admin/users`) untuk menambah akun baru, reset password, mengubah role pengguna, dan menghapus akun. |
-| **Staff** | Operational Access | Hak akses operasional harian: mengelola bahan baku, batch, brand, membuat dan mengedit produk, meracik formula, mengunggah dokumen Bab I–IV, serta membuat Form Pengajuan Sample (FSP). *Tidak memiliki akses ke panel admin user.* |
+| **Staff** | Operational Access | Hak akses operasional harian: mengelola bahan baku, batch, brand, membuat dan mengedit produk, meracik formula, mengunggah dokumen Bab I–IV, serta membuat Form Pengajuan Sample (FSP). *Tidak memiliki akses ke panel admin user.* Per keputusan pemilik repo 2026-11-09, staff dengan `perusahaan` kosong SENGAJA boleh lintas PT Erfi dan PT Heka; guard tenant hanya membatasi akun yang perusahaan-nya diisi. Akun tanpa profil / query profil gagal fail-closed (403/503) sejak PR #69; kode error login `profile_missing` / `service_unavailable`. |
 
 > ⚠️ **Catatan Keamanan:** Fitur pendaftaran mandiri (*Self-Register*) **dimatikan** untuk mencegah akses publik yang tidak terotorisasi. Pendaftaran akun baru wajib dilakukan oleh Admin melalui panel admin.
 
@@ -585,10 +585,32 @@ Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadshee
 | 010 | `010_replace_product_formula.sql` | Fungsi atomik `replace_product_formula` (transaksi DELETE+INSERT) | Penyimpanan formula Bab 2 gagal dengan pesan "fungsi transaksi belum terpasang" |
 | 011 | `011_add_profile_display_name_and_avatar.sql` | Kolom `display_name`, `avatar_path`, `avatar_updated_at` di `profiles` + CHECK constraint | Nama tampilan & foto profil tidak tersedia |
 | 012 | `012_add_batch_mengetahui_signer.sql` | Kolom `mengetahui_signer` (nullable `text`) di `raw_material_batches` — penandatangan ke-3 "Mengetahui (Kepala QC)" | Fitur baru belum tersedia (belum dijalankan) |
+| 013 | `013_replace_raw_material_components.sql` | Fungsi atomik `replace_raw_material_components` (transaksi DELETE+INSERT komponen INCI) | Edit komponen gagal dengan pesan error dan komponen tidak berubah (fail-safe) |
 
-> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). `011` sudah dipersiapkan tapi belum dieksekusi; `012` sudah dipersiapkan tapi belum dijalankan — jalankan manual via Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **013**.
+> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Nomor migrasi berikutnya adalah **014**.
 
 > ⚠️ Skema produksi **tidak dikelola otomatis** — jalankan file SQL ini manual melalui Supabase SQL Editor.
+
+#### Status eksekusi (per 2026-11-09)
+007 dan 013 dikonfirmasi dijalankan oleh pemilik repo (013 di staging dan produksi); 001-004, 006, 008, 010, 011, 012 "belum diverifikasi: jalankan query pengecekan di bawah"; 005 adalah perubahan data (bukan skema), tidak dapat dibuktikan lewat skema.
+
+#### Cek status migrasi
+Jalankan di staging dan produksi, hasil true/false per migrasi:
+
+```sql
+select '001' as migrasi, to_regclass('public.purchase_orders') is not null as sudah
+union all select '002', exists(select 1 from information_schema.columns where table_schema='public' and table_name='purchase_orders' and column_name='jenis_po')
+union all select '003', exists(select 1 from information_schema.columns where table_schema='public' and table_name='activity_logs' and column_name='outcome')
+union all select '004', to_regclass('public.product_attachments') is not null
+union all select '006', to_regclass('public.product_formula_presence') is not null
+union all select '007', exists(select 1 from information_schema.columns where table_schema='public' and table_name='products' and column_name='public_access_token')
+union all select '008', exists(select 1 from information_schema.columns where table_schema='public' and table_name='products' and column_name='is_deleted')
+union all select '010', exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='replace_product_formula')
+union all select '011', (select count(*)=3 from information_schema.columns where table_schema='public' and table_name='profiles' and column_name in ('display_name','avatar_path','avatar_updated_at'))
+union all select '012', exists(select 1 from information_schema.columns where table_schema='public' and table_name='raw_material_batches' and column_name='mengetahui_signer')
+union all select '013', exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='replace_raw_material_components')
+order by 1;
+```
 
 #### C. Skrip migrasi & rollback
 
@@ -707,7 +729,7 @@ Ditambah 4 index (`created_at`, `actor_id`, `entity_type`, `action`) — sebelum
 
 | Jenis entitas | Aksi yang tercatat |
 |---|---|
-| `product` | `create`, `update`, `delete`, `restore`, `generate` (efek samping), `public_link_visit` |
+| `product` | `create`, `update`, `delete`, `restore`, `generate` (efek samping), `public_link_visit`, `public_access` (akses publik hub/download/ZIP berhasil), `revoke_public_access`, `reactivate_public_access` |
 | `product_finished_specs` | `update` |
 | `product_qualquan_xlsx` | `export` |
 | `{doc_type}` perusahaan | `update` (NIB, CPKB, Surat Tidak Pidana, Protap, CV, SOP CPKB) |

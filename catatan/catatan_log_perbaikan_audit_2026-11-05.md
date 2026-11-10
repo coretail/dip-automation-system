@@ -34,7 +34,20 @@
 | C4–C12+ | Blocker cutover R2 (encoding, base, SSRF, privat, selektor) + pypdf | BELUM | — |
 | D-08, D-09, D-10, D-14 | Status migrasi 011 ambigu; handoff R2 tertinggal; catatan historis tanpa banner | BELUM | — |
 | E-04 s.d. E-08 | Blocker cutover R2 (encoding, base, SSRF, soak privat, selektor) | BELUM | — |
-| pypdf ≥6.21.4 | 10 advisory terbuka (butuh PR terpisah + uji manual) | BELUM | — |
+| pypdf ≥6.21.4 | 10 advisory terbuka (butuh PR terpisah + uji manual) | SELESAI | 2026-11-07 (sesi 8) |
+| F-03 (§3) | `public_access_revoked_at` tidak pernah dibaca; revoke tidak fungsional | SELESAI | 2026-11-07 (sesi 9) |
+| F-09 (§3) | Route /dip/* tanpa jejak audit download/ZIP | SELESAI | 2026-11-07 (sesi 9) |
+| F-08 (§3) | Nol rate-limit di /dip/* | SELESAI | 2026-11-09 (sesi 10) |
+| F-05 | Token `?access=` di access log (sisi aplikasi tutup; residu log edge Render di luar repo) | SELESAI (sisi aplikasi) | 2026-11-09 (sesi 10) |
+| C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (profil hilang / query gagal, #69) | 2026-11-09 (sesi 12) |
+| C-01/C-02 bagian perusahaan kosong | Non-admin perusahaan kosong lintas tenant | N/A (keputusan pemilik repo 2026-11-09) | 2026-11-09 (sesi 12) |
+| C-07 | Edit komponen bahan baku bukan atomik (delete lalu insert) | SELESAI (kode #71; migrasi 013 dijalankan di staging dan produksi 2026-11-09) | 2026-11-09 (sesi 13) |
+| C-08 | Audit sudah tertutup di main | SELESAI | sudah tertutup di main (commit 2b6ee79), terverifikasi di Sesi 13 |
+| C-10 | Upload lampiran rollback | tidak memerlukan perubahan (lampiran.js menangani `failed` per file; rollback insert sudah ada — app/static/lampiran.js:103) | 2026-11-09 (sesi 13) |
+| D-08 | Status migrasi ambigu (011) | SEBAGIAN: status 007 dan 013 terkonfirmasi, sisanya menunggu hasil query pengecekan pemilik repo | 2026-11-09 (sesi 14) |
+| D-09 | Handoff R2 tertinggal | SEBAGIAN: banner historis ditambahkan; baris produksi ditandai usang (lihat README) | 2026-11-09 (sesi 14) |
+| D-10 | Catatan historis tanpa banner (batch plan + audit 2026-10-27) | SEBAGIAN: banner historis ditambahkan | 2026-11-09 (sesi 14) |
+| D-14 | Status eksekusi migrasi di panduan | SEBAGIAN: paragraf status + query pengecekan ditambahkan | 2026-11-09 (sesi 14) |
 
 ---
 
@@ -311,3 +324,356 @@ Salin blok di bawah ini untuk sesi lanjutan; isi tanggal, ruang lingkup, perubah
 **Validasi:** `check_undefined_names` 0; `check_static_rules` 0; `compileall` 0; **22 test pure-local PASS=22 FAIL=0**; fail-closed di kode lama (stash app/): FAIL `harus 403`; E2E staging: smoke 34/34, activity 19/19, notes PASS, audit 41/0/3 skip.
 
 **Risiko:** perilaku admin/satu-tenant tidak berubah; baris tanpa `perusahaan` tetap fail-open legacy.
+
+---
+
+## Sesi 8 — 2026-11-07: bump pypdf 6.21.1 → 6.21.4 (tutup 10 advisory)
+
+**Ruang lingkup:** hanya bump `pypdf` + sinkronisasi dokumen. Tidak menyentuh temuan lain (CSRF, tenant guard, R2, portal publik, dll).
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| P1 | `requirements.txt:11` | `pypdf==6.21.1` → `pypdf==6.21.4` (tetap dipin eksak `==`) | `pip-audit -r requirements.txt`: sebelum 10 advisory (`CVE-2026-115572/-115585/-115580` fix ≥6.21.2, `CVE-2026-119203–119209` fix ≥6.21.3/6.21.4); sesudah `No known vulnerabilities found` |
+| P2 | `README.md:147` | Tabel dependensi: `pypdf` `6.21.1` → `6.21.4` | Sinkron dengan requirements.txt |
+| — | `panduan_dip_automation_system.md` | Tidak mencantumkan angka versi pypdf (hanya menyebut `pypdf` tanpa versi) | grep `pypdf`/`6.21` di panduan: 2 match tanpa angka versi; tidak diubah |
+
+**Versi target:** 6.21.4 = versi TERENDAH yang menutup SEMUA 10 advisory (advisory tertinggi membutuhkan ≥6.21.4). Changelog 6.21.1→6.21.4: hanya Security (SEC) + Bug Fixes + Performance + Robustness + Documentation — **tidak ada breaking change / deprecation API**. pypdf 7.0.0 (2026-11-06) adalah major dengan deprecations/dropped support — sengaja tidak dipilih. API yang dipakai di `app/` (`PdfReader`, `PdfWriter`, `add_page`, `write`, `merge_transformed_page`, `Transformation`) tidak berubah/deprecated di rentang ini.
+
+**Dependabot PR #41:** sudah ada PR Dependabot terbuka `chore(deps): bump pypdf from 6.21.1 to 6.21.4` (https://github.com/coretail/dip-automation-system/pull/41, CI quality SUCCESS) dengan diff identik 1 baris `requirements.txt`. PR ini (`chore/bump-pypdf`) dibuat sesuai instruksi sesi untuk validasi manual PDF + E2E staging + sinkronisasi README + log sesi ini; **PR #41 akan ditutup sebagai duplikat** bila PR ini merge, atau PR ini ditutup dan PR #41 dipakai ulang bila diinginkan pemilik repo. Tidak ada perubahan kode aplikasi.
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi / syntax error (28 file)` |
+| `python scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 25 test pure-local CI (clone bersih tanpa `.env`, env dummy CI persis `ci.yml`, `DIP_APP_ENV` tidak diset) | 0 semua | **PASS=25 FAIL=0** |
+| `pip-audit -r requirements.txt` | 0 | `No known vulnerabilities found` (10 advisory pypdf tertutup, tanpa `--ignore-vuln`) |
+| `tests/e2e_smoke_refactor.py` (staging via `run_staging_8017.py`) | 0 | **34/34 PASS** |
+| `tests/e2e_audit_staging.py --quick` (staging) | 0 | **PASS 37 / SKIP 7 / FAIL 0** |
+| Uji manual staging produk `dd000000-...-000000000401` (DEMO Brightening Serum): Bab II, gabungan Bab I–IV, ZIP Bab II | 0 | Bab II 96.711 byte / 6 halaman; Bab I 2.766 byte / 2 halaman; Bab III 44.551 byte / 2 halaman; Bab IV 43.665 byte / 2 halaman; ZIP 242.853 byte / 16 file (11 PDF di dalam ZIP semua terbaca); gabungan Bab I–IV hasil merge 186.788 byte / 12 halaman (2+6+2+2 MATCH); semua PDF dibuka ulang dengan pypdf 6.21.4 tanpa error |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah uji. Kredensial hanya di-export di shell yang sama (dari `LOGIN.md`), tidak di-echo/log/disalin.
+
+### Risiko & yang tidak berubah
+
+- Perilaku bisnis utama tidak berubah: generate PDF Bab I–IV dan ZIP identik; output dibaca ulang pypdf tanpa error dan jumlah halaman cocok.
+- Yang TIDAK diuji: efek samping PDF (NIES), cetakan fisik, serta perbandingan byte-per-byte dengan output versi 6.21.1 (hanya validasi keterbacaan + jumlah halaman + ukuran file di 6.21.4).
+- Tidak ada migrasi SQL, perubahan skema, atau perubahan kode `app/`.
+
+### Keputusan yang masih terbuka
+
+- Duplikat PR Dependabot #41 vs PR `chore/bump-pypdf`: salah satu ditutup saat merge (preferensi pemilik repo).
+- Temuan audit lain (CSRF A-07, tenant guard sisa, R2 E-04/E-07/E-08, portal publik F-08, F-05, dll) tetap di luar ruang lingkup.
+
+---
+
+## Sesi 9 — 2026-11-07: revoke link publik DIP (F-03) + audit akses publik (F-09)
+
+**Ruang lingkup:** F-03 revoke + F-09 audit akses publik. F-08 rate-limit dan F-05 masking token sengaja TIDAK dikerjakan (PR B terpisah). Tidak ada migrasi SQL.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| F-03 | `app/dip_public.py:281-310` | `public_access_revoked_at` ditambahkan ke select `_dip_public_check_product`; revoke = `enabled is False` ATAU `revoked_at` tidak null; cek revoke SEBELUM cabang BPOM; tetap fail-closed + timing-safe | Sebelum: kolom tidak dibaca, produk BPOM dicabut tetap 200. Sesudah: 404 untuk semua bentuk revoke |
+| F-03 | `app/products_routes.py` (2 route POST admin) | `POST /products/{id}/public-access/revoke`: `enabled=False` + `revoked_at=<ISO nyata>` (tanpa string now()); `POST .../reactivate`: `enabled=True` + `revoked_at=None`. Token tidak diubah dua-duanya; hanya admin; `assert_same_tenant`; baca dulu fail-closed; tolak `is_deleted`; nol tulis bila guard menolak; `log_activity` entity_id UUID tanpa token | Pola sama dengan delete_product (SEC-02) |
+| F-03 | `app/templates/qualitative_quantitative.html` | Tombol admin "Cabut Link" (konfirmasi) / "Aktifkan Ulang" + status "Link publik aktif" / "dicabut sejak ..." hanya untuk admin; token tema yang ada | Terverifikasi di staging: UI aktif/dicabut berganti benar |
+| F-09 | `app/dip_public.py` `_audit_public_access` + `app/main.py` | `log_activity` aktor sentinel `{"id": None, "full_name": "public"}`, action `public_access`, entity `product`/UUID, `source="public"`, tanpa token/query; hub + download per Bab + ZIP; 404 tidak dilog; fail-open dipertahankan | Di staging: baris `PUBLIC_ACCESS` + `REVOKE_PUBLIC_ACCESS`/`REACTIVATE_PUBLIC_ACCESS` muncul di log server |
+| — | `panduan_dip_automation_system.md:710` | Tambah `public_access`, `revoke_public_access`, `reactivate_public_access` ke baris `product` tabel entity_type | — |
+| — | `app/main.py:1728` | Teruskan `log_activity` ke `register_dip_public_routes` | Tanpa ini audit publik tidak jalan |
+
+Kontrak publik tidak berubah: link aktif (token benar atau BPOM tanpa token) tetap berfungsi persis seperti sebelumnya selama tidak dicabut. Rotasi token BUKAN bagian PR ini: aktifkan ulang selalu memakai token lama.
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi` |
+| `python scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 26 test pure-local CI (clone bersih tanpa `.env`, env dummy CI) | 0 semua | **PASS=26 FAIL=0** (termasuk `test_dip_public_revoke` 12 kasus baru) |
+| `tests/test_dip_public_revoke.py` di kode lama (`git stash push -- app/`) | 1 | FAIL `TypeError: register_dip_public_routes() got an unexpected keyword argument 'log_activity'` (route/admin/audit belum ada) — bukti test benar-benar mengunci perilaku baru |
+| `tests/e2e_smoke_refactor.py` (staging) | 0 | **34/34 PASS** |
+| `tests/e2e_audit_staging.py` (penuh, staging) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+| Manual staging produk DEMO `dd000000-...-000000000401` (BPOM legacy, tanpa token) | 0 | Hub 200 → cabut → 404 → aktifkan ulang → 200 lagi; log server memuat `REVOKE_PUBLIC_ACCESS`, `REACTIVATE_PUBLIC_ACCESS`, `PUBLIC_ACCESS` (aktor `public`, Bab `hub`) |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah uji. Kredensial hanya di-export di shell yang sama (dari `LOGIN.md`), tidak di-echo/log/disalin. `pip-audit` tidak berubah (tidak ada perubahan dependency).
+
+### Risiko & yang tidak berubah
+
+- Link publik aktif tidak berubah; hanya produk yang dicabut admin yang menjadi 404 (termasuk BPOM).
+- `log_activity`, rate-limit, masking token tidak disentuh (PR B / C-04 terpisah).
+- Yang TIDAK diuji: download/ZIP publik via browser (baru hub yang diuji manual di staging); rotasi token (bukan bagian PR ini).
+
+### Keputusan yang masih terbuka
+
+- F-08 rate-limit + F-05 masking token → SELESAI (sesi 10, PR B). Residu F-05: log edge/proxy Render masih bisa mencatat `?access=` penuh (di luar repo, tidak dapat diverifikasi dari sini) — jangan klaim tertutup; lakukan pemotongan di level Render/Cloudflare bila tersedia.
+
+---
+
+## Sesi 10 — 2026-11-09: rate-limit /dip/* (F-08) + samarkan token di access log (F-05 sisi aplikasi)
+
+**Ruang lingkup:** F-08 + F-05 sisi aplikasi (PR B, lanjutan PR #67). Tidak menyentuh CSRF, tenant guard, R2, portal publik selain ini. Tidak ada migrasi SQL.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| F-08 | `app/dip_public.py:38-72` | **Dual layer via `shared_limit(scope)`** (terverifikasi di source slowapi 0.1.10: `_scope = scope if shared else None`): Lapis 1 per-IP `_bab_ip`/`_zip_ip`/`_hub_ip` 20/5/60 per menit (scope `dip-bab-ip`/`dip-zip-ip`/`dip-hub-ip`, `key_func=client_ip`); Lapis 2 per-produk `_product` 120/menit (scope `dip-product`, key `product_id` saja, tanpa token/query); key divalidasi dengan `uuid.UUID(pid)` dan kanonik huruf kecil (`str(uuid).lower()`), TERMASUK slug UUID polos; `limiter` WAJIB (tanpa default, TypeError bila tidak diinjeksi); `_NullLimiter` DIHAPUS. Fallback slug invalid: IP klien (bukan bucket global). `DIP_PRODUCT_LIMIT=120/minute` DIPAKAI. | BPOM tanpa token: jam IP A 429 tidak mengunci IP B; ganti `?access=` tidak membuka bucket; XFF berganti 429 di 120; UUID polos & variasi huruf berbagi bucket kanonik; scope bersama lintas route terbukti |
+| F-08 | `app/main.py:459-469` | `rate_limit_handler`: `/dip/*` → 429 HTML minimal bila Accept text/html, selain itu JSON Indonesia, tanpa angka limit/token, header `Retry-After: 60`; path lain tetap redirect `/login?error=too_many_attempts`; log path TANPA query/token | Staging burst bab 429 mulai ke-21; login tetap redirect |
+| F-05 | `app/main.py` `_RedactAccessTokenFilter` + `_install_quiet_access_log` | Filter TERPISAH dari `_QuietAccessLogFilter`; tuple/list + dict; selalu return True; tidak melempar pada args tak terduga; idempoten | Log staging: `GET /dip/...?access=***` (nilai token tidak muncul), `foo=1` utuh |
+| — | `app/main.py:1785` | Teruskan `limiter` ke `register_dip_public_routes` | Tanpa ini rate-limit tidak aktif |
+| — | `tests/test_dip_public_check.py`, `test_dip_public_revoke.py` | Injeksi `Limiter` sungguhan (limiter wajib) | Keduanya tetap LULUS |
+| — | `tests/test_dip_public_rate_limit.py` | 15 kasus: per-IP, BPOM tanpa token, token rotate, per-produk 120, UUID polos 120, variasi huruf satu bucket, slug vs UUID polos satu bucket, shared lintas route, invalid slug IP fallback, limiter wajib TypeError, IP lain hub, hub/ZIP, produk berbeda, 404 dihitung, login redirect | Semua LULUS; FAIL di kode lama (`AssertionError` UUID polos di 120; `ImportError: DIP_BAB_LIMIT` untuk suite) |
+
+Alasan angka: 1 kunjungan = 1 hub + ≤9 klik; 20/5 per-IP jauh di atas normal; 120 per-produk di atas beberapa reviewer BPOM bersamaan.
+
+**Investigasi smoke 33/34:** kegagalan yang sama muncul di kode `main` TERBARU (tanpa perubahan PR ini): `GET /products/...402/finished-spec/preview` → **HTTP 403** (guard `produk["perusahaan"] != "PT Erfi"`, produk 402 milik PT Heka). Penyebab: data staging "produk pertama" (402 = PT Heka), bukan regresi PR ini. Audit penuh tetap 41/0/3.
+
+**Hasil grep token ke log/DB (jalur /dip/*):** `_audit_public_link` menulis hanya product_id/nama/IP/User-Agent/username; `_audit_public_access` hanya bab/hub; `print` route /dip hanya path tanpa query; `request.url.path` di main tanpa query. BERSIH — tidak ada penulisan token selain access log uvicorn (kini diredaksi). Residu: log edge/proxy Render masih bisa mencatat `?access=` penuh (di luar repo).
+
+**Temuan X-Forwarded-For (dilaporkan, tidak diubah):** `_client_ip` entri pertama XFF bisa dipalsukan → penyerang bisa capai batas per-produk dan kunci link sampai 120/menit. Rekomendasi: edge tepercaya Render/Cloudflare; jangan ubah `_client_ip` tanpa audit (limiter login + audit IP).
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi` |
+| `python scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 28 test pure-local CI (clone bersih) | 0 semua | **PASS=28 FAIL=0** (termasuk 2 file baru: rate_limit 12 kasus, redaction 7 kasus) |
+| File baru di kode lama (stash app/) | 1 | Rate: `ImportError: DIP_BAB_LIMIT`; Redaction: `RuntimeError` guard G-11 (filter belum ada) |
+| `tests/e2e_smoke_refactor.py` (staging) | 1 | 33/34 — kegagalan SAMA di main baru: finished-spec preview produk 402 (PT Heka) → 403 (guard Hanya PT Erfi); audit penuh tetap 41/0/3 |
+| `tests/e2e_audit_staging.py` (penuh, staging) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+| Manual staging (a) hub→tiap bab/download/ZIP sekali | 0 | Semua 200, tidak ada 429 |
+| Manual (b) burst `/bab1/download` | 0 | 200 lalu 429 sesuai batas per-IP |
+| Manual (c) burst XFF berganti-ganti | 0 | Berhenti di batas per-produk (120) |
+| Manual (d) IP penyerang 429, IP lain (XFF lain) sama produk | 0 | Masih 200 |
+| Manual (e) `?access=TOKENUJI` | 0 | Log server hanya `access=***`; nilai token tidak muncul |
+| Manual (f) /login 6× salah | 0 | Final `/login?error=too_many_attempts` (perilaku lama utuh) |
+
+Staging preflight PASS via `scripts/run_staging_8017.py`; server dihentikan. Kredensial hanya di-export di shell yang sama.
+
+### Risiko & yang tidak berubah
+
+- Pemakaian normal hub→bab→download→ZIP satu orang tetap tanpa 429.
+- **Penyerang yang memalsukan XFF tetap bisa capai batas per-produk dan kunci link sampai 120/menit** (limit per-IP memakai `_client_ip` = entri pertama XFF). Rekomendasi edge di atas.
+- Limiter in-memory per proses: bila Render menjalankan >1 worker/instance, hitungan terbagi per proses (jumlah worker TIDAK dapat diverifikasi dari repo; jangan menebak).
+- Residu F-05: log edge/proxy Render di luar repo juga bisa mencatat token; residu ini TIDAK tertutup PR ini.
+- `_client_ip` tidak diubah (dipakai limiter login + audit IP).
+- Yang TIDAK diuji: bypass XFF penuh sampai 120 di staging (hanya unit test yang membuktikan 120), multi-worker, traffic nyata.
+
+### Keputusan yang masih terbuka
+
+- Konfigurasi tepercaya X-Forwarded-For di edge Render/Cloudflare (temiento di atas).
+- Rotasi token bila revoke permanen → keputusan produk terpisah.
+
+---
+
+## Sesi 11 — 2026-11-09: akun tanpa profil / query profil gagal jadi fail-closed (C-01/A-17 parsial)
+
+**Ruang lingkup:** C-01/A-17 bagian get_current_user (profil hilang / query gagal). TIDAK menyentuh `assert_same_tenant`, non-admin perusahaan kosong (PR 2 terpisah), C-14, C-15, atau temuan lain. Tidak ada migrasi SQL.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| C-01 | `app/main.py:765-807` (`get_current_user`) | **3 kondisi:** (a) profil ada → identik dengan semula (termasuk fallback display_name); (b) query OK tanpa baris → HTTPException 403 "Profil akun tidak ditemukan. Hubungi admin." + log `user={id}` (tanpa email/token); (c) kedua query melempar → HTTPException 503 "Layanan sementara tidak tersedia. Coba lagi." + log tipe exception. 401 cookie/token tidak valid tetap; `except HTTPException: raise` tetap | Sebelum: tanpa profil kembali dict default staff lintas tenant. Sesudah: 403/503 fail-closed |
+| C-01 | `app/main.py:1291-1300` (login) | Setelah kredensial benar, cek profil SEBELUM cookie; tanpa profil → 303 `/login?error=profile_missing` tanpa Set-Cookie (kedua jalur username/email); query gagal → pesan sama (tidak bedakan gangguan DB dari profil hilang di login agar tidak bocor oracle) | Sebelum: login berhasil tanpa profil. Sesudah: ditolak |
+| — | `app/templates/login.html` | Blok error `profile_missing` mengikuti pola `invalid_credentials` | — |
+| — | `app/static/presence.js` | Reaksi 403: berhenti heartbeat + redirect `/login` (pola 401); 503 transien TIDAK dieksekusi (polling tetap, tidak logout) → tidak ada loop atau spam | Dipelajari handler 401→redirect login; 403 JSON non-401 tidak di-redirect handler, jadi polling perlu ditangani eksplisit agar berhenti wajar |
+| — | `tests/test_auth_matrix.py` | Tetap LULUS (10 route anonymous semua 401/403/303) | 29/29 pure-local |
+| — | Grep pola `"staff"` / `perusahaan=None` / `profiles` di `app/` | `admin_users_routes.py:91,139` default role form = pemakaian sah pembuatan user (bukan auth); `admin_users_routes.py:174-177` perusahaan None juga pembuatan user (diperbaiki saat insert berhasil) — TIDAK diubah; `main.py:761-763,785-786` satu-satunya jalur auth = sudah diperbaiki | Dilaporkan di deskripsi PR sebagai temuan lanjutan |
+
+`assert_same_tenant` tidak diubah: non-admin perusahaan kosong tetap lolos semua baris (PR 2 terpisah, menunggu pembersihan data). Handler HTTPException global untuk 403/503: 401 tetap redirect `/login?warning=session_expired`; 403/503 kembali JSON bawaan (tidak di-redirect) → tidak ada loop login↔dashboard karena 503 bukan 401 dan 403 profil-hilang berhenti di polling via presence.js.
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | `[OK] tidak ada nama tak terdefinisi` |
+| `python scripts/check_static_rules.py` | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| 29 test pure-local CI (clone bersih tanpa .env, env dummy CI) | 0 semua | **PASS=29 FAIL=0** (termasuk `test_auth_profile_fail_closed` 9 kasus + `test_auth_matrix` LULUS) |
+| `tests/test_auth_profile_fail_closed.py` di kode lama (stash app/) | 1 | `AssertionError: harus 403` (tanpa profil kembali dict staff) |
+| `tests/e2e_smoke_refactor.py` (staging) | 1 | 33/34 — kegagalan finished-spec preview produk 402 (PT Heka) → 403, sumber data "produk pertama" (ada di main; bukan perubahan ini) |
+| `tests/e2e_audit_staging.py` (penuh, staging) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+| Manual staging: akun NORMAL login | 0 | Dashboard 200, `/` 200 |
+| Manual staging: kredensial tanpa akun terdaftar | 0 | `/login?error=invalid_credentials` (akun auth uji tanpa profil tidak dibuatkan agar tidak meninggalkan residu di staging; case-nya dibuktikan unit test) |
+
+Staging preflight PASS via `scripts/run_staging_8017.py`; server dihentikan. Kredensial hanya di-export di shell yang sama.
+
+### Risiko & yang tidak berubah
+
+- **Akun auth yang profilnya hilang akan ter-lockout (itu tujuannya). Jumlah akun terdampak di produksi TIDAK diketahui dari repo — pemilik repo menjalankan query pengecekan di Supabase SQL Editor sebelum deploy.**
+- **Profil dengan perusahaan kosong TIDAK ditangani PR ini** (tetap lolos `assert_same_tenant` untuk non-admin; PR 2 terpisah).
+- 503 transien tidak membuat logout massal (bukan 401), dan polling presence.js tidak logout pada 503.
+- Yang TIDAK diuji: membuat akun auth uji tanpa profil di staging live, gangguan DB langsung di staging.
+- `pip-audit` tidak berubah.
+
+### Sebelum deploy ke produksi (wajib pemilik repo)
+
+Jalankan di Supabase SQL Editor:
+```sql
+SELECT a.id, a.email
+FROM auth.users a
+LEFT JOIN public.profiles p ON p.id = a.id
+WHERE p.id IS NULL;
+```
+
+### Keputusan yang masih terbuka
+
+- Pembersihan data perusahaan kosong + PR 2 `assert_same_tenant` fail-closed untuk non-admin.
+- C-14 (`.single()` vs cek manual) dan C-15 (create user) tetap terbuka sesuai keputusan sebelumnya.
+
+---
+
+## Sesi 12 — 2026-11-09: catat keputusan tenant + bedakan gangguan DB di login (PR-A, C-01/C-02 bagian perusahaan kosong N/A)
+
+**Ruang lingkup:** dokumentasi model tenant (keputusan pemilik repo 2026-11-09) + login bedakan gangguan DB dari profil hilang. TIDAK mengubah `assert_same_tenant` (selain docstring), limiter, get_current_user, atau kontrak publik.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| A1 | `AGENTS.md` (§4 subbagian) | Model tenant: admin lolos; non-admin perusahaan kosong sengaja lintas perusahaan; guard hanya untuk akun perusahaan terisi; agen dilarang fail-closed tanpa keputusan; 403/503 sejak #69; kode error login | Generik, tanpa identitas akun nyata |
+| A1 | `panduan_dip_automation_system.md` (§2.1 tabel Staff) | Catatan yang sama + kode error login | — |
+| A1 | `app/security.py` docstring `assert_same_tenant` | Fail-open perusahaan kosong dinyatakan DISENGAJA (keputusan), bukan legacy | Tanpa perubahan logika |
+| A2 | `app/main.py:1303` (`login_submit`) | Exception cek profil → 303 `/login?error=service_unavailable` tanpa cookie (log tipe exception saja); baris kosong tetap `profile_missing` | Sebelum: gangguan DB menyesatkan `profile_missing`. Sesudah: konsisten dengan 503 di get_current_user |
+| A2 | `app/templates/login.html` | Blok `service_unavailable` mengikuti pola blok yang ada | — |
+| A3 | `tests/test_auth_profile_fail_closed.py` | Tambah 2 kasus login (service_unavailable untuk username+email; profil ada sukses) | Semua LULUS; (a) FAIL di kode lama |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | OK |
+| `python scripts/check_static_rules.py` | 0 | OK |
+| `python -m compileall app` | 0 | tanpa error |
+| 29 test pure-local CI (clone bersih) | 0 semua | PASS=29 FAIL=0 (tenant_guard_* tetap lulus) |
+| Kasus service_unavailable di kode lama (stash app/) | 1 | `/login?error=profile_missing` (bukan service_unavailable) |
+| `tests/e2e_audit_staging.py --quick` | 0 | PASS 37 / SKIP 7 / FAIL 0 |
+| Manual staging: login normal | 0 | Dashboard `/` 200 |
+| Smoke 33/34 yang sama (402 PT Heka 403) | 1 | Sama seperti diketahui; bukan perubahan ini |
+
+Staging preflight PASS; server dihentikan. Kredensial hanya di-export di shell yang sama.
+
+### Koreksi riwayat
+
+Kalimat "PR 2 terpisah, menunggu pembersihan data" di Sesi 5 dan Sesi 11 tidak berlaku lagi: non-admin perusahaan kosong TIDAK akan dibuat fail-closed (keputusan pemilik repo 2026-11-09). C-01/C-02 bagian perusahaan kosong berstatus N/A.
+
+### Risiko & yang tidak berubah
+
+- Perilaku bisnis tidak berubah selain pesan error yang lebih tepat saat gangguan DB.
+- `assert_same_tenant`, limiter login, get_current_user, kontrak `/dip/*` tidak disentuh.
+
+### Keputusan yang masih terbuka
+
+- PR-B (edit komponen bahan baku atomik, migrasi 012) menunggu PR-A merge.
+- C-14, C-15 tetap terbuka.
+
+---
+
+## Sesi 13 — 2026-11-09: edit komponen bahan baku atomik (C-07)
+
+**Ruang lingkup:** C-07 saja (edit komponen bahan baku atomik). TIDAK menyentuh add_raw_material, route varian, delete, assert_same_tenant, get_current_user, limiter, log_activity. Migrasi SQL TIDAK dieksekusi agen (otorisasi tidak diberikan).
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah / validasi) |
+|---|---|---|---|
+| C-07 | `app/raw_materials_routes.py` (edit) | Validasi SEBELUM tulis apa pun (panjang list konsisten, percent via `Decimal` 0–100 inkl. non-finite ditolak) → error NOL tulis; ganti 2 delete + insert dengan SATU `supabase.rpc("replace_raw_material_components")` (payload list, bukan string JSON — pola 010); rpc gagal → log + redirect error (komponen tidak berubah, tidak fallback); `log_activity` sukses hanya setelah rpc berhasil; kode mati `if changes: pass` dihapus | Sebelum: komponen hilang bila build/insert gagal. Sesudah: atomik; input invalid NOL tulis; non-finite ditolak |
+| C-07 | `migration/013_replace_raw_material_components.sql` | Fungsi `replace_raw_material_components` (delete varian NULL+edit + insert dalam satu transaksi, lock induk `FOR UPDATE`, validasi JSONB, kembalikan jumlah baris; grant hanya `service_role`; pola 010); header: p_components harus array JSON asli (list), bukan string (merujuk 010); pre-check/probe/rehearsal | **BELUM dieksekusi di mana pun** (menunggu pemilik repo manual staging dulu) |
+| — | `README.md`, `AGENTS.md` | Tabel migrasi 001–013; nomor berikutnya 014; (prompt menuntut 012 — bentrok dengan `012_add_batch_mengetahui_signer.sql` yang sudah ada; dipakai 013) | — |
+
+Asumsi skema (BELUM terverifikasi via information_schema karena tanpa akses DB; pemilik repo wajib jalankan pre-check 0c):
+`raw_material_components(id uuid, raw_material_id uuid, variant_id uuid nullable, inci_name text, cas_number text nullable, "function" text nullable, percent_internal numeric, is_bahan_aktif boolean, created_at timestamptz)`.
+
+Urutan deploy: migrasi 013 manual DULU di staging lalu produksi (aditif, hanya membuat fungsi), BARU kode di-deploy. Bila kode sebelum migrasi, edit komponen gagal dengan pesan error dan komponen TIDAK berubah (fail-safe).
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` | 0 | OK |
+| `python scripts/check_static_rules.py` | 0 | OK |
+| `python -m compileall app` | 0 | tanpa error |
+| 30 test pure-local CI (clone bersih) | 0 semua | PASS=30 FAIL=0 (atomik 7 kasus incl. nan/inf) |
+| Test `p_components` list di kode lama (stash app/) | 1 | `AssertionError: p_components harus list, dapat str` |
+| `tests/e2e_audit_staging.py --quick` | 0 | PASS 37 / SKIP 7 / FAIL 0 |
+| Smoke 33/34 yang sama (402 PT Heka 403) | 1 | Sama seperti diketahui; bukan perubahan ini |
+
+Staging preflight PASS; server dihentikan. E2E jalur ini HANYA setelah pemilik repo menjalankan 013 di staging: edit komposisi bahan baku uji di staging lalu verifikasi komponen; simulasi kegagalan dengan input tidak valid (harus error, komponen tidak berubah).
+
+### Catatan lain
+
+- **C-08 sudah tertutup di main** (commit 2b6ee79), terverifikasi di Sesi 13.
+- **C-10 tidak memerlukan perubahan**: `app/static/lampiran.js:103` menangani `failed` per file (`const failed = (data.failed || []).find(...)`); rollback insert sudah ada.
+- **SQL belum dieksekusi di mana pun** (tidak lewat CLI/Management API/MCP/cara lain).
+- **Asumsi skema** di atas;query verifikasi pemilik repo (pre-check 0c di file 013) wajib sebelum deploy.
+
+### Koreksi tambahan (commit fix PR #71)
+
+- `p_components` kini list (array JSON asli), bukan string JSON (bug: string sampai sebagai scalar dan ditolak cek array). Pola mengikuti `replace_product_formula` (migrasi 010).
+- Persentase non-finite (nan/inf/-inf) ditolak (`Decimal.is_finite`).
+- Kode mati `if changes: pass` dihapus.
+- Batas persentase 0..100 di Python adalah perilaku BARU (kode lama menerima angka apa pun).
+- Komposit dengan semua nama bahan kosong tetap menghapus seluruh komposisi varian (sama dengan kode lama).
+- Update header bahan baku dan dokumen perusahaan terjadi SEBELUM RPC, jadi saat RPC gagal header bisa sudah berubah sementara komponen tidak (pesan error sudah menyatakan komponen tidak berubah).
+
+### Uji manual staging setelah migrasi 013 dijalankan pemilik repo
+
+1. Edit komposisi satu bahan baku uji lewat UI; verifikasi komponen berubah dan jumlahnya benar:
+   `SELECT variant_id, COUNT(*) FROM raw_material_components WHERE raw_material_id = '<rm_id>' GROUP BY variant_id;`
+2. Ulangi dengan input tidak valid (persentase negatif / bukan angka); verifikasi komponen lama TIDAK berubah (query yang sama sebelum dan sesudah).
+
+### Risiko & yang tidak berubah
+
+- Tanpa migrasi di staging, edit komponen di staging gagal dengan pesan yang jelas (tidak merusak data).
+- Route tambah bahan baku tidak diubah sesuai instruksi.
+- `pip-audit` tidak berubah.
+
+### Keputusan yang masih terbuka
+
+- Pemilik repo menjalankan migrasi 013 manual di staging lalu verifikasi sebelum produksi; lalu uji E2E komponen di staging.
+- C-14, C-15 tetap terbuka.
+
+---
+
+## Sesi 14 — 2026-11-09: perbarui log audit + status migrasi + banner dokumen historis (dokumentasi saja, tanpa perubahan kode)
+
+**Ruang lingkup:** dokumentasi saja (file `.md`); tidak menyentuh `app/`, `tests/`, `migration/`, `scripts/`, workflow, atau dependency. Tidak ada migrasi SQL yang dieksekusi.
+
+### Perubahan per file
+
+| File | Perubahan | Bukti |
+|---|---|---|
+| `catatan/catatan_log_perbaikan_audit_2026-11-05.md` | Baris C-07 → SELESAI (kode #71; migrasi 013 dijalankan staging+produksi 2026-11-09); baris C-08 frasa rapat → "sudah tertutup di main (commit 2b6ee79), terverifikasi di Sesi 13"; frasa "C-08-ish" → netral; baris D-08/D-09/D-10/D-14 → SEBAGIAN (status terkonfirmasi / banner ditambahkan); entri Sesi 14 | Hanya koreksi frasa keliru + status |
+| `panduan_dip_automation_system.md` | Baris 013 di tabel migrasi; paragraf status eksekusi; subbagian "Cek status migrasi" dengan query read-only persis | 007+013 terkonfirmasi; sisanya "belum diverifikasi: jalankan query pengecekan" |
+| `README.md` | 013 di kedua tabel migrasi; nomor berikutnya 014; paragraf status singkat + rujukan panduan | — |
+| `AGENTS.md` | Rujuk paragraf status eksekusi di panduan; konsisten 014 | — |
+| `catatan/catatan_handoff_migrasi_r2.md` + `catatan/catatan_migrasi_storage_r2.md` | Banner historis + tandai baris produksi supabase sebagai "(usang, lihat README)" | Bukan sumber kebenaran saat ini |
+| `catatan/catatan_batch_plan.md` + `catatan/catatan_audit_codebase_2026-10-27.md` | Banner historis (baris pertama) | Isi tidak diubah |
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `git diff --stat` | 0 | Hanya file `.md` (7 file) |
+| `python scripts/check_static_rules.py` | 0 | OK |
+| `python scripts/check_undefined_names.py` | 0 | OK |
+| Cek tautan/anchor markdown | 0 | — |
+
+### Risiko & yang tidak berubah
+
+- Tidak ada perubahan perilaku; hanya dokumentasi.
+- REPO PUBLIK: tidak ada project ref, username, id, email, atau data akun nyata yang ditulis ke file mana pun.
+
+### Keputusan yang masih terbuka
+
+- C-04 (log masking token di log server), C-15 (create user), dan opsional: CSRF/CSP, SRI, SSRF `httpx.get` di `dip_documents`, greeting AI, display_name.
+- Status eksekusi migrasi 001-004, 006, 008, 010, 011, 012: "belum diverifikasi" sampai query pengecekan di panduan dijalankan pemilik repo di staging dan produksi.

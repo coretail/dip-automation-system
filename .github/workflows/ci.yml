@@ -84,6 +84,11 @@ jobs:
           python tests/test_tenant_guard_sample.py
           python tests/test_bab2_qc_mengetahui.py
           python tests/test_tenant_guard_finished_spec.py
+          python tests/test_dip_public_revoke.py
+          python tests/test_dip_public_rate_limit.py
+          python tests/test_access_log_redaction.py
+          python tests/test_auth_profile_fail_closed.py
+          python tests/test_raw_material_components_atomic.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt

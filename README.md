@@ -21,7 +21,7 @@ Sistem otomasi berbasis web untuk menyusun, mengelola, dan menggenerasi **Dokume
 | **Analisis PO** (`/po-analytics`) | Halaman analitik terpisah dari modul Produksi. KPI Total PO/qty, komposisi per kuartal, grafik donat proporsi per perusahaan, **grafik kombinasi batang + garis jumlah PO & qty pcs per kuartal per perusahaan** (dua sumbu), Top 5 produk menurut PO/qty, Top 5 produk belum ada Laporan Uji SIG, serta tabel rincian qty per produk dan per merek dengan selector 5/10/25/100 client-side. Filter **tahun**, **kuartal**, **urutan**, dan **tab per perusahaan** (`Semua` / `PT Erfi` / `PT Heka`). Banner amber "PO belum punya item" yang menyebutkan jumlahnya dan daftar nomor PO-nya — pemisahan eksplisit antara *PO tanpa item* dan *PO tidak ada*. | ✅ **Selesai** |
 | **Filter & Pencarian Produksi** | `/purchase-orders` punya filter **tahun** (termasuk "Semua Tahun"), **kuartal** (Q1–Q4, default = kuartal berjalan WIB, dinaikkan ke kuartal tertinggi yang benar-benar berisi data), dan **perusahaan** — termasuk opsi **"Tanpa item"** untuk PO yang belum punya item, karena `purchase_orders` tidak punya kolom perusahaan. Disimpan di cookie `po_filter`. Pencarian realtime No. PO + nama produk. Pengurutan tanggal null diletakkan terakhir. | ✅ **Selesai** |
 | **PO Rework** | Kolom `purchase_orders.jenis_po` (`migration/002_add_jenis_po.sql`) untuk menandai PO perbaikan/rework. Di `/po-analytics`, PO Rework **tetap dihitung sebagai jumlah PO** tetapi **qty pcs-nya tidak ikut dijumlahkan** — sehingga KPI PO dan qty tidak sama-sama naik. Diberi tanda lewat `migration/tag_rework_po.py`. Banner di analisis memberi tahu bila kolom ini belum ada di database. | ✅ **Selesai** |
-| **Toolkit Migrasi Data** | Folder `migration/` berisi 10 file SQL skema (001–008, 010–011; 009 tidak dipakai) + skrip migrasi data & rollback + skrip audit/backfill storage (`audit_storage.py`, `backfill_r2_urls.py`, `verify_r2_readiness.py`), semuanya mengikuti pola yang sama: **read-only secara default**, hanya menulis dengan `--execute --yes`, `--dry-run` menulis laporan CSV/JSON tanpa menyentuh database, dan **manifest** berisi id baris yang tertulis untuk keperluan rollback. Lihat §Migrasi Data. | ✅ **Selesai** |
+| **Toolkit Migrasi Data** | Folder `migration/` berisi 12 file SQL skema (001–013; 009 tidak dipakai) + skrip migrasi data & rollback + skrip audit/backfill storage (`audit_storage.py`, `backfill_r2_urls.py`, `verify_r2_readiness.py`), semuanya mengikuti pola yang sama: **read-only secara default**, hanya menulis dengan `--execute --yes`, `--dry-run` menulis laporan CSV/JSON tanpa menyentuh database, dan **manifest** berisi id baris yang tertulis untuk keperluan rollback. Lihat §Migrasi Data. | ✅ **Selesai** |
 | **Manajemen Dokumen Perusahaan** | Halaman admin khusus (`/admin/company-documents`) untuk mengelola **7 jenis dokumen statis per-perusahaan** (NIB, Sertifikat CPKB, Surat Tidak Pidana, Protap No. Batch, Protap Pemeriksaan Produk Jadi, CV Safety Assessor, **SOP CPKB Pemeriksaan Bahan Baku**) yang dipakai lintas Bab I, III, dan IV saat generate PDF DIP. Upload file via UI (bucket `legal-documents` & `raw-material-docs`), upsert otomatis ke 5 tabel terkait, tercatat di `activity_logs`. Laporan Monitoring Efek Samping (NIES) adalah dokumen per-produk yang di-generate dari Tab Bab 4 — bukan dokumen statis perusahaan. | ✅ **Selesai** |
 | **Spesifikasi Produk Jadi (PT Erfi)** | Form input spesifikasi QC produk jadi dengan template default 5 section, auto-fill dari Informasi Dasar (`no_na_produk`, `netto`, `acc_sampel`), generate PDF meniru format dokumen QC resmi PT Erfi. Tabel `product_finished_specs`. Hanya untuk `PT Erfi`; produk PT Heka mendapat 303 ke halaman edit. | ✅ **Selesai** |
 | **Field Peringatan & Penyimpanan** | Field `peringatan` & `penyimpanan` di form Tambah/Edit Produk, otomatis muncul di dokumen Bab IV (Text Design), Formula Kualitatif & Kuantitatif, dan Export Excel — **hanya bila diisi** (bukan NULL, kosong, atau `-`). | ✅ **Selesai** |
@@ -144,7 +144,7 @@ Semua dipin dengan versi exact:
 | Paket | Versi | Paket | Versi |
 |---|---|---|---|
 | `fastapi` | 0.141.1 | `xhtml2pdf` | 0.2.20 |
-| `starlette` | 1.6.0 | `pypdf` | 6.21.1 |
+| `starlette` | 1.6.0 | `pypdf` | 6.21.4 |
 | `uvicorn` | 0.53.0 | `httpx` | 0.28.1 |
 | `supabase` | 2.31.0 | `slowapi` | 0.1.10 |
 | `boto3` | 1.43.115 | `python-slugify` | 9.0.0 |
@@ -242,8 +242,11 @@ Skema produksi tidak dikelola otomatis. Jalankan file SQL di folder `migration/`
 | 010 | `migration/010_replace_product_formula.sql` | Fungsi atomik `replace_product_formula` (transaksi DELETE+INSERT) | Penyimpanan formula Bab 2 gagal dengan pesan "fungsi transaksi belum terpasang" |
 | 011 | `migration/011_add_profile_display_name_and_avatar.sql` | Kolom `display_name`, `avatar_path`, `avatar_updated_at` di `profiles` + CHECK constraint | Nama tampilan & foto profil tidak tersedia |
 | 012 | `migration/012_add_batch_mengetahui_signer.sql` | Kolom `mengetahui_signer` (nullable `text`) di `raw_material_batches` — penandatangan "Mengetahui (Kepala QC)" | Fitur baru belum tersedia (belum dijalankan) |
+| 013 | `migration/013_replace_raw_material_components.sql` | Fungsi atomik `replace_raw_material_components` (transaksi DELETE+INSERT komponen INCI) | Edit komponen gagal dengan pesan error dan komponen tidak berubah (fail-safe) |
 
-> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Semua file SQL dijalankan manual lewat Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **013**.
+> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Semua file SQL dijalankan manual lewat Supabase SQL Editor, staging lebih dulu. Nomor migrasi berikutnya adalah **014**.
+
+Status eksekusi (per 2026-11-09): 007 dan 013 dikonfirmasi dijalankan; 001-004, 006, 008, 010, 011, 012 "belum diverifikasi: jalankan query pengecekan" (lihat subbagian "Cek status migrasi" di panduan). 005 adalah perubahan data, tidak dapat dibuktikan lewat skema.
 
 ---
 
