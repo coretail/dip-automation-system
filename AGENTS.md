@@ -100,4 +100,4 @@
 - `catatan/catatan_handoff_migrasi_r2.md` dan `catatan/catatan_migrasi_storage_r2.md`: handoff/status R2 historis; jangan dianggap status live tanpa verifikasi.
 - `catatan/catatan_batch_plan.md`: rencana lama yang bertentangan dengan PO yang sudah ada; bukan sumber kebenaran saat ini.
 - `.kilo/plans/rencana_fitur_input_po_qc.md`: rencana lama; klaim “belum ada perubahan code” tidak cocok dengan `app/po_routes.py` saat ini.
-  - `migration/001`–`013`: urutan SQL bernomor (009 sengaja tidak dipakai); `011_add_profile_display_name_and_avatar.sql` sudah dipersiapkan. Bukti repo menunjukkan manual SQL Editor, tetapi status eksekusi aktual tidak dapat diverifikasi tanpa akses database. Nomor migrasi berikutnya adalah **014**.
+  - `migration/001`–`013`: urutan SQL bernomor (009 sengaja tidak dipakai); `011_add_profile_display_name_and_avatar.sql` sudah dipersiapkan. Status eksekusi ada di paragraf "Status eksekusi (per 2026-11-09)" di panduan. Nomor migrasi berikutnya adalah **014**.

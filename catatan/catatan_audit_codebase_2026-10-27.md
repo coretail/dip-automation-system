@@ -1,5 +1,7 @@
 # Catatan Audit Codebase — DIP Automation System (2026-10-27)
 
+**DOKUMEN HISTORIS; bukan sumber kebenaran saat ini.**
+
 ## Status Dokumen
 
 **Audit READ-ONLY.** Tidak ada file kode yang diubah, dibuat, dihapus, atau di-commit

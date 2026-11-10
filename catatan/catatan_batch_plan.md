@@ -1,5 +1,7 @@
 # Catatan Batch Plan — Migration Data PO / Produksi
 
+**DOKUMEN HISTORIS; bukan sumber kebenaran saat ini.**
+
 ## Status
 
 **Planning only — belum melakukan perubahan code/database.**
