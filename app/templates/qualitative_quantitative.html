@@ -72,6 +72,132 @@
         --qq-line-heka: #7C9EE8;
     }
 
+    [data-theme="charcoal"] {
+        --qq-header-erfi: #2A2A30;
+        --qq-header-heka: #2A2A30;
+        --qq-total-fill: #2A2A30;
+        --qq-active-fill: #3A3A42;
+        --qq-active-text: #E3C57F;
+        --qq-note-fill: #3A3A42;
+        --qq-border: #8A6D3B;
+        --qq-line-erfi: #8A6D3B;
+        --qq-line-heka: #8A6D3B;
+    }
+
+    [data-theme="midnight-teal"] {
+        --qq-header-erfi: #163A48;
+        --qq-header-heka: #163A48;
+        --qq-total-fill: #163A48;
+        --qq-active-fill: #254F62;
+        --qq-active-text: #8FE3E3;
+        --qq-note-fill: #254F62;
+        --qq-border: #356477;
+        --qq-line-erfi: #2A9D8F;
+        --qq-line-heka: #2A9D8F;
+    }
+
+    /* Tema gelap: override warna teks yang tidak terbaca */
+    [data-theme="charcoal"] {
+        --qq-letterhead-title: #F2F2F3;
+        --qq-letterhead-subtitle: #A8A8B3;
+        --qq-info-bg: #1F1F23;
+        --qq-info-text: #F2F2F3;
+        --qq-doc-bg: #111114;
+    }
+
+    [data-theme="midnight-teal"] {
+        --qq-letterhead-title: #EAF6F7;
+        --qq-letterhead-subtitle: #A8C5C8;
+        --qq-info-bg: #102E3A;
+        --qq-info-text: #EAF6F7;
+        --qq-doc-bg: #0B1E26;
+    }
+
+    [data-theme="charcoal"] .bg-white,
+    [data-theme="midnight-teal"] .bg-white {
+        background-color: var(--qq-info-bg) !important;
+    }
+
+    [data-theme="charcoal"] .text-gray-900,
+    [data-theme="midnight-teal"] .text-gray-900 {
+        color: var(--qq-letterhead-title) !important;
+    }
+
+    [data-theme="charcoal"] .text-gray-600,
+    [data-theme="midnight-teal"] .text-gray-600 {
+        color: var(--qq-letterhead-subtitle) !important;
+    }
+
+    [data-theme="charcoal"] .bg-gray-50,
+    [data-theme="midnight-teal"] .bg-gray-50 {
+        background-color: var(--t-surface-2) !important;
+        color: var(--qq-info-text) !important;
+    }
+
+    [data-theme="charcoal"] .border-gray-200,
+    [data-theme="midnight-teal"] .border-gray-200 {
+        border-color: var(--qq-border) !important;
+    }
+
+    [data-theme="charcoal"] .text-gray-400,
+    [data-theme="midnight-teal"] .text-gray-400 {
+        color: var(--qq-letterhead-subtitle) !important;
+    }
+
+    /* Admin link management section (bottom) */
+    [data-theme="charcoal"] .bg-white.no-print,
+    [data-theme="midnight-teal"] .bg-white.no-print {
+        background-color: var(--qq-info-bg) !important;
+        border-color: var(--qq-border) !important;
+    }
+
+    [data-theme="charcoal"] .bg-white.no-print .text-sm,
+    [data-theme="midnight-teal"] .bg-white.no-print .text-sm {
+        color: var(--qq-letterhead-title) !important;
+    }
+
+    [data-theme="charcoal"] .bg-white.no-print .text-xs,
+    [data-theme="midnight-teal"] .bg-white.no-print .text-xs {
+        color: var(--qq-letterhead-subtitle) !important;
+    }
+
+    /* Modal styling for dark themes */
+    [data-theme="charcoal"] #bpomLinkModal .bg-white,
+    [data-theme="midnight-teal"] #bpomLinkModal .bg-white {
+        background-color: var(--qq-info-bg) !important;
+    }
+
+    [data-theme="charcoal"] #bpomLinkModal .text-gray-900,
+    [data-theme="midnight-teal"] #bpomLinkModal .text-gray-900 {
+        color: var(--qq-letterhead-title) !important;
+    }
+
+    [data-theme="charcoal"] #bpomLinkModal .text-gray-500,
+    [data-theme="midnight-teal"] #bpomLinkModal .text-gray-500 {
+        color: var(--qq-letterhead-subtitle) !important;
+    }
+
+    [data-theme="charcoal"] #bpomLinkModal .bg-gray-50,
+    [data-theme="midnight-teal"] #bpomLinkModal .bg-gray-50 {
+        background-color: var(--t-surface-2) !important;
+    }
+
+    [data-theme="charcoal"] #bpomLinkModal .border-gray-200,
+    [data-theme="midnight-teal"] #bpomLinkModal .border-gray-200 {
+        border-color: var(--qq-border) !important;
+    }
+
+    [data-theme="charcoal"] #bpomLinkModal .text-gray-700,
+    [data-theme="midnight-teal"] #bpomLinkModal .text-gray-700 {
+        color: var(--qq-letterhead-title) !important;
+    }
+
+    [data-theme="charcoal"] #bpomToast,
+    [data-theme="midnight-teal"] #bpomToast {
+        background-color: var(--t-surface-3) !important;
+        color: var(--qq-letterhead-title) !important;
+    }
+
     /* ============================================================
        PRINT LAYOUT: 1 blok .print-page = 1 halaman PDF utuh.
        Page break HANYA dikontrol lewat class .print-page pada tiap
@@ -362,6 +488,38 @@
         Keterangan tambahan: QR BPOM, No Batch dan Exp Date, Netto yg digunakan.
     </div>
 </div>
+
+<!-- ==================== ADMIN LINK MANAGEMENT (BOTTOM) ==================== -->
+{% if current_user and current_user.role == "admin" %}
+<div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mt-8 no-print">
+    <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-1">
+            {% if (product.public_access_enabled == false) or product.public_access_revoked_at %}
+            <span class="text-sm font-semibold text-red-600">Link publik dicabut sejak {{ product.public_access_revoked_at or '-' }}</span>
+            <p class="text-xs text-gray-500">Aktivkan kembali link publik untuk memungkinkan akses DIP di portal BPOM</p>
+            {% else %}
+            <span class="text-sm font-semibold text-emerald-600">Link publik aktif</span>
+            <p class="text-xs text-gray-500">Link publik dapat diakses dan dilampirkan ke portal e-registration BPOM</p>
+            {% endif %}
+        </div>
+        <div class="flex items-center gap-2">
+            {% if (product.public_access_enabled == false) or product.public_access_revoked_at %}
+            <form method="post" action="/products/{{ product.id }}/public-access/reactivate" style="display:inline">
+                <button type="submit" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center gap-2 font-semibold text-sm" title="Aktifkan ulang link publik (token lama tetap dipakai)">
+                    <i class="fa-solid fa-key"></i> Aktifkan Ulang
+                </button>
+            </form>
+            {% else %}
+            <form method="post" action="/products/{{ product.id }}/public-access/revoke" onsubmit='return confirm("Yakin ingin mencabut link publik produk " + {{ product.nama_produk | tojson }} + "? Link publik akan 404 hingga diaktifkan ulang.");' style="display:inline">
+                <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md shadow-xs transition duration-200 cursor-pointer flex items-center gap-2 font-semibold text-sm" title="Cabut link publik DIP">
+                    <i class="fa-solid fa-ban"></i> Cabut Link
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- ==================== MODAL PUBLIC LINK BPOM ==================== -->
 <div id="bpomLinkModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
