@@ -140,7 +140,9 @@
                                 {% endif %}
                             </span>
                             <span class="flex items-center gap-1.5">
+                                {% if m.files %}
                                 <span class="text-xs text-gray-400">{{ m.files|length }} file</span>
+                                {% endif %}
                                 <i class="fa-solid fa-chevron-down text-gray-400 text-xs group-open:rotate-180 transition-transform"></i>
                             </span>
                         </summary>
@@ -157,6 +159,18 @@
                                 </a>
                             </li>
                             {% endfor %}
+                            {% if m.journal_link %}
+                            <li class="flex items-center justify-between gap-2 text-sm py-0.5">
+                                <span class="flex items-center gap-2 text-gray-600 min-w-0">
+                                    <i class="fa-solid fa-book-open text-gray-400"></i>
+                                    <span class="truncate">Jurnal Referensi</span>
+                                </span>
+                                <a href="{{ m.journal_link }}" target="_blank" rel="noopener noreferrer"
+                                   class="shrink-0 text-indigo-600 hover:text-indigo-800 hover:underline font-medium text-xs flex items-center gap-1">
+                                    <i class="fa-solid fa-up-right-from-square"></i> Buka
+                                </a>
+                            </li>
+                            {% endif %}
                         </ul>
                     </details>
                     {% endfor %}

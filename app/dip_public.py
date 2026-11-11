@@ -31,6 +31,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 
 from app import object_store
+from app.journal_link import safe_journal_href
 
 # Zona waktu bisnis (WIB) — harus nilainya sama dengan main.py
 WIB = ZoneInfo("Asia/Jakarta")
@@ -71,6 +72,36 @@ def _dip_product_key(extract_id_from_slug, client_ip):
             return "dip-ip:-"
 
     return _key
+
+
+def bab2_journal_link(rm: dict) -> str | None:
+    """Link jurnal (URL EKSTERNAL, bukan storage) bahan baku untuk hub publik.
+
+    Dinormalisasi lewat ``app.journal_link.safe_journal_href`` (tanpa raise;
+    nilai kosong/tidak valid -> None) sehingga aman dipakai langsung sebagai
+    href di template. Sengaja TIDAK lewat ``_storage_signed_url``: itu khusus
+    URL objek storage (Supabase/R2), sedangkan journal_link adalah URL jurnal
+    eksternal yang dibuka apa adanya di tab baru.
+    """
+    return safe_journal_href((rm or {}).get("journal_link"))
+
+
+def bab2_material_entry(rm: dict, files: list, journal: str | None) -> dict | None:
+    """Satu entri bahan baku untuk daftar Bab II hub publik.
+
+    Bahan tetap tampil kalau punya file storage ATAU link jurnal
+    (``files or journal``). Kunci ``"files"`` tetap HANYA berisi file storage
+    (jurnal tidak ikut dihitung, template menampilkan ``m.files|length``),
+    sedangkan link jurnal dibawa di kunci terpisah ``"journal_link"``.
+    """
+    if not files and not journal:
+        return None
+    return {
+        "nama": rm.get("nama_dagang") or "Unknown",
+        "kode": rm.get("kode_bahan_baku") or "-",
+        "files": files,
+        "journal_link": journal,
+    }
 
 
 def register_dip_public_routes(
@@ -314,12 +345,12 @@ def register_dip_public_routes(
                             "icon": f["icon"],
                             "url": _storage_signed_url(f["url"])
                         })
-                if files:
-                    bab2_materials.append({
-                        "nama": rm.get("nama_dagang") or "Unknown",
-                        "kode": rm.get("kode_bahan_baku") or "-",
-                        "files": files
-                    })
+                # Link jurnal = URL eksternal (jangan lewat _storage_signed_url).
+                journal = bab2_journal_link(rm)
+                # Bahan tampil bila punya file storage ATAU link jurnal.
+                entry = bab2_material_entry(rm, files, journal)
+                if entry:
+                    bab2_materials.append(entry)
         except Exception as e:
             print(f"[PUBLIC HUB] Gagal kumpulin file Bab II: {e}")
 

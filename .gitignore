@@ -219,6 +219,8 @@ scripts_tmp_list_projects.py
 !/tests/test_safe_fetch.py
 !/tests/test_journal_link.py
 !/tests/test_import_journal_link_matching.py
+# Unit test murni logika bab2 journal hub publik /dip/* (tanpa DB/secret).
+!/tests/test_dip_public_bab2_journal.py
 
 # Local documentation and notes
 /catatan/prompt-tenant-guard-a10-a13.md
