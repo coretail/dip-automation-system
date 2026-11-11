@@ -20,7 +20,7 @@
 ## CI/CD (GitHub Actions)
 - Sumber kebenaran pipeline adalah `.github/workflows/ci.yml`, `.github/workflows/staging-e2e.yml`, `.github/workflows/dependency-audit.yml`, dan `.github/dependabot.yml`.
 - `ci.yml` berjalan pada `pull_request` dan `push` ke `main`. Job `quality` tidak memakai secret; env dummy level job berisi `SUPABASE_URL=https://ci.invalid.supabase.co`, `SUPABASE_KEY=ci-dummy-anon-key`, `SUPABASE_SERVICE_ROLE_KEY=ci-dummy-service-role-key`, dan `STORAGE_BACKEND=supabase`. `DIP_APP_ENV` **tidak boleh diset** di CI.
-  - Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, sembilan belas test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
+  - Langkah `quality`: `scripts/check_undefined_names.py`, `scripts/check_static_rules.py`, `compileall`, import terisolasi `app.main`, tiga puluh satu test pure-local, `pip-audit`, dan Gitleaks. Audit dependency dan Gitleaks masih report-only pada fast CI.
 - `staging-e2e.yml` hanya memiliki `workflow_dispatch`; trigger `push` dinonaktifkan sampai diputuskan lain. Workflow memakai GitHub Environment `staging`, concurrency tunggal dengan `cancel-in-progress: false`, serta suite `all`, `smoke`, `upload`, `activity`, `notes`, dan `audit`. Suite `all` tidak memuat `upload`; suite upload memerlukan backend `dual`/`r2`.
 - `dependency-audit.yml` berjalan melalui cron mingguan hari Senin dan `workflow_dispatch`; `pip-audit -r requirements.txt` membuat job gagal bila ada advisory. Pengecualian hanya boleh memakai `--ignore-vuln <ID>` dengan komentar yang mencatat alasan, owner, dan tanggal review.
 - `.github/dependabot.yml` mengatur ekosistem `pip` dan `github-actions`, terjadwal Senin 02:00 WIB. Update minor/patch pip digabung jadi satu PR grup (`pip-routine`) dan semua update actions jadi satu PR (`actions-all`); `fastapi`, `pydantic*`, dan `pypdf` dikecualikan dari grup sehingga tiap bump-nya PR sendiri, dan update major selalu PR terpisah. Seluruh update masuk melalui PR dan wajib melewati CI. Dependabot juga langsung memeriksa saat file konfigurasi ini berubah, jadi satu PR grup bisa muncul segera setelah merge. Security updates berjalan terpisah dari jadwal ini.
@@ -68,6 +68,7 @@
 - Commit terbaru umumnya Conventional Commits (`feat`, `fix`, `test`, `docs`, `chore`, `refactor`) dengan campuran Indonesia/Inggris. Penulis dominan `coretail`; sebagian commit Claude memiliki trailer `Co-Authored-By` dan `Claude-Session`.
 
 ## 6. Jebakan yang terbukti
+- Semua fetch URL dokumen yang berasal dari DB (spec sheet, CoA, halal, MSDS, NIB/CPKB, lampiran Bab I–IV, dst.) WAJIB lewat `app/safe_fetch.py` (`fetch_storage_bytes` + allowlist dari `SUPABASE_URL`/`R2_PUBLIC_BASES`/`R2_ACCOUNT_ID`); jangan memakai `httpx.get`/`AsyncClient.get` langsung untuk URL dari DB (SSRF, temuan audit E-04).
 - Refactor route pernah meninggalkan `NameError`; `84f0f27` menambah checker dan smoke E2E.
 - Asumsi redirect smoke test pernah salah (handler menuju preview, bukan daftar); diperbaiki di `2fa904a`.
 - Komentar/keterangan kode memperingatkan string seperti `now()`/komentar SQL di payload PostgREST dapat diperlakukan sebagai literal dan gagal cast; kirim nilai timestamp nyata.
