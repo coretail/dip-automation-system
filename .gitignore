@@ -82,6 +82,9 @@ skills-lock.json
 !/migration/backfill_r2_urls.py
 # Skrip verifikasi kesiapan cutover R2 (read-only, tanpa secret; rahasia via .env).
 !/migration/verify_r2_readiness.py
+# Skrip impor journal_link dari xlsx gabungan (token Management API via env/kilo.jsonc;
+# file script tanpa secret; xlsx & snapshot tetap di-gitignore di /logs/).
+!/migration/import_journal_link.py
 
 # RLS backup dumps (local only, contains database data)
 /backup-rls/
