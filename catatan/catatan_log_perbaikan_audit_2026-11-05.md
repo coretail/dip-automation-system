@@ -879,3 +879,50 @@ Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server
 
 - A-07 (lapisan penuh): CSRF token per-form dan CSP/HSTS tetap opsional/terbuka. Lapisan ini hanya lapisan kedua (Origin/Referer + `SameSite=Lax`).
 - A-06 (SRI Tailwind/FontAwesome), C-04 (log masking token), C-15 (create user TOCTOU), A-09, A-16/A-19, A-18, C-05, F-02/F-01, F-03/F-06, D-08/D-10/D-14 → tetap terbuka sesuai keputusan sebelumnya.
+
+---
+
+## Koreksi Sesi 16 - 2026-11-11: A-07 guard CSRF - perbaiki 3 bug dari commit 9305a87
+
+**Branch:** eat/csrf-origin-guard (commit koreksi di atas 9305a87).
+
+### Penyebab bug (review, diverifikasi dari kode)
+
+1. Referrer-Policy: no-referrer di SecurityHeadersMiddleware membuat semua POST browser mengirim Origin: null + tanpa Referer. Guard meloloskan hampir semua POST browser lewat cek 3 (keduanya tidak ada). Penyerang bisa meniru kondisi yang sama (meta 
+o-referrer / iframe sandbox). Guard praktis tidak melindungi apa-apa selain SameSite=Lax.
+2. Urutan middleware di main.py salah: pp.add_middleware(CsrfGuardMiddleware) dipasang SETELAH SecurityHeadersMiddleware sehingga guard adalah lapisan PALING LUAR dan membalas 403 tanpa melewati SecurityHeaders. Klaim "403 tetap membawa security headers" tidak benar di app nyata. Test lolos karena memakai _MiniSecurityHeadersMiddleware dengan urutan terbalik dari main.py.
+3. Dokstring menyebut Origin: null = "Chromium headless di 127.0.0.1" - keliru; penyebab sebenarnya adalah Referrer-Policy: no-referrer, terjadi juga di produksi (https://).
+
+### Perubahan koreksi
+
+| File | Perubahan |
+|---|---|
+| pp/main.py (SecurityHeadersMiddleware) | Referrer-Policy: no-referrer -> same-origin; komentar diperbarui (POST same-origin kembali membawa Origin yang benar; Referer ke domain lain tetap tidak dikirim sehingga token ?access= tidak bocor lewat link keluar) |
+| pp/main.py (urutan middleware) | CsrfGuardMiddleware dipasang DULU, SecurityHeadersMiddleware SESUDAH (yang terakhir ditambah = paling luar); komentar diperbaiki |
+| pp/csrf_guard.py | Origin: null -> 403 (hapus semua komentar quirk Chromium; logika (a)/(b)/(c) sesuai spesifikasi) |
+| 	ests/test_csrf_guard.py | Origin: null (dengan/tanpa Referer) -> 403; hapus _MiniSecurityHeadersMiddleware; tambah test app nyata untuk 403 + security headers + Referrer-Policy: same-origin; tambah test unit SecurityHeadersMiddleware |
+| 	ests/e2e_csrf_origin_staging.py (baru) | E2E regresi: login via Playwright + form POST notes, tangkap header Origin/Referer, assert Origin != "null" + Referrer-Policy == same-origin. Whitelist .gitignore, TIDAK di CI (butuh server staging) |
+
+### Hasil verifikasi
+
+| Perintah | Hasil |
+|---|---|
+| check_undefined_names.py / check_static_rules.py (clone bersih) | exit 0, OK |
+| 32 test pure-local CI (clone bersih, env dummy) | PASS=32 FAIL=0 |
+| e2e_smoke_refactor.py (staging) | 33/34 PASS (kegagalan lama: finished-spec 402 PT Heka) |
+| e2e_audit_staging.py (penuh, staging) | PASS 41 / SKIP 3 / FAIL 0 |
+| e2e_upload_staging.py (staging, dual) | 6/6 PASS |
+| e2e_csrf_origin_staging.py (staging, baru) | **6/6 PASS** |
+| Uji negatif (httpx, staging live): Origin: https://evil.example + cookie | 403 + X-Frame-Options/SAMEORIGIN, X-Content-Type-Options/nosniff, Referrer-Policy/same-origin |
+| Uji negatif: Origin: null | 403 |
+| Uji negatif: Referer: https://evil.example tanpa Origin | 403 |
+| Uji negatif: tanpa Origin & Referer (non-browser) | 303 (diizinkan, residu) |
+| Uji negatif: Origin: https://... + X-Forwarded-Proto: http | 403 |
+| Halaman publik /dip/* + tautan keluar | Respons Referrer-Policy: same-origin; token ?access= tidak bocor lewat link keluar |
+
+### Residu jujur
+
+- Request tanpa Origin **dan** tanpa Referer tetap diizinkan (klien non-browser). Mitigasi sisa: SameSite=Lax + httpOnly.
+- Browser lama yang tidak mengirim Origin (pre-2017) untuk POST diizinkan - sama dengan residu non-browser.
+- Token CSRF per-form dan CSP/HSTS tetap opsional/terbuka.
+- Perilaku Host/X-Forwarded-Proto di Render proxy belum terverifikasi sampai deploy.

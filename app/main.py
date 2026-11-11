@@ -360,8 +360,12 @@ app = FastAPI(title="DIP Kosmetik Automation")
 # SEC-04/SEC-07: security header untuk semua respons.
 # - X-Frame-Options SAMEORIGIN (BUKAN DENY): halaman seperti edit_product
 #   me-embed preview PDF dari origin sendiri; DENY akan memecahnya.
-# - Referrer-Policy no-referrer juga meredam kebocoran token ?access= lewat
-#   Referer lintas situs (sebagian F-02/F-06).
+# - Referrer-Policy same-origin (BUKAN no-referrer): POST same-origin
+#   harus tetap mengirim Origin yang benar agar guard CSRF (A-07,
+#   app/csrf_guard.py) bisa memvalidasinya. Referer ke domain lain
+#   tetap tidak dikirim (sama-origin hanya), jadi token ?access=
+#   tidak bocor lewat link keluar. Mengubah kembali ke no-referrer
+#   akan mematikan guard karena POST browser mengirim Origin: null.
 # - Content-Security-Policy dan Strict-Transport-Security DIDEFINISIKAN tapi
 #   di-gate env dan default OFF: CSP butuh penyesuaian Tailwind CDN + inline
 #   script (proyek sendiri), HSTS hanya layak di-host HTTPS produksi.
@@ -393,7 +397,7 @@ class SecurityHeadersMiddleware:
                 if "x-content-type-options" not in headers:
                     headers["X-Content-Type-Options"] = "nosniff"
                 if "referrer-policy" not in headers:
-                    headers["Referrer-Policy"] = "no-referrer"
+                    headers["Referrer-Policy"] = "same-origin"
                 if _SEC_CSP_VALUE and "content-security-policy" not in headers:
                     headers["Content-Security-Policy"] = _SEC_CSP_VALUE
                 if _SEC_HSTS_VALUE and "strict-transport-security" not in headers:
@@ -403,11 +407,13 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, send_wrapper)
 
 
-app.add_middleware(SecurityHeadersMiddleware)
 # Lapisan kedua CSRF (A-07): validasi Origin/Referer untuk POST/PUT/PATCH/DELETE.
-# Dipasang SETELAH SecurityHeadersMiddleware sehingga 403 dari guard tetap
-# ditempelkan security headers (middleware terakhir = paling luar).
+# Urutan add_middleware di Starlette: yang ditambah TERAKHIR = PALING LUAR
+# (dieksekusi pertama di jalur request, terakhir di jalur response).
+# Guard DULU, SecurityHeaders SESUDAH → SecurityHeaders membungkus guard,
+# jadi respons 403 dari guard tetap mendapat security headers.
 app.add_middleware(CsrfGuardMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Rate limiter (proteksi brute-force di /login, dibatasi per-IP)
 limiter = Limiter(key_func=_client_ip)

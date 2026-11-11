@@ -8,36 +8,43 @@ Pola yang sengaja dipilih:
   Lapisan pertama tetap cookie ``access_token`` dengan ``SameSite=Lax``
   (lihat ``app/main.py``).
 
+Sebelum perubahan ini, SecurityHeadersMiddleware memasang
+``Referrer-Policy: no-referrer``; dengan kebijakan itu browser mengirim
+``Origin: null`` + tanpa Referer untuk POST same-origin, sehingga guard
+luluskan semua POST browser lewat "keduanya tidak ada" dan penyerang
+bisa meniru kondisi yang sama. Perubahan ke ``same-origin`` (sesi 16
+koreksi) membuat POST browser mengirim ``Origin`` yang benar, dan guard
+menolak ``Origin: null`` (opaque origin / cross-origin with no-referrer).
+
 Logika (fail-closed untuk request berbrowser, longgar untuk non-browser):
 1. Method yang diperiksa: ``POST``, ``PUT``, ``PATCH``, ``DELETE``.
    ``GET``/``HEAD``/``OPTIONS`` tidak disentuh. Inventaris route saat
    perancangan (sesi 16, 2026-11-11) hanya menemukan route ``POST`` —
    tidak ada PUT/PATCH/DELETE, jadi cakupan ini sudah menutup semuanya.
-2. Bila header ``Origin`` ada (non-empty, bukan "null"): origin-nya harus
-   SAMA dengan origin request (skema efektif + ``Host``). Skema efektif
-   diambil dari ``X-Forwarded-Proto`` hanya bila nilainya ``http``/``https``
-   (case insensitive), selain itu skema scope ASGI; ``X-Forwarded-Host``
-   tidak dipercaya. Perbandingan case-insensitive.
-   - ``Origin: null`` (opaque origin) tanpa Referer: diizinkan — Chromium
-     headless di staging (http://127.0.0.1) mengirim nilai ini untuk form
-     submit; klien non-browser juga tidak membawa Origin. Lapisan pertama
-     (cookie SameSite=Lax + httpOnly) tetap memblokir form cross-origin.
-   - Permintaan lintas origin yang membawa ``Origin`` situs lain
-     (mis. ``https://evil.example``) ditolak.
-   - Header ``Origin`` kosong string ("") bukan origin valid (RFC 6454);
-     bila hadir kosong, diabaikan dan cek jatuh ke Referer.
-3. Bila ``Origin`` tidak ada tapi ``Referer`` ada: origin dari Referer
-   (via ``urlsplit``) harus sama.
-4. Bila KEDUANYA tidak ada: diizinkan. Klien non-browser (skrip E2E
-   Playwright, curl, httpx, skrip manajemen) tidak membawa cookie ambient
-   lintas origin, jadi CSRF token tidak relevan untuk mereka; cookie sesi
-   pun hanya dikirim browser. Ini adalah residu yang disengaja.
-5. ``DIP_ALLOWED_ORIGINS`` (env, daftar dipisah koma) memperluas origin
+2. Urutan keputusan:
+   a. Origin ada dan non-kosong (termasuk nilai literal "null"): harus
+      SAMA dengan origin request (skema efektif + ``Host``) atau ada di
+      allowlist, selain itu 403. ``Origin: null`` (opaque origin:
+      sandboxed iframe, ``data:`` URL, halaman dengan
+      ``<meta name="referrer" content="no-referrer">``, atau
+      ``Referrer-Policy: no-referrer``) TOLAK.
+   b. Origin tidak ada atau kosong string (RFC 6454: origin selalu
+      "null" atau scheme://host; string kosong bukan origin valid),
+      Referer ada: origin dari Referer (via ``urlsplit``) harus sama
+      dengan origin request / allowlist, selain itu 403.
+   c. Keduanya tidak ada (Origin header tidak ada dan Referer tidak
+      ada): izinkan. Klien non-browser (curl, skrip E2E, httpx, skrip
+      manajemen) tidak membawa cookie ambient lintas origin; risiko
+      CSRF tidak relevan. Ini adalah residu yang disengaja.
+3. Skema efektif: ``X-Forwarded-Proto`` hanya dipercaya bila nilainya
+   tunggal ``http``/``https`` (case insensitive), selain itu skema scope
+   ASGI; ``X-Forwarded-Host`` tidak dipercaya.
+4. ``DIP_ALLOWED_ORIGINS`` (env, daftar dipisah koma) memperluas origin
    yang diizinkan selain origin request itu sendiri. Hanya entri
    ``https://`` atau ``http://localhost``/``http://127.0.0.1`` (untuk
    staging lokal) yang diterima; entri tak valid diabaikan dan dicatat
    dengan satu warning. Default kosong.
-6. Path exempt: konstanta ``EXEMPT_PATHS`` (default kosong). Inventaris
+5. Path exempt: konstanta ``EXEMPT_PATHS`` (default kosong). Inventaris
    tidak menemukan alasan untuk mengecualikan path mana pun — termasuk
    ``/login`` (form login di browser selalu membawa Origin) dan
    ``/api/presence/heartbeat`` (fetch sama-origin). Jangan mengisi
@@ -46,6 +53,14 @@ Logika (fail-closed untuk request berbrowser, longgar untuk non-browser):
 Tolak = HTTP 403, body teks singkat, tanpa nilai header yang bocor.
 Log ``logger.warning`` hanya memuat method, path (tanpa query string),
 dan host dari Origin (bukan nilai header penuh / cookie).
+
+Residu jujur:
+- Request tanpa ``Origin`` **dan** tanpa ``Referer`` diizinkan (klien
+  non-browser). Mitigasi sisa: ``SameSite=Lax`` + ``httpOnly`` cookie.
+- Browser lama yang tidak mengirim ``Origin`` (pre-2017) untuk POST
+  diizinkan — sama dengan residu non-browser di atas.
+- ``Origin: null`` dengan ``Referer`` yang tidak cocok tetap 403 (cek
+  Referer gagal, bukan di-bypass oleh Origin null).
 
 Konsekuensi reverse proxy / custom domain:
 - Guard memakai header ``Host`` yang sampai ke aplikasi. Bila proxy
@@ -233,47 +248,38 @@ class CsrfGuardMiddleware:
             scope.get("headers") or []
         )
 
-        # Cek 1: header Origin ada, non-empty, dan bukan "null" (opaque
-        # context: Chromium headless form submit di http://127.0.0.1,
-        # sandboxed iframe, data: URL). Nilai "null" diperlakukan seperti
-        # Origin absen dan jatuhkan ke cek Referer / non-browser di bawah.
-        if origin is not None and origin.strip() not in ("", "null"):
-            ok, reason = _origin_matches(origin, scope, host, fwd_proto, self._allowed_origins)
+        origin_stripped = (origin or "").strip()
+        origin_present = origin is not None and origin_stripped != ""
+
+        # (a) Origin ada dan non-kosong (termasuk nilai literal "null"):
+        #     harus sama dengan origin request / allowlist, selain itu 403.
+        #     "null" = opaque origin (sandboxed iframe, data: URL, halaman
+        #     dengan no-referrer) — ditolak, bukan di-bypass.
+        if origin_present:
+            ok, reason = _origin_matches(origin_stripped, scope, host, fwd_proto, self._allowed_origins)
             if not ok:
                 await self._deny(send, method, path, reason)
                 return
             await self.app(scope, receive, send)
             return
-        # Cek 2: header Origin tidak ada, kosong, atau "null" (opaque).
-        # Origin kosong/"" atau "null" bukan origin valid yang bisa
-        # divalidasi (RFC 6454: origin selalu "null" atau scheme://host).
-        # Jatuhkan ke cek Referer bila ada; bila Referer juga tidak ada
-        # (klien non-browser / Chromium quirk), izinkan — lihat cek 3.
+
+        # (b) Origin tidak ada atau kosong string (RFC 6454: string kosong
+        #     bukan origin valid), Referer ada: origin Referer harus cocok
+        #     dengan origin request / allowlist, selain itu 403.
         if referer is not None:
             ok, reason = _referer_origin_matches(referer, scope, host, fwd_proto, self._allowed_origins)
-            if ok:
-                await self.app(scope, receive, send)
+            if not ok:
+                await self._deny(send, method, path, reason)
                 return
-            # Referer tidak cocok: TOLAK. Request cross-origin yang sengaja
-            # menyembunyikan Origin (fetch no-cors, XHR tanpa CORS) sering
-            # hanya membawa Referer — tolak mencegah bypass.
-            await self._deny(send, method, path, reason)
+            await self.app(scope, receive, send)
             return
-        # Cek 3: KEDUANYA tidak ada (Origin header tidak ada / kosong /
-        # "null", dan Referer juga tidak ada).
-        #
-        # Nilai Origin "null" (opaque context: sandboxed iframe, data: URL)
-        # atau Origin header yang absen sama sekali, tanpa Referer,
-        # diperlakukan setara: diizinkan (klien non-browser). Alasan:
-        # - Chromium/Playwright di lingkungan http://127.0.0.1 (staging)
-        #   mengirim `Origin: null` untuk form submit regular — perilaku
-        #   yang harus tetap bekerja agar E2E lulus.
-        # - Klien non-browser (curl, skrip E2E via API) tidak membawa
-        #   cookie ambient lintas origin; risiko CSRF tidak relevan.
-        # - Lapisan pertama (SameSite=Lax) tetap memblokir form cross-origin
-        #   dari browser, jadi lapisan kedua ini hanya menambah kedalaman.
-        # Residu: opaque origin + tanpa Referer lolos; mitigasi tersisa
-        # adalah SameSite=Lax + httpOnly cookie (bukan guard ini).
+
+        # (c) KEDUANYA tidak ada (Origin header tidak ada/ kosong, Referer
+        #     juga tidak ada): izinkan — klien non-browser (curl, skrip E2E,
+        #     httpx, skrip manajemen) tidak membawa cookie ambient lintas
+        #     origin; risiko CSRF tidak relevan. Ini residu yang disengaja;
+        #     lapisan pertama (SameSite=Lax + httpOnly) tetap memblokir form
+        #     cross-origin dari browser nyata.
         await self.app(scope, receive, send)
 
     async def _deny(self, send, method: str, path: str, reason: str) -> None:
