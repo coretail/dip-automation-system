@@ -14,6 +14,7 @@ from postgrest.exceptions import APIError
 
 from app.database import supabase
 from app.file_validation import validate_pdf_bytes
+from app.journal_link import normalize_journal_link
 from app.security import assert_same_tenant
 from app import object_store
 from app.variant_components import normalize_components, normalize_variants
@@ -917,6 +918,7 @@ def register_raw_materials_routes(
         kode_bahan_baku: str = Form(...),
         tipe: str = Form(...),
         produsen: str = Form(None),
+        journal_link: str = Form(None),
         msds_file_erfi: UploadFile = File(None),
         msds_file_heka: UploadFile = File(None),
         spec_sheet_file_erfi: UploadFile = File(None),
@@ -930,12 +932,22 @@ def register_raw_materials_routes(
         spec_parameters_heka: str = Form("[]"),
         current_user: dict = Depends(get_current_user)
     ):
+        # Validasi journal_link SEBELUM tulis apa pun: nilai tidak valid ->
+        # redirect + cookie error, TIDAK ada insert (pola error_msg yang ada).
+        try:
+            journal_link_norm = normalize_journal_link(journal_link)
+        except ValueError as exc:
+            response = RedirectResponse(url="/raw-materials", status_code=303)
+            response.set_cookie("error_msg", str(exc))
+            return response
+
         # Payload raw_materials sekarang cuma identitas -- spec & MSDS udah pindah ke raw_material_company_docs
         insert_payload = {
             "nama_dagang": nama_dagang,
             "kode_bahan_baku": kode_bahan_baku,
             "tipe": tipe,
             "produsen": produsen,
+            "journal_link": journal_link_norm,
         }
 
         kode_check = kode_bahan_baku.strip()
@@ -1064,6 +1076,7 @@ def register_raw_materials_routes(
         kode_bahan_baku: str = Form(...),
         tipe: str = Form(...),
         produsen: str = Form(None),
+        journal_link: str = Form(None),
         inci_name: List[str] = Form(None),
         cas_number: List[str] = Form(None),
         function: List[str] = Form(None),
@@ -1104,6 +1117,16 @@ def register_raw_materials_routes(
                 request=request, outcome="rejected",
             )
             raise HTTPException(status_code=403, detail="Akses ditolak! Bahan baku bukan milik perusahaan Anda.")
+
+        # Validasi journal_link setelah guard tenant (authz dulu), tapi SEBELUM
+        # tulis apa pun: nilai tidak valid -> redirect + cookie error, TIDAK
+        # ada update (pola error_msg yang ada di route ini).
+        try:
+            journal_link_norm = normalize_journal_link(journal_link)
+        except ValueError as exc:
+            response = RedirectResponse(url="/raw-materials", status_code=303)
+            response.set_cookie("error_msg", str(exc))
+            return response
 
         kode_check = " ".join(kode_bahan_baku.split())  # trim + collapse spasi ganda jadi 1
         existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).neq("id", rm_id).execute()
@@ -1213,11 +1236,15 @@ def register_raw_materials_routes(
                  changes.append({"field": f"CAS Number ({inci}){variant_label}", "old": old_c.get("cas_number") or "-", "new": new_c.get("cas_number") or "-"})
 
         # 1. UPDATE IDENTITAS DI RAW_MATERIALS (spec & MSDS udah pindah ke raw_material_company_docs)
+        # journal_link = None (form kosong) secara eksplisit mengosongkan kolom
+        # (NULL); _build_diff_changes menormalisasi "" vs None jadi satu, jadi
+        # tidak muncul diff palsu.
         update_data = {
             "nama_dagang": nama_dagang,
             "kode_bahan_baku": kode_check,
             "tipe": tipe,
             "produsen": produsen,
+            "journal_link": journal_link_norm,
         }
         supabase.table("raw_materials").update(update_data).eq("id", rm_id).execute()
 
@@ -1227,6 +1254,7 @@ def register_raw_materials_routes(
             "kode_bahan_baku": "Kode Bahan Baku",
             "tipe": "Tipe",
             "produsen": "Produsen",
+            "journal_link": "Link Jurnal",
         }
         changes.extend(_build_diff_changes(old_rm, update_data, field_labels))
 
