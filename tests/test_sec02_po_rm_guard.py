@@ -250,7 +250,8 @@ def test_edit_raw_material_foreign_company_forbidden_no_writes():
     try:
         asyncio.run(handler(
             request=None, rm_id="rm-erfi", nama_dagang="Bahan Erfi",
-            kode_bahan_baku="K-ERFI", tipe="single", current_user=STAFF_HEKA,
+            kode_bahan_baku="K-ERFI", tipe="single", journal_link=None,
+            current_user=STAFF_HEKA,
         ))
     except HTTPException as exc:
         assert exc.status_code == 403, exc.status_code
@@ -278,7 +279,8 @@ def test_edit_raw_material_shared_row_passes_guard():
     try:
         asyncio.run(handler(
             request=None, rm_id="rm-shared", nama_dagang="Bahan Katalog",
-            kode_bahan_baku="DUP", tipe="single", current_user=STAFF_HEKA,
+            kode_bahan_baku="DUP", tipe="single", journal_link=None,
+            current_user=STAFF_HEKA,
         ))
     except HTTPException as exc:
         assert exc.status_code == 400, f"harusnya lolos guard lalu 400 duplikat, dapat {exc.status_code}"

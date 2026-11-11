@@ -204,6 +204,7 @@ def _form(**kw):
     from types import SimpleNamespace as _SN
     base = dict(
         nama_dagang="Bahan Uji", kode_bahan_baku="BB01", tipe="single", produsen="PT Test",
+        journal_link=None,
         inci_name=["Aqua"], cas_number=["7732-18-5"], function=["Solvent"],
         percent_internal=[100.0], is_bahan_aktif=["0"],
         msds_file_erfi=_SN(filename=None), msds_file_heka=_SN(filename=None),

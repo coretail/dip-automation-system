@@ -170,11 +170,12 @@ Sebelum membuat formula produk, seluruh data bahan baku wajib terdaftar di dalam
 
 1. Buka menu **Bahan Baku** dari navigasi utama (`/raw-materials`).
 2. Klik tombol **+ Tambah Bahan Baku Baru**.
-3. **Isi Identitas Bahan Baku:**
-   - Nama Dagang (misal: *Niacinamide PC*, *Glycerin 99.5%*).
-   - Kode Bahan Baku (misal: *RM-001*, harus unik).
-   - Tipe (*Single* atau *Komposit*).
-   - Produsen (opsional).
+ 3. **Isi Identitas Bahan Baku:**
+    - Nama Dagang (misal: *Niacinamide PC*, *Glycerin 99.5%*).
+    - Kode Bahan Baku (misal: *RM-001*, harus unik).
+    - Tipe (*Single* atau *Komposit*).
+    - Produsen (opsional).
+    - Link Jurnal (opsional, kolom `journal_link` sejak migrasi 014): URL `http`/`https` literatur keselamatan/jurnal bahan baku, maksimal 2048 karakter. Dinormalisasi di sisi server (`app/journal_link.py`) dan ditolak selain URL `http`/`https` (CHECK constraint di database sebagai pembatas akhir). Quick-add Formula Builder tidak mengirim kolom ini (tetap NULL). Perubahan link jurnal tercatat di activity log saat edit.
 4. **Isi Komposisi Komponen INCI** (kalau tipe *Komposit*): Nama INCI, Nomor CAS, Fungsi, dan persentase internal komponen dalam bahan baku.
    - **Varian Komposisi:** bahan baku Komposit bisa punya lebih dari satu varian komposisi, dan satu varian ditandai sebagai **default**. Baris formula dapat menunjuk varian tertentu lewat `variant_id`, sehingga INCI breakdown report dan Qual-Quan mengikuti varian yang dipilih. Tambah varian, set default, dan hapus varian dilakukan dari halaman bahan baku. Varian yang sudah dipakai di formula tidak bisa dihapus.
 5. **Isi Dokumen & Spesifikasi Per Perusahaan** — pilih tab **PT Erfi** atau **PT Heka**, lalu lengkapi:
@@ -586,13 +587,14 @@ Folder `migration/` berisi skrip untuk memindahkan data historis dari spreadshee
 | 011 | `011_add_profile_display_name_and_avatar.sql` | Kolom `display_name`, `avatar_path`, `avatar_updated_at` di `profiles` + CHECK constraint | Nama tampilan & foto profil tidak tersedia |
 | 012 | `012_add_batch_mengetahui_signer.sql` | Kolom `mengetahui_signer` (nullable `text`) di `raw_material_batches` — penandatangan ke-3 "Mengetahui (Kepala QC)" | Fitur baru belum tersedia (belum dijalankan) |
 | 013 | `013_replace_raw_material_components.sql` | Fungsi atomik `replace_raw_material_components` (transaksi DELETE+INSERT komponen INCI) | Edit komponen gagal dengan pesan error dan komponen tidak berubah (fail-safe) |
+| 014 | `014_add_raw_material_journal_link.sql` | Kolom `journal_link` (nullable `text` + CHECK: URL http(s), maks 2048 karakter) di `raw_materials` | Link jurnal/literatur keselamatan bahan baku tidak bisa disimpan lewat form Tambah/Edit Bahan Baku |
 
-> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Nomor migrasi berikutnya adalah **014**.
+> Angka `009` sengaja tidak dipakai (dicadangkan migrasi lain). Nomor migrasi berikutnya adalah **015**.
 
 > ⚠️ Skema produksi **tidak dikelola otomatis** — jalankan file SQL ini manual melalui Supabase SQL Editor.
 
 #### Status eksekusi (per 2026-11-09)
-007 dan 013 dikonfirmasi dijalankan oleh pemilik repo (013 di staging dan produksi); 001-004, 006, 008, 010, 011, 012 "belum diverifikasi: jalankan query pengecekan di bawah"; 005 adalah perubahan data (bukan skema), tidak dapat dibuktikan lewat skema.
+007 dan 013 dikonfirmasi dijalankan oleh pemilik repo (013 di staging dan produksi); 001-004, 006, 008, 010, 011, 012 "belum diverifikasi: jalankan query pengecekan di bawah"; 005 adalah perubahan data (bukan skema), tidak dapat dibuktikan lewat skema. 014 (`journal_link`) disiapkan lewat PR `feat/rm-journal-link-field`: wajib dijalankan manual staging → produksi **sebelum** merge PR tersebut.
 
 #### Cek status migrasi
 Jalankan di staging dan produksi, hasil true/false per migrasi:
@@ -609,6 +611,7 @@ union all select '010', exists(select 1 from pg_proc p join pg_namespace n on n.
 union all select '011', (select count(*)=3 from information_schema.columns where table_schema='public' and table_name='profiles' and column_name in ('display_name','avatar_path','avatar_updated_at'))
 union all select '012', exists(select 1 from information_schema.columns where table_schema='public' and table_name='raw_material_batches' and column_name='mengetahui_signer')
 union all select '013', exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='replace_raw_material_components')
+union all select '014', exists(select 1 from information_schema.columns where table_schema='public' and table_name='raw_materials' and column_name='journal_link')
 order by 1;
 ```
 

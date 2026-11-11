@@ -613,6 +613,10 @@
                     <label class="block text-sm font-medium text-gray-700">Produsen (Pabrik Asal)</label>
                     <input type="text" name="produsen" placeholder="Contoh: BASF Germany, Merck" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Link Jurnal (opsional)</label>
+                    <input type="url" name="journal_link" placeholder="https://..." maxlength="2048" class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none text-sm">
+                </div>
             </div>
 
             <div class="mb-6">
@@ -1278,6 +1282,7 @@ function toggleModal(show) {
         form.querySelector('input[name="nama_dagang"]').value = '';
         form.querySelector('input[name="kode_bahan_baku"]').value = '';
         form.querySelector('input[name="produsen"]').value = '';
+        form.querySelector('input[name="journal_link"]').value = '';
 
         // 2. Set radio tipe kembali ke "single"
         const radios = form.querySelectorAll('input[name="tipe"]');
@@ -1621,6 +1626,7 @@ function openEditModal(rm) {
     form.action = "/raw-materials/edit/" + rm.id;
 
     form.querySelector('input[name="produsen"]').value = rm.produsen || '';
+    form.querySelector('input[name="journal_link"]').value = rm.journal_link || '';
     form.querySelector('input[name="nama_dagang"]').value = rm.nama_dagang;
     form.querySelector('input[name="kode_bahan_baku"]').value = rm.kode_bahan_baku;
     
