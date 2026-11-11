@@ -158,6 +158,10 @@ backup-rls/
 !/tests/test_bahansemi_spec_parameters.py
 # Unit test guard tenant finished-spec (pure-local, tanpa koneksi/secret).
 !/tests/test_tenant_guard_finished_spec.py
+# Unit test guard CSRF Origin/Referer (pure-local, tanpa koneksi/secret).
+!/tests/test_csrf_guard.py
+# E2E regresi Referrer-Policy: Origin POST form submit tidak boleh "null".
+!/tests/e2e_csrf_origin_staging.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log

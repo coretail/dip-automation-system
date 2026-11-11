@@ -39,6 +39,7 @@
 | F-03 (§3) | `public_access_revoked_at` tidak pernah dibaca; revoke tidak fungsional | SELESAI | 2026-11-07 (sesi 9) |
 | F-09 (§3) | Route /dip/* tanpa jejak audit download/ZIP | SELESAI | 2026-11-07 (sesi 9) |
 | F-08 (§3) | Nol rate-limit di /dip/* | SELESAI | 2026-11-09 (sesi 10) |
+| A-07 (§3) | Tanpa token CSRF di semua POST (guard ringan Origin/Referer) | SEBAGIAN (lapisan kedua Origin/Referer + SameSite=Lax; token CSRF penuh & CSP/HSTS tetap terbuka) | 2026-11-11 (sesi 16) |
 | F-05 | Token `?access=` di access log (sisi aplikasi tutup; residu log edge Render di luar repo) | SELESAI (sisi aplikasi) | 2026-11-09 (sesi 10) |
 | C-01/A-17 (profil) | Akun tanpa profil/query profil gagal jadi fail-open staff lintas tenant | SELESAI (profil hilang / query gagal, #69) | 2026-11-09 (sesi 12) |
 | C-01/C-02 bagian perusahaan kosong | Non-admin perusahaan kosong lintas tenant | N/A (keputusan pemilik repo 2026-11-09) | 2026-11-09 (sesi 12) |
@@ -767,3 +768,161 @@ Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server
 - E-08 (soak `product-attachments` via UI mode r2) dan bukti `put` R2 privat + `r2.dev` terbuka dari kantor → tetap prasyarat cutover R2, belum dikerjakan.
 - C-04, C-15, A-07, A-06, A-09, A-16/A-19, A-18, C-05, F-02/F-01, F-03/F-06 (lampiran.js antrean + autocomplete notes), D-08/D-10/D-14 → tetap terbuka.
 
+---
+
+﻿## Sesi 16 — 2026-11-11: A-07 guard CSRF ringan (Origin/Referer)
+
+**Ruang lingkup:** A-07 saja (guard CSRF ringan: validasi `Origin`/`Referer` untuk semua request yang mengubah data). TIDAK menyentuh token CSRF per-form, CSP, HSTS, SRI, tenant guard, R2, pypdf, C-04, C-15, A-06, atau temuan lain. Tidak ada migrasi SQL. Tidak menyentuh `.env*`/`LOGIN.md` (kredensial E2E hanya di-export di shell yang sama, tidak di-echo/log/disalin).
+
+**Branch:** `feat/csrf-origin-guard` dari `origin/main` @ `e20723c` (setelah PR #74 merge). Satu PR untuk temuan ini.
+
+### Inventaris (Langkah 0)
+
+**Route non-GET (51 total, semua POST; tidak ada PUT/PATCH/DELETE):**
+
+| Modul | Jumlah route |
+|---|---|
+| `admin_users_routes.py` | 4 (create, reset-password, update-role, delete) |
+| `brands_routes.py` | 2 (add, update-documents) |
+| `dashboard_routes.py` | 1 (restore) |
+| `company_docs_routes.py` | 1 (update) |
+| `efek_samping.py` | 2 (generate, delete) |
+| `notes_routes.py` | 4 (create, delete, complete, reopen) |
+| `main.py` | 3 (login, logout, brands/quick-add) |
+| `presence_routes.py` | 1 (heartbeat) |
+| `products_routes.py` | 8 (add, delete, public-access/revoke, public-access/reactivate, finished-spec, edit, delete-file, +1) |
+| `po_routes.py` | 5 (purchase-orders, product-batches, items, items/update, items/delete) |
+| `product_attachments_routes.py` | 3 (lampiran, lampiran/edit, lampiran/delete) |
+| `profile_routes.py` | 2 (change-password, display-name) |
+| `raw_materials_routes.py` | 13 (add, quick-add, edit, delete, variants×3, batches×4, quick-upload×2, acc×2) |
+| `sample_routes.py` | 3 (create, edit, delete) |
+| **Total** | **51** |
+
+**Pemanggil `fetch()` non-GET di template/static (4 total, semua same-origin, path relatif):**
+
+| File | URL | Method |
+|---|---|---|
+| `app/static/presence.js:41` | `/api/presence/heartbeat` (endpoint relatif) | POST |
+| `app/static/lampiran.js:98` | `root.dataset.uploadUrl` (path relatif) | POST multipart |
+| `app/static/lampiran.js:163` | `${root.dataset.baseUrl}/${item.id}/edit` (path relatif) | POST multipart |
+| `app/static/lampiran.js:176` | `${root.dataset.baseUrl}/${item.id}/delete` (path relatif) | POST |
+
+**Tidak ditemukan:** `XMLHttpRequest` di `app/`; `fetch()` dengan URL absolut `http://`/`https://` di template/static; method override (`_method`/`X-HTTP-Method-Override`); pemanggil dari host lain.
+
+**Konfirmasi:** semua pemanggil non-GET adalah same-origin (path relatif). Tidak ada yang cross-origin.
+
+### Perubahan kode
+
+| # | File | Perubahan | Bukti (sebelum → sesudah) |
+|---|---|---|---|
+| A-07 | `app/csrf_guard.py` (baru, 293 baris) | Middleware ASGI murni: tolak mutasi lintas origin. Cek `Origin` (non-empty, bukan "null") harus sama dengan origin request (skema efektif + `Host`); `Origin: null` (opaque, Chromium headless quirk di http://127.0.0.1) + tanpa Referer → diizinkan (residu didokumentasikan); `Origin: null` + Referer beda → 403; tanpa `Origin`, `Referer` same-origin → lolos; tanpa keduanya → diizinkan (non-browser). `DIP_ALLOWED_ORIGINS` (env, koma) memperluas allowlist, hanya `https://` atau `http://localhost`/`http://127.0.0.1` diterima. 403 = body teks singkat, tanpa header bocor; log `warning` hanya method/path/tanpa-query/host-origin. Tidak membaca body (multipart utuh). | Baru; tidak ada kode lama |
+| A-07 | `app/main.py:22` | `from app.csrf_guard import CsrfGuardMiddleware` | — |
+| A-07 | `app/main.py:407-410` | `app.add_middleware(CsrfGuardMiddleware)` DIPASANG SETELAH `SecurityHeadersMiddleware` (yang terakhir = paling luar), jadi 403 dari guard tetap mendapat security headers | Urutan `user_middleware` terverifikasi: `[CsrfGuardMiddleware, SecurityHeadersMiddleware]` |
+| A-07 | `tests/test_csrf_guard.py` (baru, 324 baris) | 43 kasus: same-origin, beda host, `Origin: null` (tanpa/dengan Referer), skema beda, `X-Forwarded-Proto` http/https/asing, `X-Forwarded-Host` diabaikan, GET/HEAD/OPTIONS tidak disentuh, `DIP_ALLOWED_ORIGINS` (valid + tak valid), multipart 3 MB utuh, security headers di 403, log tanpa query/cookie, method override tidak dipakai, `EXEMPT_PATHS` kosong, `/login` dan `/api/presence/heartbeat` tidak di-exempt | Semua 43 kasus LULUS (exit 0) |
+| A-07 | `.gitignore` | Tambah `!/tests/test_csrf_guard.py` (whitelist) | — |
+| A-07 | `.github/workflows/ci.yml` | Tambah `python tests/test_csrf_guard.py` (baris ke-32) | CI kini menjalankan 32 test pure-local |
+| A-07 | `AGENTS.md` | Update "tiga puluh satu test" → "tiga puluh dua test"; tambah baris jebakan A-07 di §6 | — |
+| A-07 | `README.md` | Tambah `csrf_guard.py` di pohon `app/` | — |
+
+### Logika guard (detail)
+
+```
+Method tidak penting (GET/HEAD/OPTIONS) → lanjut
+Path di EXEMPT_PATHS (default kosong)    → lanjut
+Origin ada, non-empty, bukan "null"     → cek _origin_matches
+  lolos → lanjut; ditolak → 403
+Origin kosong / "null" / tidak ada:
+  Referer ada → cek _referer_origin_matches
+    lolos → lanjut; ditolak → 403
+  Referer tidak ada → lanjut (non-browser / Chromium quirk http)
+```
+
+**Residu jujur:**
+- Request tanpa `Origin` **dan** tanpa `Referer` diizinkan (klien non-browser). Klien ini tidak membawa cookie ambient lintas origin; lapisan pertama `SameSite=Lax` tetap memblokir form cross-origin dari browser nyata.
+- `Origin: null` (opaque origin: sandboxed iframe, data: URL) **tanpa** Referer diizinkan — Chromium headless di staging (`http://127.0.0.1`) mengirim nilai ini untuk form submit regular; perilaku ini harus tetap bekerja agar E2E lulus. Di produksi (`https://`), `Origin: null` hanya muncul dari context opaque sungguhan dan mitigasinya tetap `SameSite=Lax` + `httpOnly`.
+- Middleware TIDAK melindungi GET yang mengubah data (inventaris: tidak ada GET yang mengubah data di route aplikasi; semua mutasi adalah POST).
+- Browser lama yang tidak mengirim `Origin` (pre-2017) diizinkan — sama dengan residu non-browser di atas.
+
+### Validasi sesi ini
+
+| Perintah | Exit | Hasil |
+|---|---|---|
+| `python scripts/check_undefined_names.py` (clone bersih) | 0 | `[OK] tidak ada nama tak terdefinisi / syntax error (30 file)` |
+| `python scripts/check_static_rules.py` (clone bersih) | 0 | `[OK] static rules passed` |
+| `python -m compileall app` | 0 | tanpa error |
+| Import terisolasi `app.main` (env dummy CI) | 0 | `user_middleware: ['CsrfGuardMiddleware', 'SecurityHeadersMiddleware']` |
+| 32 test pure-local CI (clone bersih, env dummy CI) | 0 semua | **PASS=32 FAIL=0** (termasuk `test_csrf_guard` 43 kasus) |
+| `tests/e2e_smoke_refactor.py` (staging, Playwright) | 1 | **33/34 PASS** — kegagalan SAMA seperti diketahui di main (GET `/products/dd...402/finished-spec/preview` → 403, guard tenant produk 402 milik PT Heka, data-dependent; bukan regresi PR ini) |
+| `tests/e2e_audit_staging.py --quick` (staging) | 0 | **PASS 37 / SKIP 7 / FAIL 0** |
+| `tests/e2e_audit_staging.py` (penuh, staging) | 0 | **PASS 41 / SKIP 3 / FAIL 0** |
+| `tests/e2e_upload_staging.py` (staging, dual) | 0 | **6/6 PASS** (upload NIB PT Erfi → R2, isi identik) |
+| Uji negatif: POST `/notes` `Origin: https://evil.example` (tanpa cookie) | 403 | `Permintaan ditolak (origin tidak cocok).` |
+| Uji negatif: POST `/notes` `Origin: https://evil.example` + cookie palsu | 403 | Sama |
+| Uji negatif: POST `/notes` `Referer: https://evil.example` (tanpa `Origin`) | 403 | Sama |
+| Uji negatif: POST `/notes` tanpa `Origin` & `Referer` (non-browser) | 303 | Diizinkan (sesuai desain) |
+| Uji positif: POST `/notes` `Origin: http://127.0.0.1:8017` (same) | 303 | Lolos guard, handler 303 (sesi hilang) |
+| Uji positif: POST multipart 1 MB `Origin` same | 400 (bukan 403 guard) | Body sampai handler utuh; 400 = validasi handler |
+| `X-Forwarded-Proto: http` + `Origin: https://...` (skema beda) | 403 | Sesuai desain |
+
+Staging preflight PASS (`/health` 200) via `scripts/run_staging_8017.py`; server dihentikan setelah uji. Kredensial hanya di-export di shell yang sama (dari `LOGIN.md`), tidak di-echo/log/disalin.
+
+### Risiko & yang tidak berubah
+
+- Perilaku bisnis tidak berubah: semua alur normal (login, form, upload, notes, presence, dsb.) tetap bekerja; yang berubah hanya request cross-origin yang sekarang ditolak 403.
+- `DIP_ALLOWED_ORIGINS` default kosong: tidak ada perubahan perilaku di konfigurasi eksisting.
+- Tidak ada migrasi SQL, perubahan skema, atau perubahan dependency.
+- `pip-audit` tidak berubah.
+- 403 dari guard tetap mendapat security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`) — terverifikasi di test.
+- `slowapi` rate-limit `/dip/*` dan `/login` tidak terpengaruh (guard tidak membaca body, tidak mengubah respons 429).
+
+### Keputusan yang masih terbuka
+
+- A-07 (lapisan penuh): CSRF token per-form dan CSP/HSTS tetap opsional/terbuka. Lapisan ini hanya lapisan kedua (Origin/Referer + `SameSite=Lax`).
+- A-06 (SRI Tailwind/FontAwesome), C-04 (log masking token), C-15 (create user TOCTOU), A-09, A-16/A-19, A-18, C-05, F-02/F-01, F-03/F-06, D-08/D-10/D-14 → tetap terbuka sesuai keputusan sebelumnya.
+
+---
+
+## Koreksi Sesi 16 - 2026-11-11: A-07 guard CSRF - perbaiki 3 bug dari commit 9305a87
+
+**Branch:** eat/csrf-origin-guard (commit koreksi di atas 9305a87).
+
+### Penyebab bug (review, diverifikasi dari kode)
+
+1. Referrer-Policy: no-referrer di SecurityHeadersMiddleware membuat semua POST browser mengirim Origin: null + tanpa Referer. Guard meloloskan hampir semua POST browser lewat cek 3 (keduanya tidak ada). Penyerang bisa meniru kondisi yang sama (meta 
+o-referrer / iframe sandbox). Guard praktis tidak melindungi apa-apa selain SameSite=Lax.
+2. Urutan middleware di main.py salah: pp.add_middleware(CsrfGuardMiddleware) dipasang SETELAH SecurityHeadersMiddleware sehingga guard adalah lapisan PALING LUAR dan membalas 403 tanpa melewati SecurityHeaders. Klaim "403 tetap membawa security headers" tidak benar di app nyata. Test lolos karena memakai _MiniSecurityHeadersMiddleware dengan urutan terbalik dari main.py.
+3. Dokstring menyebut Origin: null = "Chromium headless di 127.0.0.1" - keliru; penyebab sebenarnya adalah Referrer-Policy: no-referrer, terjadi juga di produksi (https://).
+
+### Perubahan koreksi
+
+| File | Perubahan |
+|---|---|
+| pp/main.py (SecurityHeadersMiddleware) | Referrer-Policy: no-referrer -> same-origin; komentar diperbarui (POST same-origin kembali membawa Origin yang benar; Referer ke domain lain tetap tidak dikirim sehingga token ?access= tidak bocor lewat link keluar) |
+| pp/main.py (urutan middleware) | CsrfGuardMiddleware dipasang DULU, SecurityHeadersMiddleware SESUDAH (yang terakhir ditambah = paling luar); komentar diperbaiki |
+| pp/csrf_guard.py | Origin: null -> 403 (hapus semua komentar quirk Chromium; logika (a)/(b)/(c) sesuai spesifikasi) |
+| 	ests/test_csrf_guard.py | Origin: null (dengan/tanpa Referer) -> 403; hapus _MiniSecurityHeadersMiddleware; tambah test app nyata untuk 403 + security headers + Referrer-Policy: same-origin; tambah test unit SecurityHeadersMiddleware |
+| 	ests/e2e_csrf_origin_staging.py (baru) | E2E regresi: login via Playwright + form POST notes, tangkap header Origin/Referer, assert Origin != "null" + Referrer-Policy == same-origin. Whitelist .gitignore, TIDAK di CI (butuh server staging) |
+
+### Hasil verifikasi
+
+| Perintah | Hasil |
+|---|---|
+| check_undefined_names.py / check_static_rules.py (clone bersih) | exit 0, OK |
+| 32 test pure-local CI (clone bersih, env dummy) | PASS=32 FAIL=0 |
+| e2e_smoke_refactor.py (staging) | 33/34 PASS (kegagalan lama: finished-spec 402 PT Heka) |
+| e2e_audit_staging.py (penuh, staging) | PASS 41 / SKIP 3 / FAIL 0 |
+| e2e_upload_staging.py (staging, dual) | 6/6 PASS |
+| e2e_csrf_origin_staging.py (staging, baru) | **6/6 PASS** |
+| Uji negatif (httpx, staging live): Origin: https://evil.example + cookie | 403 + X-Frame-Options/SAMEORIGIN, X-Content-Type-Options/nosniff, Referrer-Policy/same-origin |
+| Uji negatif: Origin: null | 403 |
+| Uji negatif: Referer: https://evil.example tanpa Origin | 403 |
+| Uji negatif: tanpa Origin & Referer (non-browser) | 303 (diizinkan, residu) |
+| Uji negatif: Origin: https://... + X-Forwarded-Proto: http | 403 |
+| Halaman publik /dip/* + tautan keluar | Respons Referrer-Policy: same-origin; token ?access= tidak bocor lewat link keluar |
+
+### Residu jujur
+
+- Request tanpa Origin **dan** tanpa Referer tetap diizinkan (klien non-browser). Mitigasi sisa: SameSite=Lax + httpOnly.
+- Browser lama yang tidak mengirim Origin (pre-2017) untuk POST diizinkan - sama dengan residu non-browser.
+- Token CSRF per-form dan CSP/HSTS tetap opsional/terbuka.
+- Perilaku Host/X-Forwarded-Proto di Render proxy belum terverifikasi sampai deploy.
