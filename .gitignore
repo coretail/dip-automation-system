@@ -218,6 +218,7 @@ scripts_tmp_list_projects.py
 !/tests/test_raw_material_components_atomic.py
 !/tests/test_safe_fetch.py
 !/tests/test_journal_link.py
+!/tests/test_import_journal_link_matching.py
 
 # Local documentation and notes
 /catatan/prompt-tenant-guard-a10-a13.md

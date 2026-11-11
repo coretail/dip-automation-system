@@ -123,15 +123,17 @@ def _resolve_token(args: argparse.Namespace) -> tuple[str, str]:
         return token, "env(SUPABASE_ACCESS_TOKEN/SUPABASE_MANAGEMENT_TOKEN)"
     cfg_path = os.path.abspath(args.kilo_config)
     if not os.path.isfile(cfg_path):
-        raise SystemExit("FATAL: token tidak ada. Set SUPABASE_ACCESS_TOKEN atau "
-                         f"sedikan --kilo-config yang benar (tidak ketemu: {cfg_path})")
+        print("FATAL: token tidak ada. Set SUPABASE_ACCESS_TOKEN atau "
+              f"sediakan --kilo-config yang benar (tidak ketemu: {cfg_path})")
+        raise SystemExit(2)
     cfg = _load_jsonc(cfg_path)
     command = ((cfg.get("mcp") or {}).get("supabase") or {}).get("command") or []
     for idx, item in enumerate(command):
         if str(item) == "--access-token" and idx + 1 < len(command):
             return str(command[idx + 1]), "kilo.jsonc(mcp.supabase.command --access-token)"
-    raise SystemExit("FATAL: token tidak ditemukan (env kosong dan kilo.jsonc tidak "
-                     "memuat mcp.supabase.command --access-token)")
+    print("FATAL: token tidak ditemukan (env kosong dan kilo.jsonc tidak memuat "
+          "mcp.supabase.command --access-token)")
+    raise SystemExit(2)
 
 
 def _mgmt_query(token: str, ref: str, sql: str) -> list[dict]:
@@ -169,10 +171,10 @@ def _precheck_columns(ref: str, token: str) -> None:
     ))
     ada = int(rows[0].get("ada") or 0)
     if ada != 1:
-        raise SystemExit(
-            f"FATAL: kolom raw_materials.journal_link TIDAK ada di ref {ref}. "
-            "Jalankan migration/014_add_raw_material_journal_link.sql di target ini "
-            "lebih dulu, lalu ulangi.")
+        print(f"FATAL: kolom raw_materials.journal_link TIDAK ada di ref {ref}. "
+              "Jalankan migration/014_add_raw_material_journal_link.sql di target ini "
+              "lebih dulu, lalu ulangi.")
+        raise SystemExit(2)
 
 
 def _fetch_raw_materials(ref: str, token: str) -> list[dict]:
@@ -206,19 +208,109 @@ def read_xlsx(path: str) -> tuple[str, list, list]:
     i_nama = col("Nama Bahan Baku")
     i_link = col("Link Jurnal")
     rows = []
-    for r in ws.iter_rows(min_row=2, values_only=True):
+    # no_baris = nomor baris Excel Sebenarnya (int), dari enumerate, BUKAN nilai
+    # kolom "No" (r[0]) yang bisa beda/tidak ada. start=2 karena baris 1 = header.
+    for no_baris, r in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         kode = _norm(r[i_kode]) if len(r) > i_kode else ""
         nama = _norm(r[i_nama]) if len(r) > i_nama else ""
         link = _norm(r[i_link]) if len(r) > i_link else ""
         if not (kode or nama or link):
             continue
-        rows.append((r[0], kode, nama, link))
+        rows.append((no_baris, kode, nama, link))
     return ws.title, header, rows
 
 
 def _sql_quote(text: str) -> str:
     """Escape untuk literal SQL: single quote digandakan."""
     return text.replace("'", "''")
+
+
+def compute_import_plan(db_rows: list[dict], xrows: list[tuple]) -> dict:
+    """Pencocokan MURNI (tanpa DB/network) — bisa dites unit tanpa koneksi.
+
+    xrows = [(no_baris, kode, nama, link_mentah), ...]  (no_baris: int, nomor
+    baris Excel sebenarnya); db_rows = [{id, kode_bahan_baku, nama_dagang,
+    journal_link}, ...].
+
+    Aturan:
+    - Kunci utama: kode_bahan_baku (trim + case-insensitive).
+    - Fallback ke nama_dagang (trim + case-insensitive) HANYA bila kode di
+      baris xlsx KOSONG. Kode terisi tapi tak ada di DB -> "unmatched"
+      (TIDAK jatuh ke nama).
+    - 1 baris xlsx cocok ke >1 bahan -> ambigu (jangan tulis).
+    - 1 bahan muncul di beberapa baris xlsx dengan link berbeda -> konflik
+      (jangan tulis, jangan memilih sendiri).
+    - Link dinormalisasi normalize_journal_link; tidak valid -> lapor nomor
+      baris xlsx, jangan tulis.
+    - journal_link SUDAH terisi di DB -> already_filled (skip, tak ditimpa).
+    """
+    kode_map: dict[str, list[dict]] = {}
+    nama_map: dict[str, list[dict]] = {}
+    for r in db_rows:
+        k = _norm(r.get("kode_bahan_baku")).casefold()
+        n = _norm(r.get("nama_dagang")).casefold()
+        if k:
+            kode_map.setdefault(k, []).append(r)
+        if n:
+            nama_map.setdefault(n, []).append(r)
+
+    unmatched: list[tuple] = []
+    ambiguous: list[tuple] = []
+    already_filled: list[tuple] = []
+    invalid: list[tuple] = []
+    per_material: dict[str, list[tuple]] = {}  # db_id -> [(no_baris, ident, link_norm)]
+    for no_baris, kode, nama, link_mentah in xrows:
+        if not link_mentah:
+            continue  # tanpa link: tidak relevan untuk import
+        if kode:
+            cand = kode_map.get(_norm(kode).casefold()) or []
+        else:
+            cand = nama_map.get(_norm(nama).casefold()) or []
+        ident = kode or f"(tanpa kode) {nama}"
+        if len(cand) == 0:
+            unmatched.append((no_baris, ident))
+            continue
+        if len(cand) > 1:
+            ambiguous.append((no_baris, ident,
+                              [_norm(c.get("nama_dagang")) for c in cand]))
+            continue
+        link_norm = None
+        try:
+            link_norm = normalize_journal_link(link_mentah)
+        except ValueError as exc:
+            invalid.append((no_baris, ident, str(exc)))
+            continue
+        if link_norm is None:
+            continue  # kosong setelah strip: tidak ada yang diimpor
+        db_row = cand[0]
+        rid = str(db_row.get("id"))
+        if _norm(db_row.get("journal_link")):
+            already_filled.append((no_baris, ident, _norm(db_row.get("journal_link"))[:60]))
+            continue
+        per_material.setdefault(rid, []).append((no_baris, ident, link_norm))
+
+    # Konflik: satu bahan, beberapa baris xlsx, link berbeda.
+    conflicts = {rid: sorted({lk for _, _, lk in rows})
+                 for rid, rows in per_material.items()
+                 if len({lk for _, _, lk in rows}) > 1}
+    planned: dict[str, str] = {rid: next(iter({lk for _, _, lk in rows}))
+                               for rid, rows in per_material.items()
+                               if len({lk for _, _, lk in rows}) == 1}
+    # will_write: baris xlsx yang akan ditulis; no_baris selalu int (enumerate),
+    # jadi sorted() aman (tidak ada tipe campuran).
+    will_write = sorted((no, ident, link)
+                        for rid, link in planned.items()
+                        for (no, ident, _) in per_material[rid])
+
+    return {
+        "planned": planned,
+        "will_write": will_write,
+        "unmatched": unmatched,
+        "ambiguous": ambiguous,
+        "already_filled": already_filled,
+        "invalid": invalid,
+        "conflicts": conflicts,
+    }
 
 
 def build_update_sql(id2link: dict[str, str]) -> str:
@@ -311,68 +403,34 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[target] {args.target} (ref tidak dicetak: …{ref[-6:]})")
 
     # ---------- Pre-check ----------
-    _precheck_columns(ref, token)
+    # RuntimeError dari Management API (HTTP/timeout/bentuk respons) = fatal ->
+    # exit 2 (sesuai docstring); pesan tetap di-redact terhadap token.
+    try:
+        _precheck_columns(ref, token)
+    except RuntimeError as exc:
+        print("FATAL (API saat pre-check): " + _redact(str(exc), token))
+        return 2
     print("[pre-check] kolom journal_link ada (migrasi 014 terpasang) ✓")
 
-    db_rows = _fetch_raw_materials(ref, token)
+    try:
+        db_rows = _fetch_raw_materials(ref, token)
+    except RuntimeError as exc:
+        print("FATAL (API saat baca raw_materials): " + _redact(str(exc), token))
+        return 2
     print(f"[db] {len(db_rows)} baris raw_materials terbaca")
 
-    # ---------- Baca xlsx + cocokan ----------
+    # ---------- Baca xlsx + cocokan (fungsi murni, teruji unit) ----------
     sheet, header, xrows = read_xlsx(args.xlsx)
     print(f"[xlsx] sheet '{sheet}', header={header}, baris={len(xrows)}")
 
-    kode_map: dict[str, list[dict]] = {}
-    nama_map: dict[str, list[dict]] = {}
-    for r in db_rows:
-        k = _norm(r.get("kode_bahan_baku")).casefold()
-        n = _norm(r.get("nama_dagang")).casefold()
-        if k:
-            kode_map.setdefault(k, []).append(r)
-        if n:
-            nama_map.setdefault(n, []).append(r)
-
-    unmatched: list[tuple] = []
-    ambiguous: list[tuple] = []
-    already_filled: list[tuple] = []
-    invalid: list[tuple] = []
-    per_material: dict[str, list[tuple]] = {}  # db_id -> [(no_baris, ident, link_norm)]
-    for no_baris, kode, nama, link_mentah in xrows:
-        if not link_mentah:
-            continue  # tanpa link: tidak relevan untuk import
-        cand = (kode_map.get(_norm(kode).casefold()) if kode else None) \
-            or nama_map.get(_norm(nama).casefold()) or []
-        ident = kode or f"(tanpa kode) {nama}"
-        if len(cand) == 0:
-            unmatched.append((no_baris, ident))
-            continue
-        if len(cand) > 1:
-            ambiguous.append((no_baris, ident,
-                              [ _norm(c.get('nama_dagang')) for c in cand]))
-            continue
-        link_norm = None
-        try:
-            link_norm = normalize_journal_link(link_mentah)
-        except ValueError as exc:
-            invalid.append((no_baris, ident, str(exc)))
-            continue
-        if link_norm is None:
-            continue  # kosong setelah strip: tidak ada yang diimpor
-        db_row = cand[0]
-        rid = str(db_row.get("id"))
-        if _norm(db_row.get("journal_link")):
-            already_filled.append((no_baris, ident, _norm(db_row.get("journal_link"))[:60]))
-            continue
-        per_material.setdefault(rid, []).append((no_baris, ident, link_norm))
-
-    # Konflik: satu bahan, beberapa baris xlsx, link berbeda.
-    conflicts = {rid: sorted({lk for _, _, lk in rows} | {i[2] for i in rows})
-                 for rid, rows in per_material.items()
-                 if len({lk for _, _, lk in rows}) > 1}
-    planned: dict[str, str] = {rid: next(iter({lk for _, _, lk in rows}))
-                               for rid, rows in per_material.items()
-                               if len({lk for _, _, lk in rows}) == 1}
-    will_write = [(no, ident, link) for rid, link in planned.items()
-                  for (no, ident, _) in per_material[rid]]
+    plan = compute_import_plan(db_rows, xrows)
+    planned = plan["planned"]
+    will_write = plan["will_write"]
+    unmatched = plan["unmatched"]
+    ambiguous = plan["ambiguous"]
+    already_filled = plan["already_filled"]
+    invalid = plan["invalid"]
+    conflicts = plan["conflicts"]
 
     # ---------- Laporan ----------
     print("\n===== LAPORAN DRY-RUN =====")
@@ -394,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"   {it}")
 
     dump("baris xlsx AKAN DITULIS",
-         [f"baris {no}: {ident} -> {link[:90]}" for no, ident, link in sorted(will_write)])
+         [f"baris {no}: {ident} -> {link[:90]}" for no, ident, link in will_write])
     dump("SUDAH TERISI (di-skip, tidak ditimpa)", already_filled)
     dump("TIDAK COCOK (kode/nama tidak ada di DB target)",
          [f"baris {no}: {ident}" for no, ident in unmatched])
@@ -418,18 +476,27 @@ def main(argv: list[str] | None = None) -> int:
     snapshot_path = write_snapshot(args.snapshot_dir, args.target, planned, db_rows)
     print(f"\n[snapshot] {snapshot_path}")
     sql = build_update_sql(planned)
-    _mgmt_query(token, ref, sql)
+    try:
+        _mgmt_query(token, ref, sql)
+    except RuntimeError as exc:
+        print("FATAL (API saat apply UPDATE): " + _redact(str(exc), token))
+        print(f"Snapshot untuk rollback: {snapshot_path}")
+        return 2
     print(f"[apply] UPDATE dikirim: {len(planned)} id, 1 statement atomik")
 
     # Verifikasi pasca-apply.
     id_list = ", ".join(f"'{rid}'" for rid in planned)
-    nulls = _mgmt_query(token, ref, (
-        f"SELECT count(*) AS n FROM raw_materials "
-        f"WHERE id IN ({id_list}) AND journal_link IS NULL;"
-    ))
-    changed_now = 0
-    after = _fetch_raw_materials(ref, token)
+    try:
+        nulls = _mgmt_query(token, ref, (
+            f"SELECT count(*) AS n FROM raw_materials "
+            f"WHERE id IN ({id_list}) AND journal_link IS NULL;"
+        ))
+        after = _fetch_raw_materials(ref, token)
+    except RuntimeError as exc:
+        print("FATAL (API saat verifikasi pasca-apply): " + _redact(str(exc), token))
+        return 2
     by_id = {str(r.get("id")): r for r in after}
+    changed_now = 0
     for rid, link in planned.items():
         if _norm(by_id.get(rid, {}).get("journal_link")) == link:
             changed_now += 1
@@ -438,7 +505,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[verifikasi] baris terisi sesuai rencana: {changed_now}/{expected}")
 
     # Buktikan idempoten: komputasi ulang dry-run atas data terbaru.
-    planned2 = {rid: link for rid, link in planned
+    # (iterasi planned.items() -> pasangan (rid, link); BUKAN iterasi keys).
+    planned2 = {rid: link for rid, link in planned.items()
                 if not _norm(by_id.get(rid, {}).get("journal_link"))}
     print(f"[idempoten] rencana tersisa setelah apply: {len(planned2)} (harus 0)")
 
