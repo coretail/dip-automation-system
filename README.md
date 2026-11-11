@@ -262,6 +262,7 @@ dip-automation-system/
 │   ├── brands_routes.py        # Brand & dokumen legal merek
 │   ├── company_docs_routes.py  # Dokumen perusahaan (log activity + evidence row_id)
 │   ├── config.py               # Settings pydantic (supabase_url/key/service_role, gemini_api_key)
+│   ├── csrf_guard.py           # Lapisan kedua anti-CSRF: validasi Origin/Referer (POST/PUT/PATCH/DELETE)
 │   ├── dashboard_routes.py     # Dashboard & Sampah/restore produk
 │   ├── database.py             # Klien Supabase global (service role, melewati RLS)
 │   ├── env_guard.py            # Guard produki implisit G-11 (tolak .env tanpa DIP_APP_ENV)

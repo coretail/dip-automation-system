@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import MutableHeaders
 from typing import List
+from app.csrf_guard import CsrfGuardMiddleware
 from app.database import supabase
 from app.object_store import parse_storage_url as _parse_storage_url
 
@@ -403,6 +404,10 @@ class SecurityHeadersMiddleware:
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+# Lapisan kedua CSRF (A-07): validasi Origin/Referer untuk POST/PUT/PATCH/DELETE.
+# Dipasang SETELAH SecurityHeadersMiddleware sehingga 403 dari guard tetap
+# ditempelkan security headers (middleware terakhir = paling luar).
+app.add_middleware(CsrfGuardMiddleware)
 
 # Rate limiter (proteksi brute-force di /login, dibatasi per-IP)
 limiter = Limiter(key_func=_client_ip)
