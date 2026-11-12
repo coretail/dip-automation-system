@@ -335,7 +335,7 @@ def register_dip_public_routes(
                     {"label": "Spesifikasi Bahan Baku", "url": rm.get("spec_sheet_file_url"), "icon": "fa-file-lines"},
                     {"label": "CoA (Certificate of Analysis)", "url": batch.get("coa_file_url") if batch else None, "icon": "fa-file-circle-check"},
                     {"label": "Sertifikat Halal", "url": batch.get("halal_batch_file_url") if batch else None, "icon": "fa-file-shield"},
-                    {"label": "MSDS (Material Safety Data Sheet)", "url": rm.get("msds_file_url"), "icon": "fa-file-triangle"},
+                    {"label": "MSDS (Material Safety Data Sheet)", "url": rm.get("msds_file_url"), "icon": "fa-file-circle-exclamation"},
                 ]
                 files = []
                 for f in candidate_files:
