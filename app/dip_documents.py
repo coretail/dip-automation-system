@@ -25,6 +25,7 @@ from pypdf import PdfReader, PdfWriter
 from xhtml2pdf import pisa
 
 from app import bab2_pdf
+from app.journal_link import build_daftar_jurnal
 from app.safe_fetch import fetch_storage_bytes
 
 # Catatan: nama logger berubah dari "app.main" menjadi "app.dip_documents".
@@ -506,6 +507,18 @@ def register_dip_document_routes(
                     if missing:
                         note = "Dokumen berikut belum tersedia/gagal diunduh untuk bahan baku ini:\n- " + "\n- ".join(missing)
                         zf.writestr(f"{root_folder}/{folder_name}/PERHATIAN.txt", note)
+
+            # 5d. Daftar jurnal referensi (penomoran mengikuti folder bahan 01_, 02_, ...).
+            #     Murni teks: URL jurnal TIDAK di-fetch (bukan storage). Jurnal tidak
+            #     masuk daftar missing/PERHATIAN.txt. Route ini juga dipakai hub publik
+            #     (dip_public.download_bab2_zip), jadi satu perubahan mencakup keduanya.
+            daftar_jurnal = build_daftar_jurnal(
+                product.get("nama_produk", "Produk"),
+                perusahaan,
+                [item["material"] for item in materials_data],
+            )
+            if daftar_jurnal is not None:
+                zf.writestr(f"{root_folder}/Daftar_Jurnal.txt", daftar_jurnal)
 
         zip_buffer.seek(0)
         safe_name = _safe_zip_name(product.get("nama_produk") or "Produk").replace(" ", "_")
