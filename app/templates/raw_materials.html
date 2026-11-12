@@ -153,6 +153,13 @@
                             {% else %}
                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-gray-400 bg-gray-50" title="Belum dipakai di produk manapun">0 Produk</span>
                             {% endif %}
+                            {% if rm.journal_href %}
+                            <a href="{{ rm.journal_href }}" target="_blank" rel="noopener noreferrer"
+                               class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 transition"
+                               title="Buka link jurnal referensi">
+                                <i class="fa-solid fa-book-open mr-1"></i>Jurnal
+                            </a>
+                            {% endif %}
                         </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">

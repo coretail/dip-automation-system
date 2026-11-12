@@ -14,7 +14,8 @@ from postgrest.exceptions import APIError
 
 from app.database import supabase
 from app.file_validation import validate_pdf_bytes
-from app.journal_link import normalize_journal_link
+from app.journal_link import normalize_journal_link, safe_journal_href
+from app.pagination import paginate_all, usage_counts
 from app.security import assert_same_tenant
 from app import object_store
 from app.variant_components import normalize_components, normalize_variants
@@ -486,6 +487,10 @@ def register_raw_materials_routes(
         for rm in (rm_resp.data or []):
             rm["raw_material_components"] = _resolve_variant_components(rm, None)
             _apply_company_doc_specs(rm)
+            # Href jurnal untuk badge "Jurnal" di tabel: nilai tidak valid -> None
+            # (template hanya menampilkan badge kalau ada href). TIDAK lewatkan
+            # rm.journal_link mentah ke template.
+            rm["journal_href"] = safe_journal_href(rm.get("journal_link"))
 
         success_msg = request.cookies.get("success_msg") or request.query_params.get("success")
         error_msg = request.cookies.get("error_msg") or request.query_params.get("error")
@@ -637,22 +642,27 @@ def register_raw_materials_routes(
             doc_status[rm["id"]] = status_per_company
 
         # ===== HITUNG JUMLAH PRODUK PEMAKAI TIAP BAHAN BAKU (Badge Counter) =====
+        # Ambil SELURUH baris lewat pagination: query PostgREST tanpa .range
+        # terpotong diam-diam oleh db.max-rows (default 1000) sehingga badge
+        # bisa kurang dari jumlah sebenarnya. .order("id") = PK deterministik
+        # (wajib untuk range-based pagination).
         try:
-            usage_lines = supabase.table("product_formula_lines") \
-                .select("raw_material_id, product_id, products(is_deleted)").execute()
-            usage_sets = {}
-            for ln in (usage_lines.data or []):
-                rm_id_ln = ln.get("raw_material_id")
-                prod_id_ln = ln.get("product_id")
-                # Produk yang sudah soft-delete (is_deleted=true) tidak dihitung sebagai
-                # pemakaian aktif, supaya angka badge sama dengan isi modal
-                # "Dipakai di Produk".
-                if rm_id_ln and prod_id_ln and not _is_deleted_product(ln.get("products")):
-                    # Satu bahan baku dihitung maksimal sekali per produk
-                    usage_sets.setdefault(rm_id_ln, set()).add(prod_id_ln)
+            usage_page_size = 1000
+
+            def _fetch_usage_page(offset: int) -> list:
+                page = (supabase.table("product_formula_lines")
+                        .select("raw_material_id, product_id, products(is_deleted)")
+                        .order("id")
+                        .range(offset, offset + usage_page_size - 1)
+                        .execute())
+                return page.data or []
+
+            usage_counts_map = usage_counts(paginate_all(_fetch_usage_page, usage_page_size))
             for rm in rm_resp.data:
-                rm["usage_count"] = len(usage_sets.get(rm["id"], ()))
+                rm["usage_count"] = usage_counts_map.get(rm["id"], 0)
         except Exception as e:
+            # Fallback lama tetap: query gagal -> badge 0, error dicetak (jangan
+            # disembunyikan diam-diam).
             print(f"Gagal hitung pemakaian bahan baku: {e}")
             for rm in rm_resp.data:
                 rm.setdefault("usage_count", 0)
