@@ -93,6 +93,7 @@ jobs:
           python tests/test_csrf_guard.py
           python tests/test_journal_link.py
           python tests/test_import_journal_link_matching.py
+          python tests/test_dip_public_bab2_journal.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt
