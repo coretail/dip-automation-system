@@ -168,7 +168,6 @@ def get_time_greeting() -> dict:
 _GEMINI_MODELS_FALLBACK = [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-flash-lite",
 ]
 
 async def _generate_ai_greeting_phrase(nama_user: str) -> str | None:
