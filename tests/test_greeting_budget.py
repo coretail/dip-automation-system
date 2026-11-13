@@ -20,11 +20,19 @@ if str(root) not in sys.path:
     sys.path.insert(0, str(root))
 
 # Set env dummy SEBELUM import app.main (biar env_guard tidak reject)
+# Pola sama dengan test_auth_matrix.py: set SUPABASE_URL + key dummy,
+# TIDAK set DIP_APP_ENV (variabel itu tidak boleh diset di CI per AGENTS.md).
+# Di mesin lokal yang punya file .env, mock find_dotenv_files biar env_guard
+# tidak reject (di CI tidak ada file .env, jadi mock tidak diperlukan).
 os.environ["SUPABASE_URL"] = "https://ci.invalid.supabase.co"
 os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "ci-dummy-service-role-key"
 os.environ["SUPABASE_KEY"] = "ci-dummy-anon-key"
 os.environ["STORAGE_BACKEND"] = "supabase"
-os.environ["DIP_APP_ENV"] = "production"  # Production explicit (biar env_guard pass)
+
+# Mock find_dotenv_files untuk test lokal (di CI tidak ada file .env)
+import app.env_guard as env_guard
+original_find_dotenv = env_guard.find_dotenv_files
+env_guard.find_dotenv_files = lambda: []
 
 
 def test_model_list_no_codenames():
