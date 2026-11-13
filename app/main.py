@@ -165,10 +165,15 @@ def get_time_greeting() -> dict:
     return base
 
 _GEMINI_MODELS_FALLBACK = [
+    "gemini-4-hydrogen",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-flash-lite",
 ]
+
+# Model yang butuh timeout lebih longgar (reasoning lebih kompleks)
+_MODEL_TIMEOUTS = {
+    "gemini-4-hydrogen": 8.0,  # Default tinggi, butuh waktu lebih lama
+}
 
 async def _generate_ai_greeting_phrase(nama_user: str) -> str | None:
     """Coba generate 1 kalimat sapaan santai gaya gen-Z pakai Gemini API,
@@ -222,9 +227,11 @@ async def _generate_ai_greeting_phrase(nama_user: str) -> str | None:
         for model in _GEMINI_MODELS_FALLBACK:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                # Tambah timeout khusus untuk model yang lambat (Gemini 4.x)
+                model_timeout = _MODEL_TIMEOUTS.get(model, 4.0)
                 resp = await client.post(url, json={
                     "contents": [{"parts": [{"text": prompt}]}]
-                })
+                }, timeout=model_timeout)
                 if resp.status_code != 200:
                     print(f"[AI GREETING] Model {model} gagal (status {resp.status_code}), coba model berikutnya.")
                     continue
