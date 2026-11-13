@@ -259,45 +259,67 @@ def _add_years(d: date, years: int) -> date:
     except ValueError:
         return d.replace(year=d.year + years, day=28)
 
-async def get_ed_notification_count():
-    """Helper to fetch ED notification count for template context."""
-    from datetime import datetime as _dt
-    today = _dt.now(WIB).date()
-    try:
-        ed_query = (
-            supabase.table("raw_material_batches")
-            .select("id, tanggal_ed, status_ed")
-            .neq("status_ed", "Dimusnahkan")
-            .execute()
-        )
-        count = 0
-        for batch in (ed_query.data or []):
-            tanggal_ed = batch.get("tanggal_ed")
-            if not tanggal_ed:
-                continue
-            try:
-                if isinstance(tanggal_ed, str):
-                    ed_date = _dt.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
-                else:
-                    ed_date = tanggal_ed
-                days_remaining = (ed_date - today).days
-                if days_remaining <= 180:
-                    count += 1
-            except Exception:
-                continue
-        
-        # Ambil produk dengan NA yang akan expired atau sudah expired
-        products_query = (
-            supabase.table("products")
-            .select("id, tanggal_aktif_na, status_na")
-            .in_("status_na", ["akan_expired", "expired"])
-            .execute()
-        )
-        for p in (products_query.data or []):
-            status_na, _ = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
-            if status_na in ["akan_expired", "expired"]:
-                count += 1
+# Cache badge ED: TTL 60 detik, modul-level. Badge dipanggil di banyak halaman
+# (dashboard, PO, bahan baku, dst.) — cache menghindari query berulang dalam
+# 60 detik. Endpoint /api/ed-notifications TIDAK di-cache (always fresh).
+# Invalidasi tidak perlu: badge boleh basi 60 detik (data ED jarang berubah).
+_ED_BADGE_CACHE: dict = {"count": 0, "ts": 0.0}
+_ED_BADGE_CACHE_TTL = 60.0
 
+
+async def get_ed_notification_count() -> int:
+    """Helper to fetch ED notification count untuk template context (badge).
+
+    Performa: filter berat dikembalikan ke SQL (bukan fetch semua lalu filter
+    di Python), tetap pakai paginate_all + fungsi murni critical_ed_items.
+     - raw_material_batches: select ringan TIDAK embed raw_materials,
+       .neq("status_ed","Dimusnahkan"), .lte("tanggal_ed", today+180),
+       .order("id")  -> critical_ed_items()
+       (NULL tanggal_ed dibuang .lte + critical_ed_items; JANGAN .not_().is_ —
+       not_ adalah property di postgrest 2.31.0, .not_() melempar error).
+    - products: TANPA filter status_na (filter SQL tidak bisa membuktikan
+      setara semantik compute_status_na — lihat deskripsi PR).
+    - Cache TTL 60 detik (modul-level) untuk badge saja.
+
+    Perilaku (N-02, 2026-11-13): badge sekarang konsisten dengan endpoint
+    /api/ed-notifications — bisa lebih besar dari sebelumnya karena dulu
+    badge memfilter .in_("status_na",["akan_expired","expired"]) yang bisa
+    kurang hitung saat status_na manual berbeda dari hasil compute_status_na.
+    """
+    import time
+    from datetime import datetime as _dt, timedelta
+    from app.pagination import paginate_all
+    from app.ed_notifications import (
+        critical_ed_items, critical_na_items,
+        build_ed_batch_query, build_ed_product_query,
+    )
+
+    # Cache: return cached count jika masih dalam TTL
+    now_mono = time.monotonic()
+    if _ED_BADGE_CACHE["ts"] and (now_mono - _ED_BADGE_CACHE["ts"]) < _ED_BADGE_CACHE_TTL:
+        return _ED_BADGE_CACHE["count"]
+
+    today = _dt.now(WIB).date()
+    cutoff = (today + timedelta(days=180)).isoformat()
+    try:
+        def _fetch_batches_page(offset):
+            return (build_ed_batch_query(
+                supabase.table("raw_material_batches"), cutoff, offset
+            ).execute().data or [])
+        batch_rows = paginate_all(_fetch_batches_page)
+        critical_batches = critical_ed_items(batch_rows, today)
+
+        def _fetch_products_page(offset):
+            return (build_ed_product_query(
+                supabase.table("products"), offset
+            ).execute().data or [])
+        product_rows = paginate_all(_fetch_products_page)
+
+        na_items = critical_na_items(product_rows, compute_status_na)
+
+        count = len(critical_batches) + len(na_items)
+        _ED_BADGE_CACHE["count"] = count
+        _ED_BADGE_CACHE["ts"] = now_mono
         return count
     except Exception as e:
         print(f"Gagal hitung ED notifications: {e}")

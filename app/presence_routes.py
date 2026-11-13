@@ -85,55 +85,37 @@ def register_presence_routes(
     @app.get("/api/ed-notifications")
     async def get_ed_notifications(current_user: dict = Depends(get_current_user)):
         from datetime import datetime as _dt, timedelta
+        from app.pagination import paginate_all
+        from app.ed_notifications import (
+            critical_ed_items, critical_na_items,
+            build_ed_batch_query, build_ed_product_query,
+        )
         today = _dt.now(WIB).date()
-        warning_date = today + timedelta(days=180)
+        cutoff = (today + timedelta(days=180)).isoformat()
         try:
-            query = supabase.table("raw_material_batches").select("*, raw_materials(nama_dagang, kode_bahan_baku)").neq("status_ed", "Dimusnahkan").execute()
-            batches = query.data or []
-            critical_batches = []
-            for batch in batches:
-                tanggal_ed = batch.get("tanggal_ed")
-                if not tanggal_ed:
-                    continue
-                try:
-                    if isinstance(tanggal_ed, str):
-                        ed_date = _dt.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
-                    else:
-                        ed_date = tanggal_ed
-                except Exception:
-                    continue
-                days_remaining = (ed_date - today).days
-                if days_remaining <= 180:
-                    status_ed = batch.get("status_ed") or "Active"
-                    if days_remaining <= 0 and status_ed == "Active":
-                        status_ed = "Expired"
-                    elif days_remaining <= 180 and status_ed == "Active":
-                        status_ed = "Kritis (<= 180 hari)"
-                    critical_batches.append({
-                        "id": batch.get("id"),
-                        "raw_material_id": batch.get("raw_material_id"),
-                        "no_batch": batch.get("no_batch"),
-                        "perusahaan": batch.get("perusahaan"),
-                        "tanggal_ed": tanggal_ed,
-                        "days_remaining": days_remaining,
-                        "status_ed": status_ed,
-                        "nama_dagang": (batch.get("raw_materials") or {}).get("nama_dagang", "Unknown"),
-                        "kode_bahan_baku": (batch.get("raw_materials") or {}).get("kode_bahan_baku", "")
-                    })
-            critical_batches.sort(key=lambda x: x["days_remaining"])
+            # Paginasi lengkap: PostgREST memotong di db.max-rows (default 1000).
+            # Filter berat di SQL (sama dengan badge main.py):
+            # .neq("status_ed","Dimusnahkan") + .lte("tanggal_ed", cutoff).
+            # Endpoint menambah raw_material_id + embed raw_materials untuk panel.
+            # JANGAN .not_().is_(...) — not_ adalah property di postgrest 2.31.0.
+            _ENDPOINT_EXTRA = "raw_material_id, raw_materials(nama_dagang, kode_bahan_baku)"
 
-            products_query = supabase.table("products").select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na").execute()
-            na_items = []
-            for p in (products_query.data or []):
-                status_na, days_remaining = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
-                if status_na in ["akan_expired", "expired"]:
-                    na_items.append({
-                        "id": p.get("id"),
-                        "nama_produk": p.get("nama_produk"),
-                        "no_na_produk": p.get("no_na_produk"),
-                        "days_remaining": days_remaining if days_remaining is not None else 0,
-                        "status_na": status_na,
-                    })
+            def _fetch_batches_page(offset):
+                return (build_ed_batch_query(
+                    supabase.table("raw_material_batches"), cutoff, offset,
+                    extra_select=_ENDPOINT_EXTRA,
+                ).execute().data or [])
+            batch_rows = paginate_all(_fetch_batches_page)
+            critical_batches = critical_ed_items(batch_rows, today)
+
+            # Products: TANPA filter status_na (sama seperti badge) karena
+            # filter SQL tidak bisa membuktikan setara semantik compute_status_na.
+            def _fetch_products_page(offset):
+                return (build_ed_product_query(
+                    supabase.table("products"), offset
+                ).execute().data or [])
+            product_rows = paginate_all(_fetch_products_page)
+            na_items = critical_na_items(product_rows, compute_status_na)
 
             return JSONResponse({
                 "count": len(critical_batches) + len(na_items),

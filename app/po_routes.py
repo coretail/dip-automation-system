@@ -7,6 +7,7 @@ from fastapi import Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.database import supabase
 from app.security import assert_same_tenant
+from app.pagination import paginate_all, paginate_all_capped
 WIB = ZoneInfo("Asia/Jakarta")
 
 # Label field item PO untuk activity log (dipakai _build_diff_changes),
@@ -265,7 +266,7 @@ def _num(v):
         return 0.0
 
 
-def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort="pcs", top_n=5):
+def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort="pcs", top_n=5, po_truncated=False):
     """Susun seluruh angka halaman /po-analytics dari baris mentah.
 
     pos_rows      : {id, no_po, tanggal_po, qty_pcs, jenis_po?}
@@ -279,6 +280,7 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
                     per kuartal, dan per perusahaan TETAP memakai seluruh tahun
                     supaya konteksnya tidak hilang.
     sort          : "pcs" (default) atau "po" -> dasar pengurutan daftar top.
+    po_truncated  : True jika pos_rows dipotong di batas (paginate_all_capped).
 
     Aturan hitung:
       - jumlah PO & pcs per kuartal hanya untuk PO yang tanggalnya valid
@@ -473,7 +475,7 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
         "po_tanpa_item": po_tanpa_item[:50],
         "qtr": qtr,
         "sort": sort,
-        "truncated": len(po_by_id) >= _PO_STATS_LIMIT,
+        "truncated": po_truncated,
     }
 
 def _redirect_po(po_id=None, ok=None, err=None):
@@ -545,11 +547,14 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         q_no_date = 0
         stat_rows = []
         try:
-            dq = supabase.table("purchase_orders").select("tanggal_po") \
-                .order("tanggal_po", desc=True).limit(_PO_STATS_LIMIT)
-            if qs:
-                dq = dq.ilike("no_po", f"%{qs}%")
-            stat_rows = dq.execute().data or []
+            def _fetch_stats_page(offset):
+                q = supabase.table("purchase_orders").select("tanggal_po") \
+                    .order("tanggal_po", desc=True).order("id") \
+                    .range(offset, offset + 999)
+                if qs:
+                    q = q.ilike("no_po", f"%{qs}%")
+                return q.execute().data or []
+            stat_rows, stat_truncated = paginate_all_capped(_fetch_stats_page, max_rows=_PO_STATS_LIMIT)
         except Exception as ex:
             print(f"[PO] gagal ambil statistik PO: {ex}")
 
@@ -557,7 +562,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             s = str(d or "")[:4]
             return int(s) if len(s) == 4 and s.isdigit() else None
 
-        stat_complete = len(stat_rows) < _PO_STATS_LIMIT
+        stat_complete = not stat_truncated
         per_year = {}
         for r in stat_rows:
             y = _year_of(r.get("tanggal_po"))
@@ -597,12 +602,13 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         if not qs:
             # Tanpa pencarian: PO terbaru (dibatasi tahun/kuartal bila aktif).
             try:
-                q1 = _apply_po_range(
-                    supabase.table("purchase_orders")
-                    .select("id, no_po, tanggal_po, qty_pcs")
-                    .order("tanggal_po", desc=True).limit(_PO_LIST_LIMIT),
-                    tahun, qtr)
-                pos = (q1.execute().data or [])
+                def _fetch_po_list_page(offset):
+                    q = supabase.table("purchase_orders") \
+                        .select("id, no_po, tanggal_po, qty_pcs") \
+                        .order("tanggal_po", desc=True).order("id") \
+                        .range(offset, offset + 999)
+                    return _apply_po_range(q, tahun, qtr).execute().data or []
+                pos, _po_list_truncated = paginate_all_capped(_fetch_po_list_page, max_rows=_PO_LIST_LIMIT)
             except Exception as ex:
                 print(f"[PO] list gagal: {ex}")
         else:
@@ -611,12 +617,14 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             # Dua-duanya digabung & dedup per id di bawah.
             gabung = {}
             try:
-                qa = _apply_po_range(
-                    supabase.table("purchase_orders")
-                    .select("id, no_po, tanggal_po, qty_pcs")
-                    .ilike("no_po", f"%{qs}%").limit(_PO_LIST_LIMIT),
-                    tahun, qtr)
-                for row in (qa.execute().data or []):
+                def _fetch_po_search_page(offset):
+                    q = supabase.table("purchase_orders") \
+                        .select("id, no_po, tanggal_po, qty_pcs") \
+                        .ilike("no_po", f"%{qs}%") \
+                        .order("tanggal_po", desc=True).order("id") \
+                        .range(offset, offset + 999)
+                    return _apply_po_range(q, tahun, qtr).execute().data or []
+                for row in paginate_all_capped(_fetch_po_search_page, max_rows=_PO_LIST_LIMIT)[0]:
                     if row.get("id"):
                         gabung[row["id"]] = row
             except Exception as ex:
@@ -625,6 +633,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                 # "!inner" WAJIB; tanpa itu PostgREST tidak memfilter sama sekali —
                 # ia mengembalikan seluruh baris tanpa error, sehingga hasilnya
                 # diam-diam salah (bukan 0 hasil, tapi semua baris).
+                # limit(1000) sengaja kecil untuk autocomplete — jangan diubah.
                 qb = supabase.table("purchase_order_items") \
                     .select("purchase_orders(id, no_po, tanggal_po, qty_pcs), products!inner(nama_produk)") \
                     .ilike("products.nama_produk", f"%{qs}%").limit(1000)
@@ -665,13 +674,16 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             else:
                 # Terlalu banyak baris untuk satu tangan -> query khusus 1 tahun.
                 try:
-                    cq = supabase.table("purchase_orders").select("tanggal_po") \
-                        .gte("tanggal_po", f"{tahun:04d}-01-01") \
-                        .lt("tanggal_po", f"{tahun + 1:04d}-01-01") \
-                        .limit(_PO_STATS_LIMIT)
-                    if qs:
-                        cq = cq.ilike("no_po", f"%{qs}%")
-                    for r in (cq.execute().data or []):
+                    def _fetch_quarter_page(offset):
+                        q = supabase.table("purchase_orders").select("tanggal_po") \
+                            .gte("tanggal_po", f"{tahun:04d}-01-01") \
+                            .lt("tanggal_po", f"{tahun + 1:04d}-01-01") \
+                            .order("tanggal_po", desc=True).order("id") \
+                            .range(offset, offset + 999)
+                        if qs:
+                            q = q.ilike("no_po", f"%{qs}%")
+                        return q.execute().data or []
+                    for r in paginate_all_capped(_fetch_quarter_page, max_rows=_PO_STATS_LIMIT)[0]:
                         q = _quarter_of(r.get("tanggal_po"))
                         if q:
                             q_counts[q] += 1
@@ -799,8 +811,11 @@ def register_po_routes(app, get_current_user, log_activity, templates,
 
         # Tahun yang punya data, untuk mengisi dropdown.
         try:
-            yr = supabase.table("purchase_orders").select("tanggal_po") \
-                .order("tanggal_po", desc=True).limit(_PO_STATS_LIMIT).execute().data or []
+            def _fetch_analytics_years_page(offset):
+                return supabase.table("purchase_orders").select("tanggal_po") \
+                    .order("tanggal_po", desc=True).order("id") \
+                    .range(offset, offset + 999).execute().data or []
+            yr, _ = paginate_all_capped(_fetch_analytics_years_page, max_rows=_PO_STATS_LIMIT)
             per_year = {}
             for r in yr:
                 y = _year_of(r.get("tanggal_po"))
@@ -815,30 +830,40 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         if tahun is None and years:
             tahun = years[0][0]
 
+        po_truncated = False
+        prod_truncated = False
         if tahun is not None:
             try:
-                pos = _apply_po_range(
-                    supabase.table("purchase_orders").select(po_cols)
-                    .order("tanggal_po", desc=True).limit(_PO_STATS_LIMIT),
-                    tahun, None).execute().data or []
+                def _fetch_analytics_pos_page(offset):
+                    q = supabase.table("purchase_orders").select(po_cols) \
+                        .order("tanggal_po", desc=True).order("id") \
+                        .range(offset, offset + 999)
+                    return _apply_po_range(q, tahun, None).execute().data or []
+                pos, po_truncated = paginate_all_capped(_fetch_analytics_pos_page, max_rows=_PO_STATS_LIMIT)
             except Exception as ex:
                 print(f"[PO] analytics list gagal: {ex}")
                 warnings.append("Gagal memuat daftar PO.")
+                po_truncated = False
             try:
                 # "!inner" wajib: tanpa itu, filter tanggal hanya membatasi
                 # resource yang di-embed dan item dari PO tahun lain ikut masuk.
-                item_rows = supabase.table("purchase_order_items") \
-                    .select("purchase_order_id, product_id, purchase_orders!inner(id)") \
-                    .gte("purchase_orders.tanggal_po", f"{tahun:04d}-01-01") \
-                    .lt("purchase_orders.tanggal_po", f"{tahun + 1:04d}-01-01") \
-                    .limit(_PO_STATS_LIMIT).execute().data or []
+                def _fetch_analytics_items_page(offset):
+                    return supabase.table("purchase_order_items") \
+                        .select("purchase_order_id, product_id, purchase_orders!inner(id)") \
+                        .gte("purchase_orders.tanggal_po", f"{tahun:04d}-01-01") \
+                        .lt("purchase_orders.tanggal_po", f"{tahun + 1:04d}-01-01") \
+                        .order("id") \
+                        .range(offset, offset + 999).execute().data or []
+                item_rows, _ = paginate_all_capped(_fetch_analytics_items_page, max_rows=_PO_STATS_LIMIT)
             except Exception as ex:
                 print(f"[PO] analytics item gagal: {ex}")
                 warnings.append("Gagal memuat item PO per produk.")
             try:
-                prod_rows = supabase.table("products").select(
-                    "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url, brand_id, brands(id, name)"
-                ).limit(_PO_STATS_LIMIT).execute().data or []
+                def _fetch_analytics_products_page(offset):
+                    return supabase.table("products").select(
+                        "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url, brand_id, brands(id, name)"
+                    ).order("id").range(offset, offset + 999).execute().data or []
+                prod_rows, prod_truncated = paginate_all_capped(_fetch_analytics_products_page, max_rows=_PO_STATS_LIMIT)
                 for row in prod_rows:
                     brand = row.get("brands")
                     if isinstance(brand, list):
@@ -847,9 +872,11 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             except Exception as embed_ex:
                 print(f"[PO] analytics embed brand gagal, mencoba fallback: {embed_ex}")
                 try:
-                    prod_rows = supabase.table("products").select(
-                        "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url, brand_id"
-                    ).limit(_PO_STATS_LIMIT).execute().data or []
+                    def _fetch_analytics_products_fallback_page(offset):
+                        return supabase.table("products").select(
+                            "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url, brand_id"
+                        ).order("id").range(offset, offset + 999).execute().data or []
+                    prod_rows, prod_truncated = paginate_all_capped(_fetch_analytics_products_fallback_page, max_rows=_PO_STATS_LIMIT)
                     brand_ids = list({r.get("brand_id") for r in prod_rows if r.get("brand_id")})
                     brands_by_id = {}
                     if brand_ids:
@@ -865,9 +892,10 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                     print(f"[PO] analytics fallback brand gagal: {fallback_ex}")
                     warnings.append("Gagal memuat master produk dan merek.")
                     prod_rows = []
+                    prod_truncated = False
 
-        ana = _build_po_analytics(pos, item_rows, prod_rows, tahun, qtr=qtr, sort=sort)
-        ana["produk_truncated"] = len(prod_rows) >= _PO_STATS_LIMIT
+        ana = _build_po_analytics(pos, item_rows, prod_rows, tahun, qtr=qtr, sort=sort, po_truncated=po_truncated)
+        ana["produk_truncated"] = prod_truncated
 
         ctx = {
             "current_user": current_user,
