@@ -86,33 +86,34 @@ def register_presence_routes(
     async def get_ed_notifications(current_user: dict = Depends(get_current_user)):
         from datetime import datetime as _dt, timedelta
         from app.pagination import paginate_all
-        from app.ed_notifications import critical_ed_items, critical_na_items
+        from app.ed_notifications import (
+            critical_ed_items, critical_na_items,
+            build_ed_batch_query, build_ed_product_query,
+        )
         today = _dt.now(WIB).date()
         cutoff = (today + timedelta(days=180)).isoformat()
         try:
             # Paginasi lengkap: PostgREST memotong di db.max-rows (default 1000).
-            # order("id") untuk urutan deterministik. Filter berat di SQL:
-            # .neq("status_ed","Dimusnahkan") + .lte("tanggal_ed", cutoff) +
-            # .not_().is_("tanggal_ed", None) — sama dengan badge (main.py).
-            # Kolom lengkap + embed raw_materials untuk tampilan di panel.
+            # Filter berat di SQL (sama dengan badge main.py):
+            # .neq("status_ed","Dimusnahkan") + .lte("tanggal_ed", cutoff).
+            # Endpoint menambah raw_material_id + embed raw_materials untuk panel.
+            # JANGAN .not_().is_(...) — not_ adalah property di postgrest 2.31.0.
+            _ENDPOINT_EXTRA = "raw_material_id, raw_materials(nama_dagang, kode_bahan_baku)"
+
             def _fetch_batches_page(offset):
-                return supabase.table("raw_material_batches") \
-                    .select("id, tanggal_ed, status_ed, no_batch, perusahaan, raw_material_id, raw_materials(nama_dagang, kode_bahan_baku)") \
-                    .neq("status_ed", "Dimusnahkan") \
-                    .lte("tanggal_ed", cutoff) \
-                    .not_().is_("tanggal_ed", None) \
-                    .order("id") \
-                    .range(offset, offset + 999).execute().data or []
+                return (build_ed_batch_query(
+                    supabase.table("raw_material_batches"), cutoff, offset,
+                    extra_select=_ENDPOINT_EXTRA,
+                ).execute().data or [])
             batch_rows = paginate_all(_fetch_batches_page)
             critical_batches = critical_ed_items(batch_rows, today)
 
             # Products: TANPA filter status_na (sama seperti badge) karena
             # filter SQL tidak bisa membuktikan setara semantik compute_status_na.
             def _fetch_products_page(offset):
-                return supabase.table("products") \
-                    .select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na") \
-                    .order("id") \
-                    .range(offset, offset + 999).execute().data or []
+                return (build_ed_product_query(
+                    supabase.table("products"), offset
+                ).execute().data or [])
             product_rows = paginate_all(_fetch_products_page)
             na_items = critical_na_items(product_rows, compute_status_na)
 

@@ -227,6 +227,8 @@ scripts_tmp_list_projects.py
 !/tests/test_paginate_all.py
 # Unit test paginasi kebenaran data N-01/N-02 (PO + ED notifications, tanpa DB).
 !/tests/test_po_pagination_correctness.py
+# Regresi query builder ED (method postgrest valid, tanpa .not_() property bug).
+!/tests/test_ed_query_builder.py
 # Unit test budget greeting AI (pure-local, monkeypatch httpx).
 !/tests/test_greeting_budget.py
 

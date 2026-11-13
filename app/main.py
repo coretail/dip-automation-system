@@ -273,8 +273,10 @@ async def get_ed_notification_count() -> int:
     Performa: filter berat dikembalikan ke SQL (bukan fetch semua lalu filter
     di Python), tetap pakai paginate_all + fungsi murni critical_ed_items.
      - raw_material_batches: select ringan TIDAK embed raw_materials,
-      .neq("status_ed","Dimusnahkan"), .lte("tanggal_ed", today+180),
-      .not_().is_("tanggal_ed", None), .order("id")
+       .neq("status_ed","Dimusnahkan"), .lte("tanggal_ed", today+180),
+       .order("id")  -> critical_ed_items()
+       (NULL tanggal_ed dibuang .lte + critical_ed_items; JANGAN .not_().is_ —
+       not_ adalah property di postgrest 2.31.0, .not_() melempar error).
     - products: TANPA filter status_na (filter SQL tidak bisa membuktikan
       setara semantik compute_status_na — lihat deskripsi PR).
     - Cache TTL 60 detik (modul-level) untuk badge saja.
@@ -287,7 +289,10 @@ async def get_ed_notification_count() -> int:
     import time
     from datetime import datetime as _dt, timedelta
     from app.pagination import paginate_all
-    from app.ed_notifications import critical_ed_items
+    from app.ed_notifications import (
+        critical_ed_items, critical_na_items,
+        build_ed_batch_query, build_ed_product_query,
+    )
 
     # Cache: return cached count jika masih dalam TTL
     now_mono = time.monotonic()
@@ -298,32 +303,18 @@ async def get_ed_notification_count() -> int:
     cutoff = (today + timedelta(days=180)).isoformat()
     try:
         def _fetch_batches_page(offset):
-            return (
-                supabase.table("raw_material_batches")
-                .select("id, tanggal_ed, status_ed, no_batch, perusahaan")
-                .neq("status_ed", "Dimusnahkan")
-                .lte("tanggal_ed", cutoff)
-                .not_().is_("tanggal_ed", None)
-                .order("id")
-                .range(offset, offset + 999)
-                .execute()
-                .data or []
-            )
+            return (build_ed_batch_query(
+                supabase.table("raw_material_batches"), cutoff, offset
+            ).execute().data or [])
         batch_rows = paginate_all(_fetch_batches_page)
         critical_batches = critical_ed_items(batch_rows, today)
 
         def _fetch_products_page(offset):
-            return (
-                supabase.table("products")
-                .select("id, tanggal_aktif_na, status_na")
-                .order("id")
-                .range(offset, offset + 999)
-                .execute()
-                .data or []
-            )
+            return (build_ed_product_query(
+                supabase.table("products"), offset
+            ).execute().data or [])
         product_rows = paginate_all(_fetch_products_page)
 
-        from app.ed_notifications import critical_na_items
         na_items = critical_na_items(product_rows, compute_status_na)
 
         count = len(critical_batches) + len(na_items)

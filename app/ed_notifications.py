@@ -102,3 +102,49 @@ def ed_notifications(rows_batch: list, rows_product: list, today: date,
                     compute_status_na: Callable) -> Tuple[list, list]:
     """Gabungan: return (critical_batches, na_items). Satu sumber kebenaran."""
     return critical_ed_items(rows_batch, today), critical_na_items(rows_product, compute_status_na)
+
+
+def build_ed_batch_query(table, cutoff: str, offset: int,
+                        page_size: int = 1000, extra_select: str = ""):
+    """Bangun query raw_material_batches ED untuk badge/endpoint (TANPA .execute()).
+
+    ``table`` = hasil ``client.table("raw_material_batches")`` (request builder
+    postgrest). Dikembalikan query berantai yang siap .execute() oleh caller
+    (caller yang punya konteks supabase + paginate). Filter:
+    - select ringan: id, tanggal_ed, status_ed, no_batch, perusahaan
+      (+ extra_select untuk endpoint, mis. raw_material_id + embed
+      raw_materials(nama_dagang, kode_bahan_baku)).
+    - .neq("status_ed","Dimusnahkan")
+    - .lte("tanggal_ed", cutoff)  # sudah membuang NULL (NULL <= x tidak true)
+    - .order("id") untuk urutan deterministik
+    - .range(offset, offset+page_size-1)
+
+    PENTING (regresi): jangan pakai .not_().is_("tanggal_ed", None). Di
+    supabase/postgrest 2.31.0 ``not_`` adalah PROPERTY (bukan method), jadi
+    ``.not_()`` melempar AttributeError/TypeError yang tertelan except ->
+    badge diam-diam 0. Filter NULL sudah ditangani .lte + critical_ed_items.
+    """
+    select_cols = "id, tanggal_ed, status_ed, no_batch, perusahaan"
+    if extra_select:
+        select_cols = f"{select_cols}, {extra_select}"
+    return (
+        table.select(select_cols)
+        .neq("status_ed", "Dimusnahkan")
+        .lte("tanggal_ed", cutoff)
+        .order("id")
+        .range(offset, offset + page_size - 1)
+    )
+
+
+def build_ed_product_query(table, offset: int, page_size: int = 1000):
+    """Bangun query products NA untuk badge/endpoint (TANPA .execute()).
+
+    ``table`` = hasil ``client.table("products")``. TANPA filter status_na
+    (lihat deskripsi PR: filter SQL tidak bisa dibuktikan setara semantik
+    compute_status_na). .order("id") untuk deterministik.
+    """
+    return (
+        table.select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na")
+        .order("id")
+        .range(offset, offset + page_size - 1)
+    )
