@@ -167,6 +167,8 @@ backup-rls/
 !/tests/e2e_csrf_origin_staging.py
 # E2E SEC-05: X-Forwarded-For spoof -> audit IP harus dari sisi kanan (proxy tepercaya).
 !/tests/e2e_sec05_xff_spoof_staging.py
+# Instruksi manual uji SEC-05 di produksi (file dokumen, bukan skrip runnable).
+!/tests/e2e_sec05_production_manual.md
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log
