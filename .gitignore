@@ -165,6 +165,8 @@ backup-rls/
 !/tests/test_csrf_guard.py
 # E2E regresi Referrer-Policy: Origin POST form submit tidak boleh "null".
 !/tests/e2e_csrf_origin_staging.py
+# E2E SEC-05: X-Forwarded-For spoof -> audit IP harus dari sisi kanan (proxy tepercaya).
+!/tests/e2e_sec05_xff_spoof_staging.py
 
 # Log konsol staging lokal & artefak E2E (runtime, jangan di-commit).
 /staging.log
