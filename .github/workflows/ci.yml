@@ -93,7 +93,7 @@ jobs:
           python tests/test_csrf_guard.py
           python tests/test_journal_link.py
           python tests/test_import_journal_link_matching.py
-          python tests/test_dip_public_bab2_journal.py
+           python tests/test_dip_public_bab2_journal.py
            python tests/test_bab2_daftar_jurnal.py
            python tests/test_paginate_all.py
            python tests/test_greeting_budget.py

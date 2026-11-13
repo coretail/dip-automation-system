@@ -7,7 +7,7 @@ from fastapi import Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.database import supabase
 from app.security import assert_same_tenant
-from app.pagination import paginate_all
+from app.pagination import paginate_all, paginate_all_capped
 WIB = ZoneInfo("Asia/Jakarta")
 
 # Label field item PO untuk activity log (dipakai _build_diff_changes),
@@ -266,7 +266,7 @@ def _num(v):
         return 0.0
 
 
-def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort="pcs", top_n=5):
+def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort="pcs", top_n=5, po_truncated=False):
     """Susun seluruh angka halaman /po-analytics dari baris mentah.
 
     pos_rows      : {id, no_po, tanggal_po, qty_pcs, jenis_po?}
@@ -280,6 +280,7 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
                     per kuartal, dan per perusahaan TETAP memakai seluruh tahun
                     supaya konteksnya tidak hilang.
     sort          : "pcs" (default) atau "po" -> dasar pengurutan daftar top.
+    po_truncated  : True jika pos_rows dipotong di batas (paginate_all_capped).
 
     Aturan hitung:
       - jumlah PO & pcs per kuartal hanya untuk PO yang tanggalnya valid
@@ -474,7 +475,7 @@ def _build_po_analytics(pos_rows, item_rows, product_rows, tahun, qtr=None, sort
         "po_tanpa_item": po_tanpa_item[:50],
         "qtr": qtr,
         "sort": sort,
-        "truncated": False,  # paginate_all mengambil semua baris; tidak ada truncation
+        "truncated": po_truncated,
     }
 
 def _redirect_po(po_id=None, ok=None, err=None):
@@ -553,7 +554,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                 if qs:
                     q = q.ilike("no_po", f"%{qs}%")
                 return q.execute().data or []
-            stat_rows = paginate_all(_fetch_stats_page)
+            stat_rows, stat_truncated = paginate_all_capped(_fetch_stats_page, max_rows=_PO_STATS_LIMIT)
         except Exception as ex:
             print(f"[PO] gagal ambil statistik PO: {ex}")
 
@@ -561,7 +562,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             s = str(d or "")[:4]
             return int(s) if len(s) == 4 and s.isdigit() else None
 
-        stat_complete = True  # paginate_all mengambil semua baris; tidak ada truncation
+        stat_complete = not stat_truncated
         per_year = {}
         for r in stat_rows:
             y = _year_of(r.get("tanggal_po"))
@@ -607,7 +608,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                         .order("tanggal_po", desc=True).order("id") \
                         .range(offset, offset + 999)
                     return _apply_po_range(q, tahun, qtr).execute().data or []
-                pos = paginate_all(_fetch_po_list_page)
+                pos, _po_list_truncated = paginate_all_capped(_fetch_po_list_page, max_rows=_PO_LIST_LIMIT)
             except Exception as ex:
                 print(f"[PO] list gagal: {ex}")
         else:
@@ -623,7 +624,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                         .order("tanggal_po", desc=True).order("id") \
                         .range(offset, offset + 999)
                     return _apply_po_range(q, tahun, qtr).execute().data or []
-                for row in paginate_all(_fetch_po_search_page):
+                for row in paginate_all_capped(_fetch_po_search_page, max_rows=_PO_LIST_LIMIT)[0]:
                     if row.get("id"):
                         gabung[row["id"]] = row
             except Exception as ex:
@@ -682,7 +683,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                         if qs:
                             q = q.ilike("no_po", f"%{qs}%")
                         return q.execute().data or []
-                    for r in paginate_all(_fetch_quarter_page):
+                    for r in paginate_all_capped(_fetch_quarter_page, max_rows=_PO_STATS_LIMIT)[0]:
                         q = _quarter_of(r.get("tanggal_po"))
                         if q:
                             q_counts[q] += 1
@@ -814,7 +815,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                 return supabase.table("purchase_orders").select("tanggal_po") \
                     .order("tanggal_po", desc=True).order("id") \
                     .range(offset, offset + 999).execute().data or []
-            yr = paginate_all(_fetch_analytics_years_page)
+            yr, _ = paginate_all_capped(_fetch_analytics_years_page, max_rows=_PO_STATS_LIMIT)
             per_year = {}
             for r in yr:
                 y = _year_of(r.get("tanggal_po"))
@@ -829,6 +830,8 @@ def register_po_routes(app, get_current_user, log_activity, templates,
         if tahun is None and years:
             tahun = years[0][0]
 
+        po_truncated = False
+        prod_truncated = False
         if tahun is not None:
             try:
                 def _fetch_analytics_pos_page(offset):
@@ -836,10 +839,11 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                         .order("tanggal_po", desc=True).order("id") \
                         .range(offset, offset + 999)
                     return _apply_po_range(q, tahun, None).execute().data or []
-                pos = paginate_all(_fetch_analytics_pos_page)
+                pos, po_truncated = paginate_all_capped(_fetch_analytics_pos_page, max_rows=_PO_STATS_LIMIT)
             except Exception as ex:
                 print(f"[PO] analytics list gagal: {ex}")
                 warnings.append("Gagal memuat daftar PO.")
+                po_truncated = False
             try:
                 # "!inner" wajib: tanpa itu, filter tanggal hanya membatasi
                 # resource yang di-embed dan item dari PO tahun lain ikut masuk.
@@ -850,7 +854,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                         .lt("purchase_orders.tanggal_po", f"{tahun + 1:04d}-01-01") \
                         .order("id") \
                         .range(offset, offset + 999).execute().data or []
-                item_rows = paginate_all(_fetch_analytics_items_page)
+                item_rows, _ = paginate_all_capped(_fetch_analytics_items_page, max_rows=_PO_STATS_LIMIT)
             except Exception as ex:
                 print(f"[PO] analytics item gagal: {ex}")
                 warnings.append("Gagal memuat item PO per produk.")
@@ -859,7 +863,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                     return supabase.table("products").select(
                         "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url, brand_id, brands(id, name)"
                     ).order("id").range(offset, offset + 999).execute().data or []
-                prod_rows = paginate_all(_fetch_analytics_products_page)
+                prod_rows, prod_truncated = paginate_all_capped(_fetch_analytics_products_page, max_rows=_PO_STATS_LIMIT)
                 for row in prod_rows:
                     brand = row.get("brands")
                     if isinstance(brand, list):
@@ -872,7 +876,7 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                         return supabase.table("products").select(
                             "id, nama_produk, perusahaan, is_deleted, laporan_uji_sig_file_url, brand_id"
                         ).order("id").range(offset, offset + 999).execute().data or []
-                    prod_rows = paginate_all(_fetch_analytics_products_fallback_page)
+                    prod_rows, prod_truncated = paginate_all_capped(_fetch_analytics_products_fallback_page, max_rows=_PO_STATS_LIMIT)
                     brand_ids = list({r.get("brand_id") for r in prod_rows if r.get("brand_id")})
                     brands_by_id = {}
                     if brand_ids:
@@ -888,9 +892,10 @@ def register_po_routes(app, get_current_user, log_activity, templates,
                     print(f"[PO] analytics fallback brand gagal: {fallback_ex}")
                     warnings.append("Gagal memuat master produk dan merek.")
                     prod_rows = []
+                    prod_truncated = False
 
-        ana = _build_po_analytics(pos, item_rows, prod_rows, tahun, qtr=qtr, sort=sort)
-        ana["produk_truncated"] = False  # paginate_all mengambil semua; tidak ada truncation
+        ana = _build_po_analytics(pos, item_rows, prod_rows, tahun, qtr=qtr, sort=sort, po_truncated=po_truncated)
+        ana["produk_truncated"] = prod_truncated
 
         ctx = {
             "current_user": current_user,

@@ -86,69 +86,26 @@ def register_presence_routes(
     async def get_ed_notifications(current_user: dict = Depends(get_current_user)):
         from datetime import datetime as _dt, timedelta
         from app.pagination import paginate_all
+        from app.ed_notifications import ed_notifications
         today = _dt.now(WIB).date()
-        warning_date = today + timedelta(days=180)
         try:
             # Paginasi lengkap: PostgREST memotong di db.max-rows (default 1000).
             # order("id") untuk urutan deterministik agar halaman tidak duplikat/lompat.
             def _fetch_batches_page(offset):
                 return supabase.table("raw_material_batches") \
-                    .select("*, raw_materials(nama_dagang, kode_bahan_baku)") \
-                    .neq("status_ed", "Dimusnahkan") \
+                    .select("id, tanggal_ed, status_ed, no_batch, perusahaan, raw_materials(nama_dagang, kode_bahan_baku)") \
                     .order("id") \
                     .range(offset, offset + 999).execute().data or []
-            batches = paginate_all(_fetch_batches_page)
-            critical_batches = []
-            for batch in batches:
-                tanggal_ed = batch.get("tanggal_ed")
-                if not tanggal_ed:
-                    continue
-                try:
-                    if isinstance(tanggal_ed, str):
-                        ed_date = _dt.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
-                    else:
-                        ed_date = tanggal_ed
-                except Exception:
-                    continue
-                days_remaining = (ed_date - today).days
-                if days_remaining <= 180:
-                    status_ed = batch.get("status_ed") or "Active"
-                    if days_remaining <= 0 and status_ed == "Active":
-                        status_ed = "Expired"
-                    elif days_remaining <= 180 and status_ed == "Active":
-                        status_ed = "Kritis (<= 180 hari)"
-                    critical_batches.append({
-                        "id": batch.get("id"),
-                        "raw_material_id": batch.get("raw_material_id"),
-                        "no_batch": batch.get("no_batch"),
-                        "perusahaan": batch.get("perusahaan"),
-                        "tanggal_ed": tanggal_ed,
-                        "days_remaining": days_remaining,
-                        "status_ed": status_ed,
-                        "nama_dagang": (batch.get("raw_materials") or {}).get("nama_dagang", "Unknown"),
-                        "kode_bahan_baku": (batch.get("raw_materials") or {}).get("kode_bahan_baku", "")
-                    })
-            critical_batches.sort(key=lambda x: x["days_remaining"])
+            batch_rows = paginate_all(_fetch_batches_page)
 
-            # Tanpa filter status_na karena compute_status_na bisa menghitung dari
-            # tanggal_aktif_na meski status_na manual berbeda. Cukup paginate.
             def _fetch_products_page(offset):
                 return supabase.table("products") \
                     .select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na") \
                     .order("id") \
                     .range(offset, offset + 999).execute().data or []
-            products_rows = paginate_all(_fetch_products_page)
-            na_items = []
-            for p in products_rows:
-                status_na, days_remaining = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
-                if status_na in ["akan_expired", "expired"]:
-                    na_items.append({
-                        "id": p.get("id"),
-                        "nama_produk": p.get("nama_produk"),
-                        "no_na_produk": p.get("no_na_produk"),
-                        "days_remaining": days_remaining if days_remaining is not None else 0,
-                        "status_na": status_na,
-                    })
+            product_rows = paginate_all(_fetch_products_page)
+
+            critical_batches, na_items = ed_notifications(batch_rows, product_rows, today, compute_status_na)
 
             return JSONResponse({
                 "count": len(critical_batches) + len(na_items),

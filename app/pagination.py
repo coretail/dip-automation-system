@@ -11,9 +11,10 @@ bahan jadi tidak terpengaruh). Pola berhalaman sama dengan fallback di
 from __future__ import annotations
 
 DEFAULT_PAGE_SIZE = 1000
+_DEFAULT_MAX_ROWS = 5000
 
 
-def paginate_all(fetch_page, page_size: int = DEFAULT_PAGE_SIZE) -> list:
+def paginate_all(fetch_page, page_size: int = DEFAULT_PAGE_SIZE, max_rows: int | None = None) -> list:
     """Ambil SELURUH baris lewat halaman: ``fetch_page(offset) -> list[dict]``.
 
     ``fetch_page`` harus mengaplikasikan ``.range(offset, offset+page_size-1)``
@@ -23,20 +24,65 @@ def paginate_all(fetch_page, page_size: int = DEFAULT_PAGE_SIZE) -> list:
     (halaman terakhir lebih pendek ATAU halaman kosong) — pola sama dengan
     fallback di dashboard_routes.py.
 
+    ``max_rows`` (opsional): jaring pengaman keras — hentikan loop saat jumlah
+    baris mencapai batas ini dan potong hasil ke ``max_rows``. Default None
+    = tanpa batas (perilaku lama, tidak berubah untuk caller eksisting).
+
     Error dari fetch (query gagal) dilempar ke pemanggil (jangan ditelan di
     sini, supaya fallback caller tetap print-nya).
     """
     if page_size < 1:
         raise ValueError("page_size harus >= 1")
+    if max_rows is not None and max_rows < 1:
+        raise ValueError("max_rows harus >= 1 atau None")
     rows: list = []
     offset = 0
     while True:
         page = list(fetch_page(offset) or [])
         rows.extend(page)
+        if max_rows is not None and len(rows) >= max_rows:
+            return rows[:max_rows]
         if len(page) < page_size:
             break
         offset += page_size
     return rows
+
+
+def paginate_all_capped(fetch_page, page_size: int = DEFAULT_PAGE_SIZE,
+                       max_rows: int = _DEFAULT_MAX_ROWS) -> tuple[list, bool]:
+    """Sama dengan ``paginate_all`` tapi mengembalikan ``(rows, truncated)``.
+
+    ``truncated=True`` hanya jika masih ada baris setelah batas:
+    - halaman terakhir TEPAT penuh di offset max_rows (perlu cek halaman
+      berikutnya untuk memastikan masih ada data), ATAU
+    - ``fetch_page`` di offset max_rows mengembalikan >= 1 baris.
+
+    ``max_rows`` default 5000 (jaring pengaman; PostgREST db.max-rows default
+    1000 baris per halaman, jadi 5000 = 5 halaman penuh + margin).
+    """
+    if page_size < 1:
+        raise ValueError("page_size harus >= 1")
+    if max_rows < 1:
+        raise ValueError("max_rows harus >= 1")
+    rows: list = []
+    offset = 0
+    truncated = False
+    while True:
+        page = list(fetch_page(offset) or [])
+        rows.extend(page)
+        if len(rows) >= max_rows:
+            rows = rows[:max_rows]
+            # Cek apakah masih ada data setelah batas:
+            # ambil 1 baris dari halaman berikutnya (offset = max_rows).
+            # Kalau fetch_page di max_rows mengembalikan >= 1 baris -> truncated.
+            # Kalau halaman di max_rows kosong -> tidak truncated (data habis tepat di batas).
+            probe = fetch_page(max_rows) or []
+            truncated = len(probe) > 0
+            break
+        if len(page) < page_size:
+            break
+        offset += page_size
+    return rows, truncated
 
 
 def _embed_is_deleted(embedded) -> bool:

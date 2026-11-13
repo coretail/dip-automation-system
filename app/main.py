@@ -260,60 +260,46 @@ def _add_years(d: date, years: int) -> date:
         return d.replace(year=d.year + years, day=28)
 
 async def get_ed_notification_count():
-    """Helper to fetch ED notification count for template context."""
+    """Helper to fetch ED notification count untuk template context.
+
+    Perilaku disengaja (N-02, 2026-11-13): query produk TANPA filter status_na.
+    Sebelumnya badge memfilter .in_("status_na", ["akan_expired","expired"]),
+    tapi compute_status_na bisa menghitung dari tanggal_aktif_na meski status_na
+    manual berbeda (mis. status_na="aktif" tapi NA sudah lewat 180 hari).
+    Badge sekarang konsisten dengan endpoint /api/ed-notifications — bisa lebih
+    besar dari sebelumnya (dulu bisa kurang hitung).
+    """
     from datetime import datetime as _dt
     from app.pagination import paginate_all
+    from app.ed_notifications import ed_notifications
     today = _dt.now(WIB).date()
     try:
-        # Paginasi lengkap: PostgREST memotong di db.max-rows (default 1000)
-        # meskipun .limit(5000) dipanggil. paginate_all mengambil semua baris.
         def _fetch_batches_page(offset):
             return (
                 supabase.table("raw_material_batches")
-                .select("id, tanggal_ed, status_ed")
-                .neq("status_ed", "Dimusnahkan")
+                .select("id, tanggal_ed, status_ed, no_batch, perusahaan, raw_materials(nama_dagang, kode_bahan_baku)")
                 .order("id")
                 .range(offset, offset + 999)
                 .execute()
                 .data or []
             )
-        ed_rows = paginate_all(_fetch_batches_page)
-        count = 0
-        for batch in ed_rows:
-            tanggal_ed = batch.get("tanggal_ed")
-            if not tanggal_ed:
-                continue
-            try:
-                if isinstance(tanggal_ed, str):
-                    ed_date = _dt.strptime(tanggal_ed[:10], "%Y-%m-%d").date()
-                else:
-                    ed_date = tanggal_ed
-                days_remaining = (ed_date - today).days
-                if days_remaining <= 180:
-                    count += 1
-            except Exception:
-                continue
+        batch_rows = paginate_all(_fetch_batches_page)
+        # Filter Dimusnahkan di sisi Python (critical_ed_items) — query tidak
+        # memfilter supaya satu sumber kebenaran dengan endpoint presence_routes.
 
-        # Ambil produk dengan NA yang akan expired atau sudah expired.
-        # Tanpa filter status_na karena compute_status_na bisa menghitung dari
-        # tanggal_aktif_na meski status_na manual berbeda (keputusan: biarkan
-        # tanpa filter, cukup paginate).
         def _fetch_products_page(offset):
             return (
                 supabase.table("products")
-                .select("id, tanggal_aktif_na, status_na")
+                .select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na")
                 .order("id")
                 .range(offset, offset + 999)
                 .execute()
                 .data or []
             )
         product_rows = paginate_all(_fetch_products_page)
-        for p in product_rows:
-            status_na, _ = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
-            if status_na in ["akan_expired", "expired"]:
-                count += 1
 
-        return count
+        critical_batches, na_items = ed_notifications(batch_rows, product_rows, today, compute_status_na)
+        return len(critical_batches) + len(na_items)
     except Exception as e:
         print(f"Gagal hitung ED notifications: {e}")
         return 0
