@@ -291,6 +291,38 @@ def test_product_tanggal_kosong():
     print("[OK] tanggal kosong: fallback status_na manual")
 
 
+def test_ed_batch_null_status_ed():
+    """status_ed NULL: perilaku lama .neq('status_ed','Dimusnahkan') di PostgREST
+    mengeksklusi baris NULL dari hasil (NULL <> 'x' = NULL, bukan TRUE).
+    critical_ed_items tidak mengeksklusi NULL (fallback 'Active'), jadi badge
+    kini termasuk batch yang status_ed-nya NULL. Perubahan disengaja:
+    lebih inklusif (dulu terlewat karena SQL semantik NULL)."""
+    from app.ed_notifications import critical_ed_items
+    today = date(2026, 11, 13)
+    ed_date = today + timedelta(days=50)
+    rows = [{"id": 1, "tanggal_ed": ed_date.isoformat(), "status_ed": None}]
+    items = critical_ed_items(rows, today)
+    assert len(items) == 1, "NULL status_ed kini termasuk (fallback Active)"
+    assert items[0]["status_ed"] == "Kritis (<= 180 hari)"
+    print("[OK] NULL status_ed: termasuk (perubahan disengaja, lebih inklusif)")
+
+
+def test_ed_batch_180_boundary_inclusive():
+    """Batas 180 hari: days==180 termasuk, days==181 tidak."""
+    from app.ed_notifications import critical_ed_items
+    today = date(2026, 11, 13)
+    ed_180 = (today + timedelta(days=180)).isoformat()
+    ed_181 = (today + timedelta(days=181)).isoformat()
+    rows = [
+        {"id": 1, "tanggal_ed": ed_180, "status_ed": "Active"},
+        {"id": 2, "tanggal_ed": ed_181, "status_ed": "Active"},
+    ]
+    items = critical_ed_items(rows, today)
+    assert len(items) == 1, "Hanya 180 hari yang masuk"
+    assert items[0]["id"] == 1
+    print("[OK] batas 180: inklusif (180 masuk, 181 tidak)")
+
+
 def main():
     tests = [
         test_capped_2500_rows_limit_1000,
@@ -306,6 +338,8 @@ def main():
         test_ed_batch_date_object_vs_string,
         test_ed_batch_dimusnahkan_filtered,
         test_ed_batch_embed_list,
+        test_ed_batch_null_status_ed,
+        test_ed_batch_180_boundary_inclusive,
         test_product_akan_expired,
         test_product_expired,
         test_product_aktif,

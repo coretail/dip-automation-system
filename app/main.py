@@ -259,38 +259,63 @@ def _add_years(d: date, years: int) -> date:
     except ValueError:
         return d.replace(year=d.year + years, day=28)
 
-async def get_ed_notification_count():
-    """Helper to fetch ED notification count untuk template context.
+# Cache badge ED: TTL 60 detik, modul-level. Badge dipanggil di banyak halaman
+# (dashboard, PO, bahan baku, dst.) — cache menghindari query berulang dalam
+# 60 detik. Endpoint /api/ed-notifications TIDAK di-cache (always fresh).
+# Invalidasi tidak perlu: badge boleh basi 60 detik (data ED jarang berubah).
+_ED_BADGE_CACHE: dict = {"count": 0, "ts": 0.0}
+_ED_BADGE_CACHE_TTL = 60.0
 
-    Perilaku disengaja (N-02, 2026-11-13): query produk TANPA filter status_na.
-    Sebelumnya badge memfilter .in_("status_na", ["akan_expired","expired"]),
-    tapi compute_status_na bisa menghitung dari tanggal_aktif_na meski status_na
-    manual berbeda (mis. status_na="aktif" tapi NA sudah lewat 180 hari).
-    Badge sekarang konsisten dengan endpoint /api/ed-notifications — bisa lebih
-    besar dari sebelumnya (dulu bisa kurang hitung).
+
+async def get_ed_notification_count() -> int:
+    """Helper to fetch ED notification count untuk template context (badge).
+
+    Performa: filter berat dikembalikan ke SQL (bukan fetch semua lalu filter
+    di Python), tetap pakai paginate_all + fungsi murni critical_ed_items.
+     - raw_material_batches: select ringan TIDAK embed raw_materials,
+      .neq("status_ed","Dimusnahkan"), .lte("tanggal_ed", today+180),
+      .not_().is_("tanggal_ed", None), .order("id")
+    - products: TANPA filter status_na (filter SQL tidak bisa membuktikan
+      setara semantik compute_status_na — lihat deskripsi PR).
+    - Cache TTL 60 detik (modul-level) untuk badge saja.
+
+    Perilaku (N-02, 2026-11-13): badge sekarang konsisten dengan endpoint
+    /api/ed-notifications — bisa lebih besar dari sebelumnya karena dulu
+    badge memfilter .in_("status_na",["akan_expired","expired"]) yang bisa
+    kurang hitung saat status_na manual berbeda dari hasil compute_status_na.
     """
-    from datetime import datetime as _dt
+    import time
+    from datetime import datetime as _dt, timedelta
     from app.pagination import paginate_all
-    from app.ed_notifications import ed_notifications
+    from app.ed_notifications import critical_ed_items
+
+    # Cache: return cached count jika masih dalam TTL
+    now_mono = time.monotonic()
+    if _ED_BADGE_CACHE["ts"] and (now_mono - _ED_BADGE_CACHE["ts"]) < _ED_BADGE_CACHE_TTL:
+        return _ED_BADGE_CACHE["count"]
+
     today = _dt.now(WIB).date()
+    cutoff = (today + timedelta(days=180)).isoformat()
     try:
         def _fetch_batches_page(offset):
             return (
                 supabase.table("raw_material_batches")
-                .select("id, tanggal_ed, status_ed, no_batch, perusahaan, raw_materials(nama_dagang, kode_bahan_baku)")
+                .select("id, tanggal_ed, status_ed, no_batch, perusahaan")
+                .neq("status_ed", "Dimusnahkan")
+                .lte("tanggal_ed", cutoff)
+                .not_().is_("tanggal_ed", None)
                 .order("id")
                 .range(offset, offset + 999)
                 .execute()
                 .data or []
             )
         batch_rows = paginate_all(_fetch_batches_page)
-        # Filter Dimusnahkan di sisi Python (critical_ed_items) — query tidak
-        # memfilter supaya satu sumber kebenaran dengan endpoint presence_routes.
+        critical_batches = critical_ed_items(batch_rows, today)
 
         def _fetch_products_page(offset):
             return (
                 supabase.table("products")
-                .select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na")
+                .select("id, tanggal_aktif_na, status_na")
                 .order("id")
                 .range(offset, offset + 999)
                 .execute()
@@ -298,8 +323,13 @@ async def get_ed_notification_count():
             )
         product_rows = paginate_all(_fetch_products_page)
 
-        critical_batches, na_items = ed_notifications(batch_rows, product_rows, today, compute_status_na)
-        return len(critical_batches) + len(na_items)
+        from app.ed_notifications import critical_na_items
+        na_items = critical_na_items(product_rows, compute_status_na)
+
+        count = len(critical_batches) + len(na_items)
+        _ED_BADGE_CACHE["count"] = count
+        _ED_BADGE_CACHE["ts"] = now_mono
+        return count
     except Exception as e:
         print(f"Gagal hitung ED notifications: {e}")
         return 0

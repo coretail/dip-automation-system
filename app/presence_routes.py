@@ -86,26 +86,35 @@ def register_presence_routes(
     async def get_ed_notifications(current_user: dict = Depends(get_current_user)):
         from datetime import datetime as _dt, timedelta
         from app.pagination import paginate_all
-        from app.ed_notifications import ed_notifications
+        from app.ed_notifications import critical_ed_items, critical_na_items
         today = _dt.now(WIB).date()
+        cutoff = (today + timedelta(days=180)).isoformat()
         try:
             # Paginasi lengkap: PostgREST memotong di db.max-rows (default 1000).
-            # order("id") untuk urutan deterministik agar halaman tidak duplikat/lompat.
+            # order("id") untuk urutan deterministik. Filter berat di SQL:
+            # .neq("status_ed","Dimusnahkan") + .lte("tanggal_ed", cutoff) +
+            # .not_().is_("tanggal_ed", None) — sama dengan badge (main.py).
+            # Kolom lengkap + embed raw_materials untuk tampilan di panel.
             def _fetch_batches_page(offset):
                 return supabase.table("raw_material_batches") \
-                    .select("id, tanggal_ed, status_ed, no_batch, perusahaan, raw_materials(nama_dagang, kode_bahan_baku)") \
+                    .select("id, tanggal_ed, status_ed, no_batch, perusahaan, raw_material_id, raw_materials(nama_dagang, kode_bahan_baku)") \
+                    .neq("status_ed", "Dimusnahkan") \
+                    .lte("tanggal_ed", cutoff) \
+                    .not_().is_("tanggal_ed", None) \
                     .order("id") \
                     .range(offset, offset + 999).execute().data or []
             batch_rows = paginate_all(_fetch_batches_page)
+            critical_batches = critical_ed_items(batch_rows, today)
 
+            # Products: TANPA filter status_na (sama seperti badge) karena
+            # filter SQL tidak bisa membuktikan setara semantik compute_status_na.
             def _fetch_products_page(offset):
                 return supabase.table("products") \
                     .select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na") \
                     .order("id") \
                     .range(offset, offset + 999).execute().data or []
             product_rows = paginate_all(_fetch_products_page)
-
-            critical_batches, na_items = ed_notifications(batch_rows, product_rows, today, compute_status_na)
+            na_items = critical_na_items(product_rows, compute_status_na)
 
             return JSONResponse({
                 "count": len(critical_batches) + len(na_items),
