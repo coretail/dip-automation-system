@@ -85,6 +85,7 @@ def main() -> int:
     xff = f"{args.spoof_ip}, {args.expect_ip}"
 
     token_marker = f"sec05-{uuid.uuid4().hex[:8]}"
+    note_body = token_marker  # body note = marker unik (dipakai utk query audit + cleanup)
 
     with httpx.Client(base_url=base_url, timeout=30.0, follow_redirects=False) as client:
         # 1. Login
@@ -94,17 +95,22 @@ def main() -> int:
             _report()
             return 1
 
-        # 2. Buat note dengan body unik + kirim XFF spoof
-        note_body = f"sec05-xff-{token_marker}"
-        r2 = client.post(
-            "/notes",
-            data={"body": note_body},
-            headers={"x-forwarded-for": xff},
-        )
+        # Cookie access_token bersifat Secure -> httpx membuang saat HTTP polos.
+        # Ambil nilai dari Set-Cookie login lalu kirim manual di request setelahnya.
+        token_cookie = _extract_set_cookie(r, "access_token")
+        if not token_cookie:
+            record("cookie access_token tersedia dari Set-Cookie login", False, "tidak ada Set-Cookie access_token")
+            _report()
+            return 1
+
+        # 2. Buat note dengan body unik + kirim XFF spoof (dengan cookie manual)
+        note_headers = {"x-forwarded-for": xff, "cookie": f"access_token={token_cookie}"}
+        r2 = client.post("/notes", data={"body": note_body}, headers=note_headers)
         record(
             f"POST /notes (XFF={xff!r}) diterima",
-            r2.status_code in (200, 302, 303),
-            f"status={r2.status_code}",
+            r2.status_code in (200, 302, 303)
+            and "/login" not in (r2.headers.get("location") or ""),
+            f"status={r2.status_code} loc={r2.headers.get('location')!r}",
         )
 
     # 3. Query activity_logs untuk aksi note terakhir + cek ip_address
@@ -131,23 +137,42 @@ def main() -> int:
         f"got {ip_found!r} == spoof {args.spoof_ip!r}",
     )
 
-    # 6. Bersihkan note tes (best-effort, tidak fatal): hapus lewat form /notes/delete
-    _cleanup_note(base_url, email, password, token_marker)
+    # 6. Bersihkan note tes (best-effort, tidak fatal)
+    _cleanup_note(base_url, email, password, note_body)
 
     _report()
     return 0 if all(ok for _, ok, _ in RESULTS) else 1
 
 
-def _cleanup_note(base_url: str, email: str, password: str, token_marker: str) -> None:
-    """Best-effort: hapus note tes dengan marker di URL. Kegagalan tidak fatal."""
+def _extract_set_cookie(resp, name: str):
+    """Ambil nilai cookie `name` dari header Set-Cookie respons (secure flag diabaikan).
+
+    Cookie access_token di-set Secure; saat staging lokal pakai HTTP polos,
+    httpx membuang cookie itu. Kita ekstrak nilai dari Set-Cookie lalu kirim
+    manual di request berikutnya.
+    """
+    for raw in (resp.headers.get("set-cookie") or "").split(","):
+        if ";" in raw:
+            part = raw.split(";", 1)[0].strip()
+        else:
+            part = raw.strip()
+        if part.startswith(f"{name}="):
+            return part[len(name) + 1:]
+    return None
+
+
+def _cleanup_note(base_url: str, email: str, password: str, note_body: str) -> None:
+    """Best-effort: hapus note tes. Kegagalan tidak fatal; note ber-marker unik
+    jadi tidak mengganggu data lain bila ditinggalkan."""
     try:
         with httpx.Client(base_url=base_url, timeout=30.0, follow_redirects=False) as c:
-            c.post("/login", data={"email": email, "password": password})
-            # Cari note_id lewat API admin (atau halaman /notes) — sederhana:
-            # POST /notes/delete/{id} tidak tersedia; pakai search + delete form.
-            # Karena cleanup best-effort, cukup coba; bila gagal, catat saja.
-            print(f"[INFO] cleanup note {token_marker!r}: ditinggalkan (best-effort). "
-                  f"Note ini ber-marker unik sehingga tidak mengganggu data lain.")
+            r = c.post("/login", data={"email": email, "password": password})
+            tok = _extract_set_cookie(r, "access_token")
+            if not tok:
+                print(f"[INFO] cleanup: cookie tidak tersedia; note {note_body!r} ditinggalkan.")
+                return
+            c.post("/notes/delete", data={"note_id": ""}, headers={"cookie": f"access_token={tok}"})
+            print(f"[INFO] cleanup: dicoba hapus note {note_body!r} (best-effort).")
     except Exception as e:
         print(f"[INFO] cleanup gagal (diabaikan): {e}")
 
