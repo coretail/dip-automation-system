@@ -32,10 +32,14 @@ PID2 = str(uuid.uuid4())
 
 
 def _client_ip(request):
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "-"
+    # Wrapper yang memanggil kode PRODUKSI (app.client_ip.client_ip_from)
+    # dengan trusted_hops=1, supaya test mengikuti perilaku sebenarnya,
+    # bukan salinan. trusted_hops=1 -> entri XFF terakhir (kanan), validasi
+    # IP; fallback X-Real-IP -> client.host -> "-". Test ini mengirim XFF
+    # satu entri (mis. "10.9.9.9"), jadi hasil = entri itu sendiri.
+    from app.client_ip import client_ip_from
+    client_host = request.client.host if request.client else "-"
+    return client_ip_from(request.headers, client_host, trusted_hops=1)
 
 
 def _extract_slug_uuid(slug):

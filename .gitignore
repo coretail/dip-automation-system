@@ -225,6 +225,8 @@ scripts_tmp_list_projects.py
 !/tests/test_bab2_daftar_jurnal.py
 # Unit test murni pagination + usage_counts badge N Produk /raw-materials (tanpa DB).
 !/tests/test_paginate_all.py
+# Unit test murni _client_ip trusted-proxy (SEC-05, pure-local, tanpa jaringan).
+!/tests/test_client_ip.py
 # Unit test paginasi kebenaran data N-01/N-02 (PO + ED notifications, tanpa DB).
 !/tests/test_po_pagination_correctness.py
 # Regresi query builder ED (method postgrest valid, tanpa .not_() property bug).

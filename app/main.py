@@ -134,6 +134,31 @@ try:
 except Exception:
     pass
 
+
+def _resolve_trusted_proxy_hops() -> int:
+    """Baca TRUSTED_PROXY_HOPS sekali saat import (SEC-05).
+
+    Nilai valid: int 0..5. Nilai invalid (bukan int / di luar 0..5) -> default
+    1 + print peringatan sekali. Default 1 = Render edge proxy.
+    """
+    import os as _os_trust
+    raw = (_os_trust.getenv("TRUSTED_PROXY_HOPS") or "").strip()
+    if not raw:
+        return 1
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        print(f"[SEC-05] TRUSTED_PROXY_HOPS={repr(raw)} bukan integer valid; pakai default 1.")
+        return 1
+    if val < 0 or val > 5:
+        print(f"[SEC-05] TRUSTED_PROXY_HOPS={val} di luar rentang 0..5; pakai default 1.")
+        return 1
+    return val
+
+
+# Dibaca sekali saat import (lihat _resolve_trusted_proxy_hops).
+_TRUSTED_PROXY_HOPS = _resolve_trusted_proxy_hops()
+
 # Zona waktu bisnis (WIB) — dipakai buat semua logika berbasis "hari ini"
 # (kode FSP, hitungan revisi) biar gak geser gara-gara server jalan di UTC.
 WIB = ZoneInfo("Asia/Jakarta")
@@ -364,16 +389,17 @@ def _flag_bahan_aktif(flags, i: int) -> bool:
     return str(flags[i]).strip() == "1"
 
 def _client_ip(request: Request) -> str:
-    """Ekstrak alamat IP client.
-    Prioritas: X-Forwarded-For (saat app di belakang proxy seperti Render/nginx)
-    -> X-Real-IP -> request.client.host (IP langsung)."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
-    return request.client.host if request.client else "-"
+    """Ekstrak alamat IP client tepercaya (SEC-05).
+
+    Menggunakan ``app.client_ip.client_ip_from`` dengan jumlah proxy
+    tepercaya dari env ``TRUSTED_PROXY_HOPS`` (default 1 = Render edge).
+    IP client diambil dari sisi KANAN X-Forwarded-For sesuai hops, sehingga
+    entri XFF yang dipalsukan klien di kiri tidak bisa menggeser IP audit.
+    Signature dan cara pemanggilan TIDAK berubah.
+    """
+    from app.client_ip import client_ip_from
+    client_host = request.client.host if request.client else "-"
+    return client_ip_from(request.headers, client_host, _TRUSTED_PROXY_HOPS)
 
 
 app = FastAPI(title="DIP Kosmetik Automation")
