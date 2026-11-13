@@ -225,6 +225,8 @@ scripts_tmp_list_projects.py
 !/tests/test_bab2_daftar_jurnal.py
 # Unit test murni pagination + usage_counts badge N Produk /raw-materials (tanpa DB).
 !/tests/test_paginate_all.py
+# Unit test budget greeting AI (pure-local, monkeypatch httpx).
+!/tests/test_greeting_budget.py
 
 # Local documentation and notes
 /catatan/prompt-tenant-guard-a10-a13.md
