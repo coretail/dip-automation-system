@@ -262,16 +262,24 @@ def _add_years(d: date, years: int) -> date:
 async def get_ed_notification_count():
     """Helper to fetch ED notification count for template context."""
     from datetime import datetime as _dt
+    from app.pagination import paginate_all
     today = _dt.now(WIB).date()
     try:
-        ed_query = (
-            supabase.table("raw_material_batches")
-            .select("id, tanggal_ed, status_ed")
-            .neq("status_ed", "Dimusnahkan")
-            .execute()
-        )
+        # Paginasi lengkap: PostgREST memotong di db.max-rows (default 1000)
+        # meskipun .limit(5000) dipanggil. paginate_all mengambil semua baris.
+        def _fetch_batches_page(offset):
+            return (
+                supabase.table("raw_material_batches")
+                .select("id, tanggal_ed, status_ed")
+                .neq("status_ed", "Dimusnahkan")
+                .order("id")
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+        ed_rows = paginate_all(_fetch_batches_page)
         count = 0
-        for batch in (ed_query.data or []):
+        for batch in ed_rows:
             tanggal_ed = batch.get("tanggal_ed")
             if not tanggal_ed:
                 continue
@@ -285,15 +293,22 @@ async def get_ed_notification_count():
                     count += 1
             except Exception:
                 continue
-        
-        # Ambil produk dengan NA yang akan expired atau sudah expired
-        products_query = (
-            supabase.table("products")
-            .select("id, tanggal_aktif_na, status_na")
-            .in_("status_na", ["akan_expired", "expired"])
-            .execute()
-        )
-        for p in (products_query.data or []):
+
+        # Ambil produk dengan NA yang akan expired atau sudah expired.
+        # Tanpa filter status_na karena compute_status_na bisa menghitung dari
+        # tanggal_aktif_na meski status_na manual berbeda (keputusan: biarkan
+        # tanpa filter, cukup paginate).
+        def _fetch_products_page(offset):
+            return (
+                supabase.table("products")
+                .select("id, tanggal_aktif_na, status_na")
+                .order("id")
+                .range(offset, offset + 999)
+                .execute()
+                .data or []
+            )
+        product_rows = paginate_all(_fetch_products_page)
+        for p in product_rows:
             status_na, _ = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
             if status_na in ["akan_expired", "expired"]:
                 count += 1

@@ -85,11 +85,19 @@ def register_presence_routes(
     @app.get("/api/ed-notifications")
     async def get_ed_notifications(current_user: dict = Depends(get_current_user)):
         from datetime import datetime as _dt, timedelta
+        from app.pagination import paginate_all
         today = _dt.now(WIB).date()
         warning_date = today + timedelta(days=180)
         try:
-            query = supabase.table("raw_material_batches").select("*, raw_materials(nama_dagang, kode_bahan_baku)").neq("status_ed", "Dimusnahkan").execute()
-            batches = query.data or []
+            # Paginasi lengkap: PostgREST memotong di db.max-rows (default 1000).
+            # order("id") untuk urutan deterministik agar halaman tidak duplikat/lompat.
+            def _fetch_batches_page(offset):
+                return supabase.table("raw_material_batches") \
+                    .select("*, raw_materials(nama_dagang, kode_bahan_baku)") \
+                    .neq("status_ed", "Dimusnahkan") \
+                    .order("id") \
+                    .range(offset, offset + 999).execute().data or []
+            batches = paginate_all(_fetch_batches_page)
             critical_batches = []
             for batch in batches:
                 tanggal_ed = batch.get("tanggal_ed")
@@ -122,9 +130,16 @@ def register_presence_routes(
                     })
             critical_batches.sort(key=lambda x: x["days_remaining"])
 
-            products_query = supabase.table("products").select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na").execute()
+            # Tanpa filter status_na karena compute_status_na bisa menghitung dari
+            # tanggal_aktif_na meski status_na manual berbeda. Cukup paginate.
+            def _fetch_products_page(offset):
+                return supabase.table("products") \
+                    .select("id, nama_produk, no_na_produk, tanggal_aktif_na, status_na") \
+                    .order("id") \
+                    .range(offset, offset + 999).execute().data or []
+            products_rows = paginate_all(_fetch_products_page)
             na_items = []
-            for p in (products_query.data or []):
+            for p in products_rows:
                 status_na, days_remaining = compute_status_na(p.get("tanggal_aktif_na"), p.get("status_na") or "belum_terdaftar")
                 if status_na in ["akan_expired", "expired"]:
                     na_items.append({

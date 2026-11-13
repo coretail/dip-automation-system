@@ -225,6 +225,8 @@ scripts_tmp_list_projects.py
 !/tests/test_bab2_daftar_jurnal.py
 # Unit test murni pagination + usage_counts badge N Produk /raw-materials (tanpa DB).
 !/tests/test_paginate_all.py
+# Unit test paginasi kebenaran data N-01/N-02 (PO + ED notifications, tanpa DB).
+!/tests/test_po_pagination_correctness.py
 # Unit test budget greeting AI (pure-local, monkeypatch httpx).
 !/tests/test_greeting_budget.py
 
