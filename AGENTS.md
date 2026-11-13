@@ -4,7 +4,7 @@
 - Aplikasi web FastAPI + Jinja2 untuk data bahan baku, formula, produksi, dan dokumen DIP kosmetik.
 - Supabase/PostgreSQL menjadi database; akses object storage dipusatkan di `app/object_store.py`.
 - Entrypoint ASGI adalah `app.main:app`; template mewarisi `base.html` bila memakai shell aplikasi.
-- Runtime yang dipin repo adalah Python `3.11.18` (`.python-version`); README pin `3.11.18`.
+- Runtime yang dipin repo adalah Python `3.11.0` (`.python-version`); README pin `3.11.0`.
 
 ## 2. Perintah yang diaudit
 - Instal dependensi: `pip install -r requirements.txt` (15 paket dipin; `pyflakes`, `pytest`, Playwright, dan `python-dotenv` tidak dipin di sana).

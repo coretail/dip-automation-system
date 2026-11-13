@@ -1,6 +1,6 @@
 ﻿# Aplikasi Penyusun Dokumen Informasi Produk (DIP) Kosmetik
 
-![Python Version](https://img.shields.io/badge/python-3.11.18-blue)
+![Python Version](https://img.shields.io/badge/python-3.11.0-blue)
 ![Framework](https://img.shields.io/badge/framework-FastAPI-green)
 ![Database](https://img.shields.io/badge/database-Supabase-emerald)
 ![Status](https://img.shields.io/badge/status-Bab_I_to_IV_Selesai-brightgreen)
@@ -130,7 +130,7 @@ Bab I, III, dan IV di-generate dengan satu pendekatan: halaman cover/checklist d
 
 ## 🛠️ Tech Stack
 
-* **Backend:** Python 3.11.18 (dipin via `.python-version`), FastAPI, Uvicorn, `slowapi` (rate limiting)
+* **Backend:** Python 3.11.0 (dipin via `.python-version`), FastAPI, Uvicorn, `slowapi` (rate limiting)
 * **Database & Storage:** Supabase (PostgreSQL, Supabase Storage) — satu klien global memakai service role
 * **Frontend:** Jinja2 Templates, HTML5, Tailwind CSS v4 (`@tailwindcss/browser`), JavaScript (vanilla, tanpa build step)
 * **Document Generation:** `xhtml2pdf` (render HTML ke PDF), `pypdf` (merge PDF **dan komposisi layout halaman Bab II**), `openpyxl` (export Excel)
@@ -174,7 +174,7 @@ Semua dipin dengan versi exact:
 ## 🚀 Panduan Pengoperasian Lokal
 
 ### 1. Prasyarat
-* Python 3.11.18 (lihat `.python-version`; Python 3.11 hanya menerima patch keamanan sampai Oktober 2027)
+* Python 3.11.0 (lihat `.python-version`; rencana naik ke 3.11.18 (patch keamanan) setelah cutover R2 stabil; Python 3.11 hanya menerima patch keamanan sampai Oktober 2027)
 * Akun Supabase (untuk URL Database dan Service Role Key)
 
 ### 2. Kloning Repository & Instalasi
