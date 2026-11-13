@@ -99,6 +99,7 @@ jobs:
            python tests/test_greeting_budget.py
            python tests/test_po_pagination_correctness.py
            python tests/test_ed_query_builder.py
+           python tests/test_client_ip.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt

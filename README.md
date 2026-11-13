@@ -205,9 +205,16 @@ SUPABASE_KEY=your-supabase-anon-key
 
 # Opsional — hanya untuk fitur sapaan AI di halaman login.
 GEMINI_API_KEY=your-google-gemini-api-key
+
+# Opsional — jumlah proxy tepercaya di depan app untuk audit IP client (SEC-05).
+# Default 1 (Render edge). Rentang valid 0..5; nilai invalid -> default 1.
+# 0 = abaikan X-Forwarded-For/X-Real-IP (pakai IP peer langsung saja).
+TRUSTED_PROXY_HOPS=1
 ```
 
 > Catatan: `SUPABASE_KEY` (anon/public) bersifat opsional **di mode produksi** dan tidak dipakai kode aplikasi; seluruh akses database memakai `SUPABASE_SERVICE_ROLE_KEY` (melewati RLS), termasuk login dan pencarian username. Service role key punya hak penuh — **jangan pernah** ditaruh di sisi browser atau di-commit ke repository. Di **mode staging**, `SUPABASE_KEY` wajib diisi (guard menolak startup bila kosong).
+
+> Catatan `TRUSTED_PROXY_HOPS` (SEC-05): dipakai `_client_ip` untuk mengambil IP client yang benar-benar asli dari sisi **kanan** `X-Forwarded-For` (jumlah hop = proxy tepercaya di depan app). Nilai default `1` sesuai Render edge. Set ke `0` bila app TIDAK di belakang proxy (jangan percaya XFF sama sekali). Nilai di luar `0..5` atau non-integer memicu peringatan log dan jatuh ke `1`.
 
 ### 4. Jalankan Aplikasi
 
