@@ -105,15 +105,16 @@ def berarti_lines(nomor_batch: str, tanggal: date, nama_produk: str,
 
     - PT Erfi: ``Berarti : <NAMA PRODUK> diproduksi pada <DD Bulan YYYY>``
       + baris kedua ``dengan nomor seri batch <NN>`` (digarisbawahi di PDF).
-    - PT Heka: ``Berarti : <NAMA PRODUK> diproduksi pada <DD Bulan YYYY>
-      jenis sediaan <label> produk <NAMA> batch pertama``.
+    - PT Heka: ``Berarti : <NOMOR BATCH> diproduksi pada <DD Bulan YYYY>
+      jenis sediaan <Label> produk <NAMA> batch pertama`` (diawali nomor
+      batch, sesuai PDF referensi Heka).
     """
     hari_bulan = f"{tanggal.day:02d} {_BULAN_ID[tanggal.month]} {tanggal.year}"
     nama = nama_produk or "-"
     if is_heka(perusahaan):
         label = kode_sediaan_label or "-"
         return [
-            f"Berarti : {nama} diproduksi pada {hari_bulan} "
+            f"Berarti : {nomor_batch} diproduksi pada {hari_bulan} "
             f"jenis sediaan {label} produk {nama} {terbilang_urut(urut)}",
         ]
     return [
@@ -177,7 +178,7 @@ def validasi_kode_sediaan(kode: str, perusahaan: Optional[str]) -> Optional[str]
 def label_sediaan(kode: Optional[str]) -> str:
     for c, nama in KODE_SEDIAAN:
         if c == (kode or "").strip():
-            return nama.lower()
+            return nama.title()
     return ""
 
 
@@ -209,10 +210,12 @@ def _kop_fs_path(company: dict) -> Optional[str]:
             uri = "/static/images/kop_heka.png"
         elif "erfi" in logo or "erfi" in nama:
             uri = "/static/images/kop_erfi.png"
-    if not uri:
+    if not uri.startswith("/static/"):
         return None
-    relative = uri.split("/static/", 1)[-1] if "/static/" in uri else uri.lstrip("/")
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), relative.replace("/", os.sep))
+    # ``/static/images/kop_x.png`` -> ``app/static/images/kop_x.png`` (folder
+    # ``static`` HARUS ikut; versi lama membuangnya sehingga kop tidak pernah muncul).
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static",
+                        uri[len("/static/"):].replace("/", os.sep))
     return path if os.path.isfile(path) else None
 
 
@@ -231,7 +234,7 @@ def _kop_html(company: dict) -> str:
                 px_w, px_h = img.size
         except Exception:
             px_w, px_h = 800, 130
-        width_pt = 520.0
+        width_pt = 470.0
         height_pt = round(width_pt * px_h / max(px_w, 1), 1)
         return (f'<div style="text-align:center;margin-bottom:8px;">'
                 f'<img src="{path}" alt="Kop Surat" '
@@ -248,17 +251,19 @@ def _kop_html(company: dict) -> str:
 _HTML_COMMON = """<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <style>
-@page { size: letter landscape; margin: 10mm 12mm; }
-body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #111; }
-.title { text-align: center; font-size: 13pt; font-weight: bold; margin: 10px 0 12px; }
-.line { margin: 4px 0; }
-.rule { margin: 4px 0; }
-.rule b { display: inline-block; min-width: 52px; }
+@page { size: letter landscape; margin: 8mm 12mm; }
+body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #111; }
+.title { text-align: center; font-size: 12pt; font-weight: bold; margin: 6px 0 8px; }
+.line { margin: 3px 0; }
+table.rule { width: 100%; margin: 0 0 2px 0; }
+table.rule td { padding: 0; vertical-align: top; }
+table.rule td.num { width: 44px; font-weight: bold; }
 .legend { margin: 6px 0 0 18px; }
 .berarti-label { text-decoration: underline; font-weight: bold; }
 .berarti-underline { text-decoration: underline; }
-table.lampiran { width: 100%; border-collapse: collapse; margin-top: 8px; }
-table.lampiran td { border: 1px solid #666; padding: 4px 8px; font-size: 8.5pt; }
+table.lampiran { width: 70%; margin-top: 6px; }
+table.lampiran td { padding: 1px 8px; font-size: 8.5pt; }
+table.lampiran td.kode { width: 28px; text-align: center; }
 </style>
 </head><body>
 """
@@ -267,11 +272,11 @@ _ERFI_BODY = """{kop}
 <div class="title">SISTEM PENGKODEAN BATCH</div>
 <p class="line">Format saat ini untuk kode batch produk <b>{nama}</b> sebagai berikut,</p>
 <p class="line">Contoh untuk Nomor Batch : DD MM XX ZZZZZZ 01</p>
-<p class="rule"><b>1.1.1</b> Digit pertama menunjukkan tahun produksi yang diberi kode sebagai berikut : untuk tahun 2016: 16, 2017:17 dan seterusnya.</p>
-<p class="rule"><b>1.1.2</b> Digit kedua dan ketiga menunjukkan bulan pembuatan produk (ditulis dua angka bulan, Januari adalah 01, November adalah 11, dll.)</p>
-<p class="rule"><b>1.1.3</b> Digit keempat dan kelima menunjukkan tanggal pembuatan produk (ditulis dua angka)</p>
-<p class="rule"><b>1.1.4</b> 3-6 digit menunjukkan kode produk (disesuaikan dengan jenis sediaan dan merk)</p>
-<p class="rule"><b>1.1.5</b> Digit selanjutnya menunjukkan penomoran batch.</p>
+<table class="rule"><tr><td class="num">1.1.1</td><td>Digit pertama menunjukkan tahun produksi yang diberi kode sebagai berikut : untuk tahun 2016: 16, 2017:17 dan seterusnya.</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.2</td><td>Digit kedua dan ketiga menunjukkan bulan pembuatan produk (ditulis dua angka bulan, Januari adalah 01, November adalah 11, dll.)</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.3</td><td>Digit keempat dan kelima menunjukkan tanggal pembuatan produk (ditulis dua angka)</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.4</td><td>3-6 digit menunjukkan kode produk (disesuaikan dengan jenis sediaan dan merk)</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.5</td><td>Digit selanjutnya menunjukkan penomoran batch.</td></tr></table>
 <p class="line">Nomor Batch adalah <b>{nomor_batch}</b></p>
 <p class="line">Penjelasan Kode :</p>
 <div class="legend">{legend_rows}</div>
@@ -283,12 +288,12 @@ _HEKA_BODY = """{kop}
 <div class="title">SISTEM PENGKODEAN BATCH</div>
 <p class="line">Format saat ini untuk kode batch produk <b>{nama}</b> sebagai berikut,</p>
 <p class="line">Contoh untuk Nomor Batch : DD MM XX 00 ZZZZ 01</p>
-<p class="rule"><b>1.1.1</b> Digit pertama dan kedua menunjukkan tahun produksi yang diberi kode sebagai berikut : untuk tahun 2016: 16, 2017:17 dan seterusnya.</p>
-<p class="rule"><b>1.1.2</b> Digit ketiga dan keempat menunjukkan bulan pembuatan produk (ditulis dua angka bulan, Januari adalah 01, November adalah 11, dll.)</p>
-<p class="rule"><b>1.1.3</b> Digit kelima dan keenam menunjukkan tanggal pembuatan produk (ditulis dua angka)</p>
-<p class="rule"><b>1.1.4</b> Digit ketujuh dan kedelapan menunjukkan jenis sediaan produk</p>
-<p class="rule"><b>1.1.5</b> 4-6 digit selanjutnya menunjukkan kode produk (disesuaikan dengan jenis sediaan dan merk)</p>
-<p class="rule"><b>1.1.6</b> Digit selanjutnya menunjukkan penomoran batch.</p>
+<table class="rule"><tr><td class="num">1.1.1</td><td>Digit pertama dan kedua menunjukkan tahun produksi yang diberi kode sebagai berikut : untuk tahun 2016: 16, 2017:17 dan seterusnya.</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.2</td><td>Digit ketiga dan keempat menunjukkan bulan pembuatan produk (ditulis dua angka bulan, Januari adalah 01, November adalah 11, dll.)</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.3</td><td>Digit kelima dan keenam menunjukkan tanggal pembuatan produk (ditulis dua angka)</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.4</td><td>Digit ketujuh dan kedelapan menunjukkan jenis sediaan produk</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.5</td><td>4-6 digit selanjutnya menunjukkan kode produk (disesuaikan dengan jenis sediaan dan merk)</td></tr></table>
+<table class="rule"><tr><td class="num">1.1.6</td><td>Digit selanjutnya menunjukkan penomoran batch.</td></tr></table>
 <p class="line">Nomor Batch adalah <b>{nomor_batch}</b></p>
 <p class="line">Penjelasan Kode :</p>
 <div class="legend">{legend_rows}</div>
@@ -309,7 +314,7 @@ def _legend_html(legenda: list) -> str:
     for baris in legenda or []:
         huruf = _html_escape(str((baris or {}).get("huruf") or ""))
         arti = _html_escape(str((baris or {}).get("arti") or ""))
-        rows.append(f'<p style="margin:1px 0;">{huruf} : {arti}</p>')
+        rows.append(f'<p style="margin:0;">{huruf} : {arti}</p>')
     return "\n".join(rows)
 
 
@@ -320,7 +325,7 @@ def _lampiran_html() -> str:
     for i in range(6):
         lc, ln = left[i]
         rc, rn = right[i]
-        cells.append(f"<tr><td>{lc} {ln}</td><td>{rc} {rn}</td></tr>")
+        cells.append(f'<tr><td class="kode">{lc}</td><td>{ln}</td><td class="kode">{rc}</td><td>{rn}</td></tr>')
     return "\n".join(cells)
 
 

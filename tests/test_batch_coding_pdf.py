@@ -26,7 +26,11 @@ def check(name, cond):
 
 
 def _company(perusahaan):
-    return {"nama": "PT. HARAKA ERFI KOSMETINDO ABADI" if "Heka" in perusahaan else "PT. ERFI KARYA ABADI"}
+    # Sama dengan COMPANY_INFO di app/main.py (kop = URI /static/...), supaya path kop
+    # benar-benar teruji (versi lama hanya mengirim "nama" -> selalu fallback teks).
+    if "Heka" in perusahaan:
+        return {"nama": "PT. HARAKA ERFI KOSMETINDO ABADI", "kop": "/static/images/kop_heka.png"}
+    return {"nama": "PT. ERFI KARYA ABADI", "kop": "/static/images/kop_erfi.png"}
 
 
 # --- build_batch_number -------------------------------------------------
@@ -54,10 +58,11 @@ check("Erfi 2 baris", len(lines_erfi) == 2)
 check("Erfi baris 1", lines_erfi[0] == "Berarti : PARFUM DEPHERO Men's Parfum Reaction diproduksi pada 03 April 2023")
 check("Erfi baris 2", lines_erfi[1] == "dengan nomor seri batch 01")
 lines_heka = bcp.berarti_lines("25022205UBEB01", date(2025, 2, 22),
-                                "BALTIKH Extra Bright Underarm Cream", "PT Heka", "cream", urut=1)
+                                "BALTIKH Extra Bright Underarm Cream", "PT Heka", "Cream", urut=1)
 check("Heka 1 baris", len(lines_heka) == 1)
-check("Heka isi", lines_heka[0] == "Berarti : BALTIKH Extra Bright Underarm Cream diproduksi pada 22 Februari 2025 "
-                                   "jenis sediaan cream produk BALTIKH Extra Bright Underarm Cream batch pertama")
+# Sesuai PDF referensi Heka: kalimat diawali NOMOR BATCH, sediaan "Cream" kapital.
+check("Heka isi", lines_heka[0] == "Berarti : 25022205UBEB01 diproduksi pada 22 Februari 2025 "
+                                   "jenis sediaan Cream produk BALTIKH Extra Bright Underarm Cream batch pertama")
 check("terbilang 2", "nomor seri batch 02" in bcp.berarti_lines("x", date(2023, 4, 3), "P", "PT Erfi", urut=2)[1])
 
 # --- format tanggal (hardcoded, 12 bulan) --------------------------------
@@ -93,8 +98,8 @@ check("legenda 11 baris ditolak",
 check("legenda huruf 4 char ditolak",
       bcp.validasi_legenda([{"huruf": "ABCD", "arti": "x"}]) is not None)
 check("legenda huruf 3 char (DH) OK", bcp.validasi_legenda([{"huruf": "DH", "arti": "x"}, {"huruf": "AP", "arti": "y"}]) is None)
-check("label sediaan 05 -> cream", bcp.label_sediaan("05") == "cream")
-check("label sediaan 12 -> larutan/cairan lain", bcp.label_sediaan("12") == "larutan/cairan lain")
+check("label sediaan 05 -> Cream", bcp.label_sediaan("05") == "Cream")
+check("label sediaan 12 -> Larutan/Cairan Lain", bcp.label_sediaan("12") == "Larutan/Cairan Lain")
 check("is_heka 'PT Heka'", bcp.is_heka("PT Heka"))
 check("is_heka 'PT Erfi' false", not bcp.is_heka("PT Erfi"))
 
@@ -135,6 +140,25 @@ if pdf_heka:
     check("Heka memuat nomor batch", "25022205UBEB01" in text)
     check("Heka memuat lampiran sediaan", "LARUTAN/CAIRAN LAIN" in text)
     check("Heka memuat batch pertama", "batch pertama" in text)
+
+# --- kop surat ------------------------------------------------------------
+print("kop:")
+check("kop Heka path ditemukan", bcp._kop_fs_path(_company("PT Heka")) is not None)
+check("kop Erfi path ditemukan", bcp._kop_fs_path(_company("PT Erfi")) is not None)
+check("kop Heka = kop_heka.png", os.path.basename(bcp._kop_fs_path(_company("PT Heka")) or "") == "kop_heka.png")
+check("kop Erfi = kop_erfi.png", os.path.basename(bcp._kop_fs_path(_company("PT Erfi")) or "") == "kop_erfi.png")
+check("kop tanpa /static/ -> None", bcp._kop_fs_path({"kop": "images/kop_erfi.png"}) is None)
+for _nama, _pdf in (("Erfi", pdf_erfi), ("Heka", pdf_heka)):
+    _r = pypdf.PdfReader(__import__("io").BytesIO(_pdf))
+    check(f"{_nama} PDF memuat gambar kop", len(_r.pages[0].images) >= 1)
+
+# --- legenda penuh tetap 1 halaman -----------------------------------------
+print("legenda penuh:")
+_penuh = [{"huruf": "AB", "arti": "keterangan kode " * 5} for _ in range(10)]
+for _nama, _prod in (("Erfi", produkt_erfi), ("Heka", produkt_heka)):
+    _b = bcp.render_pdf(_prod, _company("PT " + _nama), "ABCD", _penuh, kode_sediaan="05")
+    _r = pypdf.PdfReader(__import__("io").BytesIO(_b))
+    check(f"{_nama} 10 baris legenda tetap 1 halaman", len(_r.pages) == 1)
 
 # --- storage path ---------------------------------------------------------
 check("storage path", bcp.storage_path("abc-123") == "products/abc-123/sistem_penomoran_batch.pdf")

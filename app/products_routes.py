@@ -1733,8 +1733,8 @@ def register_products_routes(
     ):
         """Generate PDF "Sistem Pengkodean Batch" (1 halaman landscape) per produk.
 
-        Input JSON: kode_produk, legenda [{huruf, arti}], kode_sediaan (Heka),
-        tanggal_aktif_na (opsional override, default kolom produk), urut=1.
+        Input JSON: kode_produk, legenda [{huruf, arti}], kode_sediaan (Heka).
+        Tanggal contoh = kolom ``tanggal_aktif_na`` (fallback 29 Nov 2023), urut=1.
         Hasil menimpa ``sistem_penomoran_batch_file_url`` (key storage sama
         dengan upload manual di form edit produk).
         """
@@ -1775,9 +1775,8 @@ def register_products_routes(
         if error:
             raise HTTPException(status_code=400, detail=error)
 
-        # Tanggal contoh: override JSON (kalau ada) > kolom tanggal_aktif_na > fallback.
-        tanggal_override = str(body.get("tanggal_aktif_na") or "").strip()
-        product_for_render = {**product, "tanggal_aktif_na": tanggal_override or product.get("tanggal_aktif_na")}
+        # Tanggal contoh: kolom tanggal_aktif_na > fallback (diurus render_pdf).
+        product_for_render = product
         company = get_company_info(perusahaan)
         pdf_bytes = batch_coding_pdf.render_pdf(product_for_render, company, kode_produk, legenda,
                                                  kode_sediaan=kode_sediaan, urut=1)
