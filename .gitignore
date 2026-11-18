@@ -236,5 +236,7 @@ scripts_tmp_list_projects.py
 # Unit test budget greeting AI (pure-local, monkeypatch httpx).
 !/tests/test_greeting_budget.py
 
+!/tests/test_batch_coding_pdf.py
+
 # Local documentation and notes
 /catatan/prompt-tenant-guard-a10-a13.md

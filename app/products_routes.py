@@ -9,8 +9,9 @@ from typing import List, Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
+from app import batch_coding_pdf
 from app.efek_samping import _efek_samping_meta
 from app.excel_generator import XLSX_MIME, build_formula_workbook
 from app import object_store
@@ -1722,3 +1723,96 @@ def register_products_routes(
         response = RedirectResponse(url=f"/products/{product_id}/edit?tab={tab}", status_code=303)
         response.set_cookie("success_msg", "File PDF berhasil dihapus.")
         return response
+
+    # ==================== GENERATOR SISTEM PENGKODEAN BATCH ====================
+    @app.post("/products/{product_id}/batch-coding/generate")
+    async def generate_batch_coding(
+        request: Request,
+        product_id: str,
+        current_user: dict = Depends(get_current_user),
+    ):
+        """Generate PDF "Sistem Pengkodean Batch" (1 halaman landscape) per produk.
+
+        Input JSON: kode_produk, legenda [{huruf, arti}], kode_sediaan (Heka),
+        tanggal_aktif_na (opsional override, default kolom produk), urut=1.
+        Hasil menimpa ``sistem_penomoran_batch_file_url`` (key storage sama
+        dengan upload manual di form edit produk).
+        """
+        try:
+            response = supabase.table("products").select("*").eq("id", product_id).eq("is_deleted", False).single().execute()
+            product = response.data
+        except Exception:
+            product = None
+        if not product:
+            raise HTTPException(status_code=404, detail="Produk tidak ditemukan.")
+        if not assert_same_tenant(current_user, product):
+            log_activity(
+                current_user, "generate", "product_batch_coding", product_id,
+                product.get("nama_produk") or product_id,
+                request=request, outcome="rejected",
+            )
+            raise HTTPException(status_code=403, detail="Akses ditolak! Produk bukan milik perusahaan Anda.")
+
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        kode_produk = str(body.get("kode_produk") or "").strip()
+        legenda = body.get("legenda") or []
+        if not isinstance(legenda, list):
+            legenda = []
+        legenda = [item for item in legenda if isinstance(item, dict)]
+        kode_sediaan = str(body.get("kode_sediaan") or "").strip() or None
+
+        perusahaan = product.get("perusahaan")
+        error = (
+            batch_coding_pdf.validasi_kode_produk(kode_produk, perusahaan)
+            or batch_coding_pdf.validasi_legenda(legenda)
+            or batch_coding_pdf.validasi_kode_sediaan(kode_sediaan, perusahaan)
+        )
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+
+        # Tanggal contoh: override JSON (kalau ada) > kolom tanggal_aktif_na > fallback.
+        tanggal_override = str(body.get("tanggal_aktif_na") or "").strip()
+        product_for_render = {**product, "tanggal_aktif_na": tanggal_override or product.get("tanggal_aktif_na")}
+        company = get_company_info(perusahaan)
+        pdf_bytes = batch_coding_pdf.render_pdf(product_for_render, company, kode_produk, legenda,
+                                                 kode_sediaan=kode_sediaan, urut=1)
+        if pdf_bytes is None:
+            raise HTTPException(status_code=500, detail="Gagal merender PDF Sistem Pengkodean Batch.")
+        _err = validate_pdf_bytes(pdf_bytes, "sistem_penomoran_batch.pdf")
+        if _err:
+            raise HTTPException(status_code=500, detail=f"Hasil PDF tidak valid: {_err}")
+
+        path = batch_coding_pdf.storage_path(product_id)
+        try:
+            object_store.upload_pdf(batch_coding_pdf.bucket(), path, pdf_bytes, upsert=True, client=supabase)
+            url = object_store.public_url(batch_coding_pdf.bucket(), path, client=supabase)
+        except Exception as exc:
+            print(f"[BATCH CODING] Gagal upload PDF produk {product_id}: {exc}")
+            raise HTTPException(status_code=500, detail="Gagal menyimpan PDF ke storage.")
+
+        try:
+            supabase.table("products").update({"sistem_penomoran_batch_file_url": url}).eq("id", product_id).execute()
+        except Exception as exc:
+            print(f"[BATCH CODING] Gagal update kolom URL produk {product_id}: {exc}")
+            raise HTTPException(status_code=500, detail="Gagal menyimpan data lampiran ke database.")
+
+        nomor = batch_coding_pdf.build_batch_number(
+            batch_coding_pdf.tanggal_untuk_generate(product_for_render.get("tanggal_aktif_na")),
+            kode_produk, perusahaan, kode_sediaan, urut=1,
+        )
+        try:
+            log_activity(
+                current_user, "update", "product", product_id,
+                product.get("nama_produk") or product_id,
+                [{"field": "File Sistem Penomoran Batch",
+                  "note": f"digenerate otomatis, nomor batch contoh {nomor}"}],
+                request=request,
+            )
+        except Exception as exc:
+            print(f"[BATCH CODING] Gagal catat audit produk {product_id}: {exc}")
+        return JSONResponse({"success": True, "url": url, "nomor_batch": nomor, "path": path})
