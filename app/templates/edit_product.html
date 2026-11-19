@@ -4,9 +4,10 @@
 
 {% block content %}
 {% macro pdf_upload_card(label, field_name, file_url, desc='') %}
-<div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+<div class="p-4 bg-gray-50 rounded-lg border border-gray-200" data-pdf-card="{{ field_name }}" data-pdf-label="{{ label }}">
     <div class="flex items-center justify-between mb-2 gap-2">
         <label class="block text-sm font-semibold text-gray-900">{{ label }}</label>
+        <span data-pdf-slot="badge" class="shrink-0">
         {% if file_url %}
         <span class="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">
             <i class="fa-solid fa-circle-check"></i> PDF terisi
@@ -16,9 +17,11 @@
             <i class="fa-solid fa-circle-exclamation"></i> PDF belum terisi
         </span>
         {% endif %}
+        </span>
     </div>
     {% if desc %}<p class="text-xs text-gray-500 mb-2">{{ desc }}</p>{% endif %}
 
+    <div data-pdf-slot="preview">
     {% if file_url %}
     <div class="bg-white border border-gray-200 rounded-md mb-2 overflow-hidden">
         <iframe src="{{ file_url }}" class="w-full h-64 border-0" title="Preview {{ label }}"></iframe>
@@ -31,8 +34,9 @@
         <p class="text-[11px]">Upload file PDF di bawah untuk preview</p>
     </div>
     {% endif %}
+    </div>
 
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2" data-pdf-slot="actions">
         <input type="file" name="{{ field_name }}" id="{{ field_name }}" accept=".pdf" class="flex-1 text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700" onchange="validateFileSize(this)">
     {% if file_url %}
     <button type="submit"
@@ -928,6 +932,9 @@ const BC_IS_HEKA = {{ 'true' if product.perusahaan == 'PT Heka' else 'false' }};
 const BC_MIN_LEN = BC_IS_HEKA ? 4 : 3;
 const BC_NAMA_PRODUK = {{ product.nama_produk | tojson }};
 const BC_TANGGAL = {{ (product.tanggal_aktif_na or '') | tojson }};
+// Berubah jadi true setelah generate sukses (slot di-update in-place, tanpa reload).
+let bcSudahTerisi = {{ (product.sistem_penomoran_batch_file_url or '') | tojson }} !== "";
+const BC_FIELD = "sistem_penomoran_batch_file";
 
 function bcParseDate(value) {
     if (value) {
@@ -1034,6 +1041,70 @@ function bcPrefillSediaan() {
     sel.value = match;
 }
 
+function bcApplyGeneratedPdf(url) {
+    // Update kartu "Sistem Penomoran Batch Spesifik" in-place: badge, preview, link, tombol hapus.
+    // Mengembalikan true bila ada file manual di input slot ini yang dikosongkan
+    // (kalau dibiarkan, tombol Simpan akan menimpa PDF hasil generate dengan file itu).
+    bcSudahTerisi = true;
+    const card = document.querySelector('[data-pdf-card="' + BC_FIELD + '"]');
+    if (!card || !url) return false;
+    const label = card.getAttribute("data-pdf-label") || "Sistem Penomoran Batch";
+    // Cache-bust (URL publik di-upsert in-place); jangan sentuh URL presigned.
+    const signed = /[?&](X-Amz-Signature|X-Amz-Algorithm|token)=/i.test(url);
+    const shown = signed ? url : url + (url.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+
+    const badge = card.querySelector('[data-pdf-slot="badge"]');
+    if (badge) {
+        badge.innerHTML = '<span class="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-700">' +
+            '<i class="fa-solid fa-circle-check"></i> PDF terisi</span>';
+    }
+
+    const preview = card.querySelector('[data-pdf-slot="preview"]');
+    if (preview) {
+        preview.textContent = "";
+        const box = document.createElement("div");
+        box.className = "bg-white border border-gray-200 rounded-md mb-2 overflow-hidden";
+        const frame = document.createElement("iframe");
+        frame.className = "w-full h-64 border-0";
+        frame.title = "Preview " + label;
+        frame.src = shown;
+        box.appendChild(frame);
+        const p = document.createElement("p");
+        p.className = "text-xs text-emerald-600 font-semibold mb-2";
+        const a = document.createElement("a");
+        a.href = shown;
+        a.target = "_blank";
+        a.className = "hover:underline";
+        a.innerHTML = '<i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> ';
+        a.appendChild(document.createTextNode("Buka PDF di tab baru"));
+        p.appendChild(a);
+        preview.appendChild(box);
+        preview.appendChild(p);
+    }
+
+    const actions = card.querySelector('[data-pdf-slot="actions"]');
+    if (actions && !actions.querySelector('button[form="delete-file-form"]')) {
+        const del = document.createElement("button");
+        del.type = "submit";
+        del.setAttribute("form", "delete-file-form");
+        del.name = "field_name";
+        del.value = BC_FIELD;
+        del.className = "shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition";
+        del.innerHTML = '<i class="fa-solid fa-trash-can"></i> Hapus';
+        del.addEventListener("click", function (e) {
+            if (!confirm("Yakin hapus PDF ini? File akan dihapus permanen.")) e.preventDefault();
+        });
+        actions.appendChild(del);
+    }
+
+    const input = document.getElementById(BC_FIELD);
+    if (input && input.files && input.files.length) {
+        input.value = "";
+        return true;
+    }
+    return false;
+}
+
 async function bcGenerate() {
     const btn = document.getElementById("bc-generate");
     const status = document.getElementById("bc-status");
@@ -1057,8 +1128,7 @@ async function bcGenerate() {
         status.className = "text-xs text-red-600";
         return;
     }
-    const sudahTerisi = {{ (product.sistem_penomoran_batch_file_url or '') | tojson }} !== "";
-    if (sudahTerisi && !confirm("Sistem Penomoran Batch sudah terisi. Generate ulang akan MENIMPA file yang ada. Lanjut?")) {
+    if (bcSudahTerisi && !confirm("Sistem Penomoran Batch sudah terisi. Generate ulang akan MENIMPA file yang ada. Lanjut?")) {
         return;
     }
     btn.disabled = true;
@@ -1085,10 +1155,14 @@ async function bcGenerate() {
             status.className = "text-xs text-red-600";
             return;
         }
-        status.textContent = "Berhasil: " + (data.nomor_batch || "");
+        // JANGAN reload halaman: reload membuang semua input yang belum disimpan
+        // (file stabilitas, dokumen lain, perubahan field). Cukup update slot PDF.
+        const cleared = bcApplyGeneratedPdf(data.url);
+        status.textContent = "Berhasil: " + (data.nomor_batch || "") + ". PDF sudah tersimpan; isian lain di halaman ini tidak diubah.";
         status.className = "text-xs text-emerald-600";
-        showFileToast("PDF Sistem Pengkodean Batch berhasil dibuat.");
-        setTimeout(function () { window.location.reload(); }, 900);
+        showFileToast(cleared
+            ? "PDF Sistem Pengkodean Batch dibuat. File manual yang sempat dipilih di slot ini dikosongkan."
+            : "PDF Sistem Pengkodean Batch berhasil dibuat.");
     } catch (err) {
         status.textContent = "Gagal: " + err;
         status.className = "text-xs text-red-600";
