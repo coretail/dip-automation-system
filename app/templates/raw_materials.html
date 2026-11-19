@@ -470,7 +470,7 @@
                                     <input type="hidden" name="perusahaan" value="{{ company }}">
                                     <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Spesifikasi">
                                         <i class="fa-solid fa-upload"></i>
-                                        <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                        <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="rmSubmitKeepingContext(this.form)">
                                     </label>
                                 </form>
                             {% else %}
@@ -478,7 +478,7 @@
                                     <input type="hidden" name="perusahaan" value="{{ company }}">
                                     <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload/update PDF Spesifikasi">
                                         <i class="fa-solid fa-upload"></i>
-                                        <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                        <input type="file" name="spec_sheet_file" accept=".pdf" class="hidden" onchange="rmSubmitKeepingContext(this.form)">
                                     </label>
                                 </form>
                             {% endif %}
@@ -495,7 +495,7 @@
                                     <input type="hidden" name="perusahaan" value="{{ company }}">
                                     <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload MSDS">
                                         <i class="fa-solid fa-upload"></i>
-                                        <input type="file" name="msds_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                        <input type="file" name="msds_file" accept=".pdf" class="hidden" onchange="rmSubmitKeepingContext(this.form)">
                                     </label>
                                 </form>
                             {% endif %}
@@ -510,7 +510,7 @@
                                 <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
                                     <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload CoA ke batch terbaru">
                                         <i class="fa-solid fa-upload"></i>
-                                        <input type="file" name="coa_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                        <input type="file" name="coa_file" accept=".pdf" class="hidden" onchange="rmSubmitKeepingContext(this.form)">
                                     </label>
                                 </form>
                             {% else %}
@@ -529,7 +529,7 @@
                                 <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
                                     <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Halal ke batch terbaru">
                                         <i class="fa-solid fa-upload"></i>
-                                        <input type="file" name="halal_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                        <input type="file" name="halal_file" accept=".pdf" class="hidden" onchange="rmSubmitKeepingContext(this.form)">
                                     </label>
                                 </form>
                             {% else %}
@@ -555,7 +555,7 @@
                                 <form action="/raw-materials/batches/{{ s.batch_id }}/quick-upload-doc" method="POST" enctype="multipart/form-data" class="inline">
                                     <label class="cursor-pointer text-gray-300 hover:text-indigo-600 transition" title="Klik untuk upload Laporan Pemeriksaan ke batch terbaru">
                                         <i class="fa-solid fa-upload"></i>
-                                        <input type="file" name="qc_report_file" accept=".pdf" class="hidden" onchange="this.form.submit()">
+                                        <input type="file" name="qc_report_file" accept=".pdf" class="hidden" onchange="rmSubmitKeepingContext(this.form)">
                                     </label>
                                 </form>
                             {% else %}
@@ -2155,6 +2155,94 @@ function validateAccDimusnahkanForm() {
     return true;
 }
 
+// ==================== PERTAHANKAN KONTEKS SETELAH SUBMIT ====================
+// Setelah submit form (mis. upload cepat di tab "Cek Kelengkapan Dokumen") server
+// me-redirect ke /raw-materials, jadi halaman dimuat ulang dan kembali ke tab
+// pertama dengan search kosong. Konteks (tab, search, filter, scroll) disimpan di
+// sessionStorage sebelum submit dan dipulihkan sekali saat halaman dimuat lagi.
+const RM_UI_STATE_KEY = 'rm-ui-state';
+const RM_UI_STATE_TTL_MS = 60 * 1000;
+const RM_TAB_IDS = ['master-tab', 'batch-tab', 'ed-tab', 'docs-tab'];
+// Form yang TIDAK mempertahankan konteks: tambah bahan baku baru (hasilnya harus
+// terlihat, bukan tersaring oleh search lama).
+const RM_NO_CONTEXT_ACTIONS = ['/raw-materials/add'];
+
+function rmActiveTab() {
+    for (let i = 0; i < RM_TAB_IDS.length; i++) {
+        const el = document.getElementById(RM_TAB_IDS[i]);
+        if (el && !el.classList.contains('hidden')) return RM_TAB_IDS[i];
+    }
+    return 'master-tab';
+}
+
+function rmSaveUiState() {
+    try {
+        const val = function (id) { const el = document.getElementById(id); return el ? el.value : ''; };
+        sessionStorage.setItem(RM_UI_STATE_KEY, JSON.stringify({
+            tab: rmActiveTab(),
+            q: val('search-input'),
+            company: val('filter-company'),
+            tipe: val('filter-tipe'),
+            scrollY: window.scrollY || 0,
+            ts: Date.now()
+        }));
+    } catch (e) { /* sessionStorage bisa diblokir; fitur sekadar tidak aktif */ }
+}
+
+function rmSubmitKeepingContext(form) {
+    rmSaveUiState();
+    form.submit();
+}
+
+document.addEventListener('submit', function (e) {
+    const form = e.target;
+    if (!form || e.defaultPrevented) return;
+    let path = '';
+    try { path = new URL(form.action || window.location.href, window.location.href).pathname; } catch (err) { return; }
+    if (RM_NO_CONTEXT_ACTIONS.indexOf(path) !== -1) return;
+    rmSaveUiState();
+}, false);
+
+function rmRestoreUiState(tabParam) {
+    let st = null;
+    try {
+        st = JSON.parse(sessionStorage.getItem(RM_UI_STATE_KEY) || 'null');
+        sessionStorage.removeItem(RM_UI_STATE_KEY); // sekali pakai
+    } catch (e) { st = null; }
+    if (!st || RM_TAB_IDS.indexOf(st.tab) === -1) return false;
+    if (Date.now() - (st.ts || 0) > RM_UI_STATE_TTL_MS) return false;
+    // Hanya pulihkan bila datang dari halaman ini sendiri (POST -> redirect balik).
+    // Referrer halaman lain berarti pengguna navigasi biasa, bukan hasil submit.
+    if (document.referrer) {
+        try {
+            if (new URL(document.referrer).pathname.replace(/\/+$/, '') !== '/raw-materials') return false;
+        } catch (e) { return false; }
+    }
+    // Server sengaja mengarahkan ke tab lain (mis. batch baru -> tab Log Batch): ikuti server.
+    if (tabParam && tabParam !== st.tab) return false;
+
+    const setVal = function (id, v) {
+        const el = document.getElementById(id);
+        if (!el || v === undefined || v === null) return;
+        if (el.tagName === 'SELECT') {
+            const ok = Array.prototype.some.call(el.options, function (o) { return o.value === v; });
+            if (!ok) return;
+        }
+        el.value = v;
+    };
+    setVal('search-input', st.q);
+    setVal('filter-company', st.company);
+    setVal('filter-tipe', st.tipe);
+    switchTab(st.tab); // switchTab memanggil filterTable()
+
+    const y = Number(st.scrollY) || 0;
+    if (y > 0) {
+        requestAnimationFrame(function () { window.scrollTo(0, y); });
+        setTimeout(function () { window.scrollTo(0, y); }, 150);
+    }
+    return true;
+}
+
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize notification badge from server-rendered count (ed_notification_count from template context)
@@ -2179,6 +2267,8 @@ document.addEventListener('DOMContentLoaded', function() {
         switchTab('ed-tab');
     } else if (tabParam === 'batch-tab') {
         switchTab('batch-tab');
+    } else if (tabParam === 'docs-tab') {
+        switchTab('docs-tab');
     } else {
         // Default: render ED badges anyway in case user switches
         renderEDBadges();
@@ -2209,6 +2299,13 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.batch-row[data-status-ed="Dimusnahkan"]').forEach(row => {
         row.style.display = 'none';
     });
+
+    // Pulihkan tab/search/filter/scroll setelah submit form (deep link q/rm tetap menang).
+    if (!qParam && !rmParam) {
+        rmRestoreUiState(tabParam);
+    } else {
+        try { sessionStorage.removeItem(RM_UI_STATE_KEY); } catch (e) { /* abaikan */ }
+    }
     
     // Trigger notification badge fetch (will refresh from API)
     // ED notifications are handled globally by base.html.
