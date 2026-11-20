@@ -19,6 +19,17 @@ class _StagingSettings(BaseSettings):
     # Suffix nama bucket R2 per-environment ("" prod, "-stg" staging); mencegah
     # staging menulis ke bucket R2 produksi saat mode dual.
     r2_bucket_suffix: str = ""
+    # --- Undangan user via email (Brevo). Semua default kosong/nonaktif agar
+    # staging no-op sampai di-allowlist. Nilai secret diisi local-only, jangan commit.
+    # CAKUPAN: MAIL_ENABLED dan MAIL_ALLOWLIST hanya berlaku di mode staging; di
+    # produksi keduanya diabaikan. Untuk mematikan pengiriman produksi, kosongkan
+    # brevo_api_key (mailer mengembalikan "failed" tanpa panggilan jaringan).
+    brevo_api_key: str = ""
+    mail_from_name: str = ""
+    mail_from_email: str = ""
+    mail_enabled: bool = False
+    mail_allowlist: str = ""
+    app_base_url: str = ""
 
     model_config = SettingsConfigDict(env_file=".env.staging", env_file_encoding="utf-8", extra="ignore")
 
@@ -40,6 +51,18 @@ class _ProdSettings(BaseSettings):
     # Suffix nama bucket R2 per-environment ("" prod, "-stg" staging); mencegah
     # staging menulis ke bucket R2 produksi saat mode dual.
     r2_bucket_suffix: str = ""
+    # --- Undangan user via email (Brevo). Semua default kosong/nonaktif.
+    # CAKUPAN: MAIL_ENABLED dan MAIL_ALLOWLIST HANYA berlaku di mode staging
+    # (DIP_APP_ENV=staging) dan DIABAIKAN di produksi — di produksi email selalu
+    # dicoba dikirim bila brevo_api_key dan mail_from_email tersedia. Pengiriman
+    # produksi dapat dimatikan dengan mengosongkan brevo_api_key; mailer
+    # mengembalikan "failed" tanpa panggilan jaringan.
+    brevo_api_key: str = ""
+    mail_from_name: str = ""
+    mail_from_email: str = ""
+    mail_enabled: bool = False
+    mail_allowlist: str = ""
+    app_base_url: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

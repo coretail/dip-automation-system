@@ -30,6 +30,8 @@
 
 ## 3. Aturan keras
 - Jangan membaca, mencetak, atau commit secret dari `.env*`, termasuk `.env.staging`; `.env.staging.example` hanya template dan tidak boleh diisi secret lalu di-commit.
+- **Dilarang mencetak nilai env/secret/token** ke terminal, log, atau laporan. Nilai sensitif hanya boleh dilaporkan sebagai **panjang** dan **prefix maksimal 4 karakter** (mis. `len=44 prefix=sbp_`) — jangan pernah nilai lengkap, meski sebagian. Berlaku untuk `.env*`, `LOGIN.md`, output tool, pesan galat, dan laporan akhir.
+- **Dilarang mengekstrak token dari konfigurasi MCP** (mis. argumen `--access-token` pada blok `mcp` di `kilo.jsonc`/`kilo.json`). Token hanya boleh berasal dari environment variable yang disediakan pemilik repo, dan tetap tidak boleh dicetak atau ditulis ke file.
 - Kredensial akun tes E2E staging hanya ada di `LOGIN.md` di root repo (git-ignored); agen membacanya dari sana lalu set sebagai environment variable untuk run, dan tidak boleh echoed, di-log, disalin ke file lain, atau di-commit. Kalau nilainya pernah masuk ke file yang ter-commit atau output publik, password staging wajib segera dirotasi karena menghapus file atau commit tidak cukup - riwayat git tetap menyimpannya.
 - Jangan pernah mengarahkan staging ke produksi. `DIP_APP_ENV=staging` wajib; guard menolak URL selain host staging eksak, ref produksi, shell env yang tercampur, key JWT yang terikat bukan staging, dan konfigurasi wajib yang hilang.
 - Pengembangan/tes di mesin lokal hanya melalui `python scripts/run_staging_8017.py`; tanpa mode staging, `app/config.py` mengambil `.env` produksi dan `uvicorn app.main:app` langsung dilarang.
