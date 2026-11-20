@@ -22,7 +22,8 @@ class _StagingSettings(BaseSettings):
     # --- Undangan user via email (Brevo). Semua default kosong/nonaktif agar
     # staging no-op sampai di-allowlist. Nilai secret diisi local-only, jangan commit.
     # CAKUPAN: MAIL_ENABLED dan MAIL_ALLOWLIST hanya berlaku di mode staging; di
-    # produksi keduanya diabaikan (lihat catatan yang sama di _ProdSettings).
+    # produksi keduanya diabaikan. Untuk mematikan pengiriman produksi, kosongkan
+    # brevo_api_key (mailer mengembalikan "failed" tanpa panggilan jaringan).
     brevo_api_key: str = ""
     mail_from_name: str = ""
     mail_from_email: str = ""
@@ -53,8 +54,9 @@ class _ProdSettings(BaseSettings):
     # --- Undangan user via email (Brevo). Semua default kosong/nonaktif.
     # CAKUPAN: MAIL_ENABLED dan MAIL_ALLOWLIST HANYA berlaku di mode staging
     # (DIP_APP_ENV=staging) dan DIABAIKAN di produksi — di produksi email selalu
-    # dicoba dikirim bila brevo_api_key dan mail_from_email tersedia. Belum ada
-    # kill switch produksi.
+    # dicoba dikirim bila brevo_api_key dan mail_from_email tersedia. Pengiriman
+    # produksi dapat dimatikan dengan mengosongkan brevo_api_key; mailer
+    # mengembalikan "failed" tanpa panggilan jaringan.
     brevo_api_key: str = ""
     mail_from_name: str = ""
     mail_from_email: str = ""

@@ -33,6 +33,12 @@ Default **no-op**: link aktivasi dicetak ke terminal (email penerima di-mask).
 Pengiriman nyata hanya bila `MAIL_ENABLED=true` **dan** penerima ada di
 `MAIL_ALLOWLIST` (parse dipisah koma, case-insensitive).
 
+`MAIL_ENABLED` dan `MAIL_ALLOWLIST` **hanya berlaku di staging** dan **diabaikan
+di produksi**. Di produksi email selalu dicoba dikirim bila `BREVO_API_KEY` dan
+`MAIL_FROM_EMAIL` tersedia; pengiriman produksi dapat dimatikan dengan
+mengosongkan `BREVO_API_KEY` di Render — mailer mengembalikan `"failed"` tanpa
+panggilan jaringan.
+
 ## Keamanan
 
 - Header `api-key` (Brevo v3) + `Content-Type: application/json`.

@@ -86,6 +86,6 @@ FK `profiles_id_fkey` → `auth.users(id)` berstatus **ON DELETE CASCADE**
 - Task 3b (cancel-invite): cukup `admin.delete_user(uid)`; baris `profiles`
   terhapus otomatis (CASCADE). `activity_logs.actor_id` tetap `ON DELETE SET NULL`
   sehingga audit tidak hilang.
-- Task 4: tetap memakai `email_otp` (lihat catatan spike), bukan `hashed_token`.
+- Task 4: token aktivasi final menunggu retest spike v2 (lihat catatan spike).
 - Task 5/6: kolom `status` sudah ada; retry fail-soft tetap diperlukan untuk
   kompatibilitas bila rollback.

@@ -11,8 +11,9 @@ Kontrak ``send_invite_email`` -> ``tuple[bool, str]``:
 Cakupan ``MAIL_ENABLED`` / ``MAIL_ALLOWLIST`` (PENTING):
     Kedua variabel itu **HANYA berlaku di mode staging** (``DIP_APP_ENV=staging``)
     dan **diabaikan di produksi**. Di produksi email selalu dicoba dikirim bila
-    ``BREVO_API_KEY`` dan ``MAIL_FROM_EMAIL`` tersedia; tidak ada kill switch
-    produksi (lihat catatan di akhir docstring).
+    ``BREVO_API_KEY`` dan ``MAIL_FROM_EMAIL`` tersedia; pengiriman produksi dapat
+    dimatikan dengan mengosongkan ``BREVO_API_KEY`` (mailer mengembalikan
+    ``"failed"`` tanpa panggilan jaringan).
 
 Di staging default no-op: link aktivasi dicetak ke terminal tanpa kredensial.
 API key dan body respons penuh tidak pernah dicetak.
@@ -128,7 +129,7 @@ async def send_invite_email(to_email: str, activate_url: str, app_base_url: str)
         return (False, STATUS_FAILED)
 
     # MAIL_ENABLED / MAIL_ALLOWLIST hanya dievaluasi di staging; di produksi
-    # diabaikan (tidak ada kill switch produksi).
+    # diabaikan. Untuk mematikan pengiriman produksi, kosongkan BREVO_API_KEY.
     if is_staging_mode():
         if not settings.mail_enabled:
             _print_staging_noop(to_email, activate_url, "MAIL_ENABLED=false")

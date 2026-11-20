@@ -1,5 +1,17 @@
 # Catatan Spike Task 0 — `generate_link` + `verify_otp` (staging, 2026-11-20)
 
+> **PERINGATAN — BELUM TERVERIFIKASI, menunggu retest spike v2.**
+> Kesimpulan **S1.2**, **S2.2**, **P2**, dan **P3** di catatan ini belum dapat
+> dipercaya:
+> - **S1.2** memakai `verify_otp({... "token": ...})`, yaitu parameter `token`,
+>   **bukan** `token_hash`. Hash seharusnya lewat `token_hash`.
+> - **P2** dan **P3** berjalan **setelah** client global memegang session user
+>   (efek `verify_otp`), sehingga request admin memakai JWT user — hasil
+>   "User not allowed" bisa jadi artefak, bukan perilaku sebenarnya.
+>
+> Retest dijadwalkan lewat `.kilo/_spike_auth_invite_v2.py` (belum dijalankan).
+> Anggap bagian di bawah ini sebagai hipotesis, bukan temuan final.
+
 Latar: verifikasi terbatas perilaku Supabase Auth (`supabase==2.31.0`) sebelum
 implementasi fitur undang user via email. Skrip spike bersifat sementara dan
 **tidak** disimpan di repo (hanya di `.kilo/`, git-ignored).
