@@ -239,6 +239,9 @@ scripts_tmp_list_projects.py
 !/tests/test_batch_coding_pdf.py
 # Unit test mailer undangan Brevo (pure-local, httpx SELALU di-mock, tanpa jaringan/secret).
 !/tests/test_mailer.py
+# Unit test endpoint invite user via email (pure-local, mock Supabase & mailer).
+!/tests/test_invite_endpoint.py
+!/tests/test_invite_dedupe.py
 
 # Local documentation and notes
 /catatan/prompt-tenant-guard-a10-a13.md

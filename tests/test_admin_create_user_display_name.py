@@ -31,6 +31,15 @@ class FakeApp:
         return decorator
 
 
+class FakeLimiter:
+    """Pengganti slowapi Limiter; decorator limit() transparan (tanpa rate limit)."""
+
+    def limit(self, _spec):
+        def decorator(fn):
+            return fn
+        return decorator
+
+
 class FakeAuthResponse:
     def __init__(self, user):
         self.user = user
@@ -163,6 +172,7 @@ def build(fail_profiles_insert=False):
         _user_label, _user_role_and_label,
         get_ed_notification_count,
         None,  # compute_status_na
+        FakeLimiter(),
     )
     return app, supabase, logs
 

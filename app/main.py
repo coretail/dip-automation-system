@@ -1181,6 +1181,7 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
     # Mapping badge aksi biar gampang di-scan mata di log Render
     action_badges = {
         "create": "🟢 [CREATED]",
+        "invite": "✉️ [INVITED]",
         "update": "🟡 [UPDATED]",
         "delete": "🔴 [DELETED]",
         "change_password": "🔐 [PASSWORD CHANGED]",
@@ -1781,6 +1782,7 @@ register_admin_users_routes(
     _user_role_and_label=_user_role_and_label,
     get_ed_notification_count=get_ed_notification_count,
     compute_status_na=compute_status_na,
+    limiter=limiter,
 )
 
 from app.profile_routes import register_profile_routes
