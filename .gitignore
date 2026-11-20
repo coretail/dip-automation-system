@@ -242,6 +242,8 @@ scripts_tmp_list_projects.py
 # Unit test endpoint invite user via email (pure-local, mock Supabase & mailer).
 !/tests/test_invite_endpoint.py
 !/tests/test_invite_dedupe.py
+!/tests/test_invite_resend.py
+!/tests/test_invite_cancel.py
 
 # Local documentation and notes
 /catatan/prompt-tenant-guard-a10-a13.md

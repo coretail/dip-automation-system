@@ -1,6 +1,7 @@
 """Admin user management routes (extracted from main.py)."""
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -18,6 +19,9 @@ INVITE_MAX_USERNAME_ATTEMPTS = 3
 
 # Jendela bukti "user Auth baru dibuat request ini" untuk kompensasi hapus Auth.
 INVITE_NEW_USER_WINDOW_SECONDS = 60
+
+# Jeda minimum kirim ulang undangan dari waktu invited_at terakhir.
+INVITE_RESEND_COOLDOWN_SECONDS = 60
 
 # Validator format email sederhana (pola sama semangat dengan validasi existing).
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
@@ -84,6 +88,37 @@ def should_delete_auth_user(supabase, uid: str, created_at) -> bool:
     except Exception:  # noqa: BLE001
         return False
     return not bool(res.data)
+
+
+def resend_cooldown_remaining(
+    invited_at,
+    now: datetime | None = None,
+    cooldown_seconds: int = INVITE_RESEND_COOLDOWN_SECONDS,
+) -> int:
+    """Sisa waktu jeda resend (detik); 0 jika sudah boleh kirim ulang."""
+    if not invited_at:
+        return 0
+    if isinstance(invited_at, datetime):
+        invited_dt = invited_at
+    else:
+        try:
+            text = str(invited_at).strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            invited_dt = datetime.fromisoformat(text)
+        except Exception:  # noqa: BLE001
+            return 0
+    if invited_dt.tzinfo is None:
+        invited_dt = invited_dt.replace(tzinfo=timezone.utc)
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    elapsed = (reference - invited_dt).total_seconds()
+    if elapsed >= cooldown_seconds:
+        return 0
+    if elapsed < 0:
+        return cooldown_seconds
+    return int(math.ceil(cooldown_seconds - elapsed))
 
 
 def register_admin_users_routes(
@@ -569,6 +604,356 @@ def register_admin_users_routes(
         )
 
         return RedirectResponse(url=f"/admin/users?status={redirect_status}", status_code=303)
+
+    # 1c. KIRIM ULANG UNDANGAN USER PENDING (KHUSUS ADMIN)
+    @app.post("/admin/users/resend-invite")
+    @limiter.limit("3/minute")
+    async def admin_resend_invite(
+        request: Request,
+        target_uid: str = Form(...),
+        current_user: dict = Depends(get_current_user),
+    ):
+        """Kirim ulang tautan aktivasi untuk user Auth yang masih pending."""
+        if current_user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+
+        clean_uid = (target_uid or "").strip()
+
+        app_base_url = (getattr(settings, "app_base_url", "") or "").strip()
+        if not app_base_url:
+            print("[RESEND INVITE] APP_BASE_URL belum diset; resend dibatalkan.")
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid or None,
+                f"User {clean_uid}" if clean_uid else "(kosong)",
+                changes=[{"field": "Email", "note": "APP_BASE_URL belum diset; resend dibatalkan"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=invite_not_configured", status_code=303)
+
+        if not clean_uid:
+            log_activity(
+                current_user, "resend_invite", "user", None, "(kosong)",
+                changes=[{"field": "Target", "note": "target_uid kosong"}],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=user_not_found", status_code=303)
+
+        try:
+            prof_res = (
+                supabase.table("profiles")
+                .select("id, full_name, status, invited_email, invited_at, is_protected")
+                .eq("id", clean_uid)
+                .execute()
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[RESEND INVITE] gagal baca profil uid={clean_uid}: {exc}")
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, f"User {clean_uid}",
+                changes=[{"field": "Profil", "note": "gagal membaca data profil target"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=resend_failed", status_code=303)
+
+        if not prof_res.data:
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, f"User {clean_uid}",
+                changes=[{"field": "Target", "note": "target user tidak ditemukan"}],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=user_not_found", status_code=303)
+
+        profile = prof_res.data[0] or {}
+        username = profile.get("full_name") or f"User {clean_uid}"
+        invited_email = (profile.get("invited_email") or "").strip().lower()
+        masked = mask_email(invited_email) if "@" in invited_email else "(kosong)"
+
+        if profile.get("is_protected") and clean_uid != current_user["id"]:
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[{"field": "Proteksi", "note": "akun ditandai terproteksi"}],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
+
+        if profile.get("status") != "pending":
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[{"field": "Status", "old": profile.get("status"), "note": "bukan akun pending"}],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=not_pending", status_code=303)
+
+        if not is_valid_email(invited_email):
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[{"field": "Email", "new": masked, "note": "invited_email tidak valid atau kosong"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=resend_failed", status_code=303)
+
+        remaining = resend_cooldown_remaining(profile.get("invited_at"))
+        if remaining > 0:
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[
+                    {"field": "Email", "new": masked},
+                    {"field": "Cooldown",
+                     "note": f"jeda minimal {INVITE_RESEND_COOLDOWN_SECONDS} detik belum terpenuhi (sisa {remaining} dtk)"},
+                ],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=resend_too_soon", status_code=303)
+
+        # WAJIB cek status konfirmasi di Supabase Auth sebelum generate_link (R7).
+        try:
+            auth_res = supabase.auth.admin.get_user_by_id(clean_uid)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[RESEND INVITE] get_user_by_id gagal uid={clean_uid}: {exc}")
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[{"field": "Email", "new": masked},
+                         {"field": "Auth", "note": "gagal memeriksa status Auth user"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=resend_failed", status_code=303)
+
+        auth_user = getattr(auth_res, "user", None)
+        if auth_user is None:
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[{"field": "Email", "new": masked},
+                         {"field": "Auth", "note": "user Auth tidak ditemukan"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=resend_failed", status_code=303)
+
+        if getattr(auth_user, "email_confirmed_at", None):
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[
+                    {"field": "Email", "new": masked},
+                    {"field": "Auth",
+                     "note": "email sudah terkonfirmasi di Auth; gunakan Batalkan & undang ulang"},
+                ],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=resend_already_confirmed", status_code=303)
+
+        try:
+            link_res = supabase.auth.admin.generate_link({
+                "type": "invite",
+                "email": invited_email,
+                "options": {"data": {"username": username}},
+            })
+            hashed_token = getattr(getattr(link_res, "properties", None), "hashed_token", None)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[RESEND INVITE] generate_link gagal uid={clean_uid}: {exc}")
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[{"field": "Email", "new": masked},
+                         {"field": "Error", "note": "generate_link resend gagal"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=resend_failed", status_code=303)
+
+        if not hashed_token:
+            log_activity(
+                current_user, "resend_invite", "user", clean_uid, username,
+                changes=[{"field": "Email", "new": masked},
+                         {"field": "Error", "note": "respons generate_link tidak memiliki hashed_token"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=resend_failed", status_code=303)
+
+        invited_at_update_failed = False
+        now_iso = datetime.now(WIB).isoformat()
+        try:
+            (
+                supabase.table("profiles")
+                .update({"invited_at": now_iso, "updated_at": now_iso})
+                .eq("id", clean_uid)
+                .eq("status", "pending")
+                .execute()
+            )
+        except Exception as exc:  # noqa: BLE001
+            invited_at_update_failed = True
+            print(f"[RESEND INVITE] gagal update invited_at uid={clean_uid}: {exc}")
+
+        activate_url = f"{app_base_url.rstrip('/')}/activate?token_hash={hashed_token}&type=invite"
+        try:
+            _mail_ok, mail_status = await mailer.send_invite_email(
+                to_email=invited_email,
+                activate_url=activate_url,
+                app_base_url=app_base_url,
+                is_resend=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[RESEND INVITE] mailer exception: {exc}")
+            mail_status = mailer.STATUS_FAILED
+
+        if mail_status == mailer.STATUS_UNKNOWN:
+            redirect_status = "resend_unknown"
+        elif mail_status == mailer.STATUS_FAILED:
+            redirect_status = "resend_failed_email"
+        else:
+            redirect_status = "resend_sent"
+
+        changes = [
+            {"field": "Username", "new": username},
+            {"field": "Email", "new": masked},
+            {"field": "Mail", "new": mail_status},
+            {"field": "Token", "note": "tautan lama otomatis tidak berlaku"},
+        ]
+        if invited_at_update_failed:
+            changes.append({"field": "invited_at", "note": "gagal memperbarui invited_at di profiles"})
+
+        log_activity(
+            current_user, "resend_invite", "user", clean_uid, username,
+            changes=changes, request=request, outcome="success",
+        )
+
+        return RedirectResponse(url=f"/admin/users?status={redirect_status}", status_code=303)
+
+    # 1d. BATALKAN UNDANGAN USER PENDING (KHUSUS ADMIN)
+    @app.post("/admin/users/cancel-invite")
+    @limiter.limit("5/minute")
+    async def admin_cancel_invite(
+        request: Request,
+        target_uid: str = Form(...),
+        current_user: dict = Depends(get_current_user),
+    ):
+        """Batalkan undangan user pending dengan menghapus user Auth (cascade profiles)."""
+        if current_user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+
+        clean_uid = (target_uid or "").strip()
+        if not clean_uid:
+            log_activity(
+                current_user, "cancel_invite", "user", None, "(kosong)",
+                changes=[{"field": "Target", "note": "target_uid kosong"}],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=user_not_found", status_code=303)
+
+        if clean_uid == current_user["id"]:
+            log_activity(
+                current_user, "cancel_invite", "user", clean_uid, "akun sendiri",
+                changes=[{"field": "Proteksi", "note": "admin mencoba membatalkan akun sendiri"}],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=cannot_delete_self", status_code=303)
+
+        try:
+            snap_res = (
+                supabase.table("profiles")
+                .select("id, full_name, role, status, invited_email, is_protected")
+                .eq("id", clean_uid)
+                .execute()
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[CANCEL INVITE] gagal baca snapshot profil uid={clean_uid}: {exc}")
+            log_activity(
+                current_user, "cancel_invite", "user", clean_uid, f"User {clean_uid}",
+                changes=[{"field": "Profil", "note": "gagal membaca snapshot profil target"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=cancel_failed", status_code=303)
+
+        if not snap_res.data:
+            log_activity(
+                current_user, "cancel_invite", "user", clean_uid, f"User {clean_uid}",
+                changes=[{"field": "Target", "note": "target user tidak ditemukan"}],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=user_not_found", status_code=303)
+
+        profile = snap_res.data[0] or {}
+        username = profile.get("full_name") or f"User {clean_uid}"
+        invited_email = (profile.get("invited_email") or "").strip().lower()
+        masked = mask_email(invited_email) if "@" in invited_email else "(kosong)"
+
+        if profile.get("is_protected"):
+            log_activity(
+                current_user, "cancel_invite", "user", clean_uid, username,
+                changes=[{"field": "Proteksi", "note": "akun ditandai terproteksi"}],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=protected_account", status_code=303)
+
+        if profile.get("status") != "pending":
+            log_activity(
+                current_user, "cancel_invite", "user", clean_uid, username,
+                changes=[
+                    {"field": "Status", "old": profile.get("status"),
+                     "note": "bukan akun pending; pembatalan ditolak"},
+                ],
+                request=request, outcome="rejected",
+            )
+            return RedirectResponse(url="/admin/users?error=not_pending", status_code=303)
+
+        try:
+            supabase.auth.admin.delete_user(clean_uid)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[CANCEL INVITE] gagal hapus Auth uid={clean_uid}: {exc}")
+            log_activity(
+                current_user, "cancel_invite", "user", clean_uid, username,
+                changes=[
+                    {"field": "Username", "old": username},
+                    {"field": "Email", "old": masked},
+                    {"field": "Error", "note": "hapus akun Auth gagal; profil pending tidak diubah"},
+                ],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=cancel_failed", status_code=303)
+
+        partial_failure = False
+        cascade_note = "dihapus dari Supabase Auth (profil ikut terhapus via cascade)"
+        try:
+            rem_res = supabase.table("profiles").select("id").eq("id", clean_uid).execute()
+            remaining = rem_res.data or []
+        except Exception as exc:  # noqa: BLE001
+            partial_failure = True
+            cascade_note = "akun Auth terhapus, tetapi verifikasi cascade profil gagal"
+            print(f"[CANCEL INVITE] verifikasi cascade profil gagal uid={clean_uid}: {exc}")
+            remaining = []
+
+        if not partial_failure and remaining:
+            try:
+                (
+                    supabase.table("profiles")
+                    .delete()
+                    .eq("id", clean_uid)
+                    .eq("status", "pending")
+                    .execute()
+                )
+                cascade_note = "akun Auth terhapus; baris profil pending dibersihkan manual (cascade tidak berjalan)"
+            except Exception as exc:  # noqa: BLE001
+                partial_failure = True
+                cascade_note = "kegagalan parsial: akun Auth terhapus tetapi baris profil sisa gagal dihapus"
+                print(f"[CANCEL INVITE] fallback hapus profil gagal uid={clean_uid}: {exc}")
+
+        if partial_failure:
+            log_activity(
+                current_user, "cancel_invite", "user", clean_uid, username,
+                changes=[
+                    {"field": "Username", "old": username},
+                    {"field": "Email", "old": masked},
+                    {"field": "Error", "note": cascade_note},
+                ],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=cancel_partial", status_code=303)
+
+        log_activity(
+            current_user, "cancel_invite", "user", clean_uid, username,
+            changes=[
+                {"field": "Username", "old": username},
+                {"field": "Email", "old": masked},
+                {"field": "Auth", "note": cascade_note},
+            ],
+            request=request, outcome="success",
+        )
+        return RedirectResponse(url="/admin/users?status=cancel_success", status_code=303)
 
     # 2. PROSES RESET PASSWORD USER (KHUSUS ADMIN)
     @app.post("/admin/users/reset-password")

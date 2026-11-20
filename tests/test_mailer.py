@@ -248,6 +248,40 @@ def main():
     check("10e textContent default 24 jam", "(24 jam)" in txt_default)
     check("10f textContent memuat app_base_url", BASE_URL in txt_default)
 
+    # --- 11. mode is_resend=True --------------------------------------------
+    reset(staging=False, queue=[FakeResponse(201, {"messageId": "msg-resend"})])
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        res_resend = asyncio.run(
+            mailer.send_invite_email(
+                "user@example.com",
+                ACTIVATE_URL,
+                BASE_URL,
+                is_resend=True,
+            )
+        )
+    check("11a resend produksi 201 -> (True,'sent')", res_resend == (True, mailer.STATUS_SENT), str(res_resend))
+    resend_payload = FakeAsyncClient.calls[-1]["json"] or {}
+    check("11b resend subject == EMAIL_RESEND_SUBJECT",
+          resend_payload.get("subject") == mailer.EMAIL_RESEND_SUBJECT,
+          str(resend_payload.get("subject")))
+    resend_html = resend_payload.get("htmlContent") or ""
+    resend_text = resend_payload.get("textContent") or ""
+    check("11c resend htmlContent menyebut tautan sebelumnya tidak berlaku",
+          "sebelumnya sudah tidak berlaku" in resend_html)
+    check("11d resend textContent menyebut tautan sebelumnya tidak berlaku",
+          "sebelumnya sudah tidak berlaku" in resend_text)
+    check("11e resend htmlContent autoescape & -> &amp;",
+          ACTIVATE_URL.replace("&", "&amp;") in resend_html)
+    check("11f resend textContent plain (tanpa &amp;)",
+          ACTIVATE_URL in resend_text and "&amp;" not in resend_text)
+    resend_low = resend_html.lower()
+    check("11g resend html bebas tag/asset eksternal",
+          "<script" not in resend_low and "<link" not in resend_low and "<img" not in resend_low
+          and "@import" not in resend_low and "url(" not in resend_low)
+    found_resend_inv = [name for ch, name in invisible.items() if ch in resend_html]
+    check("11h resend html tanpa karakter tak terlihat", not found_resend_inv, ",".join(found_resend_inv))
+
     print()
     if FAILURES:
         print(f"GAGAL: {len(FAILURES)} pemeriksaan")
