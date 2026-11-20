@@ -1,75 +1,105 @@
-# Catatan Spike Task 0 — `generate_link` + `verify_otp` (staging, 2026-11-20)
+# Catatan Spike Supabase Auth — v1 (2026-11-20) dan Retest v2 (2026-11-20)
 
-> **PERINGATAN — BELUM TERVERIFIKASI, menunggu retest spike v2.**
-> Kesimpulan **S1.2**, **S2.2**, **P2**, dan **P3** di catatan ini belum dapat
-> dipercaya:
-> - **S1.2** memakai `verify_otp({... "token": ...})`, yaitu parameter `token`,
->   **bukan** `token_hash`. Hash seharusnya lewat `token_hash`.
-> - **P2** dan **P3** berjalan **setelah** client global memegang session user
->   (efek `verify_otp`), sehingga request admin memakai JWT user — hasil
->   "User not allowed" bisa jadi artefak, bukan perilaku sebenarnya.
->
-> Retest dijadwalkan lewat `.kilo/_spike_auth_invite_v2.py` (belum dijalankan).
-> Anggap bagian di bawah ini sebagai hipotesis, bukan temuan final.
+## Ringkasan
 
-Latar: verifikasi terbatas perilaku Supabase Auth (`supabase==2.31.0`) sebelum
-implementasi fitur undang user via email. Skrip spike bersifat sementara dan
-**tidak** disimpan di repo (hanya di `.kilo/`, git-ignored).
+Dua putaran spike pada Supabase Auth (`supabase==2.31.0`) di staging untuk
+memverifikasi perilaku `generate_link(type="invite")` dan `verify_otp` sebelum
+implementasi fitur undang user via email.
 
-Dijalankan di bawah guard staging fail-closed (`app.database` lolos preflight
-`check_shell_clean` + `validate_staging_file`), target host staging eksak.
-Semua akun spike (`dip-spike-20261120-*@example.com`)
-sudah dibersihkan dari Auth — pemeriksaan akhir: **tidak ada orphan**.
+- **v1** (skrip sementara di `.kilo/`): eksplorasi awal. Sebagian kesimpulannya
+  **keliru** karena dua cacat metodologi — parameter `verify_otp` yang salah dan
+  client global yang sudah memegang session user.
+- **v2** (`.kilo/_spike_auth_invite_v2.py`): retest dengan isolasi client ketat
+  dan parameter yang benar. **Inilah sumber kebenaran.**
 
-Tidak ada secret, token, password, atau kredensial yang dicetak.
+Skrip spike bersifat sementara dan **tidak** disimpan di repo (hanya di `.kilo/`,
+git-ignored). Dijalankan di bawah guard staging fail-closed
+(`check_shell_clean` + `validate_staging_file`), target host staging eksak.
+Seluruh akun uji dibuat lalu dihapus; pemeriksaan akhir: **tidak ada akun
+tersisa**. Tidak ada email yang dikirim oleh spike (`generate_link` hanya
+menghasilkan link + token). Tidak ada secret, token, password, atau kredensial
+yang dicetak.
 
-## Hasil
+## Hasil Spike v2 (FINAL)
 
-| # | Skenario | Hasil | Detail |
-|---|----------|-------|--------|
-| C1 | `inspect.signature(create_client)` | **OK** | `ClientOptions` memuat `auto_refresh_token` & `persist_session`; `SyncClientOptions(auto_refresh_token=False, persist_session=False)` valid. Desain "client baru sekali pakai" layak. |
-| S1.1 | `generate_link(type='invite')` | **OK** | Membentuk user Auth pending (`user.id` + `user.created_at` ada); respons membawa `properties.hashed_token`, `properties.verification_type=='invite'`, `properties.action_link`, dan **`properties.email_otp`** (kode 8 digit). |
-| S1.2 | `verify_otp(type='invite', token=hashed_token)` | **GAGAL** | `AuthApiError: Token has expired or is invalid`. Token invite (hashed) **tidak bisa** di-verify via `verify_otp`. |
-| P1 | `verify_otp(type='email', token=email_otp)` | **OK** | Mengonfirmasi user pending: `email_confirmed_at` terisi, session terbentuk. **Jalur aktivasi yang viable.** |
-| S2.1 | Invite ke-2 untuk email pending | **OK** | Menghasilkan `hashed_token` baru (berbeda); `verification_type` tetap `invite`. |
-| S2.2 | Token lama setelah invite ke-2 | **GAGAL** | Token lama tidak lagi bisa di-verify (sejalan dengan desain). |
-| C2 | Email Supabase otomatis | **OK** | `generate_link` hanya menghasilkan link + token di respons; tidak ada email dikirim GoTrue. Pengiriman email (Brevo) adalah tanggung jawap aplikasi. |
-| P2 | `admin.update_user_by_id(uid, {email_confirmed:True})` | **GAGAL** | `User not allowed` (user sudah confirmed oleh P1). Belum diuji pada user pending murni — jalur P1 sudah cukup. |
-| P3 | set password sebelum email confirmed | **GAGAL** | `User not allowed`. Password hanya bisa di-set **setelah** email terkonfirmasi. |
+| Skenario | Langkah | Hasil | Fakta non-rahasia |
+|---|---|---|---|
+| R1 | `verify_otp({"token_hash", "type":"invite"})` | **OK** | `session` + `user` ada; `email_confirmed_at` terisi |
+| R1 | `auth.update_user({"password"})` pada client verifikasi yang sama | **OK** | client V menyimpan session di memori |
+| R1 | `sign_in_with_password` pada client baru | **OK** | `session` terbentuk |
+| R2 | `verify_otp({"token_hash", "type":"invite"})` | **OK** | — |
+| R2 | `admin.update_user_by_id(uid, {"password"})` | **OK** | client admin tetap bersih |
+| R2 | `sign_in_with_password` pada client baru | **OK** | `session` terbentuk |
+| R3 | `admin.update_user_by_id(uid, {"password"})` **sebelum** verify | **OK** | set password memang diizinkan |
+| R3 | `verify_otp({"token_hash"})` sesudahnya | **GAGAL** | `Email link is invalid or has expired` — token undangan mati |
+| R3 | `sign_in_with_password` | **GAGAL** | `Email not confirmed` |
+| R4 | `verify_otp(token_hash)` ke-1 | **OK** | `session` terbentuk |
+| R4 | `verify_otp(token_hash)` ke-2 (token sama) | **GAGAL** | `Email link is invalid or has expired` — sekali pakai |
+| R5 | `verify_otp({"email", "token": email_otp, "type":"email"})` | **OK** | `email_confirmed_at` terisi |
+| R5 | `generate_link` kedua untuk email yang sama | **GAGAL** | `already been registered` — kasus "tanpa email" tidak teruji |
+| R6 | `generate_link` #1 | **OK** | token A |
+| R6 | `generate_link` #2 (user masih pending) | **OK** | user sama, token B **berbeda** |
+| R6 | `verify_otp(token_hash = A)` | **GAGAL** | token lama tidak berlaku |
+| R6 | `verify_otp(token_hash = B)` | **OK** | `email_confirmed_at` terisi |
+| R7 | `generate_link(invite)` untuk user yang sudah confirmed | **GAGAL** | `already been registered` |
 
-## Dampak desain (WAJIB ditindaklanjuti)
+Catatan tambahan:
 
-1. **Token aktivasi adalah `email_otp`, bukan `hashed_token`.**
-   - `verify_otp(type='invite', token=hashed_token)` **tidak bekerja**.
-   - Invite **mengganti** token lama (S2.1/S2.2) dan `generate_link` tidak mengirim
-     email, jadi hashed-token (yang hanya hidup di respons, bukan di email) tidak
-     pernah sampai ke user.
-   - Satu-satunya nilai yang sampai ke user (via email Brevo) dan bisa di-verify
-     adalah **`properties.email_otp`** melalui `verify_otp(type='email', token=email_otp)`.
-   - Konsekuensi: link aktivasi memakai `email_otp` (mis. `/activate?otp=...&type=invite`),
-     dan `_redact_access_value` harus meredact `otp`/`token` (bukan `token_hash`).
-   - "Token tidak hangus oleh salah ketik" tetap berlaku: OTP tidak hangus selama
-     belum submit sukses; namun verifikasi OTP yang sukses mengonfirmasi email dan
-     OTP tidak bisa dipakai ulang (sekali pakai).
+- Setiap `admin.get_user_by_id(uid)` yang dijalankan **setelah** tiap `verify_otp`
+  mengembalikan **OK** — membuktikan client admin (service role) tidak pernah
+  terkontaminasi session user, selama verify/sign-in memakai client baru terpisah.
+- Kegagalan `User not allowed` pada v1 **murni** akibat session user bocor ke
+  client global (efek `verify_otp` pada client yang sama), bukan perilaku Auth.
 
-2. **Client baru sekali-pakai per request WAJIB, bukan opsional.**
-   `verify_otp` memanggil `_save_session` bila respons membawa `session`, sehingga
-   client global `supabase` akan "menginap" sesi user yang sedang aktivasi.
-   Gunakan `create_client(url, key, SyncClientOptions(auto_refresh_token=False,
-   persist_session=False))` lalu buang setelah dipakai.
+## Klaim v1 -> status v2
 
-3. **Urutan aktivasi tetap**: verifikasi (konfirmasi email) → klaim profil →
-   `admin.update_user_by_id(password=...)`. Hanya tokennya yang berganti ke
-   `email_otp`. `auth_email_exists` (dedupe) tidak terpengaruh.
+| Klaim v1 | Status v2 | Penjelasan |
+|---|---|---|
+| **S1.2** — "token invite tidak bisa di-verify" | **SALAH (salah parameter)** | v1 memakai parameter `token`; dengan **`token_hash`** verify **berhasil** (R1). |
+| **S2.2** — token lama tidak berlaku setelah `generate_link` ke-2 | **BENAR** | R6: token A mati, token B hidup. |
+| **P2** — `admin.update_user_by_id` → "User not allowed" | **ARTEFAK** | R2: admin update password **berhasil**. Kegagalan v1 karena client global memegang session user. |
+| **P3** — set password sebelum konfirmasi → "User not allowed" | **ARTEFAK + temuan nyata** | R3: set password sebelum verify **diizinkan**, tetapi **membatalkan token undangan** (verify jadi gagal). |
+| **P1** — jalur `email_otp` bekerja | **BENAR** | R5a: verify `email_otp` OK. Tidak lagi dipakai (lihat keputusan final). |
 
-4. **Bersih-bersih Auth yatim harus lewat client bersih.**
-   Saat spike, `supabase.table("profiles").delete()` gagal `permission denied`
-   (RLS) setelah client global "menginap" sesi dari P1, dan `admin.delete_user()`
-   ikut terpengaruh. Jalur cancel-invite (Task 3b) harus memakai client
-   service-role yang bersih (fresh), bukan client yang sudah memegang sesi.
+## Keputusan final
 
-## Keputusan
+1. **Token aktivasi memakai `properties.hashed_token` + `type="invite"`.**
+   Link aktivasi: `{APP_BASE_URL}/activate?token_hash=<hashed_token>&type=invite`.
+   Tidak ada email di dalam link. `type` hanya menerima `invite`.
+   `verify_otp({"token_hash": ..., "type": "invite"})` **tidak membutuhkan**
+   parameter `email` (R1).
+2. **Urutan POST /activate: verifikasi dulu, baru set password.**
+   `verify_otp` → ambil `user.id` & `user.email` → validasi profil (status
+   `pending` dan `invited_email` cocok) → klaim atomik `pending`→`active` →
+   `admin.update_user_by_id(password)`. **Jangan pernah** menyetel password
+   sebelum verify (R3 mematikan token).
+3. **Client baru sekali-pakai per request wajib.** `verify_otp` memanggil
+   `_save_session` bila respons membawa session, sehingga client global akan
+   "menginap" sesi user. Gunakan
+   `create_client(url, key, SyncClientOptions(auto_refresh_token=False, persist_session=False))`
+   lalu buang. Client admin tidak boleh dipakai untuk `verify_otp`,
+   `sign_in_with_password`, atau `auth.update_user`.
+4. **Resend hanya untuk user pending.** `generate_link` gagal dengan
+   `already been registered` bila email sudah terkonfirmasi (R7), jadi resend
+   harus memeriksa `email_confirmed_at` lebih dulu dan mengarahkan admin ke
+   *Batalkan & undang ulang*. Selama user masih pending, `generate_link` baru
+   berhasil dan **token lama otomatis tidak berlaku** (R6).
+5. **Pemulihan "confirmed tanpa password" = Batalkan & undang ulang.**
+   Setelah verify sukses tetapi set password gagal, user Auth sudah confirmed
+   tanpa password; resend mustahil (R7). Satu-satunya jalur adalah
+   `admin.delete_user(uid)` (profil ikut terhapus karena FK `ON DELETE CASCADE`)
+   lalu undang ulang.
 
-Spike **tidak** menentukan pilihan desain cabang (cabang `create_user` terpisah
-dan `recovery` sudah dihapus dari rencana). Ia hanya mengonfirmasi perilaku
-project: jalur aktivasi yang viable adalah **`email_otp` + `verify_otp(type='email')`**.
+## Catatan tambahan
+
+- **C1** — `SyncClientOptions(auto_refresh_token=False, persist_session=False)`
+  valid; desain "client baru sekali pakai" layak.
+- **C2** — `generate_link` hanya menghasilkan link + token di respons; tidak ada
+  email yang dikirim GoTrue. Pengiriman email (Brevo) adalah tanggung jawab
+  aplikasi.
+- **Bersih-bersih Auth yatim harus lewat client bersih.** Pada v1,
+  `supabase.table("profiles").delete()` gagal `permission denied` (RLS) setelah
+  client global "menginap" sesi. Jalur cancel-invite harus memakai client
+  service-role yang bersih (fresh), bukan client yang sudah memegang sesi.
+- Masa berlaku token undangan mengikuti setting **Email OTP expiry** di Supabase
+  Auth; kesesuaiannya dengan konstanta aplikasi **belum teruji**.
