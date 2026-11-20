@@ -5,8 +5,8 @@ implementasi fitur undang user via email. Skrip spike bersifat sementara dan
 **tidak** disimpan di repo (hanya di `.kilo/`, git-ignored).
 
 Dijalankan di bawah guard staging fail-closed (`app.database` lolos preflight
-`check_shell_clean` + `validate_staging_file`), target host staging eksak
-`odtfppboyjlbatajncgj`. Semua akun spike (`dip-spike-20261120-*@example.com`)
+`check_shell_clean` + `validate_staging_file`), target host staging eksak.
+Semua akun spike (`dip-spike-20261120-*@example.com`)
 sudah dibersihkan dari Auth — pemeriksaan akhir: **tidak ada orphan**.
 
 Tidak ada secret, token, password, atau kredensial yang dicetak.

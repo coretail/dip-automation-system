@@ -21,6 +21,8 @@ class _StagingSettings(BaseSettings):
     r2_bucket_suffix: str = ""
     # --- Undangan user via email (Brevo). Semua default kosong/nonaktif agar
     # staging no-op sampai di-allowlist. Nilai secret diisi local-only, jangan commit.
+    # CAKUPAN: MAIL_ENABLED dan MAIL_ALLOWLIST hanya berlaku di mode staging; di
+    # produksi keduanya diabaikan (lihat catatan yang sama di _ProdSettings).
     brevo_api_key: str = ""
     mail_from_name: str = ""
     mail_from_email: str = ""
@@ -49,7 +51,10 @@ class _ProdSettings(BaseSettings):
     # staging menulis ke bucket R2 produksi saat mode dual.
     r2_bucket_suffix: str = ""
     # --- Undangan user via email (Brevo). Semua default kosong/nonaktif.
-    # MAIL_ENABLED default False -> no-op di staging sampai di-allowlist.
+    # CAKUPAN: MAIL_ENABLED dan MAIL_ALLOWLIST HANYA berlaku di mode staging
+    # (DIP_APP_ENV=staging) dan DIABAIKAN di produksi — di produksi email selalu
+    # dicoba dikirim bila brevo_api_key dan mail_from_email tersedia. Belum ada
+    # kill switch produksi.
     brevo_api_key: str = ""
     mail_from_name: str = ""
     mail_from_email: str = ""

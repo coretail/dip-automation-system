@@ -8,9 +8,14 @@ Kontrak ``send_invite_email`` -> ``tuple[bool, str]``:
     (False, "skipped")  Sengaja tidak dikirim: staging no-op, ``MAIL_ENABLED=false``,
                         atau penerima tidak ada di ``MAIL_ALLOWLIST``.
 
+Cakupan ``MAIL_ENABLED`` / ``MAIL_ALLOWLIST`` (PENTING):
+    Kedua variabel itu **HANYA berlaku di mode staging** (``DIP_APP_ENV=staging``)
+    dan **diabaikan di produksi**. Di produksi email selalu dicoba dikirim bila
+    ``BREVO_API_KEY`` dan ``MAIL_FROM_EMAIL`` tersedia; tidak ada kill switch
+    produksi (lihat catatan di akhir docstring).
+
 Di staging default no-op: link aktivasi dicetak ke terminal tanpa kredensial.
-Pengiriman nyata hanya bila ``MAIL_ENABLED=true`` dan penerima ada di
-``MAIL_ALLOWLIST``. API key dan body respons penuh tidak pernah dicetak.
+API key dan body respons penuh tidak pernah dicetak.
 """
 from __future__ import annotations
 
@@ -28,6 +33,11 @@ REQUEST_TIMEOUT_SECONDS = 10.0
 EMAIL_SUBJECT = "Undangan Bergabung — DIP Automation System"
 DEFAULT_FROM_NAME = "DIP Automation System"
 INVITE_TEMPLATE = "email/invite_email.html"
+
+# Masa berlaku tautan undangan. HARUS sama dengan setting "Email OTP expiry" di
+# Supabase Auth (Authentication -> Settings). Mengubah salah satu tanpa yang lain
+# membuat teks email menjanjikan masa berlaku yang salah.
+INVITE_VALID_HOURS = 24
 
 STATUS_SENT = "sent"
 STATUS_FAILED = "failed"
@@ -60,10 +70,48 @@ def parse_allowlist(raw: str) -> set[str]:
     return {part.strip().lower() for part in (raw or "").split(",") if part.strip()}
 
 
-def render_invite_email(activate_url: str, app_base_url: str) -> str:
+def render_invite_email(
+    activate_url: str,
+    app_base_url: str,
+    valid_hours: int = INVITE_VALID_HOURS,
+) -> str:
     """Render body HTML email undangan lewat Jinja2 (autoescape aktif)."""
     template = templates.get_template(INVITE_TEMPLATE)
-    return template.render(activate_url=activate_url, app_base_url=app_base_url)
+    return template.render(
+        activate_url=activate_url,
+        app_base_url=app_base_url,
+        valid_hours=valid_hours,
+    )
+
+
+def render_invite_text(
+    activate_url: str,
+    app_base_url: str,
+    valid_hours: int = INVITE_VALID_HOURS,
+) -> str:
+    """Body plain-text alternatif untuk ``textContent`` Brevo.
+
+    Disusun sebagai string builder (bukan template Jinja) karena autoescape Jinja
+    akan mengubah ``&`` pada query string URL menjadi ``&amp;`` — benar untuk HTML,
+    tetapi merusak tautan pada email plain-text.
+    """
+    lines = [
+        EMAIL_SUBJECT,
+        "",
+        "Anda diundang untuk bergabung ke DIP Automation System.",
+        "Silakan aktifkan akun Anda melalui tautan berikut:",
+        "",
+        activate_url,
+        "",
+        f"Tautan ini hanya berlaku sementara ({valid_hours} jam) dan hanya dapat "
+        "digunakan satu kali.",
+        "Jika Anda tidak merasa diundang, abaikan email ini.",
+        "",
+        "Bila mengalami kendala, hubungi administrator Anda.",
+    ]
+    if app_base_url:
+        lines += ["", app_base_url]
+    return "\n".join(lines) + "\n"
 
 
 def _print_staging_noop(to_email: str, activate_url: str, reason: str) -> None:
@@ -79,6 +127,8 @@ async def send_invite_email(to_email: str, activate_url: str, app_base_url: str)
         print("[MAILER] penerima tidak valid; email tidak dikirim.")
         return (False, STATUS_FAILED)
 
+    # MAIL_ENABLED / MAIL_ALLOWLIST hanya dievaluasi di staging; di produksi
+    # diabaikan (tidak ada kill switch produksi).
     if is_staging_mode():
         if not settings.mail_enabled:
             _print_staging_noop(to_email, activate_url, "MAIL_ENABLED=false")
@@ -96,6 +146,7 @@ async def send_invite_email(to_email: str, activate_url: str, app_base_url: str)
 
     try:
         html_content = render_invite_email(activate_url, app_base_url)
+        text_content = render_invite_text(activate_url, app_base_url)
     except Exception as exc:  # noqa: BLE001
         print(f"[MAILER] gagal render template email ({type(exc).__name__}).")
         return (False, STATUS_FAILED)
@@ -105,6 +156,7 @@ async def send_invite_email(to_email: str, activate_url: str, app_base_url: str)
         "to": [{"email": to_email}],
         "subject": EMAIL_SUBJECT,
         "htmlContent": html_content,
+        "textContent": text_content,
     }
     headers = {
         "api-key": api_key,

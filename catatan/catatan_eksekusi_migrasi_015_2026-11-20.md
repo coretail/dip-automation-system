@@ -15,10 +15,10 @@ modifikasi DDL.
 
 | # | Fase | Project | Hasil |
 |---|------|---------|-------|
-| 1 | Pre-check (read-only) | staging `odtfppboyjlbatajncgj` | bersih |
+| 1 | Pre-check (read-only) | staging | bersih |
 | 2 | Schema (section 1) | staging | HTTP 201, `setval=1` |
 | 3 | Post-check + probe | staging | **HIJAU** |
-| 4 | Pre-check (read-only) | produksi `dytuprmoorvrugutozwv` | bersih |
+| 4 | Pre-check (read-only) | produksi | bersih |
 | 5 | Schema (section 1) | produksi | HTTP 201, `setval=1` |
 | 6 | Post-check (TANPA probe) | produksi | **HIJAU** |
 
