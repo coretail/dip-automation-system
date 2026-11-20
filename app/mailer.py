@@ -32,6 +32,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 REQUEST_TIMEOUT_SECONDS = 10.0
 EMAIL_SUBJECT = "Undangan Bergabung — DIP Automation System"
+EMAIL_RESEND_SUBJECT = "Kirim Ulang Undangan — DIP Automation System"
 DEFAULT_FROM_NAME = "DIP Automation System"
 INVITE_TEMPLATE = "email/invite_email.html"
 
@@ -75,6 +76,8 @@ def render_invite_email(
     activate_url: str,
     app_base_url: str,
     valid_hours: int = INVITE_VALID_HOURS,
+    *,
+    is_resend: bool = False,
 ) -> str:
     """Render body HTML email undangan lewat Jinja2 (autoescape aktif)."""
     template = templates.get_template(INVITE_TEMPLATE)
@@ -82,6 +85,7 @@ def render_invite_email(
         activate_url=activate_url,
         app_base_url=app_base_url,
         valid_hours=valid_hours,
+        is_resend=is_resend,
     )
 
 
@@ -89,6 +93,8 @@ def render_invite_text(
     activate_url: str,
     app_base_url: str,
     valid_hours: int = INVITE_VALID_HOURS,
+    *,
+    is_resend: bool = False,
 ) -> str:
     """Body plain-text alternatif untuk ``textContent`` Brevo.
 
@@ -96,11 +102,21 @@ def render_invite_text(
     akan mengubah ``&`` pada query string URL menjadi ``&amp;`` — benar untuk HTML,
     tetapi merusak tautan pada email plain-text.
     """
-    lines = [
-        EMAIL_SUBJECT,
-        "",
-        "Anda diundang untuk bergabung ke DIP Automation System.",
-        "Silakan aktifkan akun Anda melalui tautan berikut:",
+    if is_resend:
+        lines = [
+            EMAIL_RESEND_SUBJECT,
+            "",
+            "Berikut adalah tautan aktivasi baru untuk akun Anda di DIP Automation System.",
+            "Tautan undangan sebelumnya sudah tidak berlaku. Silakan aktifkan akun Anda melalui tautan berikut:",
+        ]
+    else:
+        lines = [
+            EMAIL_SUBJECT,
+            "",
+            "Anda diundang untuk bergabung ke DIP Automation System.",
+            "Silakan aktifkan akun Anda melalui tautan berikut:",
+        ]
+    lines += [
         "",
         activate_url,
         "",
@@ -121,7 +137,13 @@ def _print_staging_noop(to_email: str, activate_url: str, reason: str) -> None:
     print(f"[MAILER] link aktivasi: {activate_url}")
 
 
-async def send_invite_email(to_email: str, activate_url: str, app_base_url: str) -> tuple[bool, str]:
+async def send_invite_email(
+    to_email: str,
+    activate_url: str,
+    app_base_url: str,
+    *,
+    is_resend: bool = False,
+) -> tuple[bool, str]:
     """Kirim email undangan aktivasi. Lihat docstring modul untuk status kembalian."""
     to_email = (to_email or "").strip()
     if not to_email or "@" not in to_email:
@@ -146,16 +168,17 @@ async def send_invite_email(to_email: str, activate_url: str, app_base_url: str)
         return (False, STATUS_FAILED)
 
     try:
-        html_content = render_invite_email(activate_url, app_base_url)
-        text_content = render_invite_text(activate_url, app_base_url)
+        html_content = render_invite_email(activate_url, app_base_url, is_resend=is_resend)
+        text_content = render_invite_text(activate_url, app_base_url, is_resend=is_resend)
     except Exception as exc:  # noqa: BLE001
         print(f"[MAILER] gagal render template email ({type(exc).__name__}).")
         return (False, STATUS_FAILED)
 
+    subject = EMAIL_RESEND_SUBJECT if is_resend else EMAIL_SUBJECT
     payload = {
         "sender": {"name": from_name, "email": from_email},
         "to": [{"email": to_email}],
-        "subject": EMAIL_SUBJECT,
+        "subject": subject,
         "htmlContent": html_content,
         "textContent": text_content,
     }

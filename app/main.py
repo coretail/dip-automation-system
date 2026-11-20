@@ -1182,6 +1182,8 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
     action_badges = {
         "create": "🟢 [CREATED]",
         "invite": "✉️ [INVITED]",
+        "resend_invite": "📨 [INVITE RESENT]",
+        "cancel_invite": "🚫 [INVITE CANCELLED]",
         "update": "🟡 [UPDATED]",
         "delete": "🔴 [DELETED]",
         "change_password": "🔐 [PASSWORD CHANGED]",
