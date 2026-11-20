@@ -53,13 +53,16 @@ def is_proven_new_auth_user(
     """
     if not created_at:
         return False
-    try:
-        text = str(created_at).strip()
-        if text.endswith("Z"):
-            text = text[:-1] + "+00:00"
-        created = datetime.fromisoformat(text)
-    except Exception:  # noqa: BLE001
-        return False
+    if isinstance(created_at, datetime):
+        created = created_at
+    else:
+        try:
+            text = str(created_at).strip()
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            created = datetime.fromisoformat(text)
+        except Exception:  # noqa: BLE001
+            return False
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
     reference = now or datetime.now(timezone.utc)
@@ -309,6 +312,29 @@ def register_admin_users_routes(
             raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
 
         clean_email = (email or "").strip().lower()
+        masked_email = (
+            mask_email(clean_email)
+            if "@" in clean_email
+            else ("(tidak valid)" if clean_email else "(kosong)")
+        )
+
+        def _compensate_auth_user(
+            target_uid: str,
+            target_created_at,
+            target_username: str,
+            reason_detail: str,
+        ) -> None:
+            if should_delete_auth_user(supabase, target_uid, target_created_at):
+                try:
+                    supabase.auth.admin.delete_user(target_uid)
+                    print(f"[INVITE] kompensasi: user Auth {target_uid} dihapus (terbukti baru).")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[INVITE] gagal hapus Auth kompensasi uid={target_uid}: {exc}")
+            else:
+                print(
+                    f"[AKUN AUTH YATIM] uid={target_uid} email={masked_email} "
+                    f"username={target_username} - {reason_detail}"
+                )
 
         # Guard fail-closed APP_BASE_URL: tanpa base URL tautan aktivasi tidak bisa
         # dibentuk, jadi batalkan SEBELUM membuat user Auth atau mengirim email.
@@ -316,7 +342,7 @@ def register_admin_users_routes(
         if not app_base_url:
             print("[INVITE] APP_BASE_URL belum diset; invite dibatalkan sebelum membuat user.")
             log_activity(
-                current_user, "invite", "user", None, clean_email or "(kosong)",
+                current_user, "invite", "user", None, masked_email,
                 changes=[{"field": "Email",
                           "note": "APP_BASE_URL belum diset; invite dibatalkan"}],
                 request=request, outcome="failed",
@@ -324,8 +350,9 @@ def register_admin_users_routes(
             return RedirectResponse(url="/admin/users?error=invite_not_configured", status_code=303)
 
         if not is_valid_email(clean_email):
+            invalid_label = "(kosong)" if not clean_email else "(tidak valid)"
             log_activity(
-                current_user, "invite", "user", None, clean_email or "(kosong)",
+                current_user, "invite", "user", None, invalid_label,
                 changes=[{"field": "Email", "note": "format email tidak valid"}],
                 request=request, outcome="rejected",
             )
@@ -339,7 +366,7 @@ def register_admin_users_routes(
         except Exception as exc:  # noqa: BLE001
             print(f"[INVITE] RPC auth_email_exists gagal: {exc}")
             log_activity(
-                current_user, "invite", "user", None, clean_email,
+                current_user, "invite", "user", None, masked_email,
                 changes=[{"field": "Email", "note": "dedupe Auth gagal (fail-closed)"}],
                 request=request, outcome="failed",
             )
@@ -347,13 +374,13 @@ def register_admin_users_routes(
 
         if auth_exists:
             log_activity(
-                current_user, "invite", "user", None, clean_email,
+                current_user, "invite", "user", None, masked_email,
                 changes=[{"field": "Email", "note": "sudah terdaftar di Auth"}],
                 request=request, outcome="rejected",
             )
             return RedirectResponse(url="/admin/users?error=email_exists", status_code=303)
 
-        # Dedupe 2: profiles.invited_email (case-insensitive, hanya yang pending).
+        # Dedupe 2: profiles.invited_email (case-insensitive, hanya yang pending). Fail-closed.
         try:
             pending_res = (
                 supabase.table("profiles")
@@ -367,11 +394,16 @@ def register_admin_users_routes(
             }
         except Exception as exc:  # noqa: BLE001
             print(f"[INVITE] cek profiles.invited_email gagal: {exc}")
-            pending_emails = set()
+            log_activity(
+                current_user, "invite", "user", None, masked_email,
+                changes=[{"field": "Email", "note": "dedupe pending gagal (fail-closed)"}],
+                request=request, outcome="failed",
+            )
+            return RedirectResponse(url="/admin/users?error=invite_failed", status_code=303)
 
         if clean_email in pending_emails:
             log_activity(
-                current_user, "invite", "user", None, clean_email,
+                current_user, "invite", "user", None, masked_email,
                 changes=[{"field": "Email", "note": "sudah ada undangan pending"}],
                 request=request, outcome="rejected",
             )
@@ -386,7 +418,7 @@ def register_admin_users_routes(
 
         if not username:
             log_activity(
-                current_user, "invite", "user", None, clean_email,
+                current_user, "invite", "user", None, masked_email,
                 changes=[{"field": "Email", "note": "alokasi username gagal"}],
                 request=request, outcome="failed",
             )
@@ -404,16 +436,16 @@ def register_admin_users_routes(
             hashed_token = getattr(link_res.properties, "hashed_token", None)
         except Exception as exc:  # noqa: BLE001
             message = str(exc).lower()
-            if "already" in message and "registered" in message:
+            if ("already" in message and "registered" in message) or "user already exists" in message:
                 log_activity(
-                    current_user, "invite", "user", None, clean_email,
+                    current_user, "invite", "user", None, masked_email,
                     changes=[{"field": "Email", "note": "sudah terdaftar di Auth"}],
                     request=request, outcome="rejected",
                 )
                 return RedirectResponse(url="/admin/users?error=email_exists", status_code=303)
             print(f"[INVITE] generate_link gagal: {exc}")
             log_activity(
-                current_user, "invite", "user", None, clean_email,
+                current_user, "invite", "user", None, masked_email,
                 changes=[{"field": "Email", "note": "generate_link gagal"}],
                 request=request, outcome="failed",
             )
@@ -421,9 +453,19 @@ def register_admin_users_routes(
 
         if not uid or not hashed_token:
             print("[INVITE] generate_link tidak mengembalikan user.id / hashed_token.")
+            if uid:
+                _compensate_auth_user(
+                    uid,
+                    created_at,
+                    username,
+                    "akun Auth terbentuk tetapi hashed_token kosong; perlu tindakan manual.",
+                )
             log_activity(
-                current_user, "invite", "user", uid, username,
-                changes=[{"field": "Email", "note": "respons generate_link tidak lengkap"}],
+                current_user, "invite", "user", uid, username or masked_email,
+                changes=[
+                    {"field": "Email", "new": masked_email},
+                    {"field": "Error", "note": "respons generate_link tidak lengkap"},
+                ],
                 request=request, outcome="failed",
             )
             return RedirectResponse(url="/admin/users?error=invite_failed", status_code=303)
@@ -469,7 +511,7 @@ def register_admin_users_routes(
                 # Jangan retry; perlakukan sebagai email_exists. Auth/profile yang
                 # sudah ada TIDAK boleh dihapus.
                 log_activity(
-                    current_user, "invite", "user", uid, username,
+                    current_user, "invite", "user", uid, username or masked_email,
                     changes=[{"field": "Email", "note": "bentrok email/UID (email_exists)"}],
                     request=request, outcome="rejected",
                 )
@@ -477,23 +519,17 @@ def register_admin_users_routes(
 
             # Non-retryable: kompensasi hanya bila user Auth terbukti baru dibuat
             # request ini DAN belum punya baris profiles. Bila ragu -> BE-05.
-            if should_delete_auth_user(supabase, uid, created_at):
-                try:
-                    supabase.auth.admin.delete_user(uid)
-                    print(f"[INVITE] kompensasi: user Auth {uid} dihapus (terbukti baru).")
-                except Exception as exc:  # noqa: BLE001
-                    print(f"[INVITE] gagal hapus Auth kompensasi uid={uid}: {exc}")
-            else:
-                print(
-                    f"[AKUN AUTH YATIM] uid={uid} email={mask_email(clean_email)} "
-                    f"username={username} - akun Auth terbentuk tetapi baris profiles "
-                    f"gagal dibuat; perlu tindakan manual. Detail: {insert_error}"
-                )
+            _compensate_auth_user(
+                uid,
+                created_at,
+                username,
+                f"akun Auth terbentuk tetapi baris profiles gagal dibuat; perlu tindakan manual. Detail: {insert_error}",
+            )
             log_activity(
-                current_user, "invite", "user", uid, username or clean_email,
+                current_user, "invite", "user", uid, username or masked_email,
                 changes=[
                     {"field": "Username", "new": username},
-                    {"field": "Email", "new": mask_email(clean_email)},
+                    {"field": "Email", "new": masked_email},
                     {"field": "Error", "note": "insert profil gagal; invite dibatalkan"},
                 ],
                 request=request, outcome="failed",

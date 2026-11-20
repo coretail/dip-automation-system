@@ -24,6 +24,8 @@ from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+from fastapi import HTTPException
+
 os.environ.setdefault("SUPABASE_URL", "https://ci.invalid.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "ci-dummy-service-role-key")
 os.environ.setdefault("SUPABASE_KEY", "ci-dummy-anon-key")
@@ -36,6 +38,7 @@ from app.admin_users_routes import (  # noqa: E402
     is_valid_email,
     register_admin_users_routes,
 )
+from app.mailer import mask_email  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -223,7 +226,7 @@ def build(**opts):
     register_admin_users_routes(
         app, get_current_user, supabase,
         SimpleNamespace(TemplateResponse=lambda **kwargs: kwargs),
-        log_activity, compute_user_presence, lambda email: email,
+        log_activity, compute_user_presence, mask_email,
         lambda uid: f"User {uid}",
         lambda uid: ("staff", f"User {uid}"),
         lambda: 0,
@@ -244,9 +247,10 @@ def set_mailer(result):
     aur.mailer.send_invite_email = fake_send
 
 
-def invoke(app, email="new.user@example.com"):
+def invoke(app, email="new.user@example.com", user=None):
     endpoint = app.routes[("POST", "/admin/users/invite")]
-    return asyncio.run(endpoint(SimpleNamespace(), email=email, current_user=dict(ADMIN)))
+    actor = dict(ADMIN) if user is None else dict(user)
+    return asyncio.run(endpoint(SimpleNamespace(), email=email, current_user=actor))
 
 
 def location(result):
@@ -255,6 +259,11 @@ def location(result):
 
 def last_log(logs):
     return logs[-1] if logs else ((), {})
+
+
+def raw_email_in_logs(logs, raw_email: str) -> bool:
+    needle = raw_email.strip().lower()
+    return any(needle in repr((args, kwargs)).lower() for args, kwargs in logs)
 
 
 # ---------------------------------------------------------------------------
@@ -272,13 +281,41 @@ def test_pure_helpers():
           is_proven_new_auth_user(now.isoformat(), now=now))
     check("helper: created_at lama -> False",
           not is_proven_new_auth_user((now - timedelta(minutes=5)).isoformat(), now=now))
+    check("helper: created_at datetime baru -> True",
+          is_proven_new_auth_user(now, now=now))
+    check("helper: created_at datetime lama -> False",
+          not is_proven_new_auth_user(now - timedelta(minutes=5), now=now))
     check("helper: created_at kosong -> False", not is_proven_new_auth_user(None, now=now))
+
+
+# ---------------------------------------------------------------------------
+# 0. Admin-only guard (403)
+# ---------------------------------------------------------------------------
+def test_non_admin_forbidden():
+    MAIL_CALLS.clear()
+    set_app_base_url(APP_BASE_URL)
+    set_mailer((True, "sent"))
+    app, supabase, _logs = build()
+    staff = {"id": "staff-1", "email": "staff@example.test", "full_name": "staff",
+             "role": "staff", "perusahaan": None}
+    raised = None
+    try:
+        invoke(app, user=staff)
+    except HTTPException as exc:
+        raised = exc
+    check("non-admin -> HTTPException 403",
+          raised is not None and raised.status_code == 403,
+          repr(raised))
+    check("non-admin -> generate_link TIDAK dipanggil",
+          supabase.auth.admin.generate_link_calls == [])
+    check("non-admin -> mailer TIDAK dipanggil", MAIL_CALLS == [])
 
 
 # ---------------------------------------------------------------------------
 # 1. Guard APP_BASE_URL
 # ---------------------------------------------------------------------------
 def test_app_base_url_empty_blocks():
+    MAIL_CALLS.clear()
     set_app_base_url("   ")
     set_mailer((True, "sent"))
     app, supabase, logs = build()
@@ -291,6 +328,8 @@ def test_app_base_url_empty_blocks():
     check("APP_BASE_URL kosong -> tidak ada insert profiles", supabase.inserts == [])
     check("APP_BASE_URL kosong -> dicatat outcome=failed",
           last_log(logs)[0][1] == "invite" and last_log(logs)[1]["outcome"] == "failed")
+    check("APP_BASE_URL kosong -> email mentah tidak masuk log",
+          not raw_email_in_logs(logs, "new.user@example.com"))
 
 
 # ---------------------------------------------------------------------------
@@ -306,12 +345,15 @@ def test_invalid_email_rejected():
     check("email invalid -> tidak ada user dibuat",
           supabase.auth.admin.generate_link_calls == [] and supabase.inserts == [])
     check("email invalid -> outcome=rejected", last_log(logs)[1]["outcome"] == "rejected")
+    check("email invalid -> input mentah tidak masuk log",
+          not raw_email_in_logs(logs, "bukan-email"))
 
 
 # ---------------------------------------------------------------------------
 # 3. Happy path
 # ---------------------------------------------------------------------------
 def test_invite_happy_path():
+    MAIL_CALLS.clear()
     set_app_base_url(APP_BASE_URL)
     set_mailer((True, "sent"))
     app, supabase, logs = build()
@@ -329,6 +371,8 @@ def test_invite_happy_path():
     check("happy -> tepat 1 insert profiles", len(profiles) == 1, str(len(profiles)))
     payload = profiles[0][1] if profiles else {}
     check("happy -> id = user.id dari generate_link", payload.get("id") == "new-uid-123")
+    check("happy -> full_name = user-1", payload.get("full_name") == "user-1")
+    check("happy -> display_name = full_name", payload.get("display_name") == payload.get("full_name"))
     check("happy -> role staff", payload.get("role") == "staff")
     check("happy -> status pending", payload.get("status") == "pending")
     check("happy -> invited_email lowercase",
@@ -350,6 +394,10 @@ def test_invite_happy_path():
     check("happy -> action invite", args[1] == "invite")
     check("happy -> outcome success", kwargs["outcome"] == "success")
     check("happy -> entity_id = uid", args[3] == "new-uid-123")
+    check("happy -> email mentah tidak masuk log",
+          not raw_email_in_logs(logs, "budi.santoso@example.com"))
+    check("happy -> email ter-mask tercatat di changes",
+          {"field": "Email", "new": mask_email("budi.santoso@example.com")} in kwargs["changes"])
 
 
 # ---------------------------------------------------------------------------
@@ -515,9 +563,48 @@ def test_compensation_keeps_when_profile_row_exists():
           "[AKUN AUTH YATIM]" in buf.getvalue())
 
 
+def test_missing_hashed_token_runs_compensation():
+    set_app_base_url(APP_BASE_URL)
+    set_mailer((True, "sent"))
+
+    # Skenario A: uid ada, hashed_token kosong, created_at baru -> hapus Auth
+    app, supabase, logs = build()
+    supabase.auth.admin.hashed_token = ""
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        res = invoke(app)
+    check("hashed_token kosong (baru) -> error=invite_failed",
+          "error=invite_failed" in location(res), location(res))
+    check("hashed_token kosong (baru) -> Auth DIHAPUS",
+          supabase.auth.admin.deleted_users == ["new-uid-123"],
+          str(supabase.auth.admin.deleted_users))
+    check("hashed_token kosong (baru) -> email mentah tidak masuk log",
+          not raw_email_in_logs(logs, "new.user@example.com"))
+
+    # Skenario B: uid ada, hashed_token kosong, created_at lama -> log [AKUN AUTH YATIM]
+    app, supabase, logs = build()
+    supabase.auth.admin.hashed_token = ""
+    supabase.auth.admin.created_at = (
+        datetime.now(timezone.utc) - timedelta(minutes=5)
+    ).isoformat()
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        res = invoke(app)
+    check("hashed_token kosong (lama) -> error=invite_failed",
+          "error=invite_failed" in location(res), location(res))
+    check("hashed_token kosong (lama) -> Auth TIDAK dihapus",
+          supabase.auth.admin.deleted_users == [],
+          str(supabase.auth.admin.deleted_users))
+    check("hashed_token kosong (lama) -> log [AKUN AUTH YATIM]",
+          "[AKUN AUTH YATIM]" in buf.getvalue(), buf.getvalue()[:300])
+    check("hashed_token kosong (lama) -> email mentah tidak masuk log",
+          not raw_email_in_logs(logs, "new.user@example.com"))
+
+
 # ---------------------------------------------------------------------------
 def main():
     test_pure_helpers()
+    test_non_admin_forbidden()
     test_app_base_url_empty_blocks()
     test_invalid_email_rejected()
     test_invite_happy_path()
@@ -530,6 +617,7 @@ def main():
     test_compensation_deletes_proven_new_user()
     test_compensation_keeps_orphan_when_not_proven_new()
     test_compensation_keeps_when_profile_row_exists()
+    test_missing_hashed_token_runs_compensation()
 
     print()
     if FAILURES:

@@ -25,6 +25,7 @@ os.environ.setdefault("STORAGE_BACKEND", "supabase")
 
 import app.admin_users_routes as aur  # noqa: E402
 from app.admin_users_routes import register_admin_users_routes  # noqa: E402
+from app.mailer import mask_email  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -98,6 +99,8 @@ class FakeTable:
                 raise self.fake.insert_errors.pop(0)
             return SimpleNamespace(data=[self._insert], error=None)
         if self._eq and self._eq[0] == "status":
+            if self.fake.pending_query_error is not None:
+                raise self.fake.pending_query_error
             return SimpleNamespace(data=list(self.fake.pending_rows), error=None)
         if self._eq and self._eq[0] == "id":
             return SimpleNamespace(
@@ -150,6 +153,7 @@ class FakeSupabase:
         self.rpc_calls = []
         self.rpc_results = dict(opts.get("rpc_results", {}))
         self.pending_rows = list(opts.get("pending_rows", []))
+        self.pending_query_error = opts.get("pending_query_error")
         self.profile_rows = list(opts.get("profile_rows", []))
         self.insert_errors = list(opts.get("insert_errors", []))
 
@@ -186,7 +190,7 @@ def build(**opts):
         SimpleNamespace(TemplateResponse=lambda **kwargs: kwargs),
         log_activity,
         lambda profile: {"presence_status": "offline"},
-        lambda email: email,
+        mask_email,
         lambda uid: f"User {uid}",
         lambda uid: ("staff", f"User {uid}"),
         lambda: 0,
@@ -209,6 +213,11 @@ def last_log(logs):
     return logs[-1] if logs else ((), {})
 
 
+def raw_email_in_logs(logs, raw_email: str) -> bool:
+    needle = raw_email.strip().lower()
+    return any(needle in repr((args, kwargs)).lower() for args, kwargs in logs)
+
+
 def main():
     aur.settings = SimpleNamespace(app_base_url="https://app.example.com")
 
@@ -225,6 +234,9 @@ def main():
     check("auth_email_exists True -> generate_link TIDAK dipanggil",
           supabase.auth.admin.generate_link_calls == [])
     check("auth_email_exists True -> outcome rejected", last_log(logs)[1]["outcome"] == "rejected")
+    check("auth_email_exists True -> entity_label masked & email mentah tidak bocor",
+          last_log(logs)[0][4] == mask_email("new.user@example.com")
+          and not raw_email_in_logs(logs, "new.user@example.com"))
 
     # 2. profiles.invited_email pending (case-insensitive)
     app, supabase, logs = build(
@@ -236,6 +248,26 @@ def main():
           "error=email_exists" in location(res), location(res))
     check("invited_email pending -> generate_link TIDAK dipanggil",
           supabase.auth.admin.generate_link_calls == [])
+    check("invited_email pending -> entity_label masked & email mentah tidak bocor",
+          last_log(logs)[0][4] == mask_email("new.user@example.com")
+          and not raw_email_in_logs(logs, "new.user@example.com"))
+
+    # 2b. query profiles.invited_email gagal -> fail-closed
+    app, supabase, logs = build(
+        rpc_results={"auth_email_exists": False},
+        pending_query_error=RuntimeError("db down"),
+    )
+    res = invoke(app, email="new.user@example.com")
+    check("dedupe pending gagal -> fail-closed invite_failed",
+          "error=invite_failed" in location(res), location(res))
+    check("dedupe pending gagal -> generate_link TIDAK dipanggil",
+          supabase.auth.admin.generate_link_calls == [])
+    check("dedupe pending gagal -> next_invite_username TIDAK dipanggil",
+          not any(n == "next_invite_username" for n, _p in supabase.rpc_calls))
+    check("dedupe pending gagal -> outcome failed", last_log(logs)[1]["outcome"] == "failed")
+    check("dedupe pending gagal -> entity_label masked & email mentah tidak bocor",
+          last_log(logs)[0][4] == mask_email("new.user@example.com")
+          and not raw_email_in_logs(logs, "new.user@example.com"))
 
     # 3. race constraint idx_profiles_invited_email_pending_unique
     err = Exception('duplicate key value violates unique constraint '
@@ -256,6 +288,9 @@ def main():
           "error=email_exists" in location(res), location(res))
     check("generate_link already registered -> outcome rejected",
           last_log(logs)[1]["outcome"] == "rejected")
+    check("generate_link already registered -> entity_label masked & email mentah tidak bocor",
+          last_log(logs)[0][4] == mask_email("new.user@example.com")
+          and not raw_email_in_logs(logs, "new.user@example.com"))
 
     # 5. RPC auth_email_exists gagal -> fail-closed
     app, supabase, logs = build(rpc_results={"auth_email_exists": RuntimeError("boom")})
@@ -265,6 +300,9 @@ def main():
     check("auth_email_exists gagal -> generate_link TIDAK dipanggil",
           supabase.auth.admin.generate_link_calls == [])
     check("auth_email_exists gagal -> outcome failed", last_log(logs)[1]["outcome"] == "failed")
+    check("auth_email_exists gagal -> entity_label masked & email mentah tidak bocor",
+          last_log(logs)[0][4] == mask_email("new.user@example.com")
+          and not raw_email_in_logs(logs, "new.user@example.com"))
 
     # 6. next_invite_username kosong
     app, supabase, logs = build(rpc_results={"next_invite_username": ""})
@@ -273,12 +311,18 @@ def main():
           "error=invite_failed" in location(res), location(res))
     check("next_invite_username kosong -> generate_link TIDAK dipanggil",
           supabase.auth.admin.generate_link_calls == [])
+    check("next_invite_username kosong -> entity_label masked & email mentah tidak bocor",
+          last_log(logs)[0][4] == mask_email("new.user@example.com")
+          and not raw_email_in_logs(logs, "new.user@example.com"))
 
     # 6b. next_invite_username gagal
     app, supabase, logs = build(rpc_results={"next_invite_username": RuntimeError("boom")})
     res = invoke(app)
     check("next_invite_username gagal -> invite_failed",
           "error=invite_failed" in location(res), location(res))
+    check("next_invite_username gagal -> entity_label masked & email mentah tidak bocor",
+          last_log(logs)[0][4] == mask_email("new.user@example.com")
+          and not raw_email_in_logs(logs, "new.user@example.com"))
 
     # 7. Email tidak valid
     app, supabase, logs = build()
@@ -286,6 +330,9 @@ def main():
     check("email invalid -> invalid_email", "error=invalid_email" in location(res), location(res))
     check("email invalid -> tidak ada generate_link",
           supabase.auth.admin.generate_link_calls == [])
+    check("email invalid -> entity_label (tidak valid) & input mentah tidak bocor",
+          last_log(logs)[0][4] == "(tidak valid)"
+          and not raw_email_in_logs(logs, "bukan-email"))
 
     print()
     if FAILURES:
