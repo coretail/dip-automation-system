@@ -19,6 +19,14 @@ class _StagingSettings(BaseSettings):
     # Suffix nama bucket R2 per-environment ("" prod, "-stg" staging); mencegah
     # staging menulis ke bucket R2 produksi saat mode dual.
     r2_bucket_suffix: str = ""
+    # --- Undangan user via email (Brevo). Semua default kosong/nonaktif agar
+    # staging no-op sampai di-allowlist. Nilai secret diisi local-only, jangan commit.
+    brevo_api_key: str = ""
+    mail_from_name: str = ""
+    mail_from_email: str = ""
+    mail_enabled: bool = False
+    mail_allowlist: str = ""
+    app_base_url: str = ""
 
     model_config = SettingsConfigDict(env_file=".env.staging", env_file_encoding="utf-8", extra="ignore")
 
@@ -40,6 +48,14 @@ class _ProdSettings(BaseSettings):
     # Suffix nama bucket R2 per-environment ("" prod, "-stg" staging); mencegah
     # staging menulis ke bucket R2 produksi saat mode dual.
     r2_bucket_suffix: str = ""
+    # --- Undangan user via email (Brevo). Semua default kosong/nonaktif.
+    # MAIL_ENABLED default False -> no-op di staging sampai di-allowlist.
+    brevo_api_key: str = ""
+    mail_from_name: str = ""
+    mail_from_email: str = ""
+    mail_enabled: bool = False
+    mail_allowlist: str = ""
+    app_base_url: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
