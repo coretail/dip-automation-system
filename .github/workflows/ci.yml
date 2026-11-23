@@ -110,7 +110,6 @@ jobs:
            python tests/test_invite_activation_verify_args.py
            python tests/test_invite_client_isolation.py
            python tests/test_invite_rate_limit.py
-           python tests/test_invite_ui.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt

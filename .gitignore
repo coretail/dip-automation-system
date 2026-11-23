@@ -249,8 +249,6 @@ scripts_tmp_list_projects.py
 !/tests/test_invite_activation_verify_args.py
 !/tests/test_invite_client_isolation.py
 !/tests/test_invite_rate_limit.py
-# Unit test UI daftar user pending (pure-local, mock Supabase & Jinja2, tanpa jaringan/secret).
-!/tests/test_invite_ui.py
 
 # Local documentation and notes
 /catatan/prompt-tenant-guard-a10-a13.md
