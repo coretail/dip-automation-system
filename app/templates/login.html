@@ -38,11 +38,25 @@
             <p class="text-sm text-gray-400 mt-1">Sistem Manajemen Lab & Dokumen</p>
         </div>
 
+        {% if status == 'account_activated' %}
+        <div class="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-md mb-5 text-sm flex items-center" role="status">
+            <i class="fa-solid fa-circle-check mr-2 text-green-600"></i>
+            <div>Akun berhasil diaktifkan. Silakan login dengan email dan password baru Anda.</div>
+        </div>
+        {% endif %}
+
         <!-- ALERT AREA: Cuma nampil kalau nilai variabelnya sesuai -->
         {% if error == 'invalid_credentials' %}
         <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-5 text-sm flex items-center">
             <i class="fa-solid fa-circle-xmark mr-2 text-red-600"></i>
-            <div>Email/Username atau password salah!</div>
+            <div>Email/Username atau password salah! Baru diundang? Aktifkan akun lewat link di email Anda.</div>
+        </div>
+        {% endif %}
+
+        {% if error == 'account_pending' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-md mb-5 text-sm flex items-center" role="alert">
+            <i class="fa-solid fa-envelope mr-2 text-amber-600"></i>
+            <div>Akun Anda masih menunggu aktivasi. Periksa email undangan untuk membuka link aktivasi, atau hubungi admin.</div>
         </div>
         {% endif %}
 

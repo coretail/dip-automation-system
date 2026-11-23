@@ -317,7 +317,8 @@ class _FakeProfilesTable:
         # Untuk jalur username (lookup full_name) sediakan baris berikut agar
         # lookup menemukan, tetapi check profil id pada login post-auth
         # harus tetap kosong (sesuai kasus: tanpa profil).
-        self.rows = list(profile_rows) + [{"id": USER_ID, "full_name": "testeruser", "email": USER_EMAIL}]
+        self.profile_rows = list(profile_rows)
+        self.rows = self.profile_rows + [{"id": USER_ID, "full_name": "testeruser", "email": USER_EMAIL}]
         self.has_profile_id = has_profile_id
 
     def select(self, cols):
@@ -331,11 +332,12 @@ class _FakeProfilesTable:
     def execute(self):
         if getattr(self, "_k", None) == "full_name":
             data = [r for r in self.rows if str(r.get("full_name") or "").lower() == str(self._v).lower()]
-        elif getattr(self, "_k", None) == "id" and getattr(self, "_cols", "") == "id":
-            # Check profil pasca-auth: kosong kecuali kasus has_profile
-            data = ([{"id": self._v}] if self.has_profile_id else [])
         elif getattr(self, "_k", None) == "id":
-            data = [r for r in self.rows if r.get("id") == self._v]
+            # Synthetic testeruser exists only to exercise username lookup; it
+            # must not impersonate a real profile in the post-auth existence/status check.
+            data = [r for r in self.profile_rows if r.get("id") == self._v]
+            if not data and self.has_profile_id:
+                data = [{"id": self._v, "status": "active"}]
         else:
             data = list(self.rows)
         return SimpleNamespace(data=data)
