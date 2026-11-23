@@ -1307,9 +1307,9 @@ def _fsp_notes_changes(old_row: dict, update_payload: dict) -> list:
 
 # ================= 1. ROUTE TAMPILAN LOGIN =================
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, warning: str = None, error: str = None):
+async def login_page(request: Request, warning: str = None, error: str = None, status: str = None):
     # Cek kalau token ada di cookie DAN gak lagi dapet warning/error, langsung ke dashboard
-    if request.cookies.get("access_token") and not warning and not error:
+    if request.cookies.get("access_token") and not warning and not error and not status:
         return RedirectResponse(url="/", status_code=303)
 
     return templates.TemplateResponse(
@@ -1318,6 +1318,7 @@ async def login_page(request: Request, warning: str = None, error: str = None):
         context={
             "warning": warning,
             "error": error,
+            "status": status,
             "greeting": get_time_greeting()
         }
     )
@@ -1370,13 +1371,34 @@ async def login_submit(
         # 💡 LOG SUCCESS LOGIN
         user_data = auth_response.user
         try:
-            _prof_check = supabase_admin.table("profiles").select("id").eq("id", user_data.id).execute()
+            _prof_check = supabase_admin.table("profiles").select("id, status").eq("id", user_data.id).execute()
             if not _prof_check.data:
                 print(f"🚫 [LOGIN DENIED] user={user_data.id} reason=profile_missing")
                 return RedirectResponse(url="/login?error=profile_missing", status_code=303)
+            if _prof_check.data[0].get("status") == "pending":
+                return RedirectResponse(url="/login?error=account_pending", status_code=303)
         except Exception as e:
-            print(f"🚫 [LOGIN PROFILE CHECK FAIL] user={user_data.id} reason={type(e).__name__}")
-            return RedirectResponse(url="/login?error=service_unavailable", status_code=303)
+            # Migration 015 may not yet be present in an older environment. Retry
+            # the legacy existence check only when the failure identifies status
+            # as the missing column; other database errors stay fail-closed.
+            _profile_error = str(getattr(e, "message", "") or e).lower()
+            _profile_code = str(getattr(e, "code", "") or "")
+            _missing_status = (
+                "status" in _profile_error
+                and any(term in _profile_error for term in ("does not exist", "not exist", "unknown column", "schema cache", "could not find"))
+            ) or (_profile_code == "42703" and "status" in _profile_error)
+            if _missing_status:
+                try:
+                    _prof_check = supabase_admin.table("profiles").select("id").eq("id", user_data.id).execute()
+                    if not _prof_check.data:
+                        print(f"🚫 [LOGIN DENIED] user={user_data.id} reason=profile_missing")
+                        return RedirectResponse(url="/login?error=profile_missing", status_code=303)
+                except Exception as _legacy_error:
+                    print(f"🚫 [LOGIN PROFILE CHECK FAIL] user={user_data.id} reason={type(_legacy_error).__name__}")
+                    return RedirectResponse(url="/login?error=service_unavailable", status_code=303)
+            else:
+                print(f"🚫 [LOGIN PROFILE CHECK FAIL] user={user_data.id} reason={type(e).__name__}")
+                return RedirectResponse(url="/login?error=service_unavailable", status_code=303)
         waktu_login = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S WIB")
         print("\n" + _LOG_RULE)
         print("🔑 [LOGIN SUCCESS]")
