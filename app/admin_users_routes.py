@@ -146,10 +146,38 @@ def register_admin_users_routes(
         if current_user["role"] != "admin":
             raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
 
+        # Flag fail-soft: True bila kolom status/invited_email/invited_at tersedia
+        # (schema sudah migrasi 015); False bila retry ke query legacy.
+        status_col_present = True
         try:
-            # Tarik semua data dari tabel profiles
-            profiles_res = supabase.table("profiles").select("*").order("full_name").execute()
-            users_list = profiles_res.data or []
+            # Tarik semua data dari tabel profiles. Kolom status/invited_email/invited_at
+            # hanya ada setelah migration 015; fail-soft: retry tanpa kolom bila belum ada.
+            # Query utama memakai select eksplisit (termasuk kolom invite) agar
+            # schema lama yang belum migrasi tetap bisa dibaca.
+            _PROFILE_COLS_FULL = (
+                "id, full_name, display_name, role, perusahaan, is_protected, "
+                "avatar_path, avatar_updated_at, is_online, last_seen_at, last_activity_at, "
+                "updated_at, status, invited_email, invited_at, invited_by"
+            )
+            _PROFILE_COLS_LEGACY = (
+                "id, full_name, display_name, role, perusahaan, is_protected, "
+                "avatar_path, avatar_updated_at, is_online, last_seen_at, last_activity_at, "
+                "updated_at"
+            )
+            try:
+                profiles_res = supabase.table("profiles").select(_PROFILE_COLS_FULL).order("full_name").execute()
+                users_list = profiles_res.data or []
+            except Exception as _col_exc:
+                print(f"[ADMIN USERS] query kolom penuh gagal (schema belum migrasi?): {type(_col_exc).__name__}")
+                status_col_present = False
+                try:
+                    profiles_res = supabase.table("profiles").select(_PROFILE_COLS_LEGACY).order("full_name").execute()
+                    users_list = profiles_res.data or []
+                    for u in users_list:
+                        u["_status_unavailable"] = True
+                except Exception as _exc2:
+                    print(f"[ADMIN USERS] query kolom legacy gagal: {type(_exc2).__name__}")
+                    users_list = []
 
             # Sembunyikan akun yang di-protect dari admin lain -- akun itu cuma bisa
             # lihat dirinya sendiri di list, admin lain sama sekali gak lihat baris ini
@@ -175,6 +203,12 @@ def register_admin_users_routes(
             idle_count = 0
             offline_count = 0
 
+        # Normalisasi status: bila kolom status tidak tersedia, anggap semua user active
+        # agar template tidak render badge pending / aksi invite.
+        if not status_col_present:
+            for u in users_list:
+                u.setdefault("status", "active")
+
         return templates.TemplateResponse(
             request=request,
             name="admin_users.html",
@@ -186,6 +220,7 @@ def register_admin_users_routes(
                 "online_count": online_count,
                 "idle_count": idle_count,
                 "offline_count": offline_count,
+                "status_col_present": status_col_present,
             }
         )
 

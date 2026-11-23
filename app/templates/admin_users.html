@@ -33,6 +33,101 @@
             <span><i class="fa-solid fa-circle-check mr-2 text-emerald-600"></i> Akun user berhasil dihapus permanen!</span>
             <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        {% elif request.query_params.get('status') == 'create_success' %}
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-check mr-2 text-emerald-600"></i> Akun user baru berhasil dibuat!</span>
+            <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('status') == 'update_success' %}
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-check mr-2 text-emerald-600"></i> Role user berhasil diperbarui!</span>
+            <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('status') == 'invite_sent' %}
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-paper-plane mr-2 text-emerald-600"></i> Undangan terkirim! User akan menerima email berisi tautan aktivasi.</span>
+            <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('status') == 'invite_failed_email' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i> Undangan dibuat tetapi email gagal terkirim. User tetap berstatus pending. Coba kirim ulang undangan.</span>
+            <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('status') == 'invite_unknown' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i> Status pengiriman email tidak diketahui (timeout). User tetap berstatus pending. Coba kirim ulang undangan.</span>
+            <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('status') == 'resend_sent' %}
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-rotate mr-2 text-emerald-600"></i> Undangan dikirim ulang! Tautan lama otomatis tidak berlaku.</span>
+            <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('status') == 'resend_failed_email' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i> Tautan baru dibuat tetapi email gagal terkirim. Coba kirim ulang undangan.</span>
+            <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('status') == 'resend_unknown' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i> Status pengiriman email tidak diketahui. Tautan baru mungkin sudah dibuat. Coba kirim ulang undangan.</span>
+            <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('status') == 'cancel_success' %}
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-check mr-2 text-emerald-600"></i> Undangan dibatalkan. Akun user dihapus permanen.</span>
+            <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'invite_not_configured' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> URL aplikasi belum dikonfigurasi (APP_BASE_URL). Hubungi pemilik sistem.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'invalid_email' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Format email tidak valid. Gunakan alamat email yang benar.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'invite_failed' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Gagal membuat undangan. Coba lagi nanti.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'resend_failed' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Gagal mengirim ulang undangan. Coba lagi nanti.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'resend_too_soon' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-clock mr-2 text-amber-600"></i> Jeda minimum 60 detik antara pengiriman ulang belum terpenuhi. Coba beberapa saat lagi.</span>
+            <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'resend_already_confirmed' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i> Email sudah terkonfirmasi di Auth. Kirim ulang tidak mungkin. Gunakan <strong>Batalkan & undang ulang</strong>.</span>
+            <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'not_pending' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> User bukan berstatus pending. Aksi tidak berlaku.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'cancel_failed' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> Gagal membatalkan undangan. Coba lagi nanti.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'cancel_partial' %}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i> Pembatalan sebagian: akun Auth terhapus tetapi pembersihan profil gagal. Cek manual.</span>
+            <button onclick="this.parentElement.remove()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        {% elif request.query_params.get('error') == 'user_not_found' %}
+        <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
+            <span><i class="fa-solid fa-circle-xmark mr-2 text-rose-600"></i> User tidak ditemukan.</span>
+            <button onclick="this.parentElement.remove()" class="text-rose-500 hover:text-rose-700"><i class="fa-solid fa-xmark"></i></button>
+        </div>
         {% elif request.query_params.get('error') == 'cannot_delete_self' %}
         <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-sm flex items-center justify-between">
             <span><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i> Kamu kagak bisa ngapus akun sendiri yang lagi dipakai login!</span>
@@ -73,36 +168,56 @@
         <!-- Grid layout 2 Kolom -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            <!-- KOLOM KANAN: FORM TAMBAH USER BARU -->
-            <div class="lg:col-span-1 lg:order-2 bg-white rounded-xl border border-gray-200 shadow-xs p-6 h-fit">
-                <h2 class="text-md font-bold uppercase tracking-wider text-gray-700 mb-4"><i class="fa-solid fa-user-plus text-indigo-500 mr-2"></i> Tambah User Baru</h2>
-                <form action="/admin/users/create" method="POST" class="space-y-3">
-                    <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">Username</label>
-                        <input type="text" name="username" required placeholder="mis. budi.qc"
-                               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">Email</label>
-                        <input type="email" name="email" required placeholder="budi@erfikaryaabadi.com"
-                               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">Password Awal</label>
-                        <input type="password" name="password" required minlength="6"
-                               class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">Role</label>
-                        <select name="role" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                            <option value="staff" selected>Staff</option>
-                            <option value="admin">Admin</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-md px-3 py-2 transition cursor-pointer">
-                        <i class="fa-solid fa-plus mr-1"></i> Buat Akun
-                    </button>
-                </form>
+            <!-- KOLOM KANAN: FORM TAMBAH USER BARU + UNDANG VIA EMAIL -->
+            <div class="lg:col-span-1 lg:order-2 bg-white rounded-xl border border-gray-200 shadow-xs p-6 h-fit space-y-5">
+                <div>
+                    <h2 class="text-md font-bold uppercase tracking-wider text-gray-700 mb-4"><i class="fa-solid fa-user-plus text-indigo-500 mr-2"></i> Tambah User Baru</h2>
+                    <form action="/admin/users/create" method="POST" class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Username</label>
+                            <input type="text" name="username" required placeholder="mis. budi.qc"
+                                   class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Email</label>
+                            <input type="email" name="email" required placeholder="budi@erfikaryaabadi.com"
+                                   class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Password Awal</label>
+                            <input type="password" name="password" required minlength="6"
+                                   class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Role</label>
+                            <select name="role" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                <option value="staff" selected>Staff</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-md px-3 py-2 transition cursor-pointer">
+                            <i class="fa-solid fa-plus mr-1"></i> Buat Akun
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Form Undang via Email (admin only) -->
+                <div class="border-t border-gray-100 pt-4">
+                    <h2 class="text-md font-bold uppercase tracking-wider text-gray-700 mb-3"><i class="fa-solid fa-envelope text-emerald-500 mr-2"></i> Undang via Email</h2>
+                    <form action="/admin/users/invite" method="POST" class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Email Undangan</label>
+                            <input type="email" name="email" required placeholder="budi@erfikaryaabadi.com"
+                                   class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                        </div>
+                        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold rounded-md px-3 py-2 transition cursor-pointer">
+                            <i class="fa-solid fa-paper-plane mr-1"></i> Kirim Undangan
+                        </button>
+                        <p class="text-[11px] text-gray-400 leading-snug">
+                            User akan menerima email berisi tautan aktivasi. Password diisi sendiri oleh user di halaman aktivasi.
+                        </p>
+                    </form>
+                </div>
             </div>
 
             <!-- KOLOM KIRI: DAFTAR USER & AKSI -->
@@ -125,44 +240,60 @@
                     </div>
                 </div>
 
-                <div class="flex items-center gap-2 mb-3">
+                <div class="flex items-center gap-2 mb-3 flex-wrap">
                     <button type="button" data-filter="all" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-600 text-white">Semua</button>
                     <button type="button" data-filter="online" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Online</button>
                     <button type="button" data-filter="idle" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Idle</button>
                     <button type="button" data-filter="offline" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Offline</button>
+                    {% if status_col_present %}
+                    <button type="button" data-filter="pending" class="presence-filter px-2.5 py-1 text-xs font-semibold rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200">Pending</button>
+                    {% endif %}
                     <span class="ml-auto text-[11px] text-gray-400" id="presenceRefreshHint">Monitor live · refresh 15 dtk</span>
                 </div>
-                
+
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead>
                             <tr class="border-b border-gray-200 bg-gray-50/70 text-xs font-semibold uppercase tracking-wider text-gray-500">
                                 <th class="p-3">Username / Identifier</th>
                                 <th class="p-3">Status</th>
+                                {% if status_col_present %}
+                                <th class="p-3">Email Undangan</th>
+                                {% endif %}
                                 <th class="p-3">Role Saat Ini</th>
                                 <th class="p-3 text-right">Aksi Manajemen</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                             {% for u in users %}
-                            <tr class="hover:bg-gray-50/50 transition-colors user-row" data-user-id="{{ u.id }}" data-presence-status="{{ u.presence_status }}">
+                            {% set is_pending = (status_col_present and u.status == 'pending') %}
+                            <tr class="hover:bg-gray-50/50 transition-colors user-row {% if is_pending %}row-pending{% endif %}" data-user-id="{{ u.id }}" data-presence-status="{{ u.presence_status }}" data-status="{{ u.status if status_col_present else 'active' }}">
                                 <td class="p-3 font-medium text-gray-900">
                                     <div class="flex items-center gap-2">
                                         <div class="relative">
-                                            <div class="w-7 h-7 bg-indigo-50 text-indigo-600 font-bold rounded-full flex items-center justify-center text-xs uppercase">
+                                            <div class="w-7 h-7 {% if is_pending %}bg-gray-100 text-gray-400{% else %}bg-indigo-50 text-indigo-600{% endif %} font-bold rounded-full flex items-center justify-center text-xs uppercase">
                                                 {{ u.full_name[:2] }}
                                             </div>
+                                            {% if not is_pending %}
                                             <span class="presence-dot absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white {{ 'bg-emerald-500 dot-online' if u.presence_status == 'online' else ('bg-amber-500' if u.presence_status == 'idle' else 'bg-gray-300') }}"></span>
+                                            {% endif %}
                                         </div>
                                         <div>
-                                            <p class="font-bold text-gray-800">{{ u.full_name }}</p>
-                                            {% if u.display_name and u.display_name != u.full_name %}<p class="text-xs text-gray-500">Nama tampilan: {{ u.display_name }}</p>{% endif %}
+                                            <p class="font-bold {% if is_pending %}text-gray-400{% else %}text-gray-800{% endif %}">{{ u.full_name }}</p>
+                                            {% if u.display_name and u.display_name != u.full_name and not is_pending %}<p class="text-xs text-gray-500">Nama tampilan: {{ u.display_name }}</p>{% endif %}
                                             <p class="text-xs text-gray-400">ID: {{ u.id[:8] }}...</p>
                                         </div>
                                     </div>
                                 </td>
                                 <td class="p-3">
-                                    {% if u.presence_status == 'online' %}
+                                    {% if is_pending %}
+                                    <span class="presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Pending
+                                    </span>
+                                    <p class="presence-label text-[11px] text-purple-600 mt-0.5">
+                                        Belum mengaktifkan akun
+                                    </p>
+                                    {% elif u.presence_status == 'online' %}
                                     <span class="presence-badge inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Online
                                     </span>
@@ -179,6 +310,15 @@
                                     <p class="presence-label text-[11px] text-gray-400 mt-0.5">{{ u.last_seen_label }}</p>
                                     {% endif %}
                                 </td>
+                                {% if status_col_present %}
+                                <td class="p-3">
+                                    {% if is_pending and u.invited_email %}
+                                    <span class="text-xs text-gray-600" title="Email undangan (hanya terlihat oleh admin)">{{ u.invited_email }}</span>
+                                    {% else %}
+                                    <span class="text-xs text-gray-300">—</span>
+                                    {% endif %}
+                                </td>
+                                {% endif %}
                                 <td class="p-3">
                                     <span class="px-2 py-0.5 text-xs font-semibold rounded {{ 'bg-red-50 text-red-700 border border-red-200' if u.role == 'admin' else 'bg-amber-50 text-amber-700 border border-amber-200' }} uppercase">
                                         {{ u.role }}
@@ -186,6 +326,33 @@
                                 </td>
                                 <td class="p-3 text-right">
                                     <div class="flex items-center justify-end gap-1.5">
+                                        {% if is_pending %}
+                                        <!-- User pending: hanya aksi resend & cancel -->
+                                        <form action="/admin/users/resend-invite" method="POST" class="inline" onsubmit='return confirm("Kirim ulang undangan ke " + {{ u.full_name | tojson }} + "? Tautan lama otomatis tidak berlaku.");'>
+                                            <input type="hidden" name="target_uid" value="{{ u.id }}">
+                                            <button type="submit" title="Kirim Ulang Undangan"
+                                                    class="px-2 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded transition cursor-pointer">
+                                                <i class="fa-solid fa-rotate"></i>
+                                            </button>
+                                        </form>
+                                        {% if u.id != user.id %}
+                                        <form action="/admin/users/cancel-invite" method="POST" class="inline" onsubmit='return confirm("Yakin batalkan undangan " + {{ u.full_name | tojson }} + "? Akun akan dihapus permanen.");'>
+                                            <input type="hidden" name="target_uid" value="{{ u.id }}">
+                                            <button type="submit" title="Batalkan Undangan"
+                                                    class="px-2 py-1 text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded transition cursor-pointer">
+                                                <i class="fa-solid fa-ban"></i>
+                                            </button>
+                                        </form>
+                                        {% else %}
+                                        <span class="px-2 py-1 text-xs font-medium text-gray-400 bg-gray-100 border border-gray-200 rounded cursor-not-allowed" title="Ga bisa batalkan akun sendiri">
+                                            <i class="fa-solid fa-ban"></i>
+                                        </span>
+                                        {% endif %}
+                                        <p class="w-full text-[10px] text-gray-400 mt-1 leading-snug">
+                                            Jika set password gagal saat aktivasi, satu-satunya pemulihan: Batalkan & undang ulang.
+                                        </p>
+                                        {% else %}
+                                        <!-- User active: aksi normal -->
                                         <!-- Form Change Role -->
                                         <form action="/admin/users/update-role" method="POST" class="inline-flex items-center">
                                             <input type="hidden" name="target_uid" value="{{ u.id }}">
@@ -215,12 +382,13 @@
                                             <i class="fa-solid fa-trash-can"></i>
                                         </span>
                                         {% endif %}
+                                        {% endif %}
                                     </div>
                                 </td>
                             </tr>
                             {% else %}
                             <tr>
-                                <td colspan="4" class="p-8 text-center text-sm text-gray-400">Belum ada user terdaftar.</td>
+                                <td colspan="{{ 5 if status_col_present else 4 }}" class="p-8 text-center text-sm text-gray-400">Belum ada user terdaftar.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -272,7 +440,19 @@
             function applyFilter() {
                 document.querySelectorAll('.user-row').forEach(function (row) {
                     var presenceStatus = row.getAttribute('data-presence-status') || 'offline';
-                    var show = currentFilter === 'all' || currentFilter === presenceStatus;
+                    var status = row.getAttribute('data-status') || 'active';
+                    var isPending = status === 'pending';
+                    var show;
+                    if (currentFilter === 'all') {
+                        show = true;
+                    } else if (currentFilter === 'pending') {
+                        // Filter pending: hanya tampilkan row dengan status pending.
+                        show = isPending;
+                    } else {
+                        // Filter presence (online/idle/offline): row pending tidak punya
+                        // presence yang bermakna (belum pernah online), jadi sembunyikan.
+                        show = (!isPending && currentFilter === presenceStatus);
+                    }
                     row.classList.toggle('hidden', !show);
                 });
             }
@@ -289,6 +469,8 @@
             });
 
             function paintRow(row, item) {
+                // Row pending tidak punya presence bermakna; jangan overdraw badge/dot.
+                if ((row.getAttribute('data-status') || 'active') === 'pending') return;
                 var presenceStatus = item.presence_status || (item.is_online ? 'online' : 'offline');
                 row.setAttribute('data-presence-status', presenceStatus);
                 var dot = row.querySelector('.presence-dot');

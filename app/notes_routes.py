@@ -262,21 +262,36 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
 
     @app.get("/api/notes/users")
     async def api_notes_users(q: str = "", current_user: dict = Depends(get_current_user)):
+        # Exclude user pending (status='pending') dari dropdown mention/Notes.
+        # Fail-soft: bila kolom status belum ada di schema, retry tanpa kolom status.
+        status_col_present = True
         try:
+            try:
+                res = supabase.table("profiles").select(
+                    "id, full_name, display_name, status"
+                ).order("full_name").execute()
+            except Exception:
+                res = supabase.table("profiles").select(
+                    "id, full_name, status"
+                ).order("full_name").execute()
+            rows = res.data or []
+        except Exception as e:
+            print(f"[NOTES] Gagal ambil users: {e}")
+            status_col_present = False
             try:
                 res = supabase.table("profiles").select("id, full_name, display_name").order("full_name").execute()
             except Exception:
                 res = supabase.table("profiles").select("id, full_name").order("full_name").execute()
             rows = res.data or []
-        except Exception as e:
-            print(f"[NOTES] Gagal ambil users: {e}")
-            rows = []
         qn = (q or "").strip().lower()
         items = []
         for r in rows:
             username = (r.get("full_name") or "").strip()
             display_name = (r.get("display_name") or "").strip() or username
             if not username or r.get("id") == current_user.get("id"):
+                continue
+            # Exclude user pending dari dropdown mention/Notes.
+            if status_col_present and r.get("status") == "pending":
                 continue
             if qn and qn not in username.lower() and qn not in display_name.lower():
                 continue
