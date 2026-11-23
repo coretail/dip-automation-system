@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aktivasi Akun — DIP Automation System</title>
+    <link rel="icon" type="image/png" href="/static/images/favicon.png">
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f5f7;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+        }
+        .card {
+            width: 100%;
+            max-width: 440px;
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06);
+            padding: 32px 28px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .logo {
+            width: 48px;
+            height: 48px;
+            object-fit: contain;
+            margin-bottom: 10px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+            color: #111827;
+        }
+        .subtitle {
+            margin: 6px 0 0;
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.5;
+        }
+        .alert-error {
+            background-color: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-size: 13px;
+            line-height: 1.5;
+            margin-bottom: 18px;
+        }
+        .field {
+            margin-bottom: 16px;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #4b5563;
+            margin-bottom: 6px;
+        }
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #111827;
+            background-color: #f9fafb;
+            outline: none;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            border-color: #b45309;
+            background-color: #ffffff;
+            box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.14);
+        }
+        .hint {
+            margin: 5px 0 0;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .btn-submit {
+            width: 100%;
+            margin-top: 6px;
+            padding: 11px 16px;
+            border: none;
+            border-radius: 8px;
+            background-color: #b45309;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-submit:hover {
+            background-color: #92400e;
+        }
+        .footer-link {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #f3f4f6;
+            text-align: center;
+        }
+        .footer-link a {
+            color: #b45309;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .footer-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <div class="header">
+            <img src="/static/images/favicon.png" alt="Logo DIP Automation System" class="logo">
+            <h1>Aktivasi Akun</h1>
+            <p class="subtitle">DIP Automation System</p>
+        </div>
+
+        {% if error_msg %}
+        <div class="alert-error" role="alert">{{ error_msg }}</div>
+        {% endif %}
+
+        {% if invalid_link %}
+        <div class="footer-link">
+            <a href="/login">Kembali ke Halaman Login</a>
+        </div>
+        {% else %}
+        <form action="/activate" method="POST" autocomplete="off">
+            <input type="hidden" name="token_hash" value="{{ token_hash }}">
+            <input type="hidden" name="type" value="{{ link_type }}">
+
+            <div class="field">
+                <label for="display_name">Nama Tampilan (Opsional)</label>
+                <input
+                    id="display_name"
+                    type="text"
+                    name="display_name"
+                    maxlength="60"
+                    value="{{ display_name or '' }}"
+                    placeholder="Kosongkan untuk memakai nama bawaan"
+                    autocomplete="name"
+                >
+                <p class="hint">Maksimal 60 karakter. Dapat diubah kembali nanti di halaman profil.</p>
+            </div>
+
+            <div class="field">
+                <label for="password">Password Baru</label>
+                <input
+                    id="password"
+                    type="password"
+                    name="password"
+                    minlength="6"
+                    maxlength="72"
+                    required
+                    placeholder="Minimal 6 karakter"
+                    autocomplete="new-password"
+                >
+            </div>
+
+            <div class="field">
+                <label for="confirm_password">Konfirmasi Password Baru</label>
+                <input
+                    id="confirm_password"
+                    type="password"
+                    name="confirm_password"
+                    minlength="6"
+                    maxlength="72"
+                    required
+                    placeholder="Ulangi password baru"
+                    autocomplete="new-password"
+                >
+            </div>
+
+            <button type="submit" class="btn-submit">Aktifkan Akun</button>
+        </form>
+        {% endif %}
+    </main>
+</body>
+</html>

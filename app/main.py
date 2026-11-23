@@ -501,28 +501,35 @@ class _QuietAccessLogFilter(logging.Filter):
         return path_only not in self.SKIP_PATHS
 
 
+_REDACTED_QUERY_KEYS = ("access", "token_hash", "token")
+
+
 def _redact_access_value(path: str) -> str:
-    """Samarkan nilai parameter query `access` menjadi *** (F-05, sisi aplikasi)."""
-    if not isinstance(path, str) or "access=" not in path:
-        return path
-    if "?" not in path:
+    """Samarkan nilai parameter query sensitif (`access`, `token_hash`, `token`) menjadi ***."""
+    if not isinstance(path, str) or "?" not in path:
         return path
     head, qs = path.split("?", 1)
     parts = qs.split("&")
     out = []
+    changed = False
     for part in parts:
-        if part == "access" or part.startswith("access="):
-            out.append("access=***")
+        key_raw, _sep, _val = part.partition("=")
+        key_lower = key_raw.lower()
+        if key_lower in _REDACTED_QUERY_KEYS:
+            out.append(f"{key_lower}=***")
+            changed = True
         else:
             out.append(part)
+    if not changed:
+        return path
     return head + "?" + "&".join(out)
 
 
 class _RedactAccessTokenFilter(logging.Filter):
     """Filter logging TERPISAH dari _QuietAccessLogFilter (F-05).
 
-    Mengganti nilai parameter `access` di path pada record uvicorn.access
-    menjadi `access=***`. Menangani args tuple/list (uvicorn default:
+    Mengganti nilai parameter `access`, `token_hash`, dan `token` di path pada
+    record uvicorn.access menjadi `***`. Menangani args tuple/list (uvicorn default:
     client, method, path, http_version, status) dan dict. Selalu return True,
     tidak pernah melempar exception pada args tak terduga.
     """
@@ -580,6 +587,10 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
             content={"detail": "Terlalu banyak permintaan, coba lagi sebentar lagi."},
             headers={"Retry-After": "60"},
         )
+    if request.url.path == "/activate":
+        print("\n🚫 [RATE LIMIT] Terlalu banyak permintaan aktivasi pada /activate\n")
+        from app.activate_routes import activate_rate_limit_response
+        return activate_rate_limit_response(request)
     # Redirect balik ke login dengan pesan, biar konsisten sama flow warning/error yang lain
     # (bukan JSON mentah), dan gak bocorin detail rate limit ke user.
     print(f"\n🚫 [RATE LIMIT] Terlalu banyak percobaan login dari IP: {_client_ip(request)}\n")
@@ -1184,6 +1195,7 @@ def print_activity_terminal(current_user: dict, action: str, entity_type: str, e
         "invite": "✉️ [INVITED]",
         "resend_invite": "📨 [INVITE RESENT]",
         "cancel_invite": "🚫 [INVITE CANCELLED]",
+        "activate": "✅ [ACTIVATED]",
         "update": "🟡 [UPDATED]",
         "delete": "🔴 [DELETED]",
         "change_password": "🔐 [PASSWORD CHANGED]",
@@ -1881,5 +1893,15 @@ register_dip_public_routes(
     bab_generators=_dip_bab_generators,
     download_bab2_zip=_dip_docs["bab2_zip"],
     log_activity=log_activity,
+    limiter=limiter,
+)
+
+from app.activate_routes import register_activate_routes
+register_activate_routes(
+    app,
+    supabase=supabase,
+    templates=templates,
+    log_activity=log_activity,
+    mask_email=mask_email,
     limiter=limiter,
 )
