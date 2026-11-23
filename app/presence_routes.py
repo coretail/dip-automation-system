@@ -41,13 +41,17 @@ def register_presence_routes(
     async def admin_users_presence(current_user: dict = Depends(get_current_user)):
         if current_user.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
+        # Query presence: exclude user pending (status='pending').
+        # Fail-soft: bila kolom status belum ada di schema, retry tanpa filter status.
+        status_col_present = True
         try:
             profiles_res = supabase.table("profiles").select(
-                "id, last_seen_at, last_activity_at, is_online, is_protected, full_name"
+                "id, last_seen_at, last_activity_at, is_online, is_protected, full_name, status"
             ).execute()
             rows = profiles_res.data or []
         except Exception as e:
-            print(f"[PRESENCE] Gagal tarik last_seen_at (kolom mungkin belum ada): {e}")
+            print(f"[PRESENCE] Gagal tarik last_seen_at/status (kolom mungkin belum ada): {e}")
+            status_col_present = False
             try:
                 profiles_res = supabase.table("profiles").select("id, is_protected, full_name").execute()
                 rows = profiles_res.data or []
@@ -58,6 +62,9 @@ def register_presence_routes(
         items = []
         for u in rows:
             if u.get("is_protected") and u.get("id") != current_user["id"]:
+                continue
+            # Exclude user pending dari presence (status kolom hanya ada bila migrasi 015 sudah jalan).
+            if status_col_present and u.get("status") == "pending":
                 continue
             presence = compute_user_presence(u)
             items.append({
