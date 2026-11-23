@@ -115,6 +115,39 @@ def test_install_idempotent():
     print("[PASS] _install idempoten: tepat 1 redact + 1 quiet")
 
 
+def test_activate_token_hash_and_token_redact():
+    cases = [
+        "/activate?token_hash=SECRET_HASH&type=invite",
+        "/activate?type=invite&token_hash=SECRET_HASH",
+        "/activate?foo=1&token_hash=a%2Bb%3Dc&type=invite",
+        "/activate?token=SECRET_TOK&type=invite",
+        "/activate?TOKEN_HASH=SECRET_UPPER&TOKEN=SECRET_TOK2&type=invite",
+        "/dip/x?access=SECRET_ACC&token_hash=SECRET_HASH&token=SECRET_TOK",
+    ]
+    for path in cases:
+        r = _record(("c", "GET", path, "1.1", 200))
+        assert _Redact().filter(r) is True
+        out = _formatted(r, "%s %s %s %s %s")
+        for secret in ("SECRET_HASH", "a%2Bb%3Dc", "SECRET_TOK", "SECRET_UPPER", "SECRET_TOK2", "SECRET_ACC"):
+            assert secret not in out, f"secret bocor pada {path} -> {out}"
+        if "type=invite" in path:
+            assert "type=invite" in out, f"type=invite harus tetap utuh: {out}"
+    r_dict = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        "x",
+        1,
+        "%(full_path)s",
+        ({"full_path": "/activate?token_hash=SECRET_DICT&type=invite"},),
+        None,
+        None,
+    )
+    assert _Redact().filter(r_dict) is True
+    out_dict = r_dict.getMessage()
+    assert "SECRET_DICT" not in out_dict and "token_hash=***" in out_dict and "type=invite" in out_dict
+    print("[PASS] token_hash dan token pada /activate disamarkan di tuple & dict args")
+
+
 def main():
     test_basic_redact()
     test_token_positions()
@@ -123,6 +156,7 @@ def main():
     test_dict_and_weird_args()
     test_quiet_filter_still_works()
     test_install_idempotent()
+    test_activate_token_hash_and_token_redact()
     print("\nSemua test redaction access log LULUS.")
 
 

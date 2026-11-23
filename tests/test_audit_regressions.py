@@ -774,7 +774,7 @@ def section_routes() -> None:
 
     # SEC-17 - rate limit wajib ada di /login, /profile/change-password,
     # /profile/display-name, /admin/users/invite, /admin/users/resend-invite,
-    # dan /admin/users/cancel-invite.
+    # /admin/users/cancel-invite, dan GET/POST /activate.
     # Audit: endpoint admin/upload/heartbeat lain tetap belum dilimit.
     limit_hits: list[str] = []
     for path in app_py_files():
@@ -790,14 +790,16 @@ def section_routes() -> None:
                 "%s:%d -> %s %s" % (path.name, line_of(text, m.start()), method, target)
             )
     check(
-        "SEC-17 rate limit login, ganti password, display-name, dan invite/resend/cancel tetap ada",
-        len(limit_hits) == 6
+        "SEC-17 rate limit login, ganti password, display-name, invite/resend/cancel, dan activate tetap ada",
+        len(limit_hits) == 8
         and any("POST /login" in hit for hit in limit_hits)
         and any("POST /profile/change-password" in hit for hit in limit_hits)
         and any("POST /profile/display-name" in hit for hit in limit_hits)
         and any("POST /admin/users/invite" in hit for hit in limit_hits)
         and any("POST /admin/users/resend-invite" in hit for hit in limit_hits)
-        and any("POST /admin/users/cancel-invite" in hit for hit in limit_hits),
+        and any("POST /admin/users/cancel-invite" in hit for hit in limit_hits)
+        and any("GET /activate" in hit for hit in limit_hits)
+        and any("POST /activate" in hit for hit in limit_hits),
         "dekorator @limiter.limit: %s" % ("; ".join(limit_hits) if limit_hits else "tidak ada"),
     )
 
