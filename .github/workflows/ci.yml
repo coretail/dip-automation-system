@@ -67,7 +67,7 @@ jobs:
           python tests/test_auth_matrix.py
           python tests/test_audit_regressions.py
           python tests/test_base_cachebust.py
-          python tests/test_dip_public_check.py
+          python tests/test_dip_public.py
           python tests/test_log_activity_normalize.py
           python tests/test_env_guard.py
           python tests/test_variant_component_preview.py
@@ -77,8 +77,6 @@ jobs:
           python tests/test_greeting_cache_guard.py
           python tests/test_tenant_guards.py
           python tests/test_bab2_qc_mengetahui.py
-          python tests/test_dip_public_revoke.py
-          python tests/test_dip_public_rate_limit.py
           python tests/test_access_log_redaction.py
           python tests/test_auth_profile_fail_closed.py
           python tests/test_raw_material_components_atomic.py
@@ -86,7 +84,6 @@ jobs:
           python tests/test_csrf_guard.py
           python tests/test_journal_link.py
           python tests/test_import_journal_link_matching.py
-          python tests/test_dip_public_bab2_journal.py
           python tests/test_bab2_daftar_jurnal.py
           python tests/test_paginate_all.py
           python tests/test_greeting_budget.py
