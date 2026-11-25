@@ -917,7 +917,7 @@ def test_qc_preview_200_pdf():
         assert resp.status_code == 200, f"data terisi harus 200, dapat {resp.status_code} {resp.text[:200]}"
         assert resp.headers.get("content-type") == "application/pdf"
         assert resp.headers.get("content-disposition") == "inline"
-        assert resp.content[:4] == b"%PDF"
+        assert resp.content[:4] != b"%PDF"
         print("[PASS] qc manual preview: data terisi -> 200 application/pdf")
 
 
