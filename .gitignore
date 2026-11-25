@@ -123,8 +123,8 @@ backup-rls/
 !/tests/verify_audit_db_state.py
 # E2E Playwright temuan audit 2026-10-21 (staging saja; kredensial via env vars).
 !/tests/e2e_audit_staging.py
-# Unit test murni fail-closed checker portal publik /dip/ (tanpa koneksi/secret).
-!/tests/test_dip_public_check.py
+# Unit test gabungan portal publik /dip/* (fail-closed check, revoke+audit, rate-limit, bab2 journal; tanpa koneksi/secret).
+!/tests/test_dip_public.py
 # Unit test murni normalisasi entity_id log_activity (tanpa koneksi/secret).
 !/tests/test_log_activity_normalize.py
 # Unit test murni guard mode produksi implisit G-11 (tanpa koneksi/secret).
@@ -139,8 +139,6 @@ backup-rls/
 !/tests/test_greeting_cache_guard.py
 # Unit test gabungan guard tenant: SEC-02 PO/RM, efek+lampiran, finished-spec, sample (pure-local).
 !/tests/test_tenant_guards.py
-!/tests/test_dip_public_revoke.py
-!/tests/test_dip_public_rate_limit.py
 !/tests/test_access_log_redaction.py
 # Unit test render penandatangan Mengetahui Bab II (pure-local, Jinja2).
 !/tests/test_bab2_qc_mengetahui.py
@@ -208,8 +206,6 @@ scripts_tmp_list_projects.py
 !/tests/test_safe_fetch.py
 !/tests/test_journal_link.py
 !/tests/test_import_journal_link_matching.py
-# Unit test murni logika bab2 journal hub publik /dip/* (tanpa DB/secret).
-!/tests/test_dip_public_bab2_journal.py
 # Unit test murni isi Daftar_Jurnal.txt (ZIP Bab II) (tanpa DB/secret).
 !/tests/test_bab2_daftar_jurnal.py
 # Unit test murni pagination + usage_counts badge N Produk /raw-materials (tanpa DB).
