@@ -70,12 +70,8 @@ jobs:
           python tests/test_dip_public_check.py
           python tests/test_log_activity_normalize.py
           python tests/test_env_guard.py
-          python tests/test_profile_routes.py
           python tests/test_variant_component_preview.py
-          python tests/test_profile_validation.py
-          python tests/test_admin_create_user_display_name.py
-          python tests/test_get_current_user_display_name.py
-          python tests/test_profile_display_name_route.py
+          python tests/test_profile_and_display_name.py
           python tests/test_notes_author_resolution.py
           python tests/test_verify_r2_readiness_logic.py
           python tests/test_greeting_cache_guard.py
