@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import mailer
 from app.config import settings
+from app.flash_cookie import clean_visible_text
 
 WIB = ZoneInfo("Asia/Jakarta")
 
@@ -243,7 +244,7 @@ def register_admin_users_routes(
             raise HTTPException(status_code=403, detail="Akses ditolak! Khusus Super Admin.")
 
         try:
-            clean_username = username.strip().lower()
+            clean_username = (clean_visible_text(username) or "").lower()
             clean_email = email.strip().lower()
 
             # BE-12: policy password saat create akun — minimal 6 karakter, sama

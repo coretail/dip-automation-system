@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.flash_cookie import get_flash_cookie
+
 WIB = ZoneInfo("Asia/Jakarta")
 
 
@@ -88,8 +90,8 @@ def register_dashboard_routes(
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request, current_user: dict = Depends(get_current_user)):
         # Pastikan variabel ini didefinisikan dengan nilai default None agar tidak error
-        success_msg = request.cookies.get("success_msg") or request.query_params.get("success")
-        error_msg = request.cookies.get("error_msg") or request.query_params.get("error")
+        success_msg = get_flash_cookie(request, "success_msg") or request.query_params.get("success")
+        error_msg = get_flash_cookie(request, "error_msg") or request.query_params.get("error")
 
         products, brands = [], []
         try:

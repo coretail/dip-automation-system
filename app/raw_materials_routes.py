@@ -14,6 +14,7 @@ from postgrest.exceptions import APIError
 
 from app.database import supabase
 from app.file_validation import validate_pdf_bytes
+from app.flash_cookie import clean_visible_text, delete_flash_cookie, get_flash_cookie, set_flash_cookie
 from app.journal_link import normalize_journal_link, safe_journal_href
 from app.pagination import paginate_all, usage_counts
 from app.security import assert_same_tenant
@@ -399,16 +400,16 @@ def _balas_gagal_ambigu(
             entity_label, changes=perubahan, request=request, outcome="success",
         )
         response = RedirectResponse(url=redirect_url, status_code=303)
-        response.set_cookie("success_msg", hasil["pesan"])
+        set_flash_cookie(response, "success_msg", hasil["pesan"])
     else:
         log_activity(
             current_user, action, entity_type, entity_id,
             entity_label, changes=perubahan, request=request, outcome="failed",
         )
         response = RedirectResponse(url=redirect_url, status_code=303)
-        response.set_cookie("error_msg", hasil["pesan"])
+        set_flash_cookie(response, "error_msg", hasil["pesan"])
     if peringatan:
-        response.set_cookie("warning_msg", peringatan)
+        set_flash_cookie(response, "warning_msg", peringatan)
     return response
 
 
@@ -492,8 +493,8 @@ def register_raw_materials_routes(
             # rm.journal_link mentah ke template.
             rm["journal_href"] = safe_journal_href(rm.get("journal_link"))
 
-        success_msg = request.cookies.get("success_msg") or request.query_params.get("success")
-        error_msg = request.cookies.get("error_msg") or request.query_params.get("error")
+        success_msg = get_flash_cookie(request, "success_msg") or request.query_params.get("success")
+        error_msg = get_flash_cookie(request, "error_msg") or request.query_params.get("error")
 
         try:
             query_batches = (
@@ -683,9 +684,9 @@ def register_raw_materials_routes(
         )
 
         if success_msg:
-            response.delete_cookie("success_msg")
+            delete_flash_cookie(response, "success_msg")
         if error_msg:
-            response.delete_cookie("error_msg")
+            delete_flash_cookie(response, "error_msg")
 
         return response
 
@@ -767,7 +768,7 @@ def register_raw_materials_routes(
         rm_row = (rm_resp.data or [None])[0] if rm_resp else None
         if not rm_row:
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-            response.set_cookie("error_msg", "Bahan baku tidak ditemukan.")
+            set_flash_cookie(response, "error_msg", "Bahan baku tidak ditemukan.")
             return response
         # SEC-02: guard sebelum helper menulis (upload storage + upsert company doc).
         if not assert_same_tenant(current_user, rm_row):
@@ -799,13 +800,13 @@ def register_raw_materials_routes(
                     f"Upload cepat {document_list} untuk bahan baku {nama_bahan_baku} ({perusahaan})",
                     request=request
                 )
-                response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+                set_flash_cookie(response, "success_msg", "Dokumen berhasil diupload.")
             else:
-                response.set_cookie("error_msg", "Tidak ada dokumen yang berhasil diupload.")
+                set_flash_cookie(response, "error_msg", "Tidak ada dokumen yang berhasil diupload.")
         except Exception as e:
             print(f"Gagal quick-upload company doc: {e}")
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-            response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal upload dokumen. Coba lagi.")
         return response
 
     @app.get("/raw-materials/{rm_id}/spec-manual-preview")
@@ -942,13 +943,18 @@ def register_raw_materials_routes(
         spec_parameters_heka: str = Form("[]"),
         current_user: dict = Depends(get_current_user)
     ):
+        nama_dagang = clean_visible_text(nama_dagang) or ""
+        kode_bahan_baku = clean_visible_text(kode_bahan_baku) or ""
+        produsen = clean_visible_text(produsen)
+
+        # Validasi journal_link setelah atau sebelum tulis:
         # Validasi journal_link SEBELUM tulis apa pun: nilai tidak valid ->
         # redirect + cookie error, TIDAK ada insert (pola error_msg yang ada).
         try:
             journal_link_norm = normalize_journal_link(journal_link)
         except ValueError as exc:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", str(exc))
+            set_flash_cookie(response, "error_msg", str(exc))
             return response
 
         # Payload raw_materials sekarang cuma identitas -- spec & MSDS udah pindah ke raw_material_company_docs
@@ -966,13 +972,13 @@ def register_raw_materials_routes(
         # JIKA GAGAL (Kode Dobel)
         if existing_rm.data:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", f"Kode '{kode_check}' udah terdaftar. Gunakan kode lain.")
+            set_flash_cookie(response, "error_msg", f"Kode '{kode_check}' udah terdaftar. Gunakan kode lain.")
             return response
 
         rm_resp = supabase.table("raw_materials").insert(insert_payload).execute()
         if not rm_resp.data:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", f"Gagal menyimpan bahan baku '{nama_dagang}'. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", f"Gagal menyimpan bahan baku '{nama_dagang}'. Silakan coba lagi.")
             return response
         new_rm_id = rm_resp.data[0]["id"]
 
@@ -989,7 +995,7 @@ def register_raw_materials_routes(
             default_variant_id = _ensure_default_variant(new_rm_id, produsen)
 
             if tipe == "single":
-                given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
+                given_inci = clean_visible_text(inci_name[0]) if (inci_name and inci_name[0]) else ""
                 comp_data = {
                     "raw_material_id": new_rm_id,
                     "variant_id": default_variant_id,
@@ -1004,11 +1010,12 @@ def register_raw_materials_routes(
             elif tipe == "komposit" and inci_name:
                 components = []
                 for i in range(len(inci_name)):
-                    if inci_name[i].strip():
+                    cleaned_inci = clean_visible_text(inci_name[i])
+                    if cleaned_inci:
                         components.append({
                             "raw_material_id": new_rm_id,
                             "variant_id": default_variant_id,
-                            "inci_name": inci_name[i],
+                            "inci_name": cleaned_inci,
                             "cas_number": cas_number[i] if i < len(cas_number) else None,
                             "function": function[i] if i < len(function) else None,
                             "percent_internal": percent_internal[i],
@@ -1019,13 +1026,13 @@ def register_raw_materials_routes(
 
             # JIKA BERHASIL: Set cookie tanda sukses lalu redirect
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("success_msg", f"Mantap! Bahan baku '{nama_dagang}' berhasil ditambahkan.")
+            set_flash_cookie(response, "success_msg", f"Mantap! Bahan baku '{nama_dagang}' berhasil ditambahkan.")
             return response
 
         except Exception as e:
             print(f"\n🔴 [ERROR add_raw_material] Bahan baku '{nama_dagang}' (id={new_rm_id}) sudah tersimpan, tapi data pendukung (komponen INCI/dokumen) gagal: {e}")
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", f"Bahan baku '{nama_dagang}' tersimpan, tapi ada data pendukung yang gagal disimpan. Silakan cek dan lengkapi lewat menu Edit.")
+            set_flash_cookie(response, "error_msg", f"Bahan baku '{nama_dagang}' tersimpan, tapi ada data pendukung yang gagal disimpan. Silakan cek dan lengkapi lewat menu Edit.")
             return response
 
     @app.post("/raw-materials/quick-add")
@@ -1037,6 +1044,9 @@ def register_raw_materials_routes(
         produsen: str = Form(None),
         current_user: dict = Depends(get_current_user)
     ):
+        nama_dagang = clean_visible_text(nama_dagang) or ""
+        kode_bahan_baku = clean_visible_text(kode_bahan_baku) or ""
+        produsen = clean_visible_text(produsen)
         kode_check = kode_bahan_baku.strip()
         # Cek duplikat kode (pola yang sama dengan add_raw_material)
         existing_rm = supabase.table("raw_materials").select("id").eq("kode_bahan_baku", kode_check).execute()
@@ -1101,6 +1111,10 @@ def register_raw_materials_routes(
         current_user: dict = Depends(get_current_user),
         variant_id: str = Form(None),
     ):
+        nama_dagang = clean_visible_text(nama_dagang) or ""
+        kode_bahan_baku = clean_visible_text(kode_bahan_baku) or ""
+        produsen = clean_visible_text(produsen)
+
         # --- SEC-02: guard tenant PALING AWAL, sebelum query tulis apa pun ---
         # Urutan lama (cek duplikat kode -> cek varian + _ensure_default_variant
         # (TULIS) -> baru guard) membiarkan operasi tulis terjadi sebelum authz.
@@ -1114,7 +1128,7 @@ def register_raw_materials_routes(
         old_rm = (old_rm_resp.data or [None])[0] if old_rm_resp else None
         if not old_rm:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", "Bahan baku tidak ditemukan.")
+            set_flash_cookie(response, "error_msg", "Bahan baku tidak ditemukan.")
             return response
 
         # SEC-02 (future-proof): katalog bahan baku saat ini bersama (header
@@ -1135,7 +1149,7 @@ def register_raw_materials_routes(
             journal_link_norm = normalize_journal_link(journal_link)
         except ValueError as exc:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", str(exc))
+            set_flash_cookie(response, "error_msg", str(exc))
             return response
 
         kode_check = " ".join(kode_bahan_baku.split())  # trim + collapse spasi ganda jadi 1
@@ -1170,7 +1184,7 @@ def register_raw_materials_routes(
         new_components = []
         validation_error = None
         if tipe == "single":
-            given_inci = inci_name[0].strip() if (inci_name and inci_name[0]) else ""
+            given_inci = clean_visible_text(inci_name[0]) if (inci_name and inci_name[0]) else ""
             comp_data = {
                 "inci_name": given_inci if given_inci else nama_dagang,
                 "cas_number": cas_number[0] if cas_number else None,
@@ -1191,7 +1205,8 @@ def register_raw_materials_routes(
                     break
             if validation_error is None:
                 for i in range(n):
-                    if inci_name[i].strip():
+                    cleaned_inci = clean_visible_text(inci_name[i])
+                    if cleaned_inci:
                         try:
                             _pct = Decimal(str(percent_internal[i]))
                         except (InvalidOperation, ValueError, TypeError):
@@ -1208,7 +1223,7 @@ def register_raw_materials_routes(
                             )
                             break
                         new_components.append({
-                            "inci_name": inci_name[i],
+                            "inci_name": cleaned_inci,
                             "cas_number": cas_number[i] if i < len(cas_number) else None,
                             "function": function[i] if i < len(function) else None,
                             "percent_internal": float(_pct),
@@ -1216,7 +1231,7 @@ def register_raw_materials_routes(
                         })
         if validation_error is not None:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", validation_error)
+            set_flash_cookie(response, "error_msg", validation_error)
             return response
 
         # --- Bandingin komponen lama vs baru (scoped ke varian yang lagi diedit) ---
@@ -1327,7 +1342,7 @@ def register_raw_materials_routes(
             log_activity(current_user, "update", "raw_material", rm_id, nama_dagang, changes,
                        request=request, outcome="failed")
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", "Komponen tidak berubah: penyimpanan atomik belum terpasang atau gagal. Periksa kembali komponen dan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Komponen tidak berubah: penyimpanan atomik belum terpasang atau gagal. Periksa kembali komponen dan coba lagi.")
             return response
 
         if changes:
@@ -1370,7 +1385,7 @@ def register_raw_materials_routes(
         rm_row = (rm_before.data or [None])[0] if rm_before else None
         if not rm_row:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", "Bahan baku tidak ditemukan (mungkin sudah dihapus).")
+            set_flash_cookie(response, "error_msg", "Bahan baku tidak ditemukan (mungkin sudah dihapus).")
             return response
         nama_sebelum_hapus = rm_row.get("nama_dagang") or rm_id
 
@@ -1482,10 +1497,10 @@ def register_raw_materials_routes(
         nama_varian: str = Form(...),
         current_user: dict = Depends(get_current_user),
     ):
-        nama = (nama_varian or "").strip()
+        nama = clean_visible_text(nama_varian) or ""
         if not nama:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", "Nama varian/produsen wajib diisi.")
+            set_flash_cookie(response, "error_msg", "Nama varian/produsen wajib diisi.")
             return response
         rm_check = supabase.table("raw_materials").select("id, nama_dagang, perusahaan").eq("id", rm_id).limit(1).execute()
         if not rm_check.data:
@@ -1503,7 +1518,7 @@ def register_raw_materials_routes(
             .select("id").eq("raw_material_id", rm_id).ilike("nama_varian", nama).limit(1).execute()
         if dup.data:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", f"Varian '{nama}' sudah ada untuk bahan ini.")
+            set_flash_cookie(response, "error_msg", f"Varian '{nama}' sudah ada untuk bahan ini.")
             return response
         new_variant = supabase.table("raw_material_composition_variants").insert({
             "raw_material_id": rm_id,
@@ -1513,7 +1528,7 @@ def register_raw_materials_routes(
         log_activity(current_user, "create", "raw_material_variant", new_variant.data[0]["id"], f"{rm_check.data[0].get('nama_dagang')} / {nama}",
                        request=request)
         response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("success_msg", f"Varian '{nama}' berhasil ditambahkan. Isi breakdown INCI-nya lewat menu Edit.")
+        set_flash_cookie(response, "success_msg", f"Varian '{nama}' berhasil ditambahkan. Isi breakdown INCI-nya lewat menu Edit.")
         return response
 
     @app.post("/raw-materials/{rm_id}/variants/{variant_id}/set-default")
@@ -1543,7 +1558,7 @@ def register_raw_materials_routes(
         log_activity(current_user, "update", "raw_material_variant", variant_id, f"{target.data[0].get('nama_varian')} (jadi default)",
                        request=request)
         response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("success_msg", f"Varian '{target.data[0].get('nama_varian')}' sekarang jadi varian default.")
+        set_flash_cookie(response, "success_msg", f"Varian '{target.data[0].get('nama_varian')}' sekarang jadi varian default.")
         return response
 
     @app.post("/raw-materials/{rm_id}/variants/{variant_id}/delete")
@@ -1572,7 +1587,7 @@ def register_raw_materials_routes(
             .select("id").eq("raw_material_id", rm_id).execute()
         if len(all_variants.data or []) <= 1:
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", f"Varian '{nama_varian}' tidak bisa dihapus karena ini satu-satunya varian yang tersisa.")
+            set_flash_cookie(response, "error_msg", f"Varian '{nama_varian}' tidak bisa dihapus karena ini satu-satunya varian yang tersisa.")
             return response
 
         # Guard 2: tolak kalau masih dipakai eksplisit di formula produk manapun.
@@ -1587,7 +1602,7 @@ def register_raw_materials_routes(
             if len(produk_list) > 3:
                 produk_str += "..."
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", f"Varian '{nama_varian}' masih dipakai di formula produk: {produk_str}. Pindahkan dulu ke varian lain sebelum menghapus.")
+            set_flash_cookie(response, "error_msg", f"Varian '{nama_varian}' masih dipakai di formula produk: {produk_str}. Pindahkan dulu ke varian lain sebelum menghapus.")
             return response
 
         # Hapus komponen milik varian ini, lalu variannya.
@@ -1606,7 +1621,7 @@ def register_raw_materials_routes(
         log_activity(current_user, "delete", "raw_material_variant", variant_id, nama_varian,
                    request=request)
         response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("success_msg", f"Varian '{nama_varian}' berhasil dihapus.")
+        set_flash_cookie(response, "success_msg", f"Varian '{nama_varian}' berhasil dihapus.")
         return response
 
     @app.post("/raw-materials/batches/add")
@@ -1637,6 +1652,13 @@ def register_raw_materials_routes(
     ):
         import json
 
+        no_batch = clean_visible_text(no_batch) or ""
+        supplier = clean_visible_text(supplier) or ""
+        nama_produsen = clean_visible_text(nama_produsen)
+        qc_signer = clean_visible_text(qc_signer)
+        qa_signer = clean_visible_text(qa_signer)
+        mengetahui_signer = clean_visible_text(mengetahui_signer)
+
         # SEC-02: guard tenant PALING AWAL, sebelum upload storage dan insert
         # apa pun. Tenant batch = perusahaan bahan baku induk (raw_material_id)
         # DAN nilai form `perusahaan` (new_company); keduanya harus lolos
@@ -1651,7 +1673,7 @@ def register_raw_materials_routes(
         except Exception as e:
             print(f"Gagal memuat bahan baku induk {raw_material_id} untuk guard batch: {e}")
             response = RedirectResponse(url="/raw-materials", status_code=303)
-            response.set_cookie("error_msg", "Gagal memverifikasi akses bahan baku. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal memverifikasi akses bahan baku. Silakan coba lagi.")
             return response
         if not assert_same_tenant(current_user, rm_parent_row, new_company=perusahaan):
             log_activity(
@@ -1808,7 +1830,7 @@ def register_raw_materials_routes(
                     request=request, outcome="failed",
                 )
                 response = RedirectResponse(url="/raw-materials", status_code=303)
-                response.set_cookie("error_msg", pesan)
+                set_flash_cookie(response, "error_msg", pesan)
                 return response
             # --- KEGAGALAN AMBIGU: respons database hilang --------------------
             # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
@@ -1876,9 +1898,9 @@ def register_raw_materials_routes(
 
         # Redirect balik ke halaman utama bahan baku
         response = RedirectResponse(url="/raw-materials", status_code=303)
-        response.set_cookie("success_msg", pesan)
+        set_flash_cookie(response, "success_msg", pesan)
         if peringatan:
-            response.set_cookie("warning_msg", peringatan)
+            set_flash_cookie(response, "warning_msg", peringatan)
         return response
 
     @app.post("/raw-materials/batches/edit/{batch_id}")
@@ -1900,6 +1922,10 @@ def register_raw_materials_routes(
         keterangan: str = Form(None),
         current_user: dict = Depends(get_current_user)
     ):
+        no_batch = clean_visible_text(no_batch) or ""
+        supplier = clean_visible_text(supplier) or ""
+        nama_produsen = clean_visible_text(nama_produsen)
+
         clean_batch = "".join(c for c in no_batch if c.isalnum() or c in ('-', '_')).strip()
         # Sufiks unik per operasi (lihat add_material_batch): upload baru tidak
         # boleh menimpa file lama, dan objek yang baru dibuat aman dihapus
@@ -1936,7 +1962,7 @@ def register_raw_materials_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
-            response.set_cookie("error_msg", "Batch tidak ditemukan. Perubahan tidak disimpan.")
+            set_flash_cookie(response, "error_msg", "Batch tidak ditemukan. Perubahan tidak disimpan.")
             return response
 
         # SEC-02: guard sebelum upload/update. Tenant batch = kolom perusahaan
@@ -2076,7 +2102,7 @@ def register_raw_materials_routes(
                     request=request, outcome="failed",
                 )
                 response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
-                response.set_cookie("error_msg", pesan)
+                set_flash_cookie(response, "error_msg", pesan)
                 return response
             # --- KEGAGALAN AMBIGU: respons database hilang --------------------
             # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
@@ -2147,9 +2173,9 @@ def register_raw_materials_routes(
         )
 
         response = RedirectResponse(url="/raw-materials?tab=batch-tab", status_code=303)
-        response.set_cookie("success_msg", pesan)
+        set_flash_cookie(response, "success_msg", pesan)
         if peringatan:
-            response.set_cookie("warning_msg", peringatan)
+            set_flash_cookie(response, "warning_msg", peringatan)
         return response
 
     @app.post("/raw-materials/batches/{batch_id}/quick-upload-doc")
@@ -2179,7 +2205,7 @@ def register_raw_materials_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-            response.set_cookie("error_msg", "Batch tidak ditemukan.")
+            set_flash_cookie(response, "error_msg", "Batch tidak ditemukan.")
             return response
 
         # SEC-02: guard sebelum upload storage apa pun. Tenant batch = kolom
@@ -2289,7 +2315,7 @@ def register_raw_materials_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-            response.set_cookie("error_msg", "Tidak ada file yang dipilih.")
+            set_flash_cookie(response, "error_msg", "Tidak ada file yang dipilih.")
             return response
 
         # Kasus 2: file dipilih, tapi SEMUA gagal -> tidak ada dokumen yang
@@ -2313,7 +2339,8 @@ def register_raw_materials_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-            response.set_cookie(
+            set_flash_cookie(
+                response,
                 "error_msg",
                 "Semua file gagal diunggah. Tidak ada dokumen yang tersimpan.",
             )
@@ -2387,7 +2414,7 @@ def register_raw_materials_routes(
                     request=request, outcome="failed",
                 )
                 response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
-                response.set_cookie("error_msg", pesan)
+                set_flash_cookie(response, "error_msg", pesan)
                 return response
             # --- KEGAGALAN AMBIGU: respons database hilang --------------------
             # Tulisan mungkin sudah tersimpan di server, jadi objek yang baru
@@ -2450,11 +2477,12 @@ def register_raw_materials_routes(
         )
         response = RedirectResponse(url="/raw-materials?tab=docs-tab", status_code=303)
         if upload_errors:
-            response.set_cookie("success_msg", f"Batch '{no_batch.strip()}' tersimpan.")
+            set_flash_cookie(response, "success_msg", f"Batch '{no_batch.strip()}' tersimpan.")
         else:
-            response.set_cookie("success_msg", "Dokumen berhasil diupload.")
+            set_flash_cookie(response, "success_msg", "Dokumen berhasil diupload.")
         if upload_errors or cleanup_pesan:
-            response.set_cookie(
+            set_flash_cookie(
+                response,
                 "warning_msg",
                 " ".join(
                     [
@@ -2529,7 +2557,7 @@ def register_raw_materials_routes(
                            request=request)
 
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
-            response.set_cookie("success_msg", f"ACC Dipakai berhasil disimpan. ED baru: {new_expiry_date}")
+            set_flash_cookie(response, "success_msg", f"ACC Dipakai berhasil disimpan. ED baru: {new_expiry_date}")
             return response
 
         except HTTPException:
@@ -2539,7 +2567,7 @@ def register_raw_materials_routes(
         except Exception as e:
             print(f"Gagal ACC Dipakai: {e}")
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
-            response.set_cookie("error_msg", "Gagal menyimpan ACC Dipakai. Silakan coba lagi atau hubungi admin.")
+            set_flash_cookie(response, "error_msg", "Gagal menyimpan ACC Dipakai. Silakan coba lagi atau hubungi admin.")
             return response
 
     @app.post("/raw-materials/batches/acc-dimusnahkan")
@@ -2597,7 +2625,7 @@ def register_raw_materials_routes(
                            request=request)
 
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
-            response.set_cookie("success_msg", "Batch berhasil dimusnahkan (ACC Dimusnahkan).")
+            set_flash_cookie(response, "success_msg", "Batch berhasil dimusnahkan (ACC Dimusnahkan).")
             return response
 
         except HTTPException:
@@ -2606,5 +2634,5 @@ def register_raw_materials_routes(
         except Exception as e:
             print(f"Gagal ACC Dimusnahkan: {e}")
             response = RedirectResponse(url="/raw-materials?tab=ed-tab", status_code=303)
-            response.set_cookie("error_msg", "Gagal memusnahkan batch. Silakan coba lagi atau hubungi admin.")
+            set_flash_cookie(response, "error_msg", "Gagal memusnahkan batch. Silakan coba lagi atau hubungi admin.")
             return response

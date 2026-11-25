@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.database import supabase
+from app.flash_cookie import clean_visible_text, delete_flash_cookie, get_flash_cookie, set_flash_cookie
 from app.security import assert_same_tenant
 from app.pagination import paginate_all, paginate_all_capped
 WIB = ZoneInfo("Asia/Jakarta")
@@ -34,7 +35,8 @@ def _sanitize_ilike(q: str) -> str:
 def _clean_text(v, max_len: int = 500):
     if v is None:
         return None
-    s = " ".join(str(v).split()).strip()
+    cleaned = clean_visible_text(str(v)) or ""
+    s = " ".join(cleaned.split()).strip()
     if not s:
         return None
     return s[:max_len]
@@ -489,9 +491,9 @@ def _redirect_po(po_id=None, ok=None, err=None):
         base += f"{sep}error={err}"
     resp = RedirectResponse(url=base, status_code=303)
     if ok:
-        resp.set_cookie("success_msg", ok)
+        set_flash_cookie(resp, "success_msg", ok)
     if err:
-        resp.set_cookie("error_msg", err)
+        set_flash_cookie(resp, "error_msg", err)
     return resp
 
 def register_po_routes(app, get_current_user, log_activity, templates,
@@ -507,8 +509,8 @@ def register_po_routes(app, get_current_user, log_activity, templates,
     async def po_page(request: Request, current_user: dict = Depends(get_current_user)):
         qq = (request.query_params.get("q") or "").strip()[:80]
         sel_id = (request.query_params.get("po_id") or "").strip() or None
-        s_msg = request.cookies.get("success_msg") or request.query_params.get("success")
-        e_msg = request.cookies.get("error_msg") or request.query_params.get("error")
+        s_msg = get_flash_cookie(request, "success_msg") or request.query_params.get("success")
+        e_msg = get_flash_cookie(request, "error_msg") or request.query_params.get("error")
 
         # --- Filter tahun & kuartal --------------------------------------
         # Prioritas: query param -> cookie (dari render sebelumnya) -> default
@@ -776,9 +778,9 @@ def register_po_routes(app, get_current_user, log_activity, templates,
             max_age=60 * 60 * 24 * 180, httponly=False, samesite="lax", path="/",
         )
         if s_msg:
-            resp.delete_cookie("success_msg")
+            delete_flash_cookie(resp, "success_msg")
         if e_msg:
-            resp.delete_cookie("error_msg")
+            delete_flash_cookie(resp, "error_msg")
         return resp
 
     # ======================================================================

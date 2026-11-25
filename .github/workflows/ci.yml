@@ -117,6 +117,7 @@ jobs:
           python tests/test_manual_preview_pdf.py
           python tests/verify_po_analytics_detail.py
           python tests/verify_product_attachments.py
+          python tests/test_flash_cookie.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt

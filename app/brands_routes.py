@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from app.file_validation import validate_pdf_bytes
+from app.flash_cookie import clean_visible_text, delete_flash_cookie, get_flash_cookie, set_flash_cookie
 from app import object_store
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -29,8 +30,8 @@ def register_brands_routes(
         brand_name: str = Form(...),
         current_user: dict = Depends(get_current_user)
     ):
-        producer_name = producer_name.strip()
-        brand_name = brand_name.strip()
+        producer_name = clean_visible_text(producer_name) or ""
+        brand_name = clean_visible_text(brand_name) or ""
 
         if not producer_name or not brand_name:
             log_activity(
@@ -40,7 +41,7 @@ def register_brands_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/brands", status_code=303)
-            response.set_cookie("error_msg", "Nama Produsen dan Nama Merk wajib diisi.")
+            set_flash_cookie(response, "error_msg", "Nama Produsen dan Nama Merk wajib diisi.")
             return response
 
         try:
@@ -70,7 +71,7 @@ def register_brands_routes(
                     request=request, outcome="rejected",
                 )
                 response = RedirectResponse(url="/brands", status_code=303)
-                response.set_cookie("error_msg", f"Merk '{brand_name}' sudah terdaftar di bawah produsen '{producer_name}'.")
+                set_flash_cookie(response, "error_msg", f"Merk '{brand_name}' sudah terdaftar di bawah produsen '{producer_name}'.")
                 return response
 
             new_brand_res = supabase.table("brands").insert({
@@ -95,7 +96,7 @@ def register_brands_routes(
             )
 
             response = RedirectResponse(url="/brands", status_code=303)
-            response.set_cookie("success_msg", f"Merk '{brand_name}' berhasil ditambahkan.")
+            set_flash_cookie(response, "success_msg", f"Merk '{brand_name}' berhasil ditambahkan.")
             return response
 
         except Exception as e:
@@ -108,7 +109,7 @@ def register_brands_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url="/brands", status_code=303)
-            response.set_cookie("error_msg", "Gagal menambahkan merk. Coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal menambahkan merk. Coba lagi.")
             return response
 
 
@@ -158,8 +159,8 @@ def register_brands_routes(
                     "PT Heka": {"hak_lisensi_merk_file_url": None},
                 }
 
-        success_msg = request.cookies.get("success_msg")
-        error_msg = request.cookies.get("error_msg")
+        success_msg = get_flash_cookie(request, "success_msg")
+        error_msg = get_flash_cookie(request, "error_msg")
 
         response = templates.TemplateResponse(
             request=request,
@@ -172,8 +173,8 @@ def register_brands_routes(
                 "current_user": current_user
             }
         )
-        response.delete_cookie("success_msg")
-        response.delete_cookie("error_msg")
+        delete_flash_cookie(response, "success_msg")
+        delete_flash_cookie(response, "error_msg")
         return response
 
 
@@ -193,7 +194,7 @@ def register_brands_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/brands", status_code=303)
-            response.set_cookie("error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
+            set_flash_cookie(response, "error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
             return response
 
         # Label merk supaya log_activity tidak cuma berisi UUID.
@@ -267,7 +268,7 @@ def register_brands_routes(
                 )
 
             response = RedirectResponse(url="/brands", status_code=303)
-            response.set_cookie("success_msg", f"Dokumen Hak/Lisensi Merk untuk {perusahaan} berhasil diperbarui.")
+            set_flash_cookie(response, "success_msg", f"Dokumen Hak/Lisensi Merk untuk {perusahaan} berhasil diperbarui.")
             return response
 
         except Exception as e:
@@ -280,5 +281,5 @@ def register_brands_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url="/brands", status_code=303)
-            response.set_cookie("error_msg", "Gagal upload dokumen. Coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal upload dokumen. Coba lagi.")
             return response

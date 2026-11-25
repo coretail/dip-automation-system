@@ -16,6 +16,7 @@ from app.efek_samping import _efek_samping_meta
 from app.excel_generator import XLSX_MIME, build_formula_workbook
 from app import object_store
 from app.file_validation import validate_pdf_bytes
+from app.flash_cookie import clean_visible_text, delete_flash_cookie, get_flash_cookie, set_flash_cookie
 from app.product_attachments_routes import LAMPIRAN_CATEGORIES
 from app.security import assert_same_tenant
 from app.variant_components import prepare_line_preview
@@ -244,6 +245,9 @@ def register_products_routes(
         brand_id: str = Form(None),
         current_user: dict = Depends(get_current_user)
     ):
+        nama_produk = clean_visible_text(nama_produk) or ""
+        nama_customer = clean_visible_text(nama_customer)
+
         # Bersihkan input tanggal kosong menjadi None agar Supabase tidak error
         acc_sampel_val = acc_sampel.strip() if acc_sampel else None
         if acc_sampel_val == "":
@@ -257,7 +261,7 @@ def register_products_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", "Akses ditolak! Produk harus atas nama perusahaan Anda.")
+            set_flash_cookie(response, "error_msg", "Akses ditolak! Produk harus atas nama perusahaan Anda.")
             return response
 
         tgl_aktif_na_val = tanggal_aktif_na.strip() if tanggal_aktif_na else None
@@ -306,7 +310,7 @@ def register_products_routes(
             print(f"\n🔴 [ERROR add_product] Gagal menyimpan produk '{nama_produk}': {e}")
             # Redirect balik ke halaman dashboard dengan pesan error, supaya user tahu harus input ulang
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", f"Gagal menyimpan produk '{nama_produk}'. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", f"Gagal menyimpan produk '{nama_produk}'. Silakan coba lagi.")
             return response
 
     @app.post("/products/delete/{product_id}")
@@ -335,7 +339,7 @@ def register_products_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", "Gagal memuat produk. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal memuat produk. Silakan coba lagi.")
             return response
 
         product_row = (product_before.data or [None])[0]
@@ -346,7 +350,7 @@ def register_products_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", "Produk tidak ditemukan.")
+            set_flash_cookie(response, "error_msg", "Produk tidak ditemukan.")
             return response
 
         nama_produk = product_row.get("nama_produk") or product_id
@@ -371,7 +375,7 @@ def register_products_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", "Produk sudah ada di Sampah.")
+            set_flash_cookie(response, "error_msg", "Produk sudah ada di Sampah.")
             return response
 
         try:
@@ -395,7 +399,7 @@ def register_products_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", "Gagal memindahkan produk ke Sampah. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal memindahkan produk ke Sampah. Silakan coba lagi.")
             return response
 
         # Guard 0 baris ter-update: status produk berubah di antara SELECT dan UPDATE.
@@ -406,7 +410,7 @@ def register_products_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", "Produk sudah ada di Sampah.")
+            set_flash_cookie(response, "error_msg", "Produk sudah ada di Sampah.")
             return response
 
         log_activity(
@@ -415,7 +419,7 @@ def register_products_routes(
             request=request, outcome="success",
         )
         response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie("success_msg", f"Produk '{nama_produk}' dipindahkan ke Sampah.")
+        set_flash_cookie(response, "success_msg", f"Produk '{nama_produk}' dipindahkan ke Sampah.")
         return response
 
     @app.post("/products/{product_id}/public-access/revoke")
@@ -441,7 +445,7 @@ def register_products_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-            response.set_cookie("error_msg", "Gagal memuat produk. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal memuat produk. Silakan coba lagi.")
             return response
         product_row = (product_before.data or [None])[0]
         if not product_row or product_row.get("is_deleted"):
@@ -451,7 +455,7 @@ def register_products_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", "Produk tidak ditemukan.")
+            set_flash_cookie(response, "error_msg", "Produk tidak ditemukan.")
             return response
         nama_produk = product_row.get("nama_produk") or product_id
         if not assert_same_tenant(current_user, product_row):
@@ -475,7 +479,7 @@ def register_products_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-            response.set_cookie("error_msg", "Gagal mencabut link publik. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal mencabut link publik. Silakan coba lagi.")
             return response
         log_activity(
             current_user, "revoke_public_access", "product", product_id, nama_produk,
@@ -483,7 +487,7 @@ def register_products_routes(
             request=request, outcome="success",
         )
         response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-        response.set_cookie("success_msg", f"Link publik produk '{nama_produk}' dicabut.")
+        set_flash_cookie(response, "success_msg", f"Link publik produk '{nama_produk}' dicabut.")
         return response
 
     @app.post("/products/{product_id}/public-access/reactivate")
@@ -509,7 +513,7 @@ def register_products_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-            response.set_cookie("error_msg", "Gagal memuat produk. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal memuat produk. Silakan coba lagi.")
             return response
         product_row = (product_before.data or [None])[0]
         if not product_row or product_row.get("is_deleted"):
@@ -519,7 +523,7 @@ def register_products_routes(
                 request=request, outcome="rejected",
             )
             response = RedirectResponse(url="/", status_code=303)
-            response.set_cookie("error_msg", "Produk tidak ditemukan.")
+            set_flash_cookie(response, "error_msg", "Produk tidak ditemukan.")
             return response
         nama_produk = product_row.get("nama_produk") or product_id
         if not assert_same_tenant(current_user, product_row):
@@ -542,7 +546,7 @@ def register_products_routes(
                 request=request, outcome="failed",
             )
             response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-            response.set_cookie("error_msg", "Gagal mengaktifkan ulang link publik. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal mengaktifkan ulang link publik. Silakan coba lagi.")
             return response
         log_activity(
             current_user, "reactivate_public_access", "product", product_id, nama_produk,
@@ -550,7 +554,7 @@ def register_products_routes(
             request=request, outcome="success",
         )
         response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-        response.set_cookie("success_msg", f"Link publik produk '{nama_produk}' diaktifkan ulang.")
+        set_flash_cookie(response, "success_msg", f"Link publik produk '{nama_produk}' diaktifkan ulang.")
         return response
 
     @app.get("/products/{product_id}/inci-breakdown/report", response_class=HTMLResponse)
@@ -871,15 +875,15 @@ def register_products_routes(
 
         if product["perusahaan"] != "PT Erfi":
             response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-            response.set_cookie("error_msg", "Fitur spesifikasi produk jadi hanya tersedia untuk PT Erfi.")
+            set_flash_cookie(response, "error_msg", "Fitur spesifikasi produk jadi hanya tersedia untuk PT Erfi.")
             return response
 
         spec_res = supabase.table("product_finished_specs").select("*").eq("product_id", product_id).execute()
         spec = spec_res.data[0] if spec_res.data else None
 
         # Get success/error messages from cookies
-        success_msg = request.cookies.get("success_msg")
-        error_msg = request.cookies.get("error_msg")
+        success_msg = get_flash_cookie(request, "success_msg")
+        error_msg = get_flash_cookie(request, "error_msg")
 
         response = templates.TemplateResponse(
             request=request,
@@ -893,9 +897,9 @@ def register_products_routes(
             }
         )
         if success_msg:
-            response.delete_cookie("success_msg")
+            delete_flash_cookie(response, "success_msg")
         if error_msg:
-            response.delete_cookie("error_msg")
+            delete_flash_cookie(response, "error_msg")
         return response
 
 
@@ -932,8 +936,11 @@ def register_products_routes(
             sections_data = json.loads(sections_json)
         except json.JSONDecodeError:
             response = RedirectResponse(url=f"/products/{product_id}/finished-spec", status_code=303)
-            response.set_cookie("error_msg", "Format data sections tidak valid. Pastikan format JSON benar.")
+            set_flash_cookie(response, "error_msg", "Format data sections tidak valid. Pastikan format JSON benar.")
             return response
+
+        kode_produk = clean_visible_text(kode_produk)
+        disetujui_oleh = clean_visible_text(disetujui_oleh)
 
         tgl_disetujui_val = tanggal_disetujui.strip() if tanggal_disetujui else None
         if tgl_disetujui_val == "":
@@ -962,7 +969,7 @@ def register_products_routes(
                      request=request)
 
         response = RedirectResponse(url=f"/products/{product_id}/finished-spec", status_code=303)
-        response.set_cookie("success_msg", success_msg)
+        set_flash_cookie(response, "success_msg", success_msg)
         return response
 
 
@@ -987,7 +994,7 @@ def register_products_routes(
         if not spec_res.data:
             # Redirect ke edit page jika belum diisi, biar user tau harus ngapain
             response = RedirectResponse(url=f"/products/{product_id}/edit?tab=bab3", status_code=303)
-            response.set_cookie("error_msg", "Spesifikasi produk jadi belum diisi, silakan isi form terlebih dahulu.")
+            set_flash_cookie(response, "error_msg", "Spesifikasi produk jadi belum diisi, silakan isi form terlebih dahulu.")
             return response
         spec = spec_res.data[0]
 
@@ -1063,7 +1070,7 @@ def register_products_routes(
         except HTTPException as e:
             if e.status_code == 400:
                 response = RedirectResponse(url=f"/products/{product_id}/edit?tab=bab3", status_code=303)
-                response.set_cookie("error_msg", e.detail)
+                set_flash_cookie(response, "error_msg", e.detail)
                 return response
             raise e
 
@@ -1227,8 +1234,8 @@ def register_products_routes(
             has_finished_spec = has_finished_spec_form or bool(product.get("spek_produk_jadi_file_url"))
 
         # Get error message from cookie (if any)
-        error_msg = request.cookies.get("error_msg")
-        success_msg = request.cookies.get("success_msg")
+        error_msg = get_flash_cookie(request, "error_msg")
+        success_msg = get_flash_cookie(request, "success_msg")
 
         # Lampiran produk (fitur attachment) — dikelompokkan per tanggal unggah.
         # Jika tabel atau bucket belum tersedia, halaman tetap fail-soft.
@@ -1333,6 +1340,9 @@ def register_products_routes(
         variant_id: List[str] = Form(None),
         current_user: dict = Depends(get_current_user)
     ):
+        nama_produk = clean_visible_text(nama_produk) or ""
+        nama_customer = clean_visible_text(nama_customer)
+
         acc_sampel_val = acc_sampel.strip() if acc_sampel else None
         if acc_sampel_val == "": acc_sampel_val = None
 
@@ -1380,7 +1390,7 @@ def register_products_routes(
                     request=request, outcome="rejected",
                 )
                 response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-                response.set_cookie("error_msg", formula_msg)
+                set_flash_cookie(response, "error_msg", formula_msg)
                 return response
 
         update_payload = {
@@ -1585,7 +1595,7 @@ def register_products_routes(
             log_activity(current_user, "update", "product", product_id, nama_produk,
                          failed_changes, request=request, outcome="failed")
             response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-            response.set_cookie("error_msg", formula_error_msg)
+            set_flash_cookie(response, "error_msg", formula_error_msg)
             return response
 
         if product_changes:
@@ -1593,7 +1603,7 @@ def register_products_routes(
                          product_changes, request=request)
 
         response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-        response.set_cookie("success_msg", f"Data & dokumen DIP produk '{nama_produk}' berhasil diperbarui!")
+        set_flash_cookie(response, "success_msg", f"Data & dokumen DIP produk '{nama_produk}' berhasil diperbarui!")
         return response
 
     @app.post("/products/{product_id}/delete-file")
@@ -1668,7 +1678,7 @@ def register_products_routes(
         except Exception as e:
             print(f"Gagal update DB hapus file {db_field} produk {product_id}: {e}")
             response = RedirectResponse(url=f"/products/{product_id}/edit", status_code=303)
-            response.set_cookie("error_msg", "Gagal menghapus file. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal menghapus file. Silakan coba lagi.")
             return response
 
         storage_failed = False
@@ -1716,12 +1726,12 @@ def register_products_routes(
 
         if storage_failed:
             response = RedirectResponse(url=f"/products/{product_id}/edit?tab={_tab_for_field(field_name)}", status_code=303)
-            response.set_cookie("warning_msg", "File dilepas dari produk, tetapi objek di storage gagal dihapus; hubungi admin.")
+            set_flash_cookie(response, "warning_msg", "File dilepas dari produk, tetapi objek di storage gagal dihapus; hubungi admin.")
             return response
 
         tab = _tab_for_field(field_name)
         response = RedirectResponse(url=f"/products/{product_id}/edit?tab={tab}", status_code=303)
-        response.set_cookie("success_msg", "File PDF berhasil dihapus.")
+        set_flash_cookie(response, "success_msg", "File PDF berhasil dihapus.")
         return response
 
     # ==================== GENERATOR SISTEM PENGKODEAN BATCH ====================

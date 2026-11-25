@@ -249,6 +249,7 @@ scripts_tmp_list_projects.py
 !/tests/test_invite_rate_limit.py
 !/tests/test_invite_login_message.py
 !/tests/test_invite_ui.py
+!/tests/test_flash_cookie.py
 
 # Local documentation and notes
 /catatan/prompt-tenant-guard-a10-a13.md
