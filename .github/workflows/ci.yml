@@ -102,10 +102,7 @@ jobs:
           python tests/test_client_ip.py
           python tests/test_mailer.py
           python tests/test_invite_admin.py
-          python tests/test_invite_validation.py
-          python tests/test_invite_activation_order.py
-          python tests/test_invite_activation_verify_args.py
-          python tests/test_invite_client_isolation.py
+          python tests/test_invite_activation.py
           python tests/test_invite_rate_limit.py
           python tests/test_invite_login_message.py
           python tests/test_bahansemi_spec_parameters.py
