@@ -70,7 +70,7 @@ jobs:
           python tests/test_dip_public.py
           python tests/test_log_activity_normalize.py
           python tests/test_env_guard.py
-          python tests/test_variant_component_preview.py
+          python tests/test_raw_materials.py
           python tests/test_profile_and_display_name.py
           python tests/test_notes_author_resolution.py
           python tests/test_verify_r2_readiness_logic.py
@@ -79,7 +79,6 @@ jobs:
           python tests/test_bab2_qc_mengetahui.py
           python tests/test_access_log_redaction.py
           python tests/test_auth_profile_fail_closed.py
-          python tests/test_raw_material_components_atomic.py
           python tests/test_safe_fetch.py
           python tests/test_csrf_guard.py
           python tests/test_journal_link.py
@@ -95,10 +94,8 @@ jobs:
           python tests/test_invite_activation.py
           python tests/test_invite_rate_limit.py
           python tests/test_invite_login_message.py
-          python tests/test_bahansemi_spec_parameters.py
           python tests/test_batch_coding_pdf.py
           python tests/test_invite_ui.py
-          python tests/test_manual_preview_pdf.py
           python tests/verify_po_analytics_detail.py
           python tests/verify_product_attachments.py
           python tests/test_flash_cookie.py

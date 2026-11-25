@@ -131,8 +131,8 @@ backup-rls/
 !/tests/test_env_guard.py
 # Unit test murni helper verify_r2_readiness (tanpa koneksi/secret).
 !/tests/test_verify_r2_readiness_logic.py
-# Unit test murni preview komposisi varian (tanpa koneksi/secret).
-!/tests/test_variant_component_preview.py
+# Unit test gabungan raw materials: komponen atomik, preview varian, spec_parameters, preview PDF manual (pure-local).
+!/tests/test_raw_materials.py
 # Unit test gabungan profil & display_name: validasi, rute profil, display_name, admin create, get_current_user (pure-local).
 !/tests/test_profile_and_display_name.py
 # Unit test guard greeting_cache (pure-local, tanpa koneksi/secret).
@@ -142,10 +142,6 @@ backup-rls/
 !/tests/test_access_log_redaction.py
 # Unit test render penandatangan Mengetahui Bab II (pure-local, Jinja2).
 !/tests/test_bab2_qc_mengetahui.py
-# Unit test preview PDF input manual raw materials (pure-local, fake supabase).
-!/tests/test_manual_preview_pdf.py
-# Unit test kontrak spec_parameters -> masterRawMaterials (pure-local, tanpa koneksi/secret).
-!/tests/test_bahansemi_spec_parameters.py
 # Unit test guard CSRF Origin/Referer (pure-local, tanpa koneksi/secret).
 !/tests/test_csrf_guard.py
 # E2E regresi Referrer-Policy: Origin POST form submit tidak boleh "null".
@@ -202,7 +198,6 @@ preview_themes.html
 /logs/
 scripts_tmp_list_projects.py
 !/tests/test_auth_profile_fail_closed.py
-!/tests/test_raw_material_components_atomic.py
 !/tests/test_safe_fetch.py
 !/tests/test_journal_link.py
 !/tests/test_import_journal_link_matching.py
