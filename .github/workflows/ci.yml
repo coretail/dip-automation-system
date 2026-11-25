@@ -82,10 +82,8 @@ jobs:
           python tests/test_safe_fetch.py
           python tests/test_csrf_guard.py
           python tests/test_journal_links.py
-          python tests/test_paginate_all.py
+          python tests/test_pagination_and_ed.py
           python tests/test_greeting_budget.py
-          python tests/test_po_pagination_correctness.py
-          python tests/test_ed_query_builder.py
           python tests/test_client_ip.py
           python tests/test_mailer.py
           python tests/test_invite_admin.py
