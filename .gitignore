@@ -101,17 +101,14 @@ backup-rls/
 !/tests/verify_po_analytics_detail.py
 # Unit test gabungan storage & R2: parse_storage_url, object_store dispatch, verify_r2_readiness helpers (tanpa koneksi/secret).
 !/tests/test_storage_r2.py
-# Unit test guard cache-bust untuk URL presign (pure-local).
-!/tests/test_base_cachebust.py
 # E2E upload UI -> R2 staging (tanpa secret; kredensial via env vars saat dijalankan).
 !/tests/e2e_upload_staging.py
 # E2E request_id activity log (UI /notes -> activity_logs staging; kredensial via env vars).
 !/tests/e2e_activity_request_id.py
 # E2E smoke pasca-refactor route (halaman GET + alur sample/brand; kredensial via env vars).
 !/tests/e2e_smoke_refactor.py
-# Unit tests security (pure logic, tanpa koneksi/secret).
-!/tests/test_security_helpers.py
-!/tests/test_upload_validation.py
+# Unit tests security guards gabungan (security helpers, upload PDF, client IP, safe_fetch, base cache-bust) & auth matrix (pure-local).
+!/tests/test_security_guards.py
 !/tests/test_auth_matrix.py
 # Regression test temuan audit codebase 2026-10-21 (pure logic, tanpa koneksi/secret).
 !/tests/test_audit_regressions.py
@@ -195,13 +192,10 @@ preview_themes.html
 /logs/
 scripts_tmp_list_projects.py
 !/tests/test_auth_profile_fail_closed.py
-!/tests/test_safe_fetch.py
 # Unit test gabungan journal_link: validasi URL, Daftar_Jurnal.txt Bab II, pencocokan impor (murni, tanpa DB/secret).
 !/tests/test_journal_links.py
 # Unit test gabungan pagination & ED notifications: paginate_all, usage_counts, capped/ED/NA, query builder (tanpa DB).
 !/tests/test_pagination_and_ed.py
-# Unit test murni _client_ip trusted-proxy (SEC-05, pure-local, tanpa jaringan).
-!/tests/test_client_ip.py
 # Unit test budget greeting AI (pure-local, monkeypatch httpx).
 !/tests/test_greeting_budget.py
 

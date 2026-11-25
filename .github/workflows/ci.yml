@@ -61,11 +61,9 @@ jobs:
           PYTHONPATH: .
         run: |
           python tests/test_storage_r2.py
-          python tests/test_security_helpers.py
-          python tests/test_upload_validation.py
+          python tests/test_security_guards.py
           python tests/test_auth_matrix.py
           python tests/test_audit_regressions.py
-          python tests/test_base_cachebust.py
           python tests/test_dip_public.py
           python tests/test_log_activity_normalize.py
           python tests/test_env_guard.py
@@ -77,12 +75,10 @@ jobs:
           python tests/test_bab2_qc_mengetahui.py
           python tests/test_access_log_redaction.py
           python tests/test_auth_profile_fail_closed.py
-          python tests/test_safe_fetch.py
           python tests/test_csrf_guard.py
           python tests/test_journal_links.py
           python tests/test_pagination_and_ed.py
           python tests/test_greeting_budget.py
-          python tests/test_client_ip.py
           python tests/test_mailer.py
           python tests/test_invite_admin.py
           python tests/test_invite_activation.py
