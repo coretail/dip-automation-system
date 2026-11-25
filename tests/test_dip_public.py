@@ -1002,7 +1002,7 @@ def test_journal_link_invalid_becomes_none_no_raise():
     assert bab2_journal_link({"journal_link": "h" * 3000}) is None
     assert bab2_journal_link({"journal_link": None}) is None
     assert bab2_journal_link({}) is None
-    assert bab2_journal_link(None) is not None
+    assert bab2_journal_link(None) is None
 
 
 ALL_TESTS = [
