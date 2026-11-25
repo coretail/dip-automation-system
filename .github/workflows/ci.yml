@@ -101,10 +101,7 @@ jobs:
           python tests/test_ed_query_builder.py
           python tests/test_client_ip.py
           python tests/test_mailer.py
-          python tests/test_invite_endpoint.py
-          python tests/test_invite_dedupe.py
-          python tests/test_invite_resend.py
-          python tests/test_invite_cancel.py
+          python tests/test_invite_admin.py
           python tests/test_invite_validation.py
           python tests/test_invite_activation_order.py
           python tests/test_invite_activation_verify_args.py

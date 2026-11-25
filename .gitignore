@@ -238,10 +238,10 @@ scripts_tmp_list_projects.py
 # Unit test mailer undangan Brevo (pure-local, httpx SELALU di-mock, tanpa jaringan/secret).
 !/tests/test_mailer.py
 # Unit test endpoint invite user via email (pure-local, mock Supabase & mailer).
-!/tests/test_invite_endpoint.py
-!/tests/test_invite_dedupe.py
-!/tests/test_invite_resend.py
-!/tests/test_invite_cancel.py
+# Stub murni bersama untuk unit test (tanpa state global / side effect saat import).
+!/tests/_fakes.py
+# Unit test gabungan invite admin: invite, dedupe, resend, cancel (pure-local, mock Supabase & mailer).
+!/tests/test_invite_admin.py
 !/tests/test_invite_validation.py
 !/tests/test_invite_activation_order.py
 !/tests/test_invite_activation_verify_args.py
