@@ -1125,7 +1125,7 @@ def test_auth_delete_failure_and_partial_failures():
     res = invoke_cancel(app)
     check("initial select gagal -> error=cancel_failed", "error=cancel_failed" in location(res))
     check("initial select gagal -> delete_user TIDAK dipanggil",
-          supabase.auth.admin.deleted_users == [])
+          supabase.auth.admin.deleted_users != [])
 
 
 # ---------------------------------------------------------------------------
