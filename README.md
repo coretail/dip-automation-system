@@ -310,13 +310,15 @@ dip-automation-system/
 │   │   └── images/             # logo_erfi, logo_heka, kop_erfi, kop_heka, apt, favicon
 │   └── templates/              # 18 halaman extend base.html + template PDF/partial tersendiri
 ├── migration/                  # Toolkit migrasi data (SQL skema di-commit; skrip & data tidak)
-├── tests/                      # Skrip verifikasi. Di-commit (whitelist `.gitignore`): test_parse_storage_url.py, test_object_store_r2.py, test_security_helpers.py, test_upload_validation.py, test_auth_matrix.py, test_audit_regressions.py, test_base_cachebust.py, test_dip_public_check.py, test_log_activity_normalize.py, test_verify_r2_readiness_logic.py, verify_*.py, e2e_*.py. Test baru harus ditambahkan ke whitelist `!/tests/nama.py` karena `/tests/*` di-ignore
+├── tests/                      # 29 skrip pure-local di CI (27 test_*.py + 2 verify_*.py), ditambah E2E staging dan verifikasi DB live
 ├── scripts/                    # Launcher staging (run_staging_8017.py) & util pendukung
 ├── tools/                      # Util pemeriksaan (kontras tema)
 ├── requirements.txt            # 15 dependensi, semua dipin exact
 ├── README.md                   # Dokumen ini
 └── panduan_dip_automation_system.md  # Panduan operasional & teknis lengkap
 ```
+
+Skrip pure-local yang terdaftar di CI: `test_storage_r2.py`, `test_security_guards.py`, `test_auth_matrix.py`, `test_audit_regressions.py`, `test_dip_public.py`, `test_log_activity_normalize.py`, `test_env_guard.py`, `test_raw_materials.py`, `test_profile_and_display_name.py`, `test_notes_author_resolution.py`, `test_greeting_cache_guard.py`, `test_tenant_guards.py`, `test_bab2_qc_mengetahui.py`, `test_access_log_redaction.py`, `test_auth_profile_fail_closed.py`, `test_csrf_guard.py`, `test_journal_links.py`, `test_pagination_and_ed.py`, `test_greeting_budget.py`, `test_mailer.py`, `test_invite_admin.py`, `test_invite_activation.py`, `test_invite_rate_limit.py`, `test_invite_login_message.py`, `test_batch_coding_pdf.py`, `test_invite_ui.py`, `test_flash_cookie.py`, `verify_po_analytics_detail.py`, dan `verify_product_attachments.py`. Test baru harus ditambahkan ke whitelist `!/tests/nama.py` karena `/tests/*` di-ignore. Skrip `e2e_*.py` memerlukan staging; `verify_audit_db_state.py` memeriksa database dan tetap di luar CI.
 
 > **Arsitektur.** `main.py` menangani routing inti dan menjadi pemanggil semua `register_*_routes`. Fitur yang cukup besar dipisah menjadi modul router terpisah dengan fungsi `register_*_routes(app, ...)`, sehingga `main.py` tidak terus membesar tanpa batas. Semua dependensi antar modul di-*inject* lewat parameter fungsi tersebut, sehingga tidak ada modul yang perlu meng-import `main.py` (circular import). Batas keamanan sengaja terlihat di struktur berkas: `dip_documents.py` berisi generator DIP yang **butuh login**, sedangkan `dip_public.py` berisi portal `/dip/{slug}` yang **tanpa login**.
 
