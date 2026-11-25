@@ -111,6 +111,7 @@ jobs:
            python tests/test_invite_client_isolation.py
            python tests/test_invite_rate_limit.py
            python tests/test_invite_login_message.py
+           python tests/test_flash_cookie.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt

@@ -199,9 +199,9 @@
     <!-- Main Content Block -->
     <main class="app-container px-4 sm:px-6 lg:px-8 py-8">
 
-        {% set _error_msg = error_msg if error_msg is defined and error_msg else request.cookies.get('error_msg') %}
-        {% set _success_msg = success_msg if success_msg is defined and success_msg else request.cookies.get('success_msg') %}
-        {% set _warning_msg = warning_msg if warning_msg is defined and warning_msg else request.cookies.get('warning_msg') %}
+        {% set _error_msg = error_msg if error_msg is defined and error_msg else (request.cookies.get('error_msg') | decode_flash) %}
+        {% set _success_msg = success_msg if success_msg is defined and success_msg else (request.cookies.get('success_msg') | decode_flash) %}
+        {% set _warning_msg = warning_msg if warning_msg is defined and warning_msg else (request.cookies.get('warning_msg') | decode_flash) %}
 
         {% if _error_msg %}
         <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center" role="alert">

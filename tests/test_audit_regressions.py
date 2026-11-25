@@ -927,7 +927,7 @@ FALLBACK_EXCEPTION_NAMES = {"e", "err", "exc", "ex", "error", "exception"}
 
 LEAK_PATTERNS = (
     re.compile(r"JSONResponse\([^)]*?str\(([A-Za-z_]\w*)\)"),
-    re.compile(r"set_cookie\([^)]*?str\(([A-Za-z_]\w*)\)"),
+    re.compile(r"set_(?:flash_)?cookie\([^)]*?str\(([A-Za-z_]\w*)\)"),
     re.compile(r"[\"']note[\"']\s*:\s*str\(([A-Za-z_]\w*)\)"),
 )
 
@@ -1028,7 +1028,7 @@ def section_error_honesty() -> None:
         region = "\n".join(prod_lines[rpc_idx:success_idx + 1])
         be01_ok = (
             "except Exception" in region
-            and 'set_cookie("error_msg"' in region
+            and 'set_flash_cookie(response, "error_msg"' in region
         )
         if not be01_ok:
             be01_detail = (
@@ -1062,7 +1062,7 @@ def section_error_honesty() -> None:
                 % (label, needle, idx + 1)
             )
         handler = "\n".join(block_after(rm_lines, exc_idx))
-        ok = 'set_cookie("error_msg"' in handler or "raise" in handler
+        ok = 'set_flash_cookie(response, "error_msg"' in handler or "raise" in handler
         return ok, "%s: handler gagal (raw_materials_routes.py:%d) tidak set error_msg" % (
             label, exc_idx + 1)
 
@@ -1087,7 +1087,7 @@ def section_error_honesty() -> None:
     for path in template_files():
         if "warning_msg" in read_text(path):
             readers.append(path.name)
-    warn_idx = find_line(prod_lines, 'set_cookie("warning_msg"')
+    warn_idx = find_line(prod_lines, 'set_flash_cookie(response, "warning_msg"')
     check(
         "BE-21 cookie warning_msg dirender minimal satu template",
         bool(readers),
@@ -1718,8 +1718,8 @@ def section_write_honesty() -> None:
         return re.sub(r"\s+", "", text)
 
     # Cookie flash boleh ditulis satu baris atau multi-baris -> dinormalisasi dulu.
-    cookie_error = nows('set_cookie("error_msg"')
-    cookie_warning = nows('set_cookie("warning_msg"')
+    cookie_error = nows('set_flash_cookie(response, "error_msg"')
+    cookie_warning = nows('set_flash_cookie(response, "warning_msg"')
 
     prod_lines = read_text(APP_DIR / "products_routes.py").splitlines()
     prod_text = "\n".join(prod_lines)
@@ -2185,7 +2185,7 @@ def section_write_honesty() -> None:
         and 'outcome="failed"' in win_gagal_semua
         and "_cleanup_uploaded_objects(" in win_gagal_semua
         and "Tidakadafileyangdipilih." not in win_gagal_semua
-        and 'set_cookie("warning_msg"' in quick_norm
+        and 'set_flash_cookie(response,"warning_msg"' in quick_norm
         and '",".join(upload_errors)' in win_peringatan
     )
     check(
@@ -2407,7 +2407,7 @@ def section_write_honesty() -> None:
         and "terverifikasi ada" in isi_rek
         and "dipertahankan" in isi_rek
         and 'outcome="success"' in isi_balas
-        and 'set_cookie("success_msg"' in isi_balas
+        and 'set_flash_cookie(response, "success_msg"' in isi_balas
         and "_cleanup_uploaded_objects" not in isi_balas
         and all(
             "_rekonsiliasi_setelah_gagal(" in reg
@@ -2431,7 +2431,7 @@ def section_write_honesty() -> None:
         and "daftar_path" in isi_rek
         and "uploaded_paths" in isi_rek
         and 'outcome="failed"' in isi_balas
-        and 'set_cookie("error_msg"' in isi_balas
+        and 'set_flash_cookie(response, "error_msg"' in isi_balas
         and "_cleanup_uploaded_objects" not in isi_balas
     )
     check(
@@ -2464,7 +2464,7 @@ def section_write_honesty() -> None:
         all(
             '_cleanup_uploaded_objects(uploaded_paths)' in reg
             and 'outcome="failed"' in reg
-            and 'set_cookie("error_msg"' in reg
+            and 'set_flash_cookie(response,"error_msg"' in reg
             for reg in (tambah_region, ubah_region, cepat_region)
         )
         and "isinstance(exc, (APIError, HTTPStatusError))" in isi_klasifikasi
