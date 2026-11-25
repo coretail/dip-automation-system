@@ -199,10 +199,8 @@ preview_themes.html
 scripts_tmp_list_projects.py
 !/tests/test_auth_profile_fail_closed.py
 !/tests/test_safe_fetch.py
-!/tests/test_journal_link.py
-!/tests/test_import_journal_link_matching.py
-# Unit test murni isi Daftar_Jurnal.txt (ZIP Bab II) (tanpa DB/secret).
-!/tests/test_bab2_daftar_jurnal.py
+# Unit test gabungan journal_link: validasi URL, Daftar_Jurnal.txt Bab II, pencocokan impor (murni, tanpa DB/secret).
+!/tests/test_journal_links.py
 # Unit test murni pagination + usage_counts badge N Produk /raw-materials (tanpa DB).
 !/tests/test_paginate_all.py
 # Unit test murni _client_ip trusted-proxy (SEC-05, pure-local, tanpa jaringan).
