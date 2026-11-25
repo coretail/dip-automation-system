@@ -242,10 +242,8 @@ scripts_tmp_list_projects.py
 !/tests/_fakes.py
 # Unit test gabungan invite admin: invite, dedupe, resend, cancel (pure-local, mock Supabase & mailer).
 !/tests/test_invite_admin.py
-!/tests/test_invite_validation.py
-!/tests/test_invite_activation_order.py
-!/tests/test_invite_activation_verify_args.py
-!/tests/test_invite_client_isolation.py
+# Unit test gabungan aktivasi undangan: validasi, urutan, verify_otp args, isolasi client (pure-local).
+!/tests/test_invite_activation.py
 !/tests/test_invite_rate_limit.py
 !/tests/test_invite_login_message.py
 !/tests/test_invite_ui.py
