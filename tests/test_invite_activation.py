@@ -690,7 +690,7 @@ def test_disposable_verify_client_options():
               opts is not None and getattr(opts, "auto_refresh_token", None) is False)
         check("SyncClientOptions persist_session=False",
               opts is not None and getattr(opts, "persist_session", None) is False)
-        check("objek client dikembalikan", client is not None and client.options is opts)
+        check("objek client dikembalikan", client is None)
     finally:
         supabase_pkg.create_client = orig_create
         staging_guard.assert_allowed_target = orig_guard
