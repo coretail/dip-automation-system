@@ -51,6 +51,15 @@ class FakeRpc:
         return SimpleNamespace(data=self._data, error=None)
 
 
+class FakeRequest:
+    """Pengganti minimal FastAPI Request dengan dict per-instance."""
+
+    def __init__(self, headers=None, cookies=None, query_params=None):
+        self.headers = dict(headers or {})
+        self.cookies = dict(cookies or {})
+        self.query_params = dict(query_params or {})
+
+
 class CheckRunner:
     """Pengumpul hasil ``check`` per-instance (tanpa state global)."""
 
