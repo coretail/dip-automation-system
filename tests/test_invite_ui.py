@@ -351,8 +351,10 @@ def _make_req():
 def _test_template_pending_rendering():
     """Template admin_users.html: user pending render badge pending + aksi resend/cancel."""
     from jinja2 import Environment, FileSystemLoader
+    from app.flash_cookie import decode_flash_value
 
     env = Environment(loader=FileSystemLoader("app/templates"))
+    env.filters["decode_flash"] = decode_flash_value
     tpl = env.get_template("admin_users.html")
 
     pending_user = {
@@ -421,8 +423,10 @@ def _test_template_pending_rendering():
 def _test_template_legacy_no_status():
     """status_col_present=False: kolom Email Undangan & filter Pending tidak dirender."""
     from jinja2 import Environment, FileSystemLoader
+    from app.flash_cookie import decode_flash_value
 
     env = Environment(loader=FileSystemLoader("app/templates"))
+    env.filters["decode_flash"] = decode_flash_value
     tpl = env.get_template("admin_users.html")
 
     user = {
