@@ -911,7 +911,7 @@ def test_display_name_none_falls_back_to_full_name():
     result = _get_current_user_query_pattern(sb, "user-1")
 
     effective_name = result["display_name"] or result["full_name"]
-    assert effective_name == "wrong"
+    assert effective_name == "budi"
     print("[PASS] display_name=None falls back to full_name")
 
 
