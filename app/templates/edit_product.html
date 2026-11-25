@@ -163,11 +163,12 @@
     </div>
 
     <!-- ================= ALERT ERROR ================= -->
-    {% if error_msg or request.cookies.get('error_msg') %}
+    {% set _edit_error_msg = error_msg or (request.cookies.get('error_msg') | decode_flash) %}
+    {% if _edit_error_msg %}
     <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm flex items-center justify-between" role="alert">
         <div class="flex items-center gap-2">
             <i class="fa-solid fa-circle-exclamation"></i>
-            <span>{{ error_msg or request.cookies.get('error_msg') or 'Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu.' }}</span>
+            <span>{{ _edit_error_msg or 'Ukuran file terlalu besar! Maksimal ukuran file adalah 10 MB. Silakan kompres PDF Anda terlebih dahulu.' }}</span>
         </div>
     </div>
     <script>
@@ -178,10 +179,11 @@
     </script>
     {% endif %}
 
-    {% if success_msg or request.cookies.get('success_msg') %}
+    {% set _edit_success_msg = success_msg or (request.cookies.get('success_msg') | decode_flash) %}
+    {% if _edit_success_msg %}
     <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-md mb-4 text-sm flex items-center gap-2" role="status">
         <i class="fa-solid fa-circle-check"></i>
-        <span>{{ success_msg or request.cookies.get('success_msg') }}</span>
+        <span>{{ _edit_success_msg }}</span>
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {

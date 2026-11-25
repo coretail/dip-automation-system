@@ -22,6 +22,7 @@ from starlette.datastructures import MutableHeaders
 from typing import List
 from app.csrf_guard import CsrfGuardMiddleware
 from app.database import supabase
+from app.flash_cookie import clean_visible_text, decode_flash_value, set_flash_cookie
 from app.object_store import parse_storage_url as _parse_storage_url
 
 
@@ -661,6 +662,7 @@ def extract_id_from_slug(slug_id: str) -> str:
 
 # Register slugify as Jinja2 filter
 templates.env.filters["slugify"] = slugify
+templates.env.filters["decode_flash"] = decode_flash_value
 
 def clean_pct(value, decimals=4):
     """Bulatkan dulu buat buang floating point noise, baru hilangkan trailing zero."""
@@ -1536,7 +1538,7 @@ async def custom_http_exception_handler(request: Request, exc: HTTPException):
             if _ref_netloc and _ref_netloc == urlsplit(str(request.url)).netloc:
                 redirect_url = referer
         response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
-        response.set_cookie("error_msg", str(exc.detail))
+        set_flash_cookie(response, "error_msg", str(exc.detail))
         return response
 
     # Untuk error HTTP lainnya tetap kembalikan bawaan
@@ -1645,8 +1647,8 @@ async def quick_add_brand(
     producer_name: str = Form(...),
     current_user: dict = Depends(get_current_user)
 ):
-    brand_name = brand_name.strip()
-    producer_name = producer_name.strip()
+    brand_name = clean_visible_text(brand_name) or ""
+    producer_name = clean_visible_text(producer_name) or ""
     
     if not brand_name or not producer_name:
         return JSONResponse(status_code=400, content={"success": False, "error": "Nama Merk dan Nama Produsen wajib diisi."})

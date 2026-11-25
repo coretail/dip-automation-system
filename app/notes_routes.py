@@ -13,9 +13,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.database import supabase
+from app.flash_cookie import decode_flash_value, set_flash_cookie
 
 WIB = ZoneInfo("Asia/Jakarta")
 templates = Jinja2Templates(directory="app/templates")
+templates.env.filters["decode_flash"] = decode_flash_value
 
 _MENTION_RE = re.compile(r"(?<!\w)@([a-zA-Z0-9._\-]+)")
 _UUID_RE = (
@@ -761,7 +763,7 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             except Exception as audit_err:
                 print(f"[NOTES] Gagal catat audit note gagal: {audit_err}")
             response = RedirectResponse(url="/notes", status_code=303)
-            response.set_cookie("error_msg", "Gagal menyimpan catatan. Silakan coba lagi.")
+            set_flash_cookie(response, "error_msg", "Gagal menyimpan catatan. Silakan coba lagi.")
             return response
 
         # (b) Simpan @mention. Kegagalan di sini TIDAK membatalkan catatan:
@@ -816,7 +818,8 @@ def register_notes_routes(app, get_current_user, get_ed_notification_count, log_
             # Catatan SUDAH tersimpan -> jangan tampilkan pesan gagal, tapi
             # beri peringatan bahwa notifikasi @mention tidak terkirim.
             response = RedirectResponse(url="/notes?status=created", status_code=303)
-            response.set_cookie(
+            set_flash_cookie(
+                response,
                 "warning_msg",
                 "Catatan berhasil disimpan, tetapi pemberitahuan @mention gagal disimpan. "
                 "Pengguna yang disebut tidak menerima notifikasi.",

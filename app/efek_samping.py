@@ -18,6 +18,7 @@ from pypdf import PdfReader, PdfWriter
 from xhtml2pdf import pisa
 
 from app import object_store
+from app.flash_cookie import set_flash_cookie
 from app.security import assert_same_tenant
 
 _EFEK_PERIOD_RE = re.compile(r"^(\d{4})-H([12])$")
@@ -223,7 +224,7 @@ def register_efek_samping_routes(
             response = RedirectResponse(
                 url=f"/products/{product_id}/edit?tab=bab4", status_code=303
             )
-            response.set_cookie("error_msg" if error else "success_msg", msg)
+            set_flash_cookie(response, "error_msg" if error else "success_msg", msg)
             return response
 
         try:
@@ -395,7 +396,7 @@ def register_efek_samping_routes(
             response = RedirectResponse(
                 url=f"/products/{product_id}/edit?tab=bab4", status_code=303
             )
-            response.set_cookie("error_msg" if error else "success_msg", msg)
+            set_flash_cookie(response, "error_msg" if error else "success_msg", msg)
             return response
 
         try:

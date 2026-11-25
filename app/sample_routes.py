@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.flash_cookie import clean_visible_text, set_flash_cookie
 from app.security import assert_same_tenant
 
 WIB = ZoneInfo("Asia/Jakarta")
@@ -58,6 +59,13 @@ def register_sample_routes(
         color_value: str = Form(None),
         current_user: dict = Depends(get_current_user)
     ):
+        product_name = clean_visible_text(product_name)
+        product_item = clean_visible_text(product_item)
+        custom_brand = clean_visible_text(custom_brand)
+        custom_producer = clean_visible_text(custom_producer)
+        qc_signer = clean_visible_text(qc_signer) or ""
+        rd_signer = clean_visible_text(rd_signer) or ""
+
         final_product_id = None if not product_id else product_id
         _final_company_for_guard = company
         _prod_row_for_guard = None
@@ -298,6 +306,13 @@ def register_sample_routes(
         else:
             new_sample_code = f"{prefix_clean}/{datetime.now(WIB).strftime('%d-%m-%Y')}/1.1"
 
+        product_name = clean_visible_text(product_name)
+        product_item = clean_visible_text(product_item)
+        custom_brand = clean_visible_text(custom_brand)
+        custom_producer = clean_visible_text(custom_producer)
+        qc_signer = clean_visible_text(qc_signer) or ""
+        rd_signer = clean_visible_text(rd_signer) or ""
+
         final_product_id = None if not product_id else product_id
         final_product_name = product_name
         final_company = company
@@ -432,14 +447,15 @@ def register_sample_routes(
             )
             # Pesan aman untuk user: TIDAK boleh memuat pesan exception database.
             response = RedirectResponse(url="/sample-submissions", status_code=303)
-            response.set_cookie(
+            set_flash_cookie(
+                response,
                 "error_msg",
                 f"Gagal menghapus FSP '{old_code}'. Data tidak terhapus, silakan coba lagi.",
             )
             return response
 
         response = RedirectResponse(url="/sample-submissions", status_code=303)
-        response.set_cookie("success_msg", f"FSP '{old_code}' berhasil dihapus.")
+        set_flash_cookie(response, "success_msg", f"FSP '{old_code}' berhasil dihapus.")
         return response
 
     # =====================================================================

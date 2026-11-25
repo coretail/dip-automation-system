@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import object_store
 from app.file_validation import validate_pdf_bytes
+from app.flash_cookie import set_flash_cookie
 
 
 def register_company_docs_routes(
@@ -87,11 +88,11 @@ def register_company_docs_routes(
         mapping = COMPANY_DOC_MAP.get(doc_type)
         if not mapping:
             response = RedirectResponse(url="/admin/company-documents", status_code=303)
-            response.set_cookie("error_msg", f"Jenis dokumen '{doc_type}' tidak dikenal.")
+            set_flash_cookie(response, "error_msg", f"Jenis dokumen '{doc_type}' tidak dikenal.")
             return response
         if perusahaan not in ("PT Erfi", "PT Heka"):
             response = RedirectResponse(url="/admin/company-documents", status_code=303)
-            response.set_cookie("error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
+            set_flash_cookie(response, "error_msg", "Perusahaan tidak valid. Harus PT Erfi atau PT Heka.")
             return response
 
         table, column, bucket, path_template = mapping
@@ -103,7 +104,7 @@ def register_company_docs_routes(
             _err = validate_pdf_bytes(file_bytes, label)
             if _err:
                 response = RedirectResponse(url="/admin/company-documents", status_code=303)
-                response.set_cookie("error_msg", _err)
+                set_flash_cookie(response, "error_msg", _err)
                 return response
 
             path = path_template.format(doc_type=doc_type, slug=company_slug)
@@ -132,13 +133,13 @@ def register_company_docs_routes(
                          f"{label} {perusahaan}", request=request)
 
             response = RedirectResponse(url="/admin/company-documents", status_code=303)
-            response.set_cookie("success_msg", f"{label} ({perusahaan}) berhasil diperbarui.")
+            set_flash_cookie(response, "success_msg", f"{label} ({perusahaan}) berhasil diperbarui.")
             return response
 
         except Exception as e:
             print(f"[COMPANY DOCS] Gagal update {doc_type} ({perusahaan}): {e}")
             response = RedirectResponse(url="/admin/company-documents", status_code=303)
-            response.set_cookie("error_msg", f"Gagal upload {label}. Coba lagi.")
+            set_flash_cookie(response, "error_msg", f"Gagal upload {label}. Coba lagi.")
             return response
 
 
