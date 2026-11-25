@@ -60,8 +60,7 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          python tests/test_parse_storage_url.py
-          python tests/test_object_store_r2.py
+          python tests/test_storage_r2.py
           python tests/test_security_helpers.py
           python tests/test_upload_validation.py
           python tests/test_auth_matrix.py
@@ -73,7 +72,6 @@ jobs:
           python tests/test_raw_materials.py
           python tests/test_profile_and_display_name.py
           python tests/test_notes_author_resolution.py
-          python tests/test_verify_r2_readiness_logic.py
           python tests/test_greeting_cache_guard.py
           python tests/test_tenant_guards.py
           python tests/test_bab2_qc_mengetahui.py

@@ -99,9 +99,8 @@ backup-rls/
 !/tests/
 !/tests/verify_product_attachments.py
 !/tests/verify_po_analytics_detail.py
-# Unit test murni migrasi storage (tanpa secret/koneksi).
-!/tests/test_parse_storage_url.py
-!/tests/test_object_store_r2.py
+# Unit test gabungan storage & R2: parse_storage_url, object_store dispatch, verify_r2_readiness helpers (tanpa koneksi/secret).
+!/tests/test_storage_r2.py
 # Unit test guard cache-bust untuk URL presign (pure-local).
 !/tests/test_base_cachebust.py
 # E2E upload UI -> R2 staging (tanpa secret; kredensial via env vars saat dijalankan).
@@ -129,8 +128,6 @@ backup-rls/
 !/tests/test_log_activity_normalize.py
 # Unit test murni guard mode produksi implisit G-11 (tanpa koneksi/secret).
 !/tests/test_env_guard.py
-# Unit test murni helper verify_r2_readiness (tanpa koneksi/secret).
-!/tests/test_verify_r2_readiness_logic.py
 # Unit test gabungan raw materials: komponen atomik, preview varian, spec_parameters, preview PDF manual (pure-local).
 !/tests/test_raw_materials.py
 # Unit test gabungan profil & display_name: validasi, rute profil, display_name, admin create, get_current_user (pure-local).
