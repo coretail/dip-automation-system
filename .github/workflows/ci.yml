@@ -37,6 +37,7 @@ jobs:
         run: |
           python scripts/check_undefined_names.py
           python scripts/check_static_rules.py
+          python scripts/check_tests_registered.py
       - name: Compile and isolated app import
         run: |
           python -m compileall -q app scripts
@@ -83,7 +84,6 @@ jobs:
           python tests/test_tenant_guard_finished_spec.py
           python tests/test_tenant_guard_sample.py
           python tests/test_bab2_qc_mengetahui.py
-          python tests/test_tenant_guard_finished_spec.py
           python tests/test_dip_public_revoke.py
           python tests/test_dip_public_rate_limit.py
           python tests/test_access_log_redaction.py
@@ -95,22 +95,28 @@ jobs:
           python tests/test_import_journal_link_matching.py
           python tests/test_dip_public_bab2_journal.py
           python tests/test_bab2_daftar_jurnal.py
-           python tests/test_paginate_all.py
-           python tests/test_greeting_budget.py
-           python tests/test_po_pagination_correctness.py
-           python tests/test_ed_query_builder.py
-           python tests/test_client_ip.py
-           python tests/test_mailer.py
-           python tests/test_invite_endpoint.py
-           python tests/test_invite_dedupe.py
-           python tests/test_invite_resend.py
-           python tests/test_invite_cancel.py
-           python tests/test_invite_validation.py
-           python tests/test_invite_activation_order.py
-           python tests/test_invite_activation_verify_args.py
-           python tests/test_invite_client_isolation.py
-           python tests/test_invite_rate_limit.py
-           python tests/test_invite_login_message.py
+          python tests/test_paginate_all.py
+          python tests/test_greeting_budget.py
+          python tests/test_po_pagination_correctness.py
+          python tests/test_ed_query_builder.py
+          python tests/test_client_ip.py
+          python tests/test_mailer.py
+          python tests/test_invite_endpoint.py
+          python tests/test_invite_dedupe.py
+          python tests/test_invite_resend.py
+          python tests/test_invite_cancel.py
+          python tests/test_invite_validation.py
+          python tests/test_invite_activation_order.py
+          python tests/test_invite_activation_verify_args.py
+          python tests/test_invite_client_isolation.py
+          python tests/test_invite_rate_limit.py
+          python tests/test_invite_login_message.py
+          python tests/test_bahansemi_spec_parameters.py
+          python tests/test_batch_coding_pdf.py
+          python tests/test_invite_ui.py
+          python tests/test_manual_preview_pdf.py
+          python tests/verify_po_analytics_detail.py
+          python tests/verify_product_attachments.py
       - name: Dependency audit (report-only baseline)
         continue-on-error: true
         run: pip-audit -r requirements.txt

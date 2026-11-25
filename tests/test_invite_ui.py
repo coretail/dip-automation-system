@@ -13,8 +13,7 @@ Menguji:
   6. admin_users_routes page: status_col_present diteruskan ke context;
      query legacy -> semua user status='active' (normalisasi).
 
-Semua tanpa jaringan/secret. notes_routes diuji dengan patch sys.modules
-untuk menghindari import app.database (yang memicu staging preflight).
+Semua tanpa jaringan/secret; memakai env dummy CI dan fake Supabase.
 
 Dijalankan: python tests/test_invite_ui.py
 """
@@ -22,22 +21,17 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
-os.environ.setdefault("SUPABASE_URL", "https://odtfppboyjlbatajncgj.supabase.co")
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+os.environ.setdefault("SUPABASE_URL", "https://ci.invalid.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "ci-dummy-service-role-key")
 os.environ.setdefault("SUPABASE_KEY", "ci-dummy-anon-key")
 os.environ.setdefault("STORAGE_BACKEND", "supabase")
-# Dummy R2 env agar import app.notes_routes (-> app.database) tidak memicu
-# staging preflight gagal di lingkungan CI/test tanpa secret.
-os.environ.setdefault("R2_ACCOUNT_ID", "ci-dummy")
-os.environ.setdefault("R2_ACCESS_KEY_ID", "ci-dummy")
-os.environ.setdefault("R2_SECRET_ACCESS_KEY", "ci-dummy")
-os.environ.setdefault("R2_PUBLIC_BASES", "https://ci.invalid")
-os.environ.setdefault("R2_BUCKET_SUFFIX", "-stg")
-# DIP_APP_ENV=staging wajib agar app.config memilih _StagingSettings (preflight)
-# dan tidak menolak .env produksi lokal (guard G-11).
-os.environ.setdefault("DIP_APP_ENV", "staging")
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
