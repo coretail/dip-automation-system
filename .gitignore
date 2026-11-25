@@ -116,7 +116,6 @@ backup-rls/
 !/tests/test_auth_matrix.py
 # Regression test temuan audit codebase 2026-10-21 (pure logic, tanpa koneksi/secret).
 !/tests/test_audit_regressions.py
-!/tests/test_profile_routes.py
 !/tests/e2e_profile_staging.py
 !/tests/e2e_notes_display_name.py
 !/tests/test_notes_author_resolution.py
@@ -134,14 +133,8 @@ backup-rls/
 !/tests/test_verify_r2_readiness_logic.py
 # Unit test murni preview komposisi varian (tanpa koneksi/secret).
 !/tests/test_variant_component_preview.py
-# Unit test pure logika validasi display_name (tanpa koneksi/secret).
-!/tests/test_profile_validation.py
-# Unit test display_name di admin_create_user (pure logic, mocking Supabase).
-!/tests/test_admin_create_user_display_name.py
-# Unit test get_current_user fail-soft (mocking Supabase client).
-!/tests/test_get_current_user_display_name.py
-# Unit test rute POST /profile/display-name (pure-local, mocking Supabase).
-!/tests/test_profile_display_name_route.py
+# Unit test gabungan profil & display_name: validasi, rute profil, display_name, admin create, get_current_user (pure-local).
+!/tests/test_profile_and_display_name.py
 # Unit test guard greeting_cache (pure-local, tanpa koneksi/secret).
 !/tests/test_greeting_cache_guard.py
 # Unit test gabungan guard tenant: SEC-02 PO/RM, efek+lampiran, finished-spec, sample (pure-local).

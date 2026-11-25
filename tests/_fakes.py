@@ -33,9 +33,14 @@ class FakeApp:
 
 
 class FakeLimiter:
-    """Pengganti slowapi Limiter: decorator ``limit`` tanpa efek."""
+    """Pengganti slowapi Limiter: merekam spec ``limit`` per-instance tanpa rate limit."""
 
-    def limit(self, _spec):
+    def __init__(self):
+        self.calls: list = []
+
+    def limit(self, spec):
+        self.calls.append(spec)
+
         def decorator(fn):
             return fn
         return decorator
