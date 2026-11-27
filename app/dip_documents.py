@@ -15,8 +15,10 @@ import io
 import logging
 import os
 import re
+import unicodedata
 import zipfile
 from decimal import Decimal
+from urllib.parse import quote
 
 import httpx
 from fastapi import Depends, HTTPException, Response
@@ -84,8 +86,10 @@ def _kop_image(company: dict, max_width_pt: float = BAB3_CONTENT_WIDTH_PT,
 
 def _safe_zip_name(name: str) -> str:
     """Bersihin nama biar aman dipakai sebagai nama file/folder di dalam ZIP
-    (buang karakter yang gak diizinkan di Windows/macOS: < > : " / \\ | ? *)."""
-    name = (name or "").strip()
+    (buang karakter yang gak diizinkan di Windows/macOS: < > : " / \\ | ? *,
+    serta karakter kontrol/format tak terlihat seperti U+2060 Word Joiner)."""
+    name = unicodedata.normalize("NFKC", name or "")
+    name = "".join(ch for ch in name if unicodedata.category(ch) not in ("Cc", "Cf", "Cs"))
     name = re.sub(r'[<>:"/\\|?*]', "", name)
     name = re.sub(r"\s+", " ", name).strip()
     return name or "Tanpa_Nama"
@@ -523,11 +527,17 @@ def register_dip_document_routes(
         zip_buffer.seek(0)
         safe_name = _safe_zip_name(product.get("nama_produk") or "Produk")
         filename = f"BAB 2 Data Mutu Bahan Kosmetik ({safe_name}).zip"
+        ascii_filename = filename.encode("ascii", "ignore").decode("ascii") or "BAB 2 Data Mutu Bahan Kosmetik.zip"
 
         return StreamingResponse(
             zip_buffer,
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{ascii_filename}"; '
+                    f"filename*=UTF-8''{quote(filename)}"
+                )
+            },
         )
 
 
