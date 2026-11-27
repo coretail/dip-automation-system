@@ -218,3 +218,7 @@ scripts_tmp_list_projects.py
 /catatan/prompt-tenant-guard-a10-a13.md
 scripts/audit-prompt-v2.md
 scripts/ollama.py
+/screenshots/
+/plan/
+.vercelignore
+scripts/merge_pdfs.py

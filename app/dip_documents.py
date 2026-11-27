@@ -521,8 +521,8 @@ def register_dip_document_routes(
                 zf.writestr(f"{root_folder}/Daftar_Jurnal.txt", daftar_jurnal)
 
         zip_buffer.seek(0)
-        safe_name = _safe_zip_name(product.get("nama_produk") or "Produk").replace(" ", "_")
-        filename = f"Bab2_Folder_{safe_name}.zip"
+        safe_name = _safe_zip_name(product.get("nama_produk") or "Produk")
+        filename = f"BAB 2 Data Mutu Bahan Kosmetik ({safe_name}).zip"
 
         return StreamingResponse(
             zip_buffer,
