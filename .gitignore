@@ -221,3 +221,4 @@ scripts/ollama.py
 /screenshots/
 /plan/
 .vercelignore
+scripts/merge_pdfs.py
